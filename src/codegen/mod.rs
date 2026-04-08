@@ -104,6 +104,22 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_poll_value_intrinsic",
+        runtime_symbol: "aic_rt_conc_join_poll",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Task[T]"],
+            ret: "Result[Option[T], ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_conc_cancel_value_intrinsic",
+        runtime_symbol: "aic_rt_conc_cancel",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Task[T]"],
+            ret: "Result[Bool, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_conc_scope_new_intrinsic",
         runtime_symbol: "aic_rt_conc_scope_new",
         signatures: &[IntrinsicSignatureShape {
@@ -157,6 +173,30 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         signatures: &[IntrinsicSignatureShape {
             params: &["Vec[Task[Int]]", "Int"],
             ret: "Result[IntTaskSelection, ConcurrencyError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_fs_async_submit_allowed_intrinsic",
+        runtime_symbol: "aic_rt_fs_async_submit_allowed",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[Bool, FsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_fs_async_shutdown_intrinsic",
+        runtime_symbol: "aic_rt_fs_async_shutdown",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[Bool, FsError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_fs_async_pressure_intrinsic",
+        runtime_symbol: "aic_rt_fs_async_pressure",
+        signatures: &[IntrinsicSignatureShape {
+            params: &[],
+            ret: "Result[FsAsyncRuntimePressure, FsError]",
         }],
     },
     IntrinsicBindingExpectation {
@@ -2020,9 +2060,18 @@ pub fn emit_llvm_with_options(
     file: &str,
     options: CodegenOptions,
 ) -> Result<CodegenOutput, Vec<Diagnostic>> {
+    emit_llvm_with_resolution_and_options(program, None, file, options)
+}
+
+pub fn emit_llvm_with_resolution_and_options(
+    program: &ir::Program,
+    resolution: Option<&crate::resolver::Resolution>,
+    file: &str,
+    options: CodegenOptions,
+) -> Result<CodegenOutput, Vec<Diagnostic>> {
     let started = Instant::now();
     let template_lowered = crate::template_lowering::lower_template_literals(program);
-    let mut gen = Generator::new(&template_lowered, file, options);
+    let mut gen = Generator::new(&template_lowered, resolution, file, options);
     gen.generate();
     let mut attrs = BTreeMap::from([
         ("file".to_string(), json!(file)),
@@ -2816,13 +2865,36 @@ fn read_u32_le(bytes: &[u8], offset: usize) -> anyhow::Result<u32> {
 fn collect_type_templates(
     program: &ir::Program,
     type_map: &BTreeMap<ir::TypeId, String>,
+    resolution: Option<&crate::resolver::Resolution>,
 ) -> (
     BTreeMap<String, StructTemplate>,
+    BTreeMap<(String, String), StructTemplate>,
     BTreeMap<String, EnumTemplate>,
+    BTreeMap<(String, String), EnumTemplate>,
     BTreeMap<String, Vec<VariantCtor>>,
 ) {
     let mut struct_templates = BTreeMap::new();
+    let mut struct_templates_by_module = BTreeMap::new();
     let mut enum_templates = BTreeMap::new();
+    let mut enum_templates_by_module = BTreeMap::new();
+    let struct_modules_by_symbol = resolution
+        .map(|resolution| {
+            resolution
+                .module_struct_infos
+                .iter()
+                .map(|((module, _), info)| (info.symbol, module.clone()))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let enum_modules_by_symbol = resolution
+        .map(|resolution| {
+            resolution
+                .module_enum_infos
+                .iter()
+                .map(|((module, _), info)| (info.symbol, module.clone()))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     for item in &program.items {
         match item {
@@ -2848,14 +2920,16 @@ fn collect_type_templates(
                             .map(|expr| (field.name.clone(), expr.clone()))
                     })
                     .collect::<BTreeMap<_, _>>();
-                struct_templates.insert(
-                    strukt.name.clone(),
-                    StructTemplate {
-                        generics: strukt.generics.iter().map(|g| g.name.clone()).collect(),
-                        fields,
-                        field_defaults,
-                    },
-                );
+                let template = StructTemplate {
+                    generics: strukt.generics.iter().map(|g| g.name.clone()).collect(),
+                    fields,
+                    field_defaults,
+                };
+                if let Some(module) = struct_modules_by_symbol.get(&strukt.symbol) {
+                    struct_templates_by_module
+                        .insert((module.clone(), strukt.name.clone()), template.clone());
+                }
+                struct_templates.insert(strukt.name.clone(), template);
             }
             ir::Item::Enum(enm) => {
                 let variants = enm
@@ -2866,13 +2940,15 @@ fn collect_type_templates(
                         (variant.name.clone(), payload)
                     })
                     .collect::<Vec<_>>();
-                enum_templates.insert(
-                    enm.name.clone(),
-                    EnumTemplate {
-                        generics: enm.generics.iter().map(|g| g.name.clone()).collect(),
-                        variants,
-                    },
-                );
+                let template = EnumTemplate {
+                    generics: enm.generics.iter().map(|g| g.name.clone()).collect(),
+                    variants,
+                };
+                if let Some(module) = enum_modules_by_symbol.get(&enm.symbol) {
+                    enum_templates_by_module
+                        .insert((module.clone(), enm.name.clone()), template.clone());
+                }
+                enum_templates.insert(enm.name.clone(), template);
             }
             _ => {}
         }
@@ -2917,7 +2993,13 @@ fn collect_type_templates(
         });
     }
 
-    (struct_templates, enum_templates, variant_ctors)
+    (
+        struct_templates,
+        struct_templates_by_module,
+        enum_templates,
+        enum_templates_by_module,
+        variant_ctors,
+    )
 }
 
 fn collect_internal_aliases_and_consts(
@@ -3117,6 +3199,7 @@ fn collect_recursive_call_targets(program: &ir::Program) -> BTreeMap<String, BTr
 
 struct Generator<'a> {
     program: &'a ir::Program,
+    resolution: Option<&'a crate::resolver::Resolution>,
     file: &'a str,
     source_map: Option<SourceMap>,
     debug: Option<DebugState>,
@@ -3127,6 +3210,7 @@ struct Generator<'a> {
     temp_counter: usize,
     label_counter: usize,
     fn_sigs: BTreeMap<String, FnSig>,
+    fn_sigs_by_symbol: BTreeMap<ir::SymbolId, FnSig>,
     fn_llvm_names: BTreeMap<ir::SymbolId, String>,
     extern_decls: BTreeSet<String>,
     type_map: BTreeMap<ir::TypeId, String>,
@@ -3135,7 +3219,9 @@ struct Generator<'a> {
     const_values: BTreeMap<String, ConstValue>,
     const_failures: BTreeSet<String>,
     struct_templates: BTreeMap<String, StructTemplate>,
+    struct_templates_by_module: BTreeMap<(String, String), StructTemplate>,
     enum_templates: BTreeMap<String, EnumTemplate>,
+    enum_templates_by_module: BTreeMap<(String, String), EnumTemplate>,
     variant_ctors: BTreeMap<String, Vec<VariantCtor>>,
     drop_impl_methods: BTreeMap<String, String>,
     generic_fn_instances: BTreeMap<String, Vec<GenericFnInstance>>,
@@ -3144,10 +3230,19 @@ struct Generator<'a> {
     closure_counter: usize,
     deferred_fn_defs: Vec<Vec<String>>,
     fn_value_adapters: BTreeMap<String, String>,
+    function_modules_by_symbol: BTreeMap<ir::SymbolId, String>,
     recursive_call_targets: BTreeMap<String, BTreeSet<String>>,
     dyn_traits: BTreeMap<String, DynTraitInfo>,
     dyn_vtable_globals: BTreeMap<String, String>,
     generated_dyn_wrappers: BTreeSet<String>,
+    call_sig_overrides: Vec<CallSigOverride>,
+    type_module_stack: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CallSigOverride {
+    name: String,
+    sig: FnSig,
 }
 
 #[derive(Debug, Clone)]
@@ -3165,6 +3260,37 @@ struct FnCtx {
     current_fn_llvm_name: String,
     current_fn_sig: FnSig,
     tail_return_mode: bool,
+}
+
+struct CallSigOverrideGuard {
+    stack: *mut Vec<CallSigOverride>,
+    pushed: bool,
+}
+
+impl Drop for CallSigOverrideGuard {
+    fn drop(&mut self) {
+        if self.pushed {
+            // Restore nested call-signature overrides even when gen_call exits early.
+            unsafe {
+                (*self.stack).pop();
+            }
+        }
+    }
+}
+
+struct TypeModuleGuard {
+    stack: *mut Vec<String>,
+    pushed: bool,
+}
+
+impl Drop for TypeModuleGuard {
+    fn drop(&mut self) {
+        if self.pushed && !self.stack.is_null() {
+            unsafe {
+                (*self.stack).pop();
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -3394,6 +3520,10 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
     let qualifier = call_path
         .get(call_path.len().saturating_sub(2))
         .map(String::as_str)?;
+    let qualifier = match qualifier {
+        "concurrent" => "conc",
+        other => other,
+    };
     match (qualifier, name) {
         ("io", "print_int") => Some("aic_io_print_int_intrinsic"),
         ("io", "print_str") => Some("aic_io_print_str_intrinsic"),
@@ -3430,6 +3560,8 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("conc", "cancel_task") => Some("aic_conc_cancel_intrinsic"),
         ("conc", "spawn_fn") => Some("aic_conc_spawn_fn_intrinsic"),
         ("conc", "join_value") => Some("aic_conc_join_value_intrinsic"),
+        ("conc", "poll_value_task") => Some("aic_conc_poll_value_intrinsic"),
+        ("conc", "cancel_value_task") => Some("aic_conc_cancel_value_intrinsic"),
         ("conc", "spawn_group") => Some("aic_conc_spawn_group_intrinsic"),
         ("conc", "select_first") => Some("aic_conc_select_first_intrinsic"),
         ("conc", "channel_int") => Some("aic_conc_channel_int_intrinsic"),
@@ -3494,6 +3626,8 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("fs", "create_symlink") => Some("aic_fs_create_symlink_intrinsic"),
         ("fs", "read_symlink") => Some("aic_fs_read_symlink_intrinsic"),
         ("fs", "set_readonly") => Some("aic_fs_set_readonly_intrinsic"),
+        ("fs", "async_shutdown") => Some("aic_fs_async_shutdown_intrinsic"),
+        ("fs", "async_runtime_pressure") => Some("aic_fs_async_pressure_intrinsic"),
         ("env", "get") => Some("aic_env_get_intrinsic"),
         ("env", "set") => Some("aic_env_set_intrinsic"),
         ("env", "remove") => Some("aic_env_remove_intrinsic"),
@@ -3645,6 +3779,7 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("net", "async_cancel_int") => Some("aic_net_async_cancel_int_intrinsic"),
         ("net", "async_cancel_string") => Some("aic_net_async_cancel_string_intrinsic"),
         ("net", "async_shutdown") => Some("aic_net_async_shutdown_intrinsic"),
+        ("net", "async_runtime_pressure") => Some("aic_net_async_pressure_intrinsic"),
         ("tls", "tls_send_timeout") => Some("aic_tls_send_timeout_intrinsic"),
         ("tls", "tls_async_send_submit") => Some("aic_tls_async_send_submit_intrinsic"),
         ("tls", "tls_async_recv_submit") => Some("aic_tls_async_recv_submit_intrinsic"),
@@ -3715,25 +3850,16 @@ fn qualified_builtin_intrinsic(call_path: &[String]) -> Option<&'static str> {
         ("crypto", "base64_decode") => Some("aic_crypto_base64_decode_intrinsic"),
         ("crypto", "random_bytes") => Some("aic_crypto_random_bytes_intrinsic"),
         ("crypto", "secure_eq") => Some("aic_crypto_secure_eq_intrinsic"),
-        ("url", "parse") => Some("aic_url_parse_intrinsic"),
-        ("url", "normalize") => Some("aic_url_normalize_intrinsic"),
-        ("url", "net_addr") => Some("aic_url_net_addr_intrinsic"),
         ("http", "parse_method") => Some("aic_http_parse_method_intrinsic"),
         ("http", "method_name") => Some("aic_http_method_name_intrinsic"),
-        ("http", "status_reason") => Some("aic_http_status_reason_intrinsic"),
         ("http", "validate_header") => Some("aic_http_validate_header_intrinsic"),
         ("http", "validate_target") => Some("aic_http_validate_target_intrinsic"),
         ("http", "header") => Some("aic_http_header_intrinsic"),
         ("http", "request") => Some("aic_http_request_intrinsic"),
-        ("http", "response") => Some("aic_http_response_intrinsic"),
         ("http_server", "listen") => Some("aic_http_server_listen_intrinsic"),
         ("http_server", "accept") => Some("aic_http_server_accept_intrinsic"),
         ("http_server", "read_request") => Some("aic_http_server_read_request_intrinsic"),
-        ("http_server", "write_response") => Some("aic_http_server_write_response_intrinsic"),
         ("http_server", "close") => Some("aic_http_server_close_intrinsic"),
-        ("http_server", "text_response") => Some("aic_http_server_text_response_intrinsic"),
-        ("http_server", "json_response") => Some("aic_http_server_json_response_intrinsic"),
-        ("http_server", "header") => Some("aic_http_server_header_intrinsic"),
         ("router", "new_router") => Some("aic_router_new_intrinsic"),
         ("router", "add") => Some("aic_router_add_intrinsic"),
         ("router", "match_route") => Some("aic_router_match_intrinsic"),

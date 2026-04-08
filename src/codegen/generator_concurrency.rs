@@ -14,6 +14,8 @@ impl<'a> Generator<'a> {
             "join_task" | "aic_conc_join_intrinsic" => "join_task",
             "timeout_task" | "aic_conc_join_timeout_intrinsic" => "timeout_task",
             "cancel_task" | "aic_conc_cancel_intrinsic" => "cancel_task",
+            "poll_value_task" | "aic_conc_poll_value_intrinsic" => "poll_value_task",
+            "cancel_value_task" | "aic_conc_cancel_value_intrinsic" => "cancel_value_task",
             "aic_conc_spawn_fn_intrinsic" => "spawn_fn",
             "aic_conc_spawn_fn_named_intrinsic" => "spawn_fn_named",
             "aic_conc_join_value_intrinsic" => "join_value",
@@ -103,6 +105,12 @@ impl<'a> Generator<'a> {
                     "Result[Bool, ConcurrencyError]",
                 ) =>
             {
+                Some(self.gen_concurrency_cancel_task_call(name, args, span, fctx))
+            }
+            "poll_value_task" => {
+                Some(self.gen_concurrency_poll_value_task_call(name, args, span, fctx))
+            }
+            "cancel_value_task" => {
                 Some(self.gen_concurrency_cancel_task_call(name, args, span, fctx))
             }
             "spawn_fn" => Some(self.gen_concurrency_spawn_fn_call(name, args, span, fctx)),
@@ -431,16 +439,26 @@ impl<'a> Generator<'a> {
         name: &str,
         span: crate::span::Span,
     ) -> Option<LType> {
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
-            self.diagnostics.push(Diagnostic::error(
-                "E5012",
-                format!("unknown function '{name}' in codegen"),
-                self.file,
-                span,
-            ));
-            return None;
-        };
-        Some(result_ty)
+        if let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) {
+            return Some(result_ty);
+        }
+        match name {
+            "cancel_task"
+            | "aic_conc_cancel_intrinsic"
+            | "cancel_value_task"
+            | "aic_conc_cancel_value_intrinsic" => {
+                self.parse_type_repr("Result[Bool, ConcurrencyError]", span)
+            }
+            _ => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5012",
+                    format!("unknown function '{name}' in codegen"),
+                    self.file,
+                    span,
+                ));
+                None
+            }
+        }
     }
 
     pub(super) fn concurrency_spawn_fn_result_ty(
@@ -449,7 +467,7 @@ impl<'a> Generator<'a> {
         return_ty: &LType,
         span: crate::span::Span,
     ) -> Option<LType> {
-        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+        if let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) {
             return Some(result_ty);
         }
         let rendered = render_type(return_ty);
@@ -463,7 +481,7 @@ impl<'a> Generator<'a> {
         task_ty: &LType,
         span: crate::span::Span,
     ) -> Option<LType> {
-        if let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) {
+        if let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) {
             return Some(result_ty);
         }
         let LType::Struct(layout) = task_ty else {
@@ -495,6 +513,47 @@ impl<'a> Generator<'a> {
             return None;
         }
         let repr = format!("Result[{}, ConcurrencyError]", task_args[0]);
+        self.parse_type_repr(&repr, span)
+    }
+
+    pub(super) fn concurrency_poll_value_result_ty(
+        &mut self,
+        name: &str,
+        task_ty: &LType,
+        span: crate::span::Span,
+    ) -> Option<LType> {
+        if let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) {
+            return Some(result_ty);
+        }
+        let LType::Struct(layout) = task_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "poll_value_task expects Task[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&layout.repr) != "Task" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "poll_value_task expects Task[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let task_args = extract_generic_args(&layout.repr).unwrap_or_default();
+        if task_args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "poll_value_task expects Task[T]",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let repr = format!("Result[Option[{}], ConcurrencyError]", task_args[0]);
         self.parse_type_repr(&repr, span)
     }
 
@@ -1327,6 +1386,247 @@ impl<'a> Generator<'a> {
             }
         };
         self.wrap_concurrency_result(&result_ty, ok_payload, &err, span, fctx)
+    }
+
+    pub(super) fn gen_concurrency_poll_value_task_call(
+        &mut self,
+        name: &str,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "poll_value_task expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let task = self.gen_expr(&args[0], fctx)?;
+        let handle = self.extract_named_handle_from_value(
+            &task,
+            "Task",
+            "poll_value_task",
+            args[0].span,
+            fctx,
+        )?;
+        let result_ty = self.concurrency_poll_value_result_ty(name, &task.ty, span)?;
+        let Some((layout, ok_ty, err_ty, ok_idx, err_idx)) =
+            self.result_layout_parts(&result_ty, span)
+        else {
+            return None;
+        };
+        let LType::Enum(option_layout) = ok_ty.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "poll_value_task expects Result[Option[T], ConcurrencyError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if base_type_name(&option_layout.repr) != "Option" {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "poll_value_task expects Result[Option[T], ConcurrencyError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let option_args = extract_generic_args(&option_layout.repr).unwrap_or_default();
+        if option_args.len() != 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                "poll_value_task expects Result[Option[T], ConcurrencyError] return type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let inner_ty = self.parse_type_repr(&option_args[0], span)?;
+        let some_idx = option_layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "Some")
+            .unwrap_or(1);
+        let none_idx = option_layout
+            .variants
+            .iter()
+            .position(|variant| variant.name == "None")
+            .unwrap_or(0);
+
+        let value_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i64", value_slot));
+        let err = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i64 @aic_rt_conc_join_poll(i64 {}, i64* {})",
+            err, handle, value_slot
+        ));
+        let out_value = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", out_value, value_slot));
+
+        let none_option = self.build_enum_variant(&option_layout, none_idx, None, span, fctx)?;
+        let ok_none_result =
+            self.build_enum_variant(&layout, ok_idx, Some(none_option), span, fctx)?;
+        let err_payload = self.build_concurrency_error_from_code(&err_ty, &err, span, fctx)?;
+        let err_result =
+            self.build_enum_variant(&layout, err_idx, Some(err_payload), span, fctx)?;
+
+        let out_slot = self.alloc_entry_slot(&result_ty, fctx);
+        let is_timeout = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 2", is_timeout, err));
+        let timeout_label = self.new_label("conc_poll_timeout");
+        let continue_label = self.new_label("conc_poll_continue");
+        let done_label = self.new_label("conc_poll_done");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_timeout, timeout_label, continue_label
+        ));
+
+        fctx.lines.push(format!("{}:", timeout_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            ok_none_result
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+
+        fctx.lines.push(format!("{}:", continue_label));
+        let runtime_done = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i64 {}, 0", runtime_done, err));
+        let ok_label = self.new_label("conc_poll_ok");
+        let err_label = self.new_label("conc_poll_err");
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            runtime_done, ok_label, err_label
+        ));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        let option_payload = if inner_ty == LType::Unit {
+            self.build_enum_variant(
+                &option_layout,
+                some_idx,
+                Some(Value {
+                    ty: LType::Unit,
+                    repr: None,
+                }),
+                span,
+                fctx,
+            )?
+        } else {
+            self.extern_decls
+                .insert("declare void @aic_rt_heap_free(i8*)".to_string());
+            let inner_llvm = llvm_type(&inner_ty);
+            let inner_stack = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = alloca {}", inner_stack, inner_llvm));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                inner_llvm,
+                default_value(&inner_ty),
+                inner_llvm,
+                inner_stack
+            ));
+            let has_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp ne i64 {}, 0", has_ptr, out_value));
+            let load_label = self.new_label("conc_poll_load");
+            let load_done_label = self.new_label("conc_poll_load_done");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                has_ptr, load_label, load_done_label
+            ));
+            fctx.lines.push(format!("{}:", load_label));
+            let out_ptr_i8 = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = inttoptr i64 {} to i8*",
+                out_ptr_i8, out_value
+            ));
+            let typed_ptr = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast i8* {} to {}*",
+                typed_ptr, out_ptr_i8, inner_llvm
+            ));
+            let loaded_inner = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded_inner, inner_llvm, inner_llvm, typed_ptr
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                inner_llvm, loaded_inner, inner_llvm, inner_stack
+            ));
+            fctx.lines
+                .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr_i8));
+            fctx.lines.push(format!("  br label %{}", load_done_label));
+            fctx.lines.push(format!("{}:", load_done_label));
+            let final_inner = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                final_inner, inner_llvm, inner_llvm, inner_stack
+            ));
+            self.build_enum_variant(
+                &option_layout,
+                some_idx,
+                Some(Value {
+                    ty: inner_ty,
+                    repr: Some(final_inner),
+                }),
+                span,
+                fctx,
+            )?
+        };
+        let ok_result =
+            self.build_enum_variant(&layout, ok_idx, Some(option_payload), span, fctx)?;
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            ok_result
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+
+        fctx.lines.push(format!("{}:", err_label));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&result_ty),
+            err_result
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&result_ty)),
+            llvm_type(&result_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+
+        fctx.lines.push(format!("{}:", done_label));
+        let out_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            out_reg,
+            llvm_type(&result_ty),
+            llvm_type(&result_ty),
+            out_slot
+        ));
+        Some(Value {
+            ty: result_ty,
+            repr: Some(out_reg),
+        })
     }
 
     pub(super) fn gen_concurrency_timeout_task_call(
@@ -3813,7 +4113,7 @@ impl<'a> Generator<'a> {
         ));
         let result_ty = if let Some(expected) = expected_ty {
             expected.clone()
-        } else if let Some(sig) = self.fn_sigs.get(name) {
+        } else if let Some(sig) = self.fn_sig(name) {
             sig.ret.clone()
         } else {
             self.diagnostics.push(Diagnostic::error(

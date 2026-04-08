@@ -18,8 +18,8 @@ use aicore::cli_contract::{
 };
 use aicore::codegen::{
     compile_with_clang_artifact_with_options, compile_with_clang_artifact_with_options_and_runtime,
-    emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions, LinkOptions,
-    OptimizationLevel, RuntimeInstrumentationOptions,
+    emit_llvm_with_resolution_and_options, ArtifactKind, CodegenOptions, CompileOptions,
+    LinkOptions, OptimizationLevel, RuntimeInstrumentationOptions,
 };
 use aicore::context_query;
 use aicore::contracts::lower_runtime_asserts;
@@ -2318,8 +2318,9 @@ fn run_cli() -> anyhow::Result<i32> {
                                 return Ok(EXIT_DIAGNOSTIC_ERROR);
                             }
                             let lowered = lower_runtime_asserts(&front.ir);
-                            let llvm = match emit_llvm_with_options(
+                            let llvm = match emit_llvm_with_resolution_and_options(
                                 &lowered,
+                                Some(&front.resolution),
                                 &entry.to_string_lossy(),
                                 CodegenOptions { debug_info },
                             ) {
@@ -2383,8 +2384,9 @@ fn run_cli() -> anyhow::Result<i32> {
                             EXIT_DIAGNOSTIC_ERROR
                         } else {
                             let lowered = lower_runtime_asserts(&front.ir);
-                            let llvm = match emit_llvm_with_options(
+                            let llvm = match emit_llvm_with_resolution_and_options(
                                 &lowered,
+                                Some(&front.resolution),
                                 &input.to_string_lossy(),
                                 CodegenOptions { debug_info },
                             ) {
@@ -2445,8 +2447,9 @@ fn run_cli() -> anyhow::Result<i32> {
                     EXIT_DIAGNOSTIC_ERROR
                 } else {
                     let lowered = lower_runtime_asserts(&front.ir);
-                    let llvm = match emit_llvm_with_options(
+                    let llvm = match emit_llvm_with_resolution_and_options(
                         &lowered,
+                        Some(&front.resolution),
                         &input.to_string_lossy(),
                         CodegenOptions { debug_info },
                     ) {
@@ -4692,7 +4695,12 @@ fn build_file(
     }
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = match emit_llvm(&lowered, &input.to_string_lossy()) {
+    let llvm = match emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &input.to_string_lossy(),
+        CodegenOptions { debug_info: false },
+    ) {
         Ok(v) => v,
         Err(diags) => {
             print!("{}", diagnostics_pretty(&diags));

@@ -7,8 +7,10 @@
 module std.fs;
 
 import std.bytes;
+import std.concurrent;
 import std.option;
 import std.result;
+import std.time;
 import std.vec;
 
 /// `FsError` is a `enum` in `std.fs`.
@@ -17,6 +19,10 @@ import std.vec;
 /// ```aic
 /// // Use `FsError` through `std.fs` APIs.
 /// ```
+///
+/// `Timeout` and `Cancelled` are used by async filesystem submit/wait/control APIs.
+/// Synchronous filesystem operations continue to return the stable filesystem variants
+/// (`NotFound`, `PermissionDenied`, `AlreadyExists`, `InvalidInput`, `Io`).
 enum FsError {
     /// `NotFound` enum variant.
     NotFound,
@@ -26,6 +32,10 @@ enum FsError {
     AlreadyExists,
     /// `InvalidInput` enum variant.
     InvalidInput,
+    /// `Timeout` enum variant.
+    Timeout,
+    /// `Cancelled` enum variant.
+    Cancelled,
     /// `Io` enum variant.
     Io,
 }
@@ -50,6 +60,47 @@ struct FsMetadata {
 /// ```
 struct FileHandle {
     handle: Int,
+}
+
+/// `AsyncFsBoolOp` is a `struct` in `std.fs`.
+struct AsyncFsBoolOp {
+    handle: Int,
+}
+
+/// `AsyncFsTextOp` is a `struct` in `std.fs`.
+struct AsyncFsTextOp {
+    handle: Int,
+}
+
+/// `AsyncFsBytesOp` is a `struct` in `std.fs`.
+struct AsyncFsBytesOp {
+    handle: Int,
+}
+
+/// `FsAsyncRuntimePressure` is a `struct` in `std.fs`.
+struct FsAsyncRuntimePressure {
+    active_ops: Int,
+    queue_depth: Int,
+    op_limit: Int,
+    queue_limit: Int,
+}
+
+/// `FsAsyncBoolSelection` is a `struct` in `std.fs`.
+struct FsAsyncBoolSelection {
+    index: Int,
+    value: Bool,
+}
+
+/// `FsAsyncTextSelection` is a `struct` in `std.fs`.
+struct FsAsyncTextSelection {
+    index: Int,
+    text: String,
+}
+
+/// `FsAsyncBytesSelection` is a `struct` in `std.fs`.
+struct FsAsyncBytesSelection {
+    index: Int,
+    payload: Bytes,
 }
 
 // Internal compiler/runtime intrinsics lowered by the LLVM backend.
@@ -524,6 +575,23 @@ fn aic_fs_set_readonly_intrinsic(path: String, readonly: Bool) -> Result[Bool, F
     out
 }
 
+/// `aic_fs_async_submit_allowed_intrinsic` in `std.fs`.
+///
+/// Reports whether the async filesystem runtime is currently accepting new
+/// submitted operations.
+intrinsic fn aic_fs_async_submit_allowed_intrinsic() -> Result[Bool, FsError] effects { concurrency };
+
+/// `aic_fs_async_shutdown_intrinsic` in `std.fs`.
+///
+/// Requests shutdown of the async filesystem runtime and returns whether the
+/// request was accepted.
+intrinsic fn aic_fs_async_shutdown_intrinsic() -> Result[Bool, FsError] effects { concurrency };
+
+/// `aic_fs_async_pressure_intrinsic` in `std.fs`.
+///
+/// Returns a typed snapshot of async filesystem runtime queue pressure.
+intrinsic fn aic_fs_async_pressure_intrinsic() -> Result[FsAsyncRuntimePressure, FsError] effects { concurrency };
+
 /// `exists` in `std.fs`.
 ///
 /// ## Example
@@ -750,6 +818,788 @@ fn write_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { 
 /// Returns module-defined error variants when the operation fails.
 fn append_bytes(path: String, content: Bytes) -> Result[Bool, FsError] effects { fs } {
     aic_fs_append_bytes_intrinsic(path, content.data)
+}
+
+/// Task-backed filesystem helpers run blocking fs operations on the concurrent task runtime.
+/// Public submit/wait APIs and `await Result[AsyncFs*Op, FsError]` build on these handles.
+
+/// `spawn_read_text` in `std.fs`.
+fn spawn_read_text(
+    path: String,
+) -> Result[Task[Result[String, FsError]], ConcurrencyError] effects { fs, concurrency } {
+    concurrent.aic_conc_spawn_fn_named_intrinsic("fs.read_text", || -> Result[String, FsError] {
+        read_text(path)
+    })
+}
+
+/// `spawn_write_text` in `std.fs`.
+fn spawn_write_text(
+    path: String,
+    content: String,
+) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency } {
+    concurrent.aic_conc_spawn_fn_named_intrinsic("fs.write_text", || -> Result[Bool, FsError] {
+        write_text(path, content)
+    })
+}
+
+/// `spawn_append_text` in `std.fs`.
+fn spawn_append_text(
+    path: String,
+    content: String,
+) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency } {
+    concurrent.aic_conc_spawn_fn_named_intrinsic("fs.append_text", || -> Result[Bool, FsError] {
+        append_text(path, content)
+    })
+}
+
+/// `spawn_read_bytes` in `std.fs`.
+fn spawn_read_bytes(
+    path: String,
+) -> Result[Task[Result[Bytes, FsError]], ConcurrencyError] effects { fs, concurrency } {
+    concurrent.aic_conc_spawn_fn_named_intrinsic("fs.read_bytes", || -> Result[Bytes, FsError] {
+        read_bytes(path)
+    })
+}
+
+/// `spawn_write_bytes` in `std.fs`.
+fn spawn_write_bytes(
+    path: String,
+    content: Bytes,
+) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency } {
+    concurrent.aic_conc_spawn_fn_named_intrinsic("fs.write_bytes", || -> Result[Bool, FsError] {
+        write_bytes(path, content)
+    })
+}
+
+/// `spawn_append_bytes` in `std.fs`.
+fn spawn_append_bytes(
+    path: String,
+    content: Bytes,
+) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency } {
+    concurrent.aic_conc_spawn_fn_named_intrinsic("fs.append_bytes", || -> Result[Bool, FsError] {
+        append_bytes(path, content)
+    })
+}
+
+/// `fs_timeout_error` in `std.fs`.
+///
+/// Builds the canonical timeout error used by async filesystem wait helpers.
+fn fs_timeout_error() -> FsError {
+    Timeout()
+}
+
+/// `fs_cancelled_error` in `std.fs`.
+///
+/// Builds the canonical cancelled error used by async filesystem submit and
+/// cancellation helpers.
+fn fs_cancelled_error() -> FsError {
+    Cancelled()
+}
+
+/// `fs_map_concurrency_error` in `std.fs`.
+///
+/// Maps task-runtime concurrency failures into the public `FsError` contract
+/// used by async filesystem APIs.
+fn fs_map_concurrency_error(err: ConcurrencyError) -> FsError {
+    match err {
+        Timeout => fs_timeout_error(),
+        Cancelled => fs_cancelled_error(),
+        InvalidInput => InvalidInput(),
+        NotFound => InvalidInput(),
+        Panic => Io(),
+        Closed => Io(),
+        Io => Io(),
+    }
+}
+
+/// `fs_async_bool_task` in `std.fs`.
+///
+/// Reinterprets a typed async filesystem bool handle as the underlying task
+/// handle used by the concurrent runtime.
+fn fs_async_bool_task(op: AsyncFsBoolOp) -> Task[Result[Bool, FsError]] {
+    Task { handle: op.handle }
+}
+
+/// `fs_async_text_task` in `std.fs`.
+///
+/// Reinterprets a typed async filesystem text handle as the underlying task
+/// handle used by the concurrent runtime.
+fn fs_async_text_task(op: AsyncFsTextOp) -> Task[Result[String, FsError]] {
+    Task { handle: op.handle }
+}
+
+/// `fs_async_bytes_task` in `std.fs`.
+///
+/// Reinterprets a typed async filesystem bytes handle as the underlying task
+/// handle used by the concurrent runtime.
+fn fs_async_bytes_task(op: AsyncFsBytesOp) -> Task[Result[Bytes, FsError]] {
+    Task { handle: op.handle }
+}
+
+/// `fs_async_poll_bool_task` in `std.fs`.
+///
+/// Polls a task-backed async filesystem bool operation without blocking and
+/// unwraps the nested `Result` shape into the public fs error contract.
+fn fs_async_poll_bool_task(
+    task: Task[Result[Bool, FsError]],
+) -> Result[Option[Bool], FsError] effects { concurrency } {
+    match concurrent.poll_value_task(task) {
+        Ok(state) => match state {
+            Some(result) => match result {
+                Ok(value) => Ok(Some(value)),
+                Err(err) => Err(err),
+            },
+            None => Ok(None()),
+        },
+        Err(err) => Err(fs_map_concurrency_error(err)),
+    }
+}
+
+/// `fs_async_poll_text_task` in `std.fs`.
+///
+/// Polls a task-backed async filesystem text operation without blocking and
+/// unwraps the nested `Result` shape into the public fs error contract.
+fn fs_async_poll_text_task(
+    task: Task[Result[String, FsError]],
+) -> Result[Option[String], FsError] effects { concurrency } {
+    match concurrent.poll_value_task(task) {
+        Ok(state) => match state {
+            Some(result) => match result {
+                Ok(value) => Ok(Some(value)),
+                Err(err) => Err(err),
+            },
+            None => Ok(None()),
+        },
+        Err(err) => Err(fs_map_concurrency_error(err)),
+    }
+}
+
+/// `fs_async_poll_bytes_task` in `std.fs`.
+///
+/// Polls a task-backed async filesystem bytes operation without blocking and
+/// unwraps the nested `Result` shape into the public fs error contract.
+fn fs_async_poll_bytes_task(
+    task: Task[Result[Bytes, FsError]],
+) -> Result[Option[Bytes], FsError] effects { concurrency } {
+    match concurrent.poll_value_task(task) {
+        Ok(state) => match state {
+            Some(result) => match result {
+                Ok(value) => Ok(Some(value)),
+                Err(err) => Err(err),
+            },
+            None => Ok(None()),
+        },
+        Err(err) => Err(fs_map_concurrency_error(err)),
+    }
+}
+
+/// `fs_async_wait_bool_task` in `std.fs`.
+///
+/// Waits for completion of a task-backed async filesystem bool operation until
+/// success, failure, or timeout.
+fn fs_async_wait_bool_task(
+    task: Task[Result[Bool, FsError]],
+    timeout_ms: Int,
+) -> Result[Bool, FsError] effects { concurrency, time } {
+    if timeout_ms < 0 {
+        Err(InvalidInput())
+    } else {
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let task_handle = task.handle;
+        let mut done = false;
+        let mut value: Option[Bool] = None();
+        let mut failure: Option[FsError] = None();
+
+        while !done {
+            match fs_async_poll_bool_task(Task { handle: task_handle }) {
+                Ok(state) => match state {
+                    Some(found) => if true {
+                        done = true;
+                        value = Some(found);
+                    } else {
+                        ()
+                    },
+                    None => if remaining_ms(deadline_ms) <= 0 {
+                        done = true;
+                        failure = Some(fs_timeout_error());
+                    } else {
+                        sleep_ms(1);
+                    },
+                },
+                Err(err) => if true {
+                    done = true;
+                    failure = Some(err);
+                } else {
+                    ()
+                },
+            };
+        };
+
+        match failure {
+            Some(err) => Err(err),
+            None => match value {
+                Some(found) => Ok(found),
+                None => Err(fs_timeout_error()),
+            },
+        }
+    }
+}
+
+/// `fs_async_wait_text_task` in `std.fs`.
+///
+/// Waits for completion of a task-backed async filesystem text operation until
+/// success, failure, or timeout.
+fn fs_async_wait_text_task(
+    task: Task[Result[String, FsError]],
+    timeout_ms: Int,
+) -> Result[String, FsError] effects { concurrency, time } {
+    if timeout_ms < 0 {
+        Err(InvalidInput())
+    } else {
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let task_handle = task.handle;
+        let mut done = false;
+        let mut value: Option[String] = None();
+        let mut failure: Option[FsError] = None();
+
+        while !done {
+            match fs_async_poll_text_task(Task { handle: task_handle }) {
+                Ok(state) => match state {
+                    Some(found) => if true {
+                        done = true;
+                        value = Some(found);
+                    } else {
+                        ()
+                    },
+                    None => if remaining_ms(deadline_ms) <= 0 {
+                        done = true;
+                        failure = Some(fs_timeout_error());
+                    } else {
+                        sleep_ms(1);
+                    },
+                },
+                Err(err) => if true {
+                    done = true;
+                    failure = Some(err);
+                } else {
+                    ()
+                },
+            };
+        };
+
+        match failure {
+            Some(err) => Err(err),
+            None => match value {
+                Some(found) => Ok(found),
+                None => Err(fs_timeout_error()),
+            },
+        }
+    }
+}
+
+/// `fs_async_wait_bytes_task` in `std.fs`.
+///
+/// Waits for completion of a task-backed async filesystem bytes operation until
+/// success, failure, or timeout.
+fn fs_async_wait_bytes_task(
+    task: Task[Result[Bytes, FsError]],
+    timeout_ms: Int,
+) -> Result[Bytes, FsError] effects { concurrency, time } {
+    if timeout_ms < 0 {
+        Err(InvalidInput())
+    } else {
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let task_handle = task.handle;
+        let mut done = false;
+        let mut value: Option[Bytes] = None();
+        let mut failure: Option[FsError] = None();
+
+        while !done {
+            match fs_async_poll_bytes_task(Task { handle: task_handle }) {
+                Ok(state) => match state {
+                    Some(found) => if true {
+                        done = true;
+                        value = Some(found);
+                    } else {
+                        ()
+                    },
+                    None => if remaining_ms(deadline_ms) <= 0 {
+                        done = true;
+                        failure = Some(fs_timeout_error());
+                    } else {
+                        sleep_ms(1);
+                    },
+                },
+                Err(err) => if true {
+                    done = true;
+                    failure = Some(err);
+                } else {
+                    ()
+                },
+            };
+        };
+
+        match failure {
+            Some(err) => Err(err),
+            None => match value {
+                Some(found) => Ok(found),
+                None => Err(fs_timeout_error()),
+            },
+        }
+    }
+}
+
+/// `async_read_text_submit` in `std.fs`.
+fn async_read_text_submit(
+    path: String,
+) -> Result[AsyncFsTextOp, FsError] effects { fs, concurrency } {
+    match aic_fs_async_submit_allowed_intrinsic() {
+        Ok(allowed) => if allowed {
+            match spawn_read_text(path) {
+                Ok(task) => Ok(AsyncFsTextOp { handle: task.handle }),
+                Err(err) => Err(fs_map_concurrency_error(err)),
+            }
+        } else {
+            Err(fs_cancelled_error())
+        },
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_write_text_submit` in `std.fs`.
+fn async_write_text_submit(
+    path: String,
+    content: String,
+) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency } {
+    match aic_fs_async_submit_allowed_intrinsic() {
+        Ok(allowed) => if allowed {
+            match spawn_write_text(path, content) {
+                Ok(task) => Ok(AsyncFsBoolOp { handle: task.handle }),
+                Err(err) => Err(fs_map_concurrency_error(err)),
+            }
+        } else {
+            Err(fs_cancelled_error())
+        },
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_append_text_submit` in `std.fs`.
+fn async_append_text_submit(
+    path: String,
+    content: String,
+) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency } {
+    match aic_fs_async_submit_allowed_intrinsic() {
+        Ok(allowed) => if allowed {
+            match spawn_append_text(path, content) {
+                Ok(task) => Ok(AsyncFsBoolOp { handle: task.handle }),
+                Err(err) => Err(fs_map_concurrency_error(err)),
+            }
+        } else {
+            Err(fs_cancelled_error())
+        },
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_read_bytes_submit` in `std.fs`.
+fn async_read_bytes_submit(
+    path: String,
+) -> Result[AsyncFsBytesOp, FsError] effects { fs, concurrency } {
+    match aic_fs_async_submit_allowed_intrinsic() {
+        Ok(allowed) => if allowed {
+            match spawn_read_bytes(path) {
+                Ok(task) => Ok(AsyncFsBytesOp { handle: task.handle }),
+                Err(err) => Err(fs_map_concurrency_error(err)),
+            }
+        } else {
+            Err(fs_cancelled_error())
+        },
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_write_bytes_submit` in `std.fs`.
+fn async_write_bytes_submit(
+    path: String,
+    content: Bytes,
+) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency } {
+    match aic_fs_async_submit_allowed_intrinsic() {
+        Ok(allowed) => if allowed {
+            match spawn_write_bytes(path, content) {
+                Ok(task) => Ok(AsyncFsBoolOp { handle: task.handle }),
+                Err(err) => Err(fs_map_concurrency_error(err)),
+            }
+        } else {
+            Err(fs_cancelled_error())
+        },
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_append_bytes_submit` in `std.fs`.
+fn async_append_bytes_submit(
+    path: String,
+    content: Bytes,
+) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency } {
+    match aic_fs_async_submit_allowed_intrinsic() {
+        Ok(allowed) => if allowed {
+            match spawn_append_bytes(path, content) {
+                Ok(task) => Ok(AsyncFsBoolOp { handle: task.handle }),
+                Err(err) => Err(fs_map_concurrency_error(err)),
+            }
+        } else {
+            Err(fs_cancelled_error())
+        },
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_wait_bool` in `std.fs`.
+fn async_wait_bool(
+    op: AsyncFsBoolOp,
+    timeout_ms: Int,
+) -> Result[Bool, FsError] effects { concurrency, time } {
+    fs_async_wait_bool_task(fs_async_bool_task(op), timeout_ms)
+}
+
+/// `async_wait_text` in `std.fs`.
+fn async_wait_text(
+    op: AsyncFsTextOp,
+    timeout_ms: Int,
+) -> Result[String, FsError] effects { concurrency, time } {
+    fs_async_wait_text_task(fs_async_text_task(op), timeout_ms)
+}
+
+/// `async_wait_bytes` in `std.fs`.
+fn async_wait_bytes(
+    op: AsyncFsBytesOp,
+    timeout_ms: Int,
+) -> Result[Bytes, FsError] effects { concurrency, time } {
+    fs_async_wait_bytes_task(fs_async_bytes_task(op), timeout_ms)
+}
+
+/// `async_poll_bool` in `std.fs`.
+fn async_poll_bool(op: AsyncFsBoolOp) -> Result[Option[Bool], FsError] effects { concurrency } {
+    fs_async_poll_bool_task(fs_async_bool_task(op))
+}
+
+/// `async_poll_text` in `std.fs`.
+fn async_poll_text(op: AsyncFsTextOp) -> Result[Option[String], FsError] effects { concurrency } {
+    fs_async_poll_text_task(fs_async_text_task(op))
+}
+
+/// `async_poll_bytes` in `std.fs`.
+fn async_poll_bytes(op: AsyncFsBytesOp) -> Result[Option[Bytes], FsError] effects { concurrency } {
+    fs_async_poll_bytes_task(fs_async_bytes_task(op))
+}
+
+/// `async_cancel_bool` in `std.fs`.
+fn async_cancel_bool(op: AsyncFsBoolOp) -> Result[Bool, FsError] effects { concurrency } {
+    match concurrent.cancel_value_task(fs_async_bool_task(op)) {
+        Ok(cancelled) => Ok(cancelled),
+        Err(err) => Err(fs_map_concurrency_error(err)),
+    }
+}
+
+/// `async_cancel_text` in `std.fs`.
+fn async_cancel_text(op: AsyncFsTextOp) -> Result[Bool, FsError] effects { concurrency } {
+    match concurrent.cancel_value_task(fs_async_text_task(op)) {
+        Ok(cancelled) => Ok(cancelled),
+        Err(err) => Err(fs_map_concurrency_error(err)),
+    }
+}
+
+/// `async_cancel_bytes` in `std.fs`.
+fn async_cancel_bytes(op: AsyncFsBytesOp) -> Result[Bool, FsError] effects { concurrency } {
+    match concurrent.cancel_value_task(fs_async_bytes_task(op)) {
+        Ok(cancelled) => Ok(cancelled),
+        Err(err) => Err(fs_map_concurrency_error(err)),
+    }
+}
+
+/// `async_wait_many_bool` in `std.fs`.
+fn async_wait_many_bool(
+    ops: Vec[AsyncFsBoolOp],
+    timeout_ms: Int,
+) -> Result[FsAsyncBoolSelection, FsError] effects { concurrency, time } {
+    if timeout_ms < 0 || ops.len == 0 {
+        Err(InvalidInput())
+    } else {
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let mut done = false;
+        let mut selected = FsAsyncBoolSelection { index: 0, value: false };
+        let mut failed = false;
+        let mut failure: FsError = fs_timeout_error();
+
+        while !done && !failed {
+            let mut i = 0;
+            while i < ops.len && !done && !failed {
+                match aic_vec_get_intrinsic(ops, i) {
+                    Some(op) => match async_poll_bool(AsyncFsBoolOp { handle: op.handle }) {
+                        Ok(state) => match state {
+                            Some(value) => if true {
+                                done = true;
+                                selected = FsAsyncBoolSelection { index: i, value: value };
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        Err(err) => if true {
+                            failed = true;
+                            failure = err;
+                        } else {
+                            ()
+                        },
+                    },
+                    None => (),
+                };
+                i = i + 1;
+            };
+
+            if !done && !failed {
+                if remaining_ms(deadline_ms) <= 0 {
+                    failed = true;
+                    failure = fs_timeout_error();
+                } else {
+                    sleep_ms(1);
+                };
+            } else {
+                ()
+            };
+        };
+
+        if done {
+            Ok(selected)
+        } else {
+            Err(failure)
+        }
+    }
+}
+
+/// `async_wait_many_text` in `std.fs`.
+fn async_wait_many_text(
+    ops: Vec[AsyncFsTextOp],
+    timeout_ms: Int,
+) -> Result[FsAsyncTextSelection, FsError] effects { concurrency, time } {
+    if timeout_ms < 0 || ops.len == 0 {
+        Err(InvalidInput())
+    } else {
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let mut done = false;
+        let mut selected = FsAsyncTextSelection { index: 0, text: "" };
+        let mut failed = false;
+        let mut failure: FsError = fs_timeout_error();
+
+        while !done && !failed {
+            let mut i = 0;
+            while i < ops.len && !done && !failed {
+                match aic_vec_get_intrinsic(ops, i) {
+                    Some(op) => match async_poll_text(AsyncFsTextOp { handle: op.handle }) {
+                        Ok(state) => match state {
+                            Some(text) => if true {
+                                done = true;
+                                selected = FsAsyncTextSelection { index: i, text: text };
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        Err(err) => if true {
+                            failed = true;
+                            failure = err;
+                        } else {
+                            ()
+                        },
+                    },
+                    None => (),
+                };
+                i = i + 1;
+            };
+
+            if !done && !failed {
+                if remaining_ms(deadline_ms) <= 0 {
+                    failed = true;
+                    failure = fs_timeout_error();
+                } else {
+                    sleep_ms(1);
+                };
+            } else {
+                ()
+            };
+        };
+
+        if done {
+            Ok(selected)
+        } else {
+            Err(failure)
+        }
+    }
+}
+
+/// `async_wait_many_bytes` in `std.fs`.
+fn async_wait_many_bytes(
+    ops: Vec[AsyncFsBytesOp],
+    timeout_ms: Int,
+) -> Result[FsAsyncBytesSelection, FsError] effects { concurrency, time } {
+    if timeout_ms < 0 || ops.len == 0 {
+        Err(InvalidInput())
+    } else {
+        let deadline_ms = deadline_after_ms(timeout_ms);
+        let mut done = false;
+        let mut selected = FsAsyncBytesSelection { index: 0, payload: empty() };
+        let mut failed = false;
+        let mut failure: FsError = fs_timeout_error();
+
+        while !done && !failed {
+            let mut i = 0;
+            while i < ops.len && !done && !failed {
+                match aic_vec_get_intrinsic(ops, i) {
+                    Some(op) => match async_poll_bytes(AsyncFsBytesOp { handle: op.handle }) {
+                        Ok(state) => match state {
+                            Some(payload) => if true {
+                                done = true;
+                                selected = FsAsyncBytesSelection { index: i, payload: payload };
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        Err(err) => if true {
+                            failed = true;
+                            failure = err;
+                        } else {
+                            ()
+                        },
+                    },
+                    None => (),
+                };
+                i = i + 1;
+            };
+
+            if !done && !failed {
+                if remaining_ms(deadline_ms) <= 0 {
+                    failed = true;
+                    failure = fs_timeout_error();
+                } else {
+                    sleep_ms(1);
+                };
+            } else {
+                ()
+            };
+        };
+
+        if done {
+            Ok(selected)
+        } else {
+            Err(failure)
+        }
+    }
+}
+
+/// `async_wait_any_bool` in `std.fs`.
+fn async_wait_any_bool(
+    op1: AsyncFsBoolOp,
+    op2: AsyncFsBoolOp,
+    timeout_ms: Int,
+) -> Result[FsAsyncBoolSelection, FsError] effects { concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_bool(ops, timeout_ms)
+}
+
+/// `async_wait_any_text` in `std.fs`.
+fn async_wait_any_text(
+    op1: AsyncFsTextOp,
+    op2: AsyncFsTextOp,
+    timeout_ms: Int,
+) -> Result[FsAsyncTextSelection, FsError] effects { concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_text(ops, timeout_ms)
+}
+
+/// `async_wait_any_bytes` in `std.fs`.
+fn async_wait_any_bytes(
+    op1: AsyncFsBytesOp,
+    op2: AsyncFsBytesOp,
+    timeout_ms: Int,
+) -> Result[FsAsyncBytesSelection, FsError] effects { concurrency, time } {
+    let ops = aic_vec_push_intrinsic(aic_vec_of_intrinsic(op1), op2);
+    async_wait_many_bytes(ops, timeout_ms)
+}
+
+/// `async_shutdown` in `std.fs`.
+fn async_shutdown() -> Result[Bool, FsError] effects { concurrency } {
+    aic_fs_async_shutdown_intrinsic()
+}
+
+/// `async_runtime_pressure` in `std.fs`.
+fn async_runtime_pressure() -> Result[FsAsyncRuntimePressure, FsError] effects { concurrency } {
+    aic_fs_async_pressure_intrinsic()
+}
+
+/// `async_read_text` in `std.fs`.
+fn async_read_text(path: String, timeout_ms: Int) -> Result[String, FsError] effects { fs, concurrency, time } {
+    match async_read_text_submit(path) {
+        Ok(op) => async_wait_text(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_write_text` in `std.fs`.
+fn async_write_text(
+    path: String,
+    content: String,
+    timeout_ms: Int,
+) -> Result[Bool, FsError] effects { fs, concurrency, time } {
+    match async_write_text_submit(path, content) {
+        Ok(op) => async_wait_bool(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_append_text` in `std.fs`.
+fn async_append_text(
+    path: String,
+    content: String,
+    timeout_ms: Int,
+) -> Result[Bool, FsError] effects { fs, concurrency, time } {
+    match async_append_text_submit(path, content) {
+        Ok(op) => async_wait_bool(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_read_bytes` in `std.fs`.
+fn async_read_bytes(path: String, timeout_ms: Int) -> Result[Bytes, FsError] effects { fs, concurrency, time } {
+    match async_read_bytes_submit(path) {
+        Ok(op) => async_wait_bytes(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_write_bytes` in `std.fs`.
+fn async_write_bytes(
+    path: String,
+    content: Bytes,
+    timeout_ms: Int,
+) -> Result[Bool, FsError] effects { fs, concurrency, time } {
+    match async_write_bytes_submit(path, content) {
+        Ok(op) => async_wait_bool(op, timeout_ms),
+        Err(err) => Err(err),
+    }
+}
+
+/// `async_append_bytes` in `std.fs`.
+fn async_append_bytes(
+    path: String,
+    content: Bytes,
+    timeout_ms: Int,
+) -> Result[Bool, FsError] effects { fs, concurrency, time } {
+    match async_append_bytes_submit(path, content) {
+        Ok(op) => async_wait_bool(op, timeout_ms),
+        Err(err) => Err(err),
+    }
 }
 
 /// `open_read` in `std.fs`.

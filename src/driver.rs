@@ -9,8 +9,8 @@ use serde_json::json;
 
 use crate::ast;
 use crate::codegen::{
-    compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
-    CompileOptions, LinkOptions, OptimizationLevel,
+    compile_with_clang_artifact_with_options, emit_llvm_with_resolution_and_options, ArtifactKind,
+    CodegenOptions, CompileOptions, LinkOptions, OptimizationLevel,
 };
 use crate::contracts::{lower_runtime_asserts, verify_static_with_context};
 use crate::diagnostics::{Diagnostic, Severity, SuggestedFix};
@@ -115,6 +115,8 @@ pub fn run_frontend_with_options(
             resolution: Resolution {
                 functions: Default::default(),
                 module_function_infos: Default::default(),
+                module_struct_infos: Default::default(),
+                module_enum_infos: Default::default(),
                 structs: Default::default(),
                 enums: Default::default(),
                 traits: Default::default(),
@@ -123,8 +125,12 @@ pub fn run_frontend_with_options(
                 module_imports: Default::default(),
                 entry_module: None,
                 function_modules: Default::default(),
+                struct_modules: Default::default(),
+                enum_modules: Default::default(),
                 module_functions: Default::default(),
                 module_exported_functions: Default::default(),
+                module_exported_structs: Default::default(),
+                module_exported_enums: Default::default(),
                 visible_functions: Default::default(),
                 import_aliases: Default::default(),
                 ambiguous_import_aliases: Default::default(),
@@ -178,6 +184,8 @@ pub fn run_frontend_with_options(
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
+    apply_call_symbols(&mut ir, &typecheck.call_symbols);
+    apply_call_target_modules(&mut ir, &typecheck.call_target_modules);
     diagnostics.extend(typecheck.diagnostics.iter().cloned());
 
     let verify_started = Instant::now();
@@ -322,6 +330,7 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
             callee,
             args,
             arg_names,
+            ..
         } => {
             reorder_call_args_in_expr(callee, orders);
             for arg in args.iter_mut() {
@@ -411,6 +420,324 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_) => {}
     }
+}
+
+fn apply_call_target_modules(
+    program: &mut ir::Program,
+    modules: &BTreeMap<ir::NodeId, Vec<String>>,
+) {
+    for item in &mut program.items {
+        match item {
+            ir::Item::Function(func) => {
+                if let Some(req) = func.requires.as_mut() {
+                    qualify_call_targets_in_expr(req, modules);
+                }
+                if let Some(ens) = func.ensures.as_mut() {
+                    qualify_call_targets_in_expr(ens, modules);
+                }
+                qualify_call_targets_in_block(&mut func.body, modules);
+            }
+            ir::Item::Struct(strukt) => {
+                for field in &mut strukt.fields {
+                    if let Some(default) = field.default_value.as_mut() {
+                        qualify_call_targets_in_expr(default, modules);
+                    }
+                }
+                if let Some(invariant) = strukt.invariant.as_mut() {
+                    qualify_call_targets_in_expr(invariant, modules);
+                }
+            }
+            ir::Item::Enum(_) => {}
+            ir::Item::Trait(trait_def) => {
+                for method in &mut trait_def.methods {
+                    if let Some(req) = method.requires.as_mut() {
+                        qualify_call_targets_in_expr(req, modules);
+                    }
+                    if let Some(ens) = method.ensures.as_mut() {
+                        qualify_call_targets_in_expr(ens, modules);
+                    }
+                    qualify_call_targets_in_block(&mut method.body, modules);
+                }
+            }
+            ir::Item::Impl(impl_def) => {
+                for method in &mut impl_def.methods {
+                    if let Some(req) = method.requires.as_mut() {
+                        qualify_call_targets_in_expr(req, modules);
+                    }
+                    if let Some(ens) = method.ensures.as_mut() {
+                        qualify_call_targets_in_expr(ens, modules);
+                    }
+                    qualify_call_targets_in_block(&mut method.body, modules);
+                }
+            }
+        }
+    }
+}
+
+fn apply_call_symbols(program: &mut ir::Program, symbols: &BTreeMap<ir::NodeId, ir::SymbolId>) {
+    for item in &mut program.items {
+        match item {
+            ir::Item::Function(func) => {
+                if let Some(req) = func.requires.as_mut() {
+                    attach_call_symbols_in_expr(req, symbols);
+                }
+                if let Some(ens) = func.ensures.as_mut() {
+                    attach_call_symbols_in_expr(ens, symbols);
+                }
+                attach_call_symbols_in_block(&mut func.body, symbols);
+            }
+            ir::Item::Struct(strukt) => {
+                for field in &mut strukt.fields {
+                    if let Some(default) = field.default_value.as_mut() {
+                        attach_call_symbols_in_expr(default, symbols);
+                    }
+                }
+                if let Some(invariant) = strukt.invariant.as_mut() {
+                    attach_call_symbols_in_expr(invariant, symbols);
+                }
+            }
+            ir::Item::Enum(_) => {}
+            ir::Item::Trait(trait_def) => {
+                for method in &mut trait_def.methods {
+                    if let Some(req) = method.requires.as_mut() {
+                        attach_call_symbols_in_expr(req, symbols);
+                    }
+                    if let Some(ens) = method.ensures.as_mut() {
+                        attach_call_symbols_in_expr(ens, symbols);
+                    }
+                    attach_call_symbols_in_block(&mut method.body, symbols);
+                }
+            }
+            ir::Item::Impl(impl_def) => {
+                for method in &mut impl_def.methods {
+                    if let Some(req) = method.requires.as_mut() {
+                        attach_call_symbols_in_expr(req, symbols);
+                    }
+                    if let Some(ens) = method.ensures.as_mut() {
+                        attach_call_symbols_in_expr(ens, symbols);
+                    }
+                    attach_call_symbols_in_block(&mut method.body, symbols);
+                }
+            }
+        }
+    }
+}
+
+fn qualify_call_targets_in_block(
+    block: &mut ir::Block,
+    modules: &BTreeMap<ir::NodeId, Vec<String>>,
+) {
+    for stmt in &mut block.stmts {
+        match stmt {
+            ir::Stmt::Let { expr, .. }
+            | ir::Stmt::Assign { expr, .. }
+            | ir::Stmt::Expr { expr, .. }
+            | ir::Stmt::Assert { expr, .. } => qualify_call_targets_in_expr(expr, modules),
+            ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => qualify_call_targets_in_expr(expr, modules),
+            ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &mut block.tail {
+        qualify_call_targets_in_expr(tail, modules);
+    }
+}
+
+fn attach_call_symbols_in_block(
+    block: &mut ir::Block,
+    symbols: &BTreeMap<ir::NodeId, ir::SymbolId>,
+) {
+    for stmt in &mut block.stmts {
+        match stmt {
+            ir::Stmt::Let { expr, .. }
+            | ir::Stmt::Assign { expr, .. }
+            | ir::Stmt::Expr { expr, .. }
+            | ir::Stmt::Assert { expr, .. } => attach_call_symbols_in_expr(expr, symbols),
+            ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => attach_call_symbols_in_expr(expr, symbols),
+            ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &mut block.tail {
+        attach_call_symbols_in_expr(tail, symbols);
+    }
+}
+
+fn attach_call_symbols_in_expr(expr: &mut ir::Expr, symbols: &BTreeMap<ir::NodeId, ir::SymbolId>) {
+    match &mut expr.kind {
+        ir::ExprKind::Call {
+            callee,
+            args,
+            symbol,
+            ..
+        } => {
+            attach_call_symbols_in_expr(callee, symbols);
+            for arg in args.iter_mut() {
+                attach_call_symbols_in_expr(arg, symbols);
+            }
+            *symbol = symbols.get(&expr.node).copied();
+        }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args.iter_mut() {
+                attach_call_symbols_in_expr(arg, symbols);
+            }
+        }
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            attach_call_symbols_in_expr(cond, symbols);
+            attach_call_symbols_in_block(then_block, symbols);
+            attach_call_symbols_in_block(else_block, symbols);
+        }
+        ir::ExprKind::While { cond, body } => {
+            attach_call_symbols_in_expr(cond, symbols);
+            attach_call_symbols_in_block(body, symbols);
+        }
+        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            attach_call_symbols_in_block(body, symbols);
+        }
+        ir::ExprKind::Break { expr: Some(inner) } => attach_call_symbols_in_expr(inner, symbols),
+        ir::ExprKind::Break { expr: None } | ir::ExprKind::Continue => {}
+        ir::ExprKind::Match { expr: inner, arms } => {
+            attach_call_symbols_in_expr(inner, symbols);
+            for arm in arms {
+                if let Some(guard) = arm.guard.as_mut() {
+                    attach_call_symbols_in_expr(guard, symbols);
+                }
+                attach_call_symbols_in_expr(&mut arm.body, symbols);
+            }
+        }
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            attach_call_symbols_in_expr(lhs, symbols);
+            attach_call_symbols_in_expr(rhs, symbols);
+        }
+        ir::ExprKind::Unary { expr: inner, .. }
+        | ir::ExprKind::Borrow { expr: inner, .. }
+        | ir::ExprKind::Await { expr: inner }
+        | ir::ExprKind::Try { expr: inner } => attach_call_symbols_in_expr(inner, symbols),
+        ir::ExprKind::FieldAccess { base, .. } => attach_call_symbols_in_expr(base, symbols),
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields.iter_mut() {
+                attach_call_symbols_in_expr(value, symbols);
+            }
+        }
+        ir::ExprKind::Closure { body, .. } => attach_call_symbols_in_block(body, symbols),
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit
+        | ir::ExprKind::Var(_) => {}
+    }
+}
+
+fn qualify_call_targets_in_expr(expr: &mut ir::Expr, modules: &BTreeMap<ir::NodeId, Vec<String>>) {
+    match &mut expr.kind {
+        ir::ExprKind::Call { callee, args, .. } => {
+            qualify_call_targets_in_expr(callee, modules);
+            for arg in args.iter_mut() {
+                qualify_call_targets_in_expr(arg, modules);
+            }
+
+            let Some(module_path) = modules.get(&expr.node) else {
+                return;
+            };
+            let ir::ExprKind::Var(name) = &callee.kind else {
+                return;
+            };
+            let path = module_path
+                .iter()
+                .cloned()
+                .chain(std::iter::once(name.clone()))
+                .collect::<Vec<_>>();
+            *callee = Box::new(build_qualified_callee_expr(&path, callee.span));
+        }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args.iter_mut() {
+                qualify_call_targets_in_expr(arg, modules);
+            }
+        }
+        ir::ExprKind::Closure { body, .. } => qualify_call_targets_in_block(body, modules),
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            qualify_call_targets_in_expr(cond, modules);
+            qualify_call_targets_in_block(then_block, modules);
+            qualify_call_targets_in_block(else_block, modules);
+        }
+        ir::ExprKind::While { cond, body } => {
+            qualify_call_targets_in_expr(cond, modules);
+            qualify_call_targets_in_block(body, modules);
+        }
+        ir::ExprKind::Loop { body } => qualify_call_targets_in_block(body, modules),
+        ir::ExprKind::Break { expr: Some(inner) } => qualify_call_targets_in_expr(inner, modules),
+        ir::ExprKind::Break { expr: None } | ir::ExprKind::Continue => {}
+        ir::ExprKind::Match {
+            expr: scrutinee,
+            arms,
+        } => {
+            qualify_call_targets_in_expr(scrutinee, modules);
+            for arm in arms {
+                if let Some(guard) = arm.guard.as_mut() {
+                    qualify_call_targets_in_expr(guard, modules);
+                }
+                qualify_call_targets_in_expr(&mut arm.body, modules);
+            }
+        }
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            qualify_call_targets_in_expr(lhs, modules);
+            qualify_call_targets_in_expr(rhs, modules);
+        }
+        ir::ExprKind::Unary { expr: inner, .. }
+        | ir::ExprKind::Borrow { expr: inner, .. }
+        | ir::ExprKind::Await { expr: inner }
+        | ir::ExprKind::Try { expr: inner } => qualify_call_targets_in_expr(inner, modules),
+        ir::ExprKind::UnsafeBlock { block } => qualify_call_targets_in_block(block, modules),
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                qualify_call_targets_in_expr(value, modules);
+            }
+        }
+        ir::ExprKind::FieldAccess { base, .. } => qualify_call_targets_in_expr(base, modules),
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit
+        | ir::ExprKind::Var(_) => {}
+    }
+}
+
+fn build_qualified_callee_expr(path: &[String], span: crate::span::Span) -> ir::Expr {
+    let mut segments = path.iter();
+    let head = segments
+        .next()
+        .cloned()
+        .unwrap_or_else(|| "<missing>".to_string());
+    let mut expr = ir::Expr {
+        node: ir::NodeId(0),
+        kind: ir::ExprKind::Var(head),
+        span,
+    };
+    for segment in segments {
+        expr = ir::Expr {
+            node: ir::NodeId(0),
+            kind: ir::ExprKind::FieldAccess {
+                base: Box::new(expr),
+                field: segment.clone(),
+            },
+            span,
+        };
+    }
+    expr
 }
 
 pub fn sort_and_cap_diagnostics(
@@ -531,8 +858,9 @@ pub fn build_with_artifact_options(
     }
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm_with_options(
+    let llvm = emit_llvm_with_resolution_and_options(
         &lowered,
+        Some(&front.resolution),
         &path.to_string_lossy(),
         CodegenOptions { debug_info },
     )

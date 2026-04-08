@@ -6,7 +6,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::codegen::emit_llvm;
+use crate::codegen::{emit_llvm_with_resolution_and_options, CodegenOptions};
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::has_errors;
 use crate::ir_builder;
@@ -295,8 +295,13 @@ pub fn benchmark_dataset(dataset_root: &Path, iterations: usize) -> anyhow::Resu
                 anyhow::bail!("benchmark typecheck failure in {}", path.display());
             }
             let lowered = lower_runtime_asserts(&ir);
-            let _ = emit_llvm(&lowered, &path.to_string_lossy())
-                .map_err(|diags| anyhow::anyhow!("benchmark codegen failure: {diags:#?}"))?;
+            let _ = emit_llvm_with_resolution_and_options(
+                &lowered,
+                Some(&resolution),
+                &path.to_string_lossy(),
+                CodegenOptions::default(),
+            )
+            .map_err(|diags| anyhow::anyhow!("benchmark codegen failure: {diags:#?}"))?;
         }
         codegen_ns += start.elapsed().as_nanos() as f64;
     }

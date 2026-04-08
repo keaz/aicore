@@ -881,6 +881,7 @@ fn render_expr(expr: &ir::Expr) -> String {
             callee,
             args,
             arg_names,
+            ..
         } => {
             let rendered_args = args
                 .iter()

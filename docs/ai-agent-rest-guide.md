@@ -67,7 +67,7 @@ This matrix captures implementation state as of the current code/tests and shoul
 | Capability | Status | Evidence anchor |
 |---|---|---|
 | `std.http_server` synchronous server APIs | Supported | Runtime implementations in `src/codegen/runtime/part05.c` + execution test `exec_http_server_parses_request_and_emits_http11_response` |
-| Native async HTTP server APIs (`std.http_server.async_*`) | Supported | Reactor-backed async accept plus compatibility request/response wrappers in `std/http_server.aic` + runnable example `examples/io/http_server_async_api.aic` |
+| Native async HTTP server APIs (`std.http_server.async_*`) | Partial | Reactor-backed async accept is implemented, but request/response I/O still uses compatibility wrappers in `std/http_server.aic`; `async_serve` now composes through async accept |
 | HTTP request parsing breadth | Partial | Parser currently accepts HTTP/1.0 + HTTP/1.1, recognized method set, and bounded receive-loop `Content-Length` body handling in `aic_rt_http_server_read_request` |
 | Router dispatch (`exact`, `:param`, trailing `*`, deterministic first-match) | Supported | Runtime router implementation in `part05.c` + execution test `exec_router_matches_paths_params_and_order` |
 | JSON helpers used by REST workflows | Supported | `std/json.aic` APIs + execution test `exec_json_roundtrip_and_object_operations` |

@@ -157,6 +157,8 @@ fn map_fs_error(err: FsError) -> ConfigError {
         PermissionDenied => cfg_permission_denied(),
         AlreadyExists => cfg_io(),
         InvalidInput => cfg_invalid_input(),
+        Timeout => cfg_io(),
+        Cancelled => cfg_io(),
         Io => cfg_io(),
     }
 }

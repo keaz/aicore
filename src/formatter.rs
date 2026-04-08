@@ -550,6 +550,7 @@ fn format_expr(
             callee,
             args,
             arg_names,
+            ..
         } => {
             format_expr(out, callee, 10, type_map, indent);
             out.push('(');

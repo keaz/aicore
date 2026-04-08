@@ -1,0 +1,85 @@
+module example.io.fs_async_tasks;
+
+import std.io;
+import std.fs;
+import std.bytes;
+import std.path;
+import std.vec;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn text_ok(v: Result[String, FsError], expected: String) -> Int {
+    match v {
+        Ok(text) => if text == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn bytes_ok(v: Result[Bytes, FsError], expected: String) -> Int {
+    match v {
+        Ok(payload) => if bytes.to_string_lossy(payload) == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs, env, concurrency, time } capabilities { io, fs, env, concurrency, time  } {
+    let scratch = match fs.temp_dir("aic_fs_async_tasks_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let text_path = path.join(scratch, "task.txt");
+    let bytes_path = path.join(scratch, "task.bin");
+
+    let wrote_text = match async_write_text_submit(text_path, "alpha") {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+    let wrote_bytes = match async_write_bytes_submit(bytes_path, bytes.from_string("bi")) {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+
+    let appended_text = match async_append_text_submit(text_path, "-beta") {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+    let appended_bytes = match async_append_bytes_submit(bytes_path, bytes.from_string("nary")) {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+
+    let read_text_ok = text_ok(async_read_text(text_path, 2000), "alpha-beta");
+    let read_bytes_ok = bytes_ok(async_read_bytes(bytes_path, 2000), "binary");
+
+    let selected_text_ok = match async_read_text_submit(text_path) {
+        Ok(op) => match async_wait_many_text(vec.vec_of(op), 2000) {
+            Ok(selection) => if selection.index == 0 && selection.text == "alpha-beta" { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let selected_bytes_ok = match async_read_bytes_submit(bytes_path) {
+        Ok(op) => match async_wait_many_bytes(vec.vec_of(op), 2000) {
+            Ok(selection) => if selection.index == 0 && bytes.to_string_lossy(selection.payload) == "binary" { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let deleted_text = ok_bool(delete(text_path));
+    let deleted_bytes = ok_bool(delete(bytes_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    if wrote_text + wrote_bytes + appended_text + appended_bytes + read_text_ok + read_bytes_ok + selected_text_ok + selected_bytes_ok + deleted_text + deleted_bytes + deleted_dir == 11 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

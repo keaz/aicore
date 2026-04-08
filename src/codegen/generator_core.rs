@@ -1,16 +1,35 @@
 use super::*;
 
 impl<'a> Generator<'a> {
-    pub(super) fn new(program: &'a ir::Program, file: &'a str, options: CodegenOptions) -> Self {
+    pub(super) fn new(
+        program: &'a ir::Program,
+        resolution: Option<&'a crate::resolver::Resolution>,
+        file: &'a str,
+        options: CodegenOptions,
+    ) -> Self {
         let mut type_map = BTreeMap::new();
         for ty in &program.types {
             type_map.insert(ty.id, ty.repr.clone());
         }
         let (type_aliases, const_defs) = collect_internal_aliases_and_consts(program, &type_map);
-        let (struct_templates, enum_templates, variant_ctors) =
-            collect_type_templates(program, &type_map);
+        let (
+            struct_templates,
+            struct_templates_by_module,
+            enum_templates,
+            enum_templates_by_module,
+            variant_ctors,
+        ) = collect_type_templates(program, &type_map, resolution);
         let drop_impl_methods = collect_drop_impl_methods(program, &type_map);
         let recursive_call_targets = collect_recursive_call_targets(program);
+        let function_modules_by_symbol = resolution
+            .map(|resolution| {
+                resolution
+                    .module_function_infos
+                    .iter()
+                    .map(|((module, _), info)| (info.symbol, module.clone()))
+                    .collect::<BTreeMap<_, _>>()
+            })
+            .unwrap_or_default();
         let source_map = fs::read_to_string(file)
             .ok()
             .map(|source| SourceMap::from_source(&source));
@@ -21,6 +40,7 @@ impl<'a> Generator<'a> {
         };
         Self {
             program,
+            resolution,
             file,
             source_map,
             debug,
@@ -31,6 +51,7 @@ impl<'a> Generator<'a> {
             temp_counter: 0,
             label_counter: 0,
             fn_sigs: BTreeMap::new(),
+            fn_sigs_by_symbol: BTreeMap::new(),
             fn_llvm_names: BTreeMap::new(),
             extern_decls: BTreeSet::new(),
             type_map,
@@ -39,7 +60,9 @@ impl<'a> Generator<'a> {
             const_values: BTreeMap::new(),
             const_failures: BTreeSet::new(),
             struct_templates,
+            struct_templates_by_module,
             enum_templates,
+            enum_templates_by_module,
             variant_ctors,
             drop_impl_methods,
             generic_fn_instances: BTreeMap::new(),
@@ -48,10 +71,13 @@ impl<'a> Generator<'a> {
             closure_counter: 0,
             deferred_fn_defs: Vec::new(),
             fn_value_adapters: BTreeMap::new(),
+            function_modules_by_symbol,
             recursive_call_targets,
             dyn_traits: BTreeMap::new(),
             dyn_vtable_globals: BTreeMap::new(),
             generated_dyn_wrappers: BTreeSet::new(),
+            call_sig_overrides: Vec::new(),
+            type_module_stack: Vec::new(),
         }
     }
 
@@ -244,6 +270,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_conc_spawn_fn_named(i64, i64, i8*, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_join(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_join_value(i64, i64*)\n");
+        text.push_str("declare i64 @aic_rt_conc_join_poll(i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_scope_new(i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_scope_spawn_fn(i64, i64, i64, i64*)\n");
         text.push_str("declare i64 @aic_rt_conc_scope_join_all(i64)\n");
@@ -319,7 +346,10 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_fs_list_dir(i8*, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_fs_create_symlink(i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_fs_read_symlink(i8*, i64, i64, i8**, i64*)\n");
-        text.push_str("declare i64 @aic_rt_fs_set_readonly(i8*, i64, i64, i64)\n\n");
+        text.push_str("declare i64 @aic_rt_fs_set_readonly(i8*, i64, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_fs_async_submit_allowed(i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_async_shutdown(i64*)\n");
+        text.push_str("declare i64 @aic_rt_fs_async_pressure(i64*, i64*, i64*, i64*)\n\n");
         text.push_str("declare void @aic_rt_env_set_args(i32, i8**)\n");
         text.push_str("declare void @aic_rt_env_args(i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_env_arg_count()\n");
@@ -721,6 +751,7 @@ impl<'a> Generator<'a> {
             let Some(func) = func else {
                 continue;
             };
+            let _module_guard = self.type_module_guard_for_symbol(func.symbol);
             if func.generics.len() != inst.type_args.len() {
                 self.diagnostics.push(Diagnostic::error(
                     "E5019",
@@ -867,6 +898,7 @@ impl<'a> Generator<'a> {
         function_items_by_name: &mut BTreeMap<String, Vec<&'b ir::Function>>,
         name_counts: &mut BTreeMap<String, usize>,
     ) {
+        let _module_guard = self.type_module_guard_for_symbol(func.symbol);
         if decode_internal_type_alias(&func.name).is_some()
             || decode_internal_const(&func.name).is_some()
         {
@@ -898,26 +930,26 @@ impl<'a> Generator<'a> {
             if func.is_async {
                 ret = LType::Async(Box::new(ret));
             }
-            self.fn_sigs.insert(
-                func.name.clone(),
-                FnSig {
-                    is_extern: func.is_extern,
-                    extern_symbol: if func.is_extern {
-                        Some(func.name.clone())
-                    } else {
-                        None
-                    },
-                    extern_abi: func.extern_abi.clone(),
-                    is_intrinsic: func.is_intrinsic,
-                    intrinsic_abi: func.intrinsic_abi.clone(),
-                    params,
-                    ret,
+            let sig = FnSig {
+                is_extern: func.is_extern,
+                extern_symbol: if func.is_extern {
+                    Some(func.name.clone())
+                } else {
+                    None
                 },
-            );
+                extern_abi: func.extern_abi.clone(),
+                is_intrinsic: func.is_intrinsic,
+                intrinsic_abi: func.intrinsic_abi.clone(),
+                params,
+                ret,
+            };
+            self.fn_sigs.insert(func.name.clone(), sig.clone());
+            self.fn_sigs_by_symbol.insert(func.symbol, sig);
         }
     }
 
     pub(super) fn function_signature(&mut self, func: &ir::Function) -> Option<FnSig> {
+        let _module_guard = self.type_module_guard_for_symbol(func.symbol);
         let params = func
             .params
             .iter()
@@ -1155,6 +1187,7 @@ impl<'a> Generator<'a> {
         llvm_name: &str,
         bindings: Option<BTreeMap<String, String>>,
     ) {
+        let _module_guard = self.type_module_guard_for_symbol(func.symbol);
         let previous_bindings = self.active_type_bindings.clone();
         self.active_type_bindings = bindings;
         let async_inner_ret = if func.is_async {
@@ -1324,7 +1357,7 @@ impl<'a> Generator<'a> {
     }
 
     pub(super) fn gen_entry_wrapper(&mut self) {
-        let Some(main_sig) = self.fn_sigs.get("main").cloned() else {
+        let Some(main_sig) = self.fn_sig("main").cloned() else {
             return;
         };
         self.out
@@ -1954,11 +1987,84 @@ impl<'a> Generator<'a> {
         }
     }
 
+    pub(super) fn load_boxed_runtime_value(
+        &mut self,
+        value_ty: &LType,
+        boxed_value: &str,
+        label_prefix: &str,
+        _span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        if *value_ty == LType::Unit {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
+        self.extern_decls
+            .insert("declare void @aic_rt_heap_free(i8*)".to_string());
+        let value_llvm = llvm_type(value_ty);
+        let value_stack = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = alloca {}", value_stack, value_llvm));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            value_llvm,
+            default_value(value_ty),
+            value_llvm,
+            value_stack
+        ));
+
+        let has_ptr = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp ne i64 {}, 0", has_ptr, boxed_value));
+        let load_label = self.new_label(&format!("{label_prefix}_load"));
+        let cont_label = self.new_label(&format!("{label_prefix}_cont"));
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            has_ptr, load_label, cont_label
+        ));
+        fctx.lines.push(format!("{}:", load_label));
+        let out_ptr_i8 = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = inttoptr i64 {} to i8*",
+            out_ptr_i8, boxed_value
+        ));
+        let typed_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            typed_ptr, out_ptr_i8, value_llvm
+        ));
+        let loaded_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded_value, value_llvm, value_llvm, typed_ptr
+        ));
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            value_llvm, loaded_value, value_llvm, value_stack
+        ));
+        fctx.lines
+            .push(format!("  call void @aic_rt_heap_free(i8* {})", out_ptr_i8));
+        fctx.lines.push(format!("  br label %{}", cont_label));
+        fctx.lines.push(format!("{}:", cont_label));
+        let final_value = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            final_value, value_llvm, value_llvm, value_stack
+        ));
+        Some(Value {
+            ty: value_ty.clone(),
+            repr: Some(final_value),
+        })
+    }
+
     pub(super) fn classify_await_submit_result(
         &mut self,
         ty: &LType,
         span: crate::span::Span,
-    ) -> Option<(usize, usize, LType, LType, LType, bool, bool)> {
+    ) -> Option<(usize, usize, LType, LType, LType, String, String)> {
         let LType::Enum(layout) = ty else {
             return None;
         };
@@ -1992,18 +2098,25 @@ impl<'a> Generator<'a> {
             ("AsyncStringOp", "TlsError") => {
                 self.parse_type_repr("Result[Bytes, TlsError]", span)?
             }
+            ("AsyncFsBoolOp", "FsError") => self.parse_type_repr("Result[Bool, FsError]", span)?,
+            ("AsyncFsTextOp", "FsError") => {
+                self.parse_type_repr("Result[String, FsError]", span)?
+            }
+            ("AsyncFsBytesOp", "FsError") => {
+                self.parse_type_repr("Result[Bytes, FsError]", span)?
+            }
             _ => return None,
         };
-        let is_string = op_name == "AsyncStringOp";
-        let tls_error = err_name == "TlsError";
+        let op_name = op_name.to_string();
+        let err_name = err_name.to_string();
         Some((
             ok_idx,
             err_idx,
             ok_payload_ty,
             err_payload_ty,
             output_ty,
-            is_string,
-            tls_error,
+            op_name,
+            err_name,
         ))
     }
 
@@ -2015,8 +2128,8 @@ impl<'a> Generator<'a> {
         submit_ok_payload_ty: LType,
         submit_err_payload_ty: LType,
         output_ty: LType,
-        string_payload: bool,
-        tls_error: bool,
+        op_name: String,
+        err_name: String,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
@@ -2106,25 +2219,18 @@ impl<'a> Generator<'a> {
             ty: submit_ok_payload_ty.clone(),
             repr: Some(op_payload),
         };
-        let op_handle = if string_payload {
-            self.extract_named_handle_from_value(
-                &op_value,
-                "AsyncStringOp",
-                "await submit bridge",
-                span,
-                fctx,
-            )?
-        } else {
-            self.extract_named_handle_from_value(
-                &op_value,
-                "AsyncIntOp",
-                "await submit bridge",
-                span,
-                fctx,
-            )?
-        };
+        let op_handle = self.extract_named_handle_from_value(
+            &op_value,
+            &op_name,
+            "await submit bridge",
+            span,
+            fctx,
+        )?;
 
-        let ok_payload = if string_payload {
+        let bridged_result = if matches!(
+            (op_name.as_str(), err_name.as_str()),
+            ("AsyncStringOp", "NetError") | ("AsyncStringOp", "TlsError")
+        ) {
             let out_ptr_slot = self.new_temp();
             fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
             let out_len_slot = self.new_temp();
@@ -2152,12 +2258,15 @@ impl<'a> Generator<'a> {
                     fctx,
                 )?
             };
-            if tls_error {
+            if err_name == "TlsError" {
                 self.wrap_tls_result(&output_ty, payload, &poll_err, span, fctx)?
             } else {
                 self.wrap_net_result(&output_ty, payload, &poll_err, span, fctx)?
             }
-        } else {
+        } else if matches!(
+            (op_name.as_str(), err_name.as_str()),
+            ("AsyncIntOp", "NetError") | ("AsyncIntOp", "TlsError")
+        ) {
             let out_int_slot = self.new_temp();
             fctx.lines.push(format!("  {} = alloca i64", out_int_slot));
             let poll_err = self.new_temp();
@@ -2168,7 +2277,7 @@ impl<'a> Generator<'a> {
             let out_int = self.new_temp();
             fctx.lines
                 .push(format!("  {} = load i64, i64* {}", out_int, out_int_slot));
-            if tls_error {
+            if err_name == "TlsError" {
                 self.wrap_tls_result(
                     &output_ty,
                     Value {
@@ -2191,11 +2300,90 @@ impl<'a> Generator<'a> {
                     fctx,
                 )?
             }
+        } else {
+            let joined_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i64", joined_slot));
+            let join_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 @aic_rt_conc_join_value(i64 {}, i64* {})",
+                join_err, op_handle, joined_slot
+            ));
+            let joined_value = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load i64, i64* {}",
+                joined_value, joined_slot
+            ));
+            let joined_payload = self.load_boxed_runtime_value(
+                &output_ty,
+                &joined_value,
+                "await_submit_fs",
+                span,
+                fctx,
+            )?;
+            let joined_slot_out = self.alloc_entry_slot(&output_ty, fctx);
+            let runtime_done = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", runtime_done, join_err));
+            let joined_ok_label = self.new_label("await_submit_fs_ok");
+            let joined_err_label = self.new_label("await_submit_fs_err");
+            let joined_done_label = self.new_label("await_submit_fs_done");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                runtime_done, joined_ok_label, joined_err_label
+            ));
+            fctx.lines.push(format!("{}:", joined_ok_label));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&output_ty),
+                joined_payload
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&output_ty)),
+                llvm_type(&output_ty),
+                joined_slot_out
+            ));
+            fctx.lines
+                .push(format!("  br label %{}", joined_done_label));
+            fctx.lines.push(format!("{}:", joined_err_label));
+            let async_err_payload =
+                self.build_fs_error_from_concurrency_code(&output_err_ty, &join_err, span, fctx)?;
+            let async_err_value = self.build_enum_variant(
+                &output_layout,
+                output_err_idx,
+                Some(async_err_payload),
+                span,
+                fctx,
+            )?;
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&output_ty),
+                async_err_value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&output_ty)),
+                llvm_type(&output_ty),
+                joined_slot_out
+            ));
+            fctx.lines
+                .push(format!("  br label %{}", joined_done_label));
+            fctx.lines.push(format!("{}:", joined_done_label));
+            let joined_result = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                joined_result,
+                llvm_type(&output_ty),
+                llvm_type(&output_ty),
+                joined_slot_out
+            ));
+            Value {
+                ty: output_ty.clone(),
+                repr: Some(joined_result),
+            }
         };
         fctx.lines.push(format!(
             "  store {} {}, {}* {}",
             llvm_type(&output_ty),
-            ok_payload
+            bridged_result
                 .repr
                 .clone()
                 .unwrap_or_else(|| default_value(&output_ty)),
@@ -2247,15 +2435,8 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if let Some((
-            ok_idx,
-            err_idx,
-            submit_ok_ty,
-            submit_err_ty,
-            output_ty,
-            string_payload,
-            tls_error,
-        )) = self.classify_await_submit_result(&awaited.ty, span)
+        if let Some((ok_idx, err_idx, submit_ok_ty, submit_err_ty, output_ty, op_name, err_name)) =
+            self.classify_await_submit_result(&awaited.ty, span)
         {
             return self.gen_await_submit_result(
                 awaited,
@@ -2264,8 +2445,8 @@ impl<'a> Generator<'a> {
                 submit_ok_ty,
                 submit_err_ty,
                 output_ty,
-                string_payload,
-                tls_error,
+                op_name,
+                err_name,
                 span,
                 fctx,
             );
@@ -2273,7 +2454,7 @@ impl<'a> Generator<'a> {
 
         self.diagnostics.push(Diagnostic::error(
             "E5002",
-            "await expects Async[T] or Result[Async*Op, NetError/TlsError] during codegen",
+            "await expects Async[T] or Result[Async*Op, NetError/TlsError/FsError] during codegen",
             self.file,
             span,
         ));
@@ -2295,7 +2476,7 @@ impl<'a> Generator<'a> {
         local: &DropSlot,
         fctx: &mut FnCtx,
     ) {
-        let Some(sig) = self.fn_sigs.get(drop_method).cloned() else {
+        let Some(sig) = self.fn_sig(drop_method).cloned() else {
             return;
         };
         if sig.params.len() != 1 || sig.params[0] != local.ty || sig.ret != LType::Unit {
@@ -2432,7 +2613,7 @@ impl<'a> Generator<'a> {
             return false;
         }
         let callee_name = &path[0];
-        let Some(callee_sig) = self.fn_sigs.get(callee_name).cloned() else {
+        let Some(callee_sig) = self.fn_sig(callee_name).cloned() else {
             return false;
         };
         if callee_sig.is_extern || callee_sig.is_intrinsic {
@@ -2682,7 +2863,7 @@ impl<'a> Generator<'a> {
                         expr.span,
                     ));
                     None
-                } else if let Some(sig) = self.fn_sigs.get(name).cloned() {
+                } else if let Some(sig) = self.fn_sig(name).cloned() {
                     self.gen_function_value(name, &sig, expr.span, fctx)
                 } else {
                     self.diagnostics.push(Diagnostic::error(
@@ -2766,7 +2947,12 @@ impl<'a> Generator<'a> {
                 let rv = self.gen_expr_with_expected(rhs, rhs_expected, fctx)?;
                 self.gen_binary(*op, lv, rv, fctx, expr.span)
             }
-            ir::ExprKind::Call { callee, args, .. } => {
+            ir::ExprKind::Call {
+                callee,
+                args,
+                symbol,
+                ..
+            } => {
                 if let ir::ExprKind::Var(name) = &callee.kind {
                     if let Some(local) = find_local(&fctx.vars, name) {
                         if matches!(local.ty, LType::Fn(_)) {
@@ -2794,7 +2980,7 @@ impl<'a> Generator<'a> {
                     ));
                     return None;
                 }
-                self.gen_call(&path, args, expr.span, expected_ty, fctx)
+                self.gen_call(&path, args, *symbol, expr.span, expected_ty, fctx)
             }
             ir::ExprKind::TemplateLiteral { .. } => {
                 self.diagnostics.push(Diagnostic::error(
@@ -3231,6 +3417,7 @@ impl<'a> Generator<'a> {
         &mut self,
         call_path: &[String],
         args: &[ir::Expr],
+        call_symbol: Option<ir::SymbolId>,
         span: crate::span::Span,
         expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
@@ -3245,6 +3432,22 @@ impl<'a> Generator<'a> {
             return None;
         };
         let builtin_name = qualified_builtin_intrinsic(call_path).unwrap_or(name);
+        let exact_sig = call_symbol.and_then(|symbol| self.fn_sigs_by_symbol.get(&symbol).cloned());
+        let _sig_guard = if let Some(sig) = exact_sig.clone() {
+            self.call_sig_overrides.push(CallSigOverride {
+                name: name.to_string(),
+                sig,
+            });
+            CallSigOverrideGuard {
+                stack: &mut self.call_sig_overrides as *mut _,
+                pushed: true,
+            }
+        } else {
+            CallSigOverrideGuard {
+                stack: std::ptr::null_mut(),
+                pushed: false,
+            }
+        };
 
         if let Some(value) = self.gen_variant_constructor(name, args, expected_ty, span, fctx) {
             return value;
@@ -3489,7 +3692,7 @@ impl<'a> Generator<'a> {
             return result;
         }
 
-        let sig_hint = self.fn_sigs.get(name).cloned();
+        let sig_hint = exact_sig.clone().or_else(|| self.fn_sig(name).cloned());
         let mut values = Vec::new();
         for (idx, expr) in args.iter().enumerate() {
             let expected_hint = sig_hint.as_ref().and_then(|sig| sig.params.get(idx));
@@ -3558,7 +3761,7 @@ impl<'a> Generator<'a> {
                 repr: Some(reg),
             });
         }
-        let Some(sig) = self.fn_sigs.get(name).cloned() else {
+        let Some(sig) = exact_sig.clone().or_else(|| self.fn_sig(name).cloned()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{}' in codegen", name),
@@ -3632,11 +3835,13 @@ impl<'a> Generator<'a> {
             ));
         }
 
-        let mangled = mangle(name);
+        let llvm_name = call_symbol
+            .and_then(|symbol| self.fn_llvm_names.get(&symbol).cloned())
+            .unwrap_or_else(|| mangle(name));
         if sig.ret == LType::Unit {
             fctx.lines.push(format!(
                 "  call void @{}({})",
-                mangled,
+                llvm_name,
                 rendered_args.join(", ")
             ));
             Some(Value {
@@ -3649,7 +3854,7 @@ impl<'a> Generator<'a> {
                 "  {} = call {} @{}({})",
                 reg,
                 llvm_type(&sig.ret),
-                mangled,
+                llvm_name,
                 rendered_args.join(", ")
             ));
             Some(Value {
@@ -3671,6 +3876,9 @@ impl<'a> Generator<'a> {
             return false;
         }
         let qualifier_joined = qualifier.join(".");
+        if qualifier_joined == "std" || qualifier_joined.starts_with("std.") {
+            return true;
+        }
         if self
             .program
             .imports
@@ -4699,7 +4907,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        let Some(sig) = self.fn_sigs.get(name).cloned() else {
+        let Some(sig) = self.fn_sig(name).cloned() else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{}' in codegen", name),
@@ -4891,6 +5099,7 @@ impl<'a> Generator<'a> {
             return;
         }
 
+        let _module_guard = self.type_module_guard_for_symbol(func.symbol);
         let generic_names = func
             .generics
             .iter()
@@ -5671,8 +5880,98 @@ impl<'a> Generator<'a> {
         captures.into_iter().collect()
     }
 
+    pub(super) fn fn_sig(&self, name: &str) -> Option<&FnSig> {
+        self.call_sig_overrides
+            .iter()
+            .rev()
+            .find(|entry| entry.name == name)
+            .map(|entry| &entry.sig)
+            .or_else(|| self.fn_sigs.get(name))
+    }
+
+    pub(super) fn type_module_guard_for_symbol(&mut self, symbol: ir::SymbolId) -> TypeModuleGuard {
+        if let Some(module) = self.function_modules_by_symbol.get(&symbol).cloned() {
+            self.type_module_stack.push(module);
+            TypeModuleGuard {
+                stack: &mut self.type_module_stack as *mut _,
+                pushed: true,
+            }
+        } else {
+            TypeModuleGuard {
+                stack: std::ptr::null_mut(),
+                pushed: false,
+            }
+        }
+    }
+
+    pub(super) fn current_type_module(&self) -> Option<&str> {
+        self.type_module_stack.last().map(String::as_str)
+    }
+
+    pub(super) fn visible_struct_template(&self, name: &str) -> Option<&StructTemplate> {
+        if let Some((module, short)) = name.rsplit_once('.') {
+            return self
+                .struct_templates_by_module
+                .get(&(module.to_string(), short.to_string()));
+        }
+
+        let short = name.rsplit('.').next().unwrap_or(name);
+        if let Some(module) = self.current_type_module() {
+            if let Some(template) = self
+                .struct_templates_by_module
+                .get(&(module.to_string(), short.to_string()))
+            {
+                return Some(template);
+            }
+            if let Some(resolution) = self.resolution {
+                if let Some(imports) = resolution.module_imports.get(module) {
+                    for import in imports {
+                        if let Some(template) = self
+                            .struct_templates_by_module
+                            .get(&(import.clone(), short.to_string()))
+                        {
+                            return Some(template);
+                        }
+                    }
+                }
+            }
+        }
+        self.struct_templates.get(short)
+    }
+
+    pub(super) fn visible_enum_template(&self, name: &str) -> Option<&EnumTemplate> {
+        if let Some((module, short)) = name.rsplit_once('.') {
+            return self
+                .enum_templates_by_module
+                .get(&(module.to_string(), short.to_string()));
+        }
+
+        let short = name.rsplit('.').next().unwrap_or(name);
+        if let Some(module) = self.current_type_module() {
+            if let Some(template) = self
+                .enum_templates_by_module
+                .get(&(module.to_string(), short.to_string()))
+            {
+                return Some(template);
+            }
+            if let Some(resolution) = self.resolution {
+                if let Some(imports) = resolution.module_imports.get(module) {
+                    for import in imports {
+                        if let Some(template) = self
+                            .enum_templates_by_module
+                            .get(&(import.clone(), short.to_string()))
+                        {
+                            return Some(template);
+                        }
+                    }
+                }
+            }
+        }
+        self.enum_templates.get(short)
+    }
+
     pub(super) fn sig_matches_shape(&self, name: &str, params: &[&str], ret: &str) -> bool {
-        let Some(sig) = self.fn_sigs.get(name) else {
+        let Some(sig) = self.fn_sig(name) else {
             return false;
         };
         if sig.params.len() != params.len() {
@@ -5695,7 +5994,7 @@ impl<'a> Generator<'a> {
         arg_types: &[LType],
         span: crate::span::Span,
     ) -> Option<FnSig> {
-        if let Some(sig) = self.fn_sigs.get(name).cloned() {
+        if let Some(sig) = self.fn_sig(name).cloned() {
             if sig.params == arg_types {
                 return Some(sig);
             }

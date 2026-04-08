@@ -12,6 +12,8 @@ fn err_code(err: FsError) -> Int {
         AlreadyExists => 12,
         InvalidInput => 13,
         Io => 14,
+        Timeout => 15,
+        Cancelled => 16,
     }
 }
 

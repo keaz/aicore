@@ -3621,7 +3621,7 @@ impl<'a> Generator<'a> {
             }));
         }
 
-        if let Some(template) = self.struct_templates.get(base).cloned() {
+        if let Some(template) = self.visible_struct_template(base).cloned() {
             if template.generics.len() != arg_texts.len() {
                 self.diagnostics.push(Diagnostic::error(
                     "E5019",
@@ -3660,7 +3660,7 @@ impl<'a> Generator<'a> {
             }));
         }
 
-        if let Some(template) = self.enum_templates.get(base).cloned() {
+        if let Some(template) = self.visible_enum_template(base).cloned() {
             if template.generics.len() != arg_texts.len() {
                 self.diagnostics.push(Diagnostic::error(
                     "E5019",

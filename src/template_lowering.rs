@@ -150,12 +150,14 @@ impl TemplateLowerer {
                 callee,
                 args,
                 arg_names,
+                symbol,
             } => ir::Expr {
                 node: expr.node,
                 kind: ir::ExprKind::Call {
                     callee: Box::new(self.lower_expr(callee)),
                     args: args.iter().map(|arg| self.lower_expr(arg)).collect(),
                     arg_names: arg_names.clone(),
+                    symbol: *symbol,
                 },
                 span: expr.span,
             },
@@ -364,6 +366,7 @@ impl TemplateLowerer {
                 callee: Box::new(self.make_var(callee_name, span)),
                 args,
                 arg_names: Vec::new(),
+                symbol: None,
             },
             span,
         }

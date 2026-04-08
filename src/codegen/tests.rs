@@ -1529,6 +1529,116 @@ let _recv_score = match recv {
 }
 
 #[test]
+fn await_submit_bridge_lowers_fs_submit_results_to_task_join_runtime_calls() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("await_submit_bridge_polling_fs.aic");
+    fs::write(
+        &file,
+        r#"
+import std.bytes;
+import std.fs;
+
+async fn main() -> Int effects { fs, concurrency } capabilities { fs, concurrency } {
+let wrote = await async_write_text_submit("demo.txt", "alpha");
+let text = await async_read_text_submit("demo.txt");
+let payload = await async_read_bytes_submit("demo.bin");
+let _wrote_score = match wrote {
+    Ok(_) => 1,
+    Err(_) => 1,
+};
+let _text_score = match text {
+    Ok(_) => 1,
+    Err(_) => 1,
+};
+let _payload_score = match payload {
+    Ok(_) => 1,
+    Err(_) => 1,
+};
+0
+}
+"#,
+    )
+    .expect("write source");
+
+    let front = run_frontend(&file).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    let lowered = lower_runtime_asserts(&front.ir);
+    let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+
+    assert!(
+        output.llvm_ir.contains("call i64 @aic_rt_conc_join_value("),
+        "fs await submit bridge should join task-backed async operations\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output.llvm_ir.contains("call i64 @aic_rt_async_poll_int("),
+        "fs await submit bridge should not use net int poll helpers\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output
+            .llvm_ir
+            .contains("call i64 @aic_rt_async_poll_string("),
+        "fs await submit bridge should not use net string poll helpers\nllvm={}",
+        output.llvm_ir
+    );
+}
+
+#[test]
+fn fs_runtime_controls_lower_to_filesystem_runtime_symbols() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("fs_runtime_controls_lowering.aic");
+    fs::write(
+        &file,
+        r#"
+import std.fs;
+
+fn main() -> Int effects { fs, concurrency } capabilities { fs, concurrency } {
+let _pressure = async_runtime_pressure();
+let _shutdown = async_shutdown();
+0
+}
+"#,
+    )
+    .expect("write source");
+
+    let front = run_frontend(&file).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics={:#?}",
+        front.diagnostics
+    );
+    let lowered = lower_runtime_asserts(&front.ir);
+    let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
+    let main_block = find_define_block(&output.llvm_ir, "@aic_main(");
+
+    assert!(
+        main_block.contains("call i64 @aic_rt_fs_async_pressure("),
+        "fs async_runtime_pressure should lower to filesystem runtime pressure\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        main_block.contains("call i64 @aic_rt_fs_async_shutdown(i64*"),
+        "fs async_shutdown should lower to filesystem shutdown runtime\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !main_block.contains("call i64 @aic_rt_net_async_pressure("),
+        "fs runtime controls must not lower to net async pressure\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !main_block.contains("call i64 @aic_rt_net_async_shutdown()"),
+        "fs runtime controls must not lower to net async shutdown\nllvm={}",
+        output.llvm_ir
+    );
+}
+
+#[test]
 fn struct_init_tail_move_skips_map_close_on_moved_local() {
     let dir = tempdir().expect("tempdir");
     let file = dir.path().join("struct_tail_move_map.aic");
@@ -1971,6 +2081,9 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_conc_join_timeout(i64, i64, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_conc_join_poll(i64, i64*)"));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_conc_spawn_group(i8*, i64, i64, i64, i64**, i64*)"));
     assert!(output
         .llvm_ir
@@ -2402,6 +2515,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_conc_join(long handle, long* out_value)"));
     assert!(runtime_c_source()
         .contains("long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value)"));
+    assert!(runtime_c_source().contains("long aic_rt_conc_join_poll(long handle, long* out_value)"));
     assert!(runtime_c_source().contains("long aic_rt_conc_spawn_group("));
     assert!(runtime_c_source().contains("long aic_rt_conc_select_first("));
     assert!(runtime_c_source()

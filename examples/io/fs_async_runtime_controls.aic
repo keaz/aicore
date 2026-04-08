@@ -1,0 +1,29 @@
+module example.io.fs_async_runtime_controls;
+
+import std.io;
+import std.fs;
+
+fn main() -> Int effects { io, fs, concurrency } capabilities { io, fs, concurrency  } {
+    let pressure_ok = match async_runtime_pressure() {
+        Ok(pressure) => if pressure.active_ops == 0 && pressure.queue_depth == 0 && pressure.op_limit > 0 && pressure.queue_limit == 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let shutdown_ok = match async_shutdown() {
+        Ok(done) => if done { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let blocked_submit = match async_read_text_submit("after_shutdown.txt") {
+        Ok(_) => 0,
+        Err(err) => match err {
+            Cancelled => 1,
+            _ => 0,
+        },
+    };
+
+    if pressure_ok + shutdown_ok + blocked_submit == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

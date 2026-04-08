@@ -866,6 +866,8 @@ fn from_fs_error(err: FsError) -> IoError {
     match err {
         NotFound => io_end_of_input(),
         InvalidInput => io_invalid_input(),
+        Timeout => io_other(),
+        Cancelled => io_other(),
         _ => io_other(),
     }
 }
@@ -1023,6 +1025,8 @@ fn fs_error_name(err: FsError) -> String {
         PermissionDenied => "fs.PermissionDenied",
         AlreadyExists => "fs.AlreadyExists",
         InvalidInput => "fs.InvalidInput",
+        Timeout => "fs.Timeout",
+        Cancelled => "fs.Cancelled",
         Io => "fs.Io",
     }
 }
@@ -1149,6 +1153,8 @@ fn from_fs_error_with_context(err: FsError, context: String) -> IoErrorContext {
         PermissionDenied => mapped_error_with_context(io_other(), context, "fs.PermissionDenied"),
         AlreadyExists => mapped_error_with_context(io_other(), context, "fs.AlreadyExists"),
         InvalidInput => mapped_error_with_context(io_invalid_input(), context, "fs.InvalidInput"),
+        Timeout => mapped_error_with_context(io_other(), context, "fs.Timeout"),
+        Cancelled => mapped_error_with_context(io_other(), context, "fs.Cancelled"),
         Io => mapped_error_with_context(io_other(), context, "fs.Io"),
     }
 }

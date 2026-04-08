@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::codegen::{
-    compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
-    CompileOptions, OptimizationLevel,
+    compile_with_clang_artifact_with_options, emit_llvm_with_resolution_and_options, ArtifactKind,
+    CodegenOptions, CompileOptions, OptimizationLevel,
 };
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::{has_errors, run_frontend};
@@ -158,8 +158,9 @@ fn run_case(
         MatrixMode::Debug => OptimizationLevel::O0,
         MatrixMode::Release => OptimizationLevel::O2,
     };
-    let llvm = emit_llvm_with_options(
+    let llvm = emit_llvm_with_resolution_and_options(
         &lowered,
+        Some(&front.resolution),
         &source_path.to_string_lossy(),
         CodegenOptions { debug_info },
     )

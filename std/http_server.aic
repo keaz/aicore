@@ -604,10 +604,10 @@ fn async_serve(
     accept_timeout_ms: Int,
     io_timeout_ms: Int,
     handler: Fn(Request) -> ResponseView,
-) -> Result[Int, ServerError] effects { net } {
-    match accept(listener, accept_timeout_ms) {
+) -> Result[Int, ServerError] effects { net, concurrency } {
+    match net.async_accept(listener, accept_timeout_ms) {
         Ok(conn) => async_serve_connection(conn, max_bytes, io_timeout_ms, handler),
-        Err(err) => Err(err),
+        Err(err) => Err(http_server_net_error_to_server_error(err)),
     }
 }
 

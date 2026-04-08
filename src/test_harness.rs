@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
-use crate::codegen::{compile_with_clang, emit_llvm};
+use crate::codegen::{compile_with_clang, emit_llvm_with_resolution_and_options, CodegenOptions};
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::{has_errors, run_frontend};
 use crate::formatter::format_program;
@@ -159,8 +159,13 @@ fn run_pass_case(path: &Path) -> anyhow::Result<String> {
     }
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &path.to_string_lossy())
-        .map_err(|diags| anyhow::anyhow!("llvm generation failed: {:#?}", diags))?;
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &path.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .map_err(|diags| anyhow::anyhow!("llvm generation failed: {:#?}", diags))?;
 
     let tmp = std::env::temp_dir().join(format!(
         "aicore-harness-{}-{}",

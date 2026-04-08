@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Number, Value};
 
-use crate::codegen::{compile_with_clang, emit_llvm};
+use crate::codegen::{compile_with_clang, emit_llvm_with_resolution_and_options, CodegenOptions};
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::{has_errors, run_frontend};
 use crate::test_harness::{HarnessCase, HarnessMode, HarnessReport};
@@ -248,8 +248,13 @@ fn compile_property_case(file: &Path, transformed: &str) -> anyhow::Result<Prope
     }
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &test_file.to_string_lossy())
-        .map_err(|diags| anyhow::anyhow!("llvm generation failed: {:#?}", diags))?;
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &test_file.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .map_err(|diags| anyhow::anyhow!("llvm generation failed: {:#?}", diags))?;
 
     let exe = temp_dir.join("property-test-bin");
     compile_with_clang(&llvm.llvm_ir, &exe, &temp_dir)?;

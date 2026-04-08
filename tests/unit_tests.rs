@@ -133,6 +133,231 @@ fn assert_delegate_call(
     }
 }
 
+fn collect_ir_call_paths(expr: &aicore::ir::Expr, out: &mut Vec<String>) {
+    match &expr.kind {
+        aicore::ir::ExprKind::Call { callee, args, .. } => {
+            let mut segments = Vec::new();
+            let mut current = &callee.kind;
+            loop {
+                match current {
+                    aicore::ir::ExprKind::Var(name) => {
+                        segments.push(name.clone());
+                        break;
+                    }
+                    aicore::ir::ExprKind::FieldAccess { base, field } => {
+                        segments.push(field.clone());
+                        current = &base.kind;
+                    }
+                    _ => break,
+                }
+            }
+            if !segments.is_empty() {
+                segments.reverse();
+                out.push(segments.join("."));
+            }
+            collect_ir_call_paths(callee, out);
+            for arg in args {
+                collect_ir_call_paths(arg, out);
+            }
+        }
+        aicore::ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_ir_call_paths(arg, out);
+            }
+        }
+        aicore::ir::ExprKind::Closure { body, .. }
+        | aicore::ir::ExprKind::UnsafeBlock { block: body } => {
+            collect_ir_call_paths_in_block(body, out);
+        }
+        aicore::ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_ir_call_paths(cond, out);
+            collect_ir_call_paths_in_block(then_block, out);
+            collect_ir_call_paths_in_block(else_block, out);
+        }
+        aicore::ir::ExprKind::While { cond, body } => {
+            collect_ir_call_paths(cond, out);
+            collect_ir_call_paths_in_block(body, out);
+        }
+        aicore::ir::ExprKind::Loop { body } => collect_ir_call_paths_in_block(body, out),
+        aicore::ir::ExprKind::Break { expr: Some(inner) }
+        | aicore::ir::ExprKind::Borrow { expr: inner, .. }
+        | aicore::ir::ExprKind::Await { expr: inner }
+        | aicore::ir::ExprKind::Try { expr: inner }
+        | aicore::ir::ExprKind::Unary { expr: inner, .. } => collect_ir_call_paths(inner, out),
+        aicore::ir::ExprKind::Break { expr: None }
+        | aicore::ir::ExprKind::Continue
+        | aicore::ir::ExprKind::Int(_)
+        | aicore::ir::ExprKind::Float(_)
+        | aicore::ir::ExprKind::Bool(_)
+        | aicore::ir::ExprKind::Char(_)
+        | aicore::ir::ExprKind::String(_)
+        | aicore::ir::ExprKind::Unit
+        | aicore::ir::ExprKind::Var(_) => {}
+        aicore::ir::ExprKind::Match { expr, arms } => {
+            collect_ir_call_paths(expr, out);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_ir_call_paths(guard, out);
+                }
+                collect_ir_call_paths(&arm.body, out);
+            }
+        }
+        aicore::ir::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_ir_call_paths(lhs, out);
+            collect_ir_call_paths(rhs, out);
+        }
+        aicore::ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                collect_ir_call_paths(value, out);
+            }
+        }
+        aicore::ir::ExprKind::FieldAccess { base, .. } => collect_ir_call_paths(base, out),
+    }
+}
+
+fn collect_ir_call_paths_and_symbols(
+    expr: &aicore::ir::Expr,
+    out: &mut Vec<(String, Option<aicore::ir::SymbolId>)>,
+) {
+    match &expr.kind {
+        aicore::ir::ExprKind::Call {
+            callee,
+            args,
+            symbol,
+            ..
+        } => {
+            let mut segments = Vec::new();
+            let mut current = &callee.kind;
+            loop {
+                match current {
+                    aicore::ir::ExprKind::Var(name) => {
+                        segments.push(name.clone());
+                        break;
+                    }
+                    aicore::ir::ExprKind::FieldAccess { base, field } => {
+                        segments.push(field.clone());
+                        current = &base.kind;
+                    }
+                    _ => break,
+                }
+            }
+            if !segments.is_empty() {
+                segments.reverse();
+                out.push((segments.join("."), *symbol));
+            }
+            collect_ir_call_paths_and_symbols(callee, out);
+            for arg in args {
+                collect_ir_call_paths_and_symbols(arg, out);
+            }
+        }
+        aicore::ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_ir_call_paths_and_symbols(arg, out);
+            }
+        }
+        aicore::ir::ExprKind::Closure { body, .. }
+        | aicore::ir::ExprKind::UnsafeBlock { block: body } => {
+            collect_ir_call_paths_and_symbols_in_block(body, out);
+        }
+        aicore::ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_ir_call_paths_and_symbols(cond, out);
+            collect_ir_call_paths_and_symbols_in_block(then_block, out);
+            collect_ir_call_paths_and_symbols_in_block(else_block, out);
+        }
+        aicore::ir::ExprKind::While { cond, body } => {
+            collect_ir_call_paths_and_symbols(cond, out);
+            collect_ir_call_paths_and_symbols_in_block(body, out);
+        }
+        aicore::ir::ExprKind::Loop { body } => {
+            collect_ir_call_paths_and_symbols_in_block(body, out)
+        }
+        aicore::ir::ExprKind::Break { expr: Some(inner) }
+        | aicore::ir::ExprKind::Borrow { expr: inner, .. }
+        | aicore::ir::ExprKind::Await { expr: inner }
+        | aicore::ir::ExprKind::Try { expr: inner }
+        | aicore::ir::ExprKind::Unary { expr: inner, .. } => {
+            collect_ir_call_paths_and_symbols(inner, out)
+        }
+        aicore::ir::ExprKind::Break { expr: None }
+        | aicore::ir::ExprKind::Continue
+        | aicore::ir::ExprKind::Int(_)
+        | aicore::ir::ExprKind::Float(_)
+        | aicore::ir::ExprKind::Bool(_)
+        | aicore::ir::ExprKind::Char(_)
+        | aicore::ir::ExprKind::String(_)
+        | aicore::ir::ExprKind::Unit
+        | aicore::ir::ExprKind::Var(_) => {}
+        aicore::ir::ExprKind::Match { expr, arms } => {
+            collect_ir_call_paths_and_symbols(expr, out);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_ir_call_paths_and_symbols(guard, out);
+                }
+                collect_ir_call_paths_and_symbols(&arm.body, out);
+            }
+        }
+        aicore::ir::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_ir_call_paths_and_symbols(lhs, out);
+            collect_ir_call_paths_and_symbols(rhs, out);
+        }
+        aicore::ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                collect_ir_call_paths_and_symbols(value, out);
+            }
+        }
+        aicore::ir::ExprKind::FieldAccess { base, .. } => {
+            collect_ir_call_paths_and_symbols(base, out)
+        }
+    }
+}
+
+fn collect_ir_call_paths_in_block(block: &aicore::ir::Block, out: &mut Vec<String>) {
+    for stmt in &block.stmts {
+        match stmt {
+            aicore::ir::Stmt::Let { expr, .. }
+            | aicore::ir::Stmt::Assign { expr, .. }
+            | aicore::ir::Stmt::Expr { expr, .. }
+            | aicore::ir::Stmt::Assert { expr, .. } => collect_ir_call_paths(expr, out),
+            aicore::ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => collect_ir_call_paths(expr, out),
+            aicore::ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_ir_call_paths(tail, out);
+    }
+}
+
+fn collect_ir_call_paths_and_symbols_in_block(
+    block: &aicore::ir::Block,
+    out: &mut Vec<(String, Option<aicore::ir::SymbolId>)>,
+) {
+    for stmt in &block.stmts {
+        match stmt {
+            aicore::ir::Stmt::Let { expr, .. }
+            | aicore::ir::Stmt::Assign { expr, .. }
+            | aicore::ir::Stmt::Expr { expr, .. }
+            | aicore::ir::Stmt::Assert { expr, .. } => collect_ir_call_paths_and_symbols(expr, out),
+            aicore::ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => collect_ir_call_paths_and_symbols(expr, out),
+            aicore::ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_ir_call_paths_and_symbols(tail, out);
+    }
+}
+
 fn assert_intrinsic_declaration(source: &str, file: &str, function_name: &str, arity: usize) {
     let (program, diags) = parse(source, file);
     assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
@@ -1063,6 +1288,81 @@ async fn main() -> Int {
         Err(_) => 1,
     };
     a + b
+}
+"#;
+    let ir = lower(src);
+    let (res, _) = resolve(&ir, "unit.aic");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1256" || d.code == "E1257"),
+        "diags={:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_await_fs_async_submit_bridge_typechecks() {
+    let src = r#"
+enum FsError {
+    Timeout,
+    Io,
+}
+
+struct AsyncFsBoolOp {
+    handle: Int,
+}
+
+struct AsyncFsTextOp {
+    handle: Int,
+}
+
+struct AsyncFsBytesOp {
+    handle: Int,
+}
+
+fn async_write_text_submit(path: String, content: String) -> Result[AsyncFsBoolOp, FsError] {
+    if path == content {
+        Ok(AsyncFsBoolOp { handle: 1 })
+    } else {
+        Err(Timeout())
+    }
+}
+
+fn async_read_text_submit(path: String) -> Result[AsyncFsTextOp, FsError] {
+    if path != "" {
+        Ok(AsyncFsTextOp { handle: 2 })
+    } else {
+        Err(Timeout())
+    }
+}
+
+fn async_read_bytes_submit(path: String) -> Result[AsyncFsBytesOp, FsError] {
+    if path != "" {
+        Ok(AsyncFsBytesOp { handle: 3 })
+    } else {
+        Err(Timeout())
+    }
+}
+
+async fn main() -> Int {
+    let wrote = await async_write_text_submit("x", "x");
+    let text = await async_read_text_submit("x");
+    let bytes = await async_read_bytes_submit("x");
+    let a = match wrote {
+        Ok(_) => 1,
+        Err(_) => 1,
+    };
+    let b = match text {
+        Ok(_) => 1,
+        Err(_) => 1,
+    };
+    let c = match bytes {
+        Ok(_) => 1,
+        Err(_) => 1,
+    };
+    a + b + c
 }
 "#;
     let ir = lower(src);
@@ -2646,6 +2946,88 @@ fn unit_std_fs_public_apis_delegate_to_runtime_intrinsics() {
         "aic_fs_temp_dir_intrinsic",
         1,
     );
+}
+
+#[test]
+fn unit_std_fs_task_async_helpers_are_declared() {
+    let fs_source = fs::read_to_string("std/fs.aic").expect("read std/fs.aic");
+
+    assert!(fs_source.contains("Timeout,"));
+    assert!(fs_source.contains("Cancelled,"));
+    assert!(fs_source.contains("struct AsyncFsBoolOp {"));
+    assert!(fs_source.contains("struct AsyncFsTextOp {"));
+    assert!(fs_source.contains("struct AsyncFsBytesOp {"));
+    assert!(fs_source.contains("struct FsAsyncRuntimePressure {"));
+    assert!(fs_source.contains("struct FsAsyncBoolSelection {"));
+    assert!(fs_source.contains("struct FsAsyncTextSelection {"));
+    assert!(fs_source.contains("struct FsAsyncBytesSelection {"));
+
+    for surface in [
+        "fn spawn_read_text(\n    path: String,\n) -> Result[Task[Result[String, FsError]], ConcurrencyError] effects { fs, concurrency }",
+        "fn spawn_write_text(\n    path: String,\n    content: String,\n) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }",
+        "fn spawn_append_text(\n    path: String,\n    content: String,\n) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }",
+        "fn spawn_read_bytes(\n    path: String,\n) -> Result[Task[Result[Bytes, FsError]], ConcurrencyError] effects { fs, concurrency }",
+        "fn spawn_write_bytes(\n    path: String,\n    content: Bytes,\n) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }",
+        "fn spawn_append_bytes(\n    path: String,\n    content: Bytes,\n) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }",
+        "fn async_read_text_submit(\n    path: String,\n) -> Result[AsyncFsTextOp, FsError] effects { fs, concurrency }",
+        "fn async_write_text_submit(\n    path: String,\n    content: String,\n) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }",
+        "fn async_append_text_submit(\n    path: String,\n    content: String,\n) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }",
+        "fn async_read_bytes_submit(\n    path: String,\n) -> Result[AsyncFsBytesOp, FsError] effects { fs, concurrency }",
+        "fn async_write_bytes_submit(\n    path: String,\n    content: Bytes,\n) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }",
+        "fn async_append_bytes_submit(\n    path: String,\n    content: Bytes,\n) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }",
+        "fn async_wait_bool(\n    op: AsyncFsBoolOp,\n    timeout_ms: Int,\n) -> Result[Bool, FsError] effects { concurrency, time }",
+        "fn async_wait_text(\n    op: AsyncFsTextOp,\n    timeout_ms: Int,\n) -> Result[String, FsError] effects { concurrency, time }",
+        "fn async_wait_bytes(\n    op: AsyncFsBytesOp,\n    timeout_ms: Int,\n) -> Result[Bytes, FsError] effects { concurrency, time }",
+        "fn async_poll_bool(op: AsyncFsBoolOp) -> Result[Option[Bool], FsError] effects { concurrency }",
+        "fn async_poll_text(op: AsyncFsTextOp) -> Result[Option[String], FsError] effects { concurrency }",
+        "fn async_poll_bytes(op: AsyncFsBytesOp) -> Result[Option[Bytes], FsError] effects { concurrency }",
+        "fn async_cancel_bool(op: AsyncFsBoolOp) -> Result[Bool, FsError] effects { concurrency }",
+        "fn async_cancel_text(op: AsyncFsTextOp) -> Result[Bool, FsError] effects { concurrency }",
+        "fn async_cancel_bytes(op: AsyncFsBytesOp) -> Result[Bool, FsError] effects { concurrency }",
+        "fn async_wait_many_bool(",
+        "fn async_wait_many_text(",
+        "fn async_wait_many_bytes(",
+        "fn async_shutdown() -> Result[Bool, FsError] effects { concurrency }",
+        "fn async_runtime_pressure() -> Result[FsAsyncRuntimePressure, FsError] effects { concurrency }",
+        "fn async_read_text(path: String, timeout_ms: Int) -> Result[String, FsError] effects { fs, concurrency, time }",
+        "fn async_write_text(",
+        "fn async_append_text(",
+        "fn async_read_bytes(path: String, timeout_ms: Int) -> Result[Bytes, FsError] effects { fs, concurrency, time }",
+        "fn async_write_bytes(",
+        "fn async_append_bytes(",
+    ] {
+        assert!(
+            fs_source.contains(surface),
+            "std/fs.aic must expose task-backed async helper surface: {surface}"
+        );
+    }
+
+    for lowering in [
+        "concurrent.aic_conc_spawn_fn_named_intrinsic(\"fs.read_text\"",
+        "concurrent.aic_conc_spawn_fn_named_intrinsic(\"fs.write_text\"",
+        "concurrent.aic_conc_spawn_fn_named_intrinsic(\"fs.append_text\"",
+        "concurrent.aic_conc_spawn_fn_named_intrinsic(\"fs.read_bytes\"",
+        "concurrent.aic_conc_spawn_fn_named_intrinsic(\"fs.write_bytes\"",
+        "concurrent.aic_conc_spawn_fn_named_intrinsic(\"fs.append_bytes\"",
+        "match spawn_read_text(path) {",
+        "match spawn_write_text(path, content) {",
+        "match spawn_append_text(path, content) {",
+        "match spawn_read_bytes(path) {",
+        "match spawn_write_bytes(path, content) {",
+        "match spawn_append_bytes(path, content) {",
+        "match aic_fs_async_submit_allowed_intrinsic() {",
+        "concurrent.poll_value_task(task)",
+        "concurrent.cancel_value_task(fs_async_bool_task(op))",
+        "concurrent.cancel_value_task(fs_async_text_task(op))",
+        "concurrent.cancel_value_task(fs_async_bytes_task(op))",
+        "aic_fs_async_shutdown_intrinsic()",
+        "aic_fs_async_pressure_intrinsic()",
+    ] {
+        assert!(
+            fs_source.contains(lowering),
+            "std/fs.aic task-backed async helper must delegate through named concurrency spawn intrinsic: {lowering}"
+        );
+    }
 }
 
 #[test]
@@ -5872,21 +6254,21 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
     );
     assert!(
         source.contains(
-            "fn async_serve(\n    listener: Int,\n    max_bytes: Int,\n    accept_timeout_ms: Int,\n    io_timeout_ms: Int,\n    handler: Fn(Request) -> ResponseView,\n) -> Result[Int, ServerError] effects { net }"
+            "fn async_serve(\n    listener: Int,\n    max_bytes: Int,\n    accept_timeout_ms: Int,\n    io_timeout_ms: Int,\n    handler: Fn(Request) -> ResponseView,\n) -> Result[Int, ServerError] effects { net, concurrency } {\n    match net.async_accept(listener, accept_timeout_ms) {\n        Ok(conn) => async_serve_connection(conn, max_bytes, io_timeout_ms, handler),\n        Err(err) => Err(http_server_net_error_to_server_error(err)),\n    }"
         ),
-        "std/http_server.aic must expose async_serve convenience wrapper"
+        "std/http_server.aic must expose async_serve over the async accept path and map net failures into ServerError"
     );
     assert!(
-        async_doc.contains("| Async HTTP-server API surface | Supported |")
-            && async_doc.contains("`std.http_server` async accept + compatibility read/write/serve wrappers"),
-        "docs/async-event-loop.md must mark the async HTTP server surface as supported with implementation notes"
+        async_doc.contains("| Async HTTP-server API surface | Partial |")
+            && async_doc.contains("`std.http_server` provides async accept plus compatibility read/write wrappers"),
+        "docs/async-event-loop.md must mark the async HTTP server surface as partial until request/response I/O is natively async"
     );
     assert!(
         rest_doc
-            .contains("| Native async HTTP server APIs (`std.http_server.async_*`) | Supported |")
+            .contains("| Native async HTTP server APIs (`std.http_server.async_*`) | Partial |")
             && rest_doc
-                .contains("compatibility request/response wrappers in `std/http_server.aic`"),
-        "docs/ai-agent-rest-guide.md must mark native async HTTP server APIs as supported"
+                .contains("request/response I/O still uses compatibility wrappers in `std/http_server.aic`"),
+        "docs/ai-agent-rest-guide.md must mark native async HTTP server APIs as partial until request/response I/O is natively async"
     );
     assert!(
         rest_doc.contains("examples/io/http_server_async_api.aic"),
@@ -6395,6 +6777,12 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
     assert!(source.contains(
         "intrinsic fn aic_conc_payload_take_value_intrinsic[T](payload_id: Int, marker: Option[T]) -> Result[T, ConcurrencyError] effects { concurrency };"
     ));
+    assert!(source.contains(
+        "intrinsic fn aic_conc_poll_value_intrinsic[T](task: Task[T]) -> Result[Option[T], ConcurrencyError] effects { concurrency };"
+    ));
+    assert!(source.contains(
+        "intrinsic fn aic_conc_cancel_value_intrinsic[T](task: Task[T]) -> Result[Bool, ConcurrencyError] effects { concurrency };"
+    ));
     assert!(source.contains("match store_payload_for_channel(value)"));
     assert!(source.contains("take_payload_for_channel(payload_id, rx)"));
     assert!(source.contains("match aic_conc_payload_store_intrinsic(value.data)"));
@@ -6426,6 +6814,22 @@ fn unit_std_concurrency_public_apis_delegate_to_runtime_intrinsics() {
         "std/concurrent.aic",
         "cancel_task",
         "aic_conc_cancel_intrinsic",
+        1,
+    );
+    assert!(source.contains("fn poll_value_task[T](task: Task[T]) -> Result[Option[T], ConcurrencyError] effects { concurrency }"));
+    assert!(source.contains("fn cancel_value_task[T](task: Task[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"));
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "poll_value_task",
+        "aic_conc_poll_value_intrinsic",
+        1,
+    );
+    assert_delegate_call(
+        &source,
+        "std/concurrent.aic",
+        "cancel_value_task",
+        "aic_conc_cancel_value_intrinsic",
         1,
     );
     assert_delegate_call(
@@ -7019,8 +7423,10 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _rb = random_bool();
     let _spawn_task = spawn_task(21, 1);
     let _join_task = join_task(Task { handle: 1 });
+    let _poll_value_task = poll_value_task(Task { handle: 1 });
     let _timeout_task = timeout_task(Task { handle: 1 }, 1);
     let _cancel_task = cancel_task(Task { handle: 1 });
+    let _cancel_value_task = cancel_value_task(Task { handle: 1 });
     let _group = spawn_group(vec.vec_of(21), 1);
     let _first = select_first(vec.vec_of(Task { handle: 1 }), 1);
     let _chan = channel_int(2);
@@ -8145,6 +8551,127 @@ fn main() -> Int {
         out.diagnostics.iter().any(|d| d.code == "E1091"),
         "diags={:#?}",
         out.diagnostics
+    );
+}
+
+#[test]
+fn unit_frontend_qualifies_ambiguous_std_calls_in_module_ir() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+import std.io;
+import std.net;
+import std.http_server;
+
+fn main() -> Int effects { io } capabilities { io } {
+    0
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
+    let async_runtime_modules = out
+        .resolution
+        .function_modules
+        .get("async_runtime_pressure")
+        .cloned()
+        .unwrap_or_default();
+    let recorded_targets = out
+        .typecheck
+        .call_target_modules
+        .values()
+        .map(|path| path.join("."))
+        .collect::<Vec<_>>();
+
+    let calls = out
+        .ir
+        .items
+        .iter()
+        .zip(out.item_modules.iter())
+        .find_map(|(item, module)| match item {
+            aicore::ir::Item::Function(func)
+                if module.as_ref().map(|m| m.join(".")) == Some("std.net".to_string())
+                    && func.name == "async_runtime_pressure_u32" =>
+            {
+                let mut calls = Vec::new();
+                collect_ir_call_paths_in_block(&func.body, &mut calls);
+                Some(calls)
+            }
+            _ => None,
+        })
+        .expect("std.net.async_runtime_pressure_u32 must be present");
+    let call_symbols = out
+        .ir
+        .items
+        .iter()
+        .zip(out.item_modules.iter())
+        .find_map(|(item, module)| match item {
+            aicore::ir::Item::Function(func)
+                if module.as_ref().map(|m| m.join(".")) == Some("std.net".to_string())
+                    && func.name == "async_runtime_pressure_u32" =>
+            {
+                let mut calls = Vec::new();
+                collect_ir_call_paths_and_symbols_in_block(&func.body, &mut calls);
+                Some(calls)
+            }
+            _ => None,
+        })
+        .expect("std.net.async_runtime_pressure_u32 symbols must be present");
+    let unresolved_async_runtime_calls = out
+        .ir
+        .items
+        .iter()
+        .zip(out.item_modules.iter())
+        .filter_map(|(item, module)| match item {
+            aicore::ir::Item::Function(func) => {
+                let mut calls = Vec::new();
+                collect_ir_call_paths_in_block(&func.body, &mut calls);
+                let unresolved = calls
+                    .into_iter()
+                    .filter(|call| call == "async_runtime_pressure" || call == "async_shutdown")
+                    .collect::<Vec<_>>();
+                if unresolved.is_empty() {
+                    None
+                } else {
+                    Some((
+                        module
+                            .as_ref()
+                            .map(|m| m.join("."))
+                            .unwrap_or_else(|| "<root>".to_string()),
+                        func.name.clone(),
+                        unresolved,
+                    ))
+                }
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        calls.iter().any(|call| call == "std.net.async_runtime_pressure"),
+        "std.net.async_runtime_pressure_u32 should call the qualified std.net helper\nmodules={async_runtime_modules:#?}\nrecorded_targets={recorded_targets:#?}\ncalls={calls:#?}"
+    );
+    assert!(
+        call_symbols.iter().any(|(call, symbol)| {
+            call == "std.net.async_runtime_pressure" && symbol.is_some()
+        }),
+        "qualified std.net helper calls should retain their resolved function symbol\ncall_symbols={call_symbols:#?}"
+    );
+    assert!(
+        !calls.iter().any(|call| call == "std.fs.async_runtime_pressure"),
+        "std.net.async_runtime_pressure_u32 must not be rebound to std.fs\nmodules={async_runtime_modules:#?}\nrecorded_targets={recorded_targets:#?}\ncalls={calls:#?}"
+    );
+    assert!(
+        unresolved_async_runtime_calls.is_empty(),
+        "all ambiguous async runtime control calls should be qualified\nleftovers={unresolved_async_runtime_calls:#?}"
     );
 }
 

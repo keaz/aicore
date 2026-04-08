@@ -333,7 +333,7 @@ async fn main() -> () effects { net, io } capabilities { net, io } {
 - `async fn` returns `Async[T]` — consumed only via `await`
 - `await` is valid only inside `async fn`
 - Async functions participate in the same effect checking as synchronous functions
-- Current codegen lowers ordinary async returns to compiler-managed `Async[T]` wrapper values; reactor-backed waiting is provided by the `await Result[Async*Op, NetError|TlsError]` submit bridge used by `std.net` and `std.tls`
+- Current codegen lowers ordinary async returns to compiler-managed `Async[T]` wrapper values; runtime-backed waiting is provided by the `await Result[Async*Op, NetError|TlsError|FsError]` submit bridge used by `std.net`, `std.tls`, and `std.fs`
 
 ### Error Handling
 
@@ -536,7 +536,8 @@ Exhaustiveness checks catch missing `Option` / `Result` branches at compile time
 | HTTP request parsing coverage | Partial | Runtime parser accepts HTTP/1.0 + HTTP/1.1 and known methods (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`), with bounded receive-loop body handling driven by `Content-Length`. |
 | `std.router` route matching (exact, `:param`, trailing `*`) | Supported | Deterministic first-match order and typed errors are execution-tested (`exec_router_matches_paths_params_and_order`). |
 | `std.net` async submit/wait/cancel/poll/wait-many/shutdown/pressure | Supported | Event-loop runtime is covered by execution tests and runnable examples (`examples/io/async_*`). |
-| `await` submit bridge (`await Result[Async*Op, NetError]`) | Supported | Lowered to runtime async poll helpers and covered by tests/examples. |
+| `std.fs` async submit/wait/cancel/poll/wait-many/shutdown/pressure | Supported | Task-backed async filesystem handles are covered by execution tests and runnable examples (`examples/io/fs_async_*`). |
+| `await` submit bridge (`await Result[Async*Op, NetError|TlsError|FsError]`) | Supported | Lowered to reactor poll helpers for net/tls and task-join helpers for fs; covered by tests/examples. |
 | `std.tls` async submit/wait lifecycle | Partial | API surface is implemented and tested; runtime pressure reports queue metrics as `0` and backend-dependent TLS behavior is handled with typed fallback paths. |
 | REST + async runtime on Windows | Partial | Shared net/async runtime backend and Windows smoke coverage exist for client-runtime paths, but REST/server-oriented async execution coverage remains primarily non-Windows. |
 

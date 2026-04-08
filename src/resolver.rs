@@ -10,6 +10,8 @@ const ROOT_MODULE: &str = "<root>";
 pub struct Resolution {
     pub functions: BTreeMap<String, FunctionInfo>,
     pub module_function_infos: BTreeMap<(String, String), FunctionInfo>,
+    pub module_struct_infos: BTreeMap<(String, String), StructInfo>,
+    pub module_enum_infos: BTreeMap<(String, String), EnumInfo>,
     pub structs: BTreeMap<String, StructInfo>,
     pub enums: BTreeMap<String, EnumInfo>,
     pub traits: BTreeMap<String, TraitInfo>,
@@ -18,8 +20,12 @@ pub struct Resolution {
     pub module_imports: BTreeMap<String, BTreeSet<String>>,
     pub entry_module: Option<String>,
     pub function_modules: BTreeMap<String, BTreeSet<String>>,
+    pub struct_modules: BTreeMap<String, BTreeSet<String>>,
+    pub enum_modules: BTreeMap<String, BTreeSet<String>>,
     pub module_functions: BTreeMap<String, BTreeSet<String>>,
     pub module_exported_functions: BTreeMap<String, BTreeSet<String>>,
+    pub module_exported_structs: BTreeMap<String, BTreeSet<String>>,
+    pub module_exported_enums: BTreeMap<String, BTreeSet<String>>,
     pub visible_functions: BTreeSet<String>,
     pub import_aliases: BTreeMap<String, String>,
     pub ambiguous_import_aliases: BTreeSet<String>,
@@ -236,6 +242,8 @@ pub fn resolve_with_item_modules_imports_and_files(
 
     let mut functions = BTreeMap::new();
     let mut module_function_infos = BTreeMap::new();
+    let mut module_struct_infos = BTreeMap::new();
+    let mut module_enum_infos = BTreeMap::new();
     let mut structs = BTreeMap::new();
     let mut enums = BTreeMap::new();
     let mut traits = BTreeMap::new();
@@ -274,8 +282,12 @@ pub fn resolve_with_item_modules_imports_and_files(
     }
 
     let mut function_modules: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut struct_modules: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut enum_modules: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut module_functions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut module_exported_functions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut module_exported_structs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut module_exported_enums: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     // Namespace model:
     // - Value namespace: functions
@@ -344,7 +356,7 @@ pub fn resolve_with_item_modules_imports_and_files(
                 }
 
                 let struct_visibility = effective_visibility(&module_name, s.visibility, &s.name);
-                structs.entry(s.name.clone()).or_insert_with(|| StructInfo {
+                let info = StructInfo {
                     symbol: s.symbol,
                     module: module_name.clone(),
                     visibility: struct_visibility,
@@ -354,7 +366,19 @@ pub fn resolve_with_item_modules_imports_and_files(
                     default_fields,
                     invariant: s.invariant.clone(),
                     span: s.span,
-                });
+                };
+                struct_modules
+                    .entry(s.name.clone())
+                    .or_default()
+                    .insert(module_name.clone());
+                if struct_visibility != Visibility::Private {
+                    module_exported_structs
+                        .entry(module_name.clone())
+                        .or_default()
+                        .insert(s.name.clone());
+                }
+                module_struct_infos.insert((module_name.clone(), s.name.clone()), info.clone());
+                structs.entry(s.name.clone()).or_insert(info);
             }
             ir::Item::Enum(e) => {
                 if let Some(existing_kind) = type_decl_kind_by_module_name
@@ -391,14 +415,26 @@ pub fn resolve_with_item_modules_imports_and_files(
                 }
 
                 let enum_visibility = effective_visibility(&module_name, e.visibility, &e.name);
-                enums.entry(e.name.clone()).or_insert_with(|| EnumInfo {
+                let info = EnumInfo {
                     symbol: e.symbol,
                     module: module_name.clone(),
                     visibility: enum_visibility,
                     generics: e.generics.iter().map(|g| g.name.clone()).collect(),
                     variants,
                     span: e.span,
-                });
+                };
+                enum_modules
+                    .entry(e.name.clone())
+                    .or_default()
+                    .insert(module_name.clone());
+                if enum_visibility != Visibility::Private {
+                    module_exported_enums
+                        .entry(module_name.clone())
+                        .or_default()
+                        .insert(e.name.clone());
+                }
+                module_enum_infos.insert((module_name.clone(), e.name.clone()), info.clone());
+                enums.entry(e.name.clone()).or_insert(info);
             }
             ir::Item::Trait(t) => {
                 if let Some(existing_kind) = type_decl_kind_by_module_name
@@ -745,6 +781,8 @@ pub fn resolve_with_item_modules_imports_and_files(
         Resolution {
             functions,
             module_function_infos,
+            module_struct_infos,
+            module_enum_infos,
             structs,
             enums,
             traits,
@@ -753,8 +791,12 @@ pub fn resolve_with_item_modules_imports_and_files(
             module_imports: module_imports_map,
             entry_module,
             function_modules,
+            struct_modules,
+            enum_modules,
             module_functions,
             module_exported_functions,
+            module_exported_structs,
+            module_exported_enums,
             visible_functions,
             import_aliases,
             ambiguous_import_aliases,

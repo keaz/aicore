@@ -1,0 +1,59 @@
+module example.io.fs_async_await_bridge;
+
+import std.io;
+import std.fs;
+import std.bytes;
+import std.path;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+async fn main() -> Int effects { io, fs, env, concurrency } capabilities { io, fs, env, concurrency  } {
+    let scratch = match fs.temp_dir("aic_fs_async_await_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let text_path = path.join(scratch, "await.txt");
+    let bytes_path = path.join(scratch, "await.bin");
+
+    let wrote_text = match await async_write_text_submit(text_path, "alpha") {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let appended_text = match await async_append_text_submit(text_path, "-beta") {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let read_text_ok = match await async_read_text_submit(text_path) {
+        Ok(text) => if text == "alpha-beta" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let wrote_bytes = match await async_write_bytes_submit(bytes_path, bytes.from_string("bi")) {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let appended_bytes = match await async_append_bytes_submit(bytes_path, bytes.from_string("nary")) {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let read_bytes_ok = match await async_read_bytes_submit(bytes_path) {
+        Ok(payload) => if bytes.to_string_lossy(payload) == "binary" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let deleted_text = ok_bool(delete(text_path));
+    let deleted_bytes = ok_bool(delete(bytes_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    if wrote_text + appended_text + read_text_ok + wrote_bytes + appended_bytes + read_bytes_ok + deleted_text + deleted_bytes + deleted_dir == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

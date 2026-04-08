@@ -3430,6 +3430,8 @@ static pthread_mutex_t aic_rt_conc_arc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static long aic_rt_conc_task_limit = AIC_RT_CONC_TASK_CAP;
 static long aic_rt_conc_channel_limit = AIC_RT_CONC_CHANNEL_CAP;
 static long aic_rt_conc_mutex_limit = AIC_RT_CONC_MUTEX_CAP;
+static long aic_rt_fs_async_op_limit = AIC_RT_CONC_TASK_CAP;
+static atomic_int aic_rt_fs_async_shutdown_requested = 0;
 static pthread_once_t aic_rt_conc_limits_once = PTHREAD_ONCE_INIT;
 
 static void aic_rt_conc_limits_init(void) {
@@ -3451,10 +3453,32 @@ static void aic_rt_conc_limits_init(void) {
         1,
         AIC_RT_CONC_MUTEX_CAP
     );
+    aic_rt_fs_async_op_limit = aic_rt_env_parse_bounded_long(
+        "AIC_RT_LIMIT_FS_ASYNC_OPS",
+        aic_rt_conc_task_limit,
+        1,
+        aic_rt_conc_task_limit
+    );
 }
 
 static void aic_rt_conc_limits_ensure(void) {
     (void)pthread_once(&aic_rt_conc_limits_once, aic_rt_conc_limits_init);
+}
+
+static int aic_rt_conc_task_is_fs_async(const AicConcTaskSlot* slot) {
+    return slot != NULL
+        && slot->active
+        && strncmp(slot->thread_name, "fs.", 3) == 0;
+}
+
+static long aic_rt_fs_async_active_count(void) {
+    long active = 0;
+    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
+        if (aic_rt_conc_task_is_fs_async(&aic_rt_conc_tasks[i])) {
+            active += 1;
+        }
+    }
+    return active;
 }
 
 static long aic_rt_conc_map_errno(int err) {
@@ -4166,6 +4190,10 @@ long aic_rt_conc_join_value(long handle, long* out_value) {
     return aic_rt_conc_join_internal(handle, 0, 0, out_value);
 }
 
+long aic_rt_conc_join_poll(long handle, long* out_value) {
+    return aic_rt_conc_join_internal(handle, 0, 1, out_value);
+}
+
 long aic_rt_conc_cancel(long handle, long* out_cancelled);
 
 long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value) {
@@ -4221,6 +4249,59 @@ long aic_rt_conc_cancel(long handle, long* out_cancelled) {
     pthread_mutex_unlock(&slot->mutex);
     if (propagate_scope_cancel && scope_id > 0) {
         aic_rt_conc_scope_cancel_internal(scope_id);
+    }
+    return 0;
+}
+
+long aic_rt_fs_async_submit_allowed(long* out_allowed) {
+    aic_rt_conc_limits_ensure();
+    if (out_allowed != NULL) {
+        *out_allowed = 0;
+    }
+    if (atomic_load(&aic_rt_fs_async_shutdown_requested) != 0) {
+        return 0;
+    }
+    if (aic_rt_fs_async_active_count() >= aic_rt_fs_async_op_limit) {
+        return 2;
+    }
+    if (out_allowed != NULL) {
+        *out_allowed = 1;
+    }
+    return 0;
+}
+
+long aic_rt_fs_async_shutdown(long* out_ok) {
+    atomic_store(&aic_rt_fs_async_shutdown_requested, 1);
+    if (out_ok != NULL) {
+        *out_ok = 1;
+    }
+    return 0;
+}
+
+long aic_rt_fs_async_pressure(
+    long* out_active,
+    long* out_queue_depth,
+    long* out_op_limit,
+    long* out_queue_limit
+) {
+    aic_rt_conc_limits_ensure();
+    if (out_active != NULL) {
+        *out_active = 0;
+    }
+    if (out_queue_depth != NULL) {
+        *out_queue_depth = 0;
+    }
+    if (out_op_limit != NULL) {
+        *out_op_limit = aic_rt_fs_async_op_limit;
+    }
+    if (out_queue_limit != NULL) {
+        *out_queue_limit = 0;
+    }
+
+    long active = aic_rt_fs_async_active_count();
+
+    if (out_active != NULL) {
+        *out_active = active;
     }
     return 0;
 }

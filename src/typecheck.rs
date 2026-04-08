@@ -41,6 +41,8 @@ pub struct TypecheckOutput {
     pub call_graph: BTreeMap<String, Vec<String>>,
     pub holes: Vec<TypedHole>,
     pub call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
+    pub call_symbols: BTreeMap<ir::NodeId, ir::SymbolId>,
+    pub call_target_modules: BTreeMap<ir::NodeId, Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +134,7 @@ pub fn validate_type_fast(
 
 #[derive(Debug, Clone)]
 struct FnSig {
+    symbol: Option<ir::SymbolId>,
     is_async: bool,
     is_unsafe: bool,
     is_extern: bool,
@@ -190,6 +193,8 @@ struct Checker<'a> {
     struct_field_inferred: BTreeMap<(String, String), String>,
     current_param_positions: BTreeMap<String, usize>,
     call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
+    call_symbols: BTreeMap<ir::NodeId, ir::SymbolId>,
+    call_target_modules: BTreeMap<ir::NodeId, Vec<String>>,
 }
 
 #[derive(Default)]
@@ -386,6 +391,7 @@ impl<'a> Checker<'a> {
             functions.insert(
                 name.clone(),
                 FnSig {
+                    symbol: Some(info.symbol),
                     is_async: info.is_async,
                     is_unsafe: info.is_unsafe,
                     is_extern: info.is_extern,
@@ -413,6 +419,7 @@ impl<'a> Checker<'a> {
             module_functions.insert(
                 (module.clone(), name.clone()),
                 FnSig {
+                    symbol: Some(info.symbol),
                     is_async: info.is_async,
                     is_unsafe: info.is_unsafe,
                     is_extern: info.is_extern,
@@ -445,6 +452,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "print_int".to_string(),
             FnSig {
+                symbol: None,
                 is_async: false,
                 is_unsafe: false,
                 is_extern: false,
@@ -461,6 +469,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "print_str".to_string(),
             FnSig {
+                symbol: None,
                 is_async: false,
                 is_unsafe: false,
                 is_extern: false,
@@ -477,6 +486,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "print_float".to_string(),
             FnSig {
+                symbol: None,
                 is_async: false,
                 is_unsafe: false,
                 is_extern: false,
@@ -493,6 +503,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "len".to_string(),
             FnSig {
+                symbol: None,
                 is_async: false,
                 is_unsafe: false,
                 is_extern: false,
@@ -509,6 +520,7 @@ impl<'a> Checker<'a> {
         functions.insert(
             "panic".to_string(),
             FnSig {
+                symbol: None,
                 is_async: false,
                 is_unsafe: false,
                 is_extern: false,
@@ -565,6 +577,8 @@ impl<'a> Checker<'a> {
             struct_field_inferred: BTreeMap::new(),
             current_param_positions: BTreeMap::new(),
             call_arg_orders: BTreeMap::new(),
+            call_symbols: BTreeMap::new(),
+            call_target_modules: BTreeMap::new(),
         }
     }
 
@@ -672,6 +686,8 @@ impl<'a> Checker<'a> {
             call_graph,
             holes: self.typed_holes,
             call_arg_orders: self.call_arg_orders,
+            call_symbols: self.call_symbols,
+            call_target_modules: self.call_target_modules,
         }
     }
 
@@ -890,10 +906,10 @@ impl<'a> Checker<'a> {
         let unqualified = Self::unqualified_name(base);
         let known_alias =
             self.type_aliases.contains_key(base) || self.type_aliases.contains_key(unqualified);
-        let known_struct = self.resolution.structs.contains_key(base)
-            || self.resolution.structs.contains_key(unqualified);
-        let known_enum = self.resolution.enums.contains_key(base)
-            || self.resolution.enums.contains_key(unqualified);
+        let known_struct = self.visible_struct_info(base).is_some()
+            || self.visible_struct_info(unqualified).is_some();
+        let known_enum =
+            self.visible_enum_info(base).is_some() || self.visible_enum_info(unqualified).is_some();
         let known_trait = self.resolution.traits.contains_key(base)
             || self.resolution.traits.contains_key(unqualified);
 
@@ -1533,6 +1549,124 @@ impl<'a> Checker<'a> {
     fn field_is_accessible_from_current(&self, owner_module: &str, visibility: Visibility) -> bool {
         self.module_matches_current(owner_module)
             || self.visibility_allows_cross_module_access(visibility)
+    }
+
+    fn visible_struct_candidates(&self, name: &str) -> Vec<&StructInfo> {
+        let mut out = Vec::new();
+        let mut seen = BTreeSet::new();
+
+        if let Some((module, short)) = name.rsplit_once('.') {
+            if let Some(info) = self
+                .resolution
+                .module_struct_infos
+                .get(&(module.to_string(), short.to_string()))
+            {
+                if self.field_is_accessible_from_current(&info.module, info.visibility) {
+                    out.push(info);
+                }
+            }
+            return out;
+        }
+
+        let short = Self::unqualified_name(name);
+        let current = self.current_module_name();
+        if let Some(info) = self
+            .resolution
+            .module_struct_infos
+            .get(&(current.clone(), short.to_string()))
+        {
+            if self.field_is_accessible_from_current(&info.module, info.visibility) {
+                seen.insert(info.symbol);
+                out.push(info);
+            }
+        }
+
+        for module in self.imports_for_current_module() {
+            if let Some(info) = self
+                .resolution
+                .module_struct_infos
+                .get(&(module.clone(), short.to_string()))
+            {
+                if self.field_is_accessible_from_current(&info.module, info.visibility)
+                    && seen.insert(info.symbol)
+                {
+                    out.push(info);
+                }
+            }
+        }
+
+        if out.is_empty() {
+            if let Some(info) = self.resolution.structs.get(short) {
+                if self.field_is_accessible_from_current(&info.module, info.visibility) {
+                    out.push(info);
+                }
+            }
+        }
+
+        out
+    }
+
+    fn visible_enum_candidates(&self, name: &str) -> Vec<&EnumInfo> {
+        let mut out = Vec::new();
+        let mut seen = BTreeSet::new();
+
+        if let Some((module, short)) = name.rsplit_once('.') {
+            if let Some(info) = self
+                .resolution
+                .module_enum_infos
+                .get(&(module.to_string(), short.to_string()))
+            {
+                if self.field_is_accessible_from_current(&info.module, info.visibility) {
+                    out.push(info);
+                }
+            }
+            return out;
+        }
+
+        let short = Self::unqualified_name(name);
+        let current = self.current_module_name();
+        if let Some(info) = self
+            .resolution
+            .module_enum_infos
+            .get(&(current.clone(), short.to_string()))
+        {
+            if self.field_is_accessible_from_current(&info.module, info.visibility) {
+                seen.insert(info.symbol);
+                out.push(info);
+            }
+        }
+
+        for module in self.imports_for_current_module() {
+            if let Some(info) = self
+                .resolution
+                .module_enum_infos
+                .get(&(module.clone(), short.to_string()))
+            {
+                if self.field_is_accessible_from_current(&info.module, info.visibility)
+                    && seen.insert(info.symbol)
+                {
+                    out.push(info);
+                }
+            }
+        }
+
+        if out.is_empty() {
+            if let Some(info) = self.resolution.enums.get(short) {
+                if self.field_is_accessible_from_current(&info.module, info.visibility) {
+                    out.push(info);
+                }
+            }
+        }
+
+        out
+    }
+
+    fn visible_struct_info(&self, name: &str) -> Option<&StructInfo> {
+        self.visible_struct_candidates(name).into_iter().next()
+    }
+
+    fn visible_enum_info(&self, name: &str) -> Option<&EnumInfo> {
+        self.visible_enum_candidates(name).into_iter().next()
     }
 
     fn is_user_written_intrinsic_use(&self, name: &str, span: crate::span::Span) -> bool {
@@ -2996,6 +3130,7 @@ impl<'a> Checker<'a> {
                 callee,
                 args,
                 arg_names,
+                ..
             } => {
                 let mut borrows = self.check_borrow_expr(callee, mutability, state, binding_types);
                 for arg in args {
@@ -3454,8 +3589,8 @@ impl<'a> Checker<'a> {
             return false;
         };
         let source_base = base_type_name(source_ty);
-        let movable = self.resolution.structs.contains_key(source_base)
-            || self.resolution.enums.contains_key(source_base);
+        let movable = self.visible_struct_info(source_base).is_some()
+            || self.visible_enum_info(source_base).is_some();
         if !movable {
             return false;
         }
@@ -4312,6 +4447,7 @@ impl<'a> Checker<'a> {
                 callee,
                 args,
                 arg_names,
+                ..
             } => {
                 if let ir::ExprKind::FieldAccess { base, field } = &callee.kind {
                     if !self.is_module_qualified_callee(callee, locals) {
@@ -4678,6 +4814,33 @@ impl<'a> Checker<'a> {
                     name.clone()
                 };
 
+                if !qualified {
+                    if let Some(module_name) = resolved_module.as_deref() {
+                        let candidate_count = self
+                            .resolution
+                            .function_modules
+                            .get(&name)
+                            .map(|modules| modules.len())
+                            .unwrap_or(0);
+                        let is_module_function = self
+                            .resolution
+                            .module_function_infos
+                            .contains_key(&(module_name.to_string(), resolved_name.clone()));
+                        // Post-typecheck qualification is only safe for actual module functions.
+                        // Enum constructors share call syntax, but their resolution is type-directed.
+                        if module_name.starts_with("std.")
+                            && candidate_count > 1
+                            && is_module_function
+                        {
+                            let module_path = module_name
+                                .split('.')
+                                .map(ToOwned::to_owned)
+                                .collect::<Vec<_>>();
+                            self.call_target_modules.insert(expr.node, module_path);
+                        }
+                    }
+                }
+
                 let sig = if let Some(module_name) = resolved_module.as_ref() {
                     self.module_functions
                         .get(&(module_name.clone(), resolved_name.clone()))
@@ -4715,6 +4878,9 @@ impl<'a> Checker<'a> {
                                 return "<?>".to_string();
                             }
                         }
+                    }
+                    if let Some(symbol) = sig.symbol {
+                        self.call_symbols.insert(expr.node, symbol);
                     }
 
                     for (idx, param_ty) in sig.params.iter_mut().enumerate() {
@@ -6047,7 +6213,7 @@ impl<'a> Checker<'a> {
                     return format!("{TUPLE_INTERNAL_NAME}[{}]", item_types.join(", "));
                 }
 
-                let Some(info) = self.resolution.structs.get(name).cloned() else {
+                let Some(info) = self.visible_struct_info(name).cloned() else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1224",
                         format!("unknown struct '{}'", name),
@@ -6551,6 +6717,7 @@ impl<'a> Checker<'a> {
                     }),
                     args: call_args,
                     arg_names: Vec::new(),
+                    symbol: None,
                 },
                 span: call_expr.span,
             };
@@ -7224,7 +7391,7 @@ impl<'a> Checker<'a> {
             return None;
         }
 
-        let Some(info) = self.resolution.structs.get(struct_name).cloned() else {
+        let Some(info) = self.visible_struct_info(struct_name).cloned() else {
             return None;
         };
 
@@ -7379,7 +7546,15 @@ impl<'a> Checker<'a> {
             }
             return;
         }
-        if let Some(expected) = self.generic_arity.get(&base).copied() {
+        let expected = self
+            .visible_struct_info(&base)
+            .map(|info| info.generics.len())
+            .or_else(|| {
+                self.visible_enum_info(&base)
+                    .map(|info| info.generics.len())
+            })
+            .or_else(|| self.generic_arity.get(&base).copied());
+        if let Some(expected) = expected {
             let provided = extract_generic_args(ty).map(|a| a.len()).unwrap_or(0);
             if provided != expected {
                 self.diagnostics.push(
@@ -8604,7 +8779,7 @@ impl<'a> Checker<'a> {
             self.record_instantiation(ir::GenericInstantiationKind::Enum, base, None, &args, span);
             return;
         }
-        if let Some(info) = self.resolution.enums.get(base) {
+        if let Some(info) = self.visible_enum_info(base) {
             if info.generics.len() == args.len() {
                 self.record_instantiation(
                     ir::GenericInstantiationKind::Enum,
@@ -8616,7 +8791,7 @@ impl<'a> Checker<'a> {
             }
             return;
         }
-        if let Some(info) = self.resolution.structs.get(base) {
+        if let Some(info) = self.visible_struct_info(base) {
             if info.generics.len() == args.len() {
                 self.record_instantiation(
                     ir::GenericInstantiationKind::Struct,
@@ -8647,16 +8822,20 @@ impl<'a> Checker<'a> {
     fn extract_expected_enum_name(&self, expected: &str) -> Option<String> {
         let normalized = self.normalize_type(expected);
         let base = base_type_name(&normalized);
-        if self.resolution.enums.contains_key(base) {
-            return Some(base.to_string());
+        if self.visible_enum_info(base).is_some() {
+            return Some(Self::unqualified_name(base).to_string());
         }
         None
     }
 
     fn find_variants(&self, name: &str) -> Vec<VariantMatch> {
         let mut out = Vec::new();
-        for (enum_name, info) in &self.resolution.enums {
+        let mut seen = BTreeSet::new();
+        for ((_, enum_name), info) in &self.resolution.module_enum_infos {
             if !self.field_is_accessible_from_current(&info.module, info.visibility) {
+                continue;
+            }
+            if !seen.insert(info.symbol) {
                 continue;
             }
             if let Some(payload) = info.variants.get(name) {
@@ -8675,19 +8854,15 @@ impl<'a> Checker<'a> {
     fn find_enum(&self, ty: &str) -> Option<&EnumInfo> {
         let normalized = self.normalize_type(ty);
         let base = base_type_name(&normalized);
-        if let Some(info) = self.resolution.enums.get(base) {
-            return Some(info);
-        }
-        self.resolution.enums.get(Self::unqualified_name(base))
+        self.visible_enum_info(base)
+            .or_else(|| self.visible_enum_info(Self::unqualified_name(base)))
     }
 
     fn find_struct(&self, ty: &str) -> Option<&StructInfo> {
         let normalized = self.normalize_type(ty);
         let base = base_type_name(&normalized);
-        if let Some(info) = self.resolution.structs.get(base) {
-            return Some(info);
-        }
-        self.resolution.structs.get(Self::unqualified_name(base))
+        self.visible_struct_info(base)
+            .or_else(|| self.visible_struct_info(Self::unqualified_name(base)))
     }
 
     fn is_auto_marker_trait(bound_trait: &str) -> bool {
@@ -9805,6 +9980,9 @@ fn await_bridge_submit_type(ty: &str) -> Option<String> {
         ("AsyncStringOp", "NetError") => Some("Result[Bytes, NetError]".to_string()),
         ("AsyncIntOp", "TlsError") => Some("Result[Int, TlsError]".to_string()),
         ("AsyncStringOp", "TlsError") => Some("Result[Bytes, TlsError]".to_string()),
+        ("AsyncFsBoolOp", "FsError") => Some("Result[Bool, FsError]".to_string()),
+        ("AsyncFsTextOp", "FsError") => Some("Result[String, FsError]".to_string()),
+        ("AsyncFsBytesOp", "FsError") => Some("Result[Bytes, FsError]".to_string()),
         _ => None,
     }
 }
@@ -10875,7 +11053,7 @@ fn main() -> Int effects { net, proc } capabilities { net, proc } {
     }
 
     #[test]
-    fn await_bridge_submit_type_supports_net_and_tls_results() {
+    fn await_bridge_submit_type_supports_net_tls_and_fs_results() {
         assert_eq!(
             await_bridge_submit_type("Result[AsyncIntOp, NetError]"),
             Some("Result[Int, NetError]".to_string())
@@ -10893,8 +11071,16 @@ fn main() -> Int effects { net, proc } capabilities { net, proc } {
             Some("Result[Bytes, TlsError]".to_string())
         );
         assert_eq!(
-            await_bridge_submit_type("Result[AsyncStringOp, FsError]"),
-            None
+            await_bridge_submit_type("Result[AsyncFsBoolOp, FsError]"),
+            Some("Result[Bool, FsError]".to_string())
+        );
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncFsTextOp, FsError]"),
+            Some("Result[String, FsError]".to_string())
+        );
+        assert_eq!(
+            await_bridge_submit_type("Result[AsyncFsBytesOp, FsError]"),
+            Some("Result[Bytes, FsError]".to_string())
         );
     }
 

@@ -6,8 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::codegen::compile_with_clang;
-use crate::codegen::emit_llvm;
+use crate::codegen::{compile_with_clang, emit_llvm_with_resolution_and_options, CodegenOptions};
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::{has_errors, run_frontend};
 use crate::parser;
@@ -166,8 +165,13 @@ fn run_codegen_case(path: &Path, expected_output: Option<&str>) -> anyhow::Resul
     }
 
     let lowered = lower_runtime_asserts(&out.ir);
-    let llvm = emit_llvm(&lowered, &path.to_string_lossy())
-        .map_err(|diags| anyhow::anyhow!("llvm generation failed: {diags:#?}"))?;
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&out.resolution),
+        &path.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .map_err(|diags| anyhow::anyhow!("llvm generation failed: {diags:#?}"))?;
 
     let tmp = unique_temp_dir("aicore-conformance");
     fs::create_dir_all(&tmp)?;

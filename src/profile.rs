@@ -6,8 +6,8 @@ use std::time::Instant;
 
 use aicore::cli_contract::{EXIT_DIAGNOSTIC_ERROR, EXIT_OK};
 use aicore::codegen::{
-    compile_with_clang_artifact_with_options, emit_llvm, ArtifactKind, CompileOptions,
-    OptimizationLevel,
+    compile_with_clang_artifact_with_options, emit_llvm_with_resolution_and_options, ArtifactKind,
+    CodegenOptions, CompileOptions, OptimizationLevel,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{diagnostics_pretty, has_errors, run_frontend_with_options, FrontendOptions};
@@ -89,7 +89,12 @@ pub fn run_profiled(options: RunProfileOptions<'_>) -> anyhow::Result<RunProfile
     ));
 
     let llvm_started = Instant::now();
-    let llvm = match emit_llvm(&lowered, &options.input.to_string_lossy()) {
+    let llvm = match emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &options.input.to_string_lossy(),
+        CodegenOptions::default(),
+    ) {
         Ok(output) => output,
         Err(diags) => {
             print!("{}", diagnostics_pretty(&diags));

@@ -1,6 +1,6 @@
 # Async Event Loop Runtime (REST-T8)
 
-This document defines the runtime model used by async networking APIs in `std.net`.
+This document defines the runtime model used by async submit/wait APIs in `std.net`, `std.tls`, and `std.fs`.
 
 ## Scope
 
@@ -9,15 +9,18 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - Reactor-based non-blocking socket progress for async TCP accept/send/recv.
 - Async submit/wait API surface for TCP accept/send/recv.
 - TLS async submit/wait API surface for TLS send/recv.
+- Task-backed async filesystem submit/wait API surface for text/bytes file operations.
 
 ## Async + REST Runtime Support Matrix
 
 | Capability | Status | Evidence anchor |
 |---|---|---|
 | `std.net` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Runtime async reactor in `src/codegen/runtime/part04.c` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable`, `exec_net_async_queue_backpressure_and_shutdown` |
+| `std.fs` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Task-backed runtime bridge in `std/fs.aic` + `src/codegen/runtime/part03.c` + execution tests `exec_fs_async_submit_wait_roundtrip`, `exec_fs_async_runtime_backpressure_is_deterministic`, `exec_fs_async_wait_timeout_retry_is_stable` |
 | `await` submit bridge for net/tls async handles | Supported | Runtime poll helpers (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) + execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` |
+| `await` submit bridge for fs async handles | Supported | Task-join helper (`aic_rt_conc_join_value`) + execution test `exec_async_await_fs_submit_bridge_roundtrip` |
 | `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Partial | API/runtime paths are implemented; `tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`, and TLS backend availability gates some execution paths |
-| Async HTTP-server API surface | Supported | `std.http_server` async accept + compatibility read/write/serve wrappers in `std/http_server.aic` + runnable example `examples/io/http_server_async_api.aic` |
+| Async HTTP-server API surface | Partial | `std.http_server` provides async accept plus compatibility read/write wrappers in `std/http_server.aic`; `async_serve` now composes through async accept, but request/response I/O is still synchronous under the hood |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
 | Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for `exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`, and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
 
@@ -60,6 +63,33 @@ This document defines the runtime model used by async networking APIs in `std.ne
 - `tls_async_shutdown() -> Result[Bool, TlsError]`
 - Convenience wrappers: `tls_async_send`, `tls_async_recv`
 
+`std/fs.aic` now exposes:
+
+- `async_read_text_submit(path) -> Result[AsyncFsTextOp, FsError]`
+- `async_read_bytes_submit(path) -> Result[AsyncFsBytesOp, FsError]`
+- `async_write_text_submit(path, content) -> Result[AsyncFsBoolOp, FsError]`
+- `async_write_bytes_submit(path, content) -> Result[AsyncFsBoolOp, FsError]`
+- `async_append_text_submit(path, content) -> Result[AsyncFsBoolOp, FsError]`
+- `async_append_bytes_submit(path, content) -> Result[AsyncFsBoolOp, FsError]`
+- `async_wait_text(op, timeout_ms) -> Result[String, FsError]`
+- `async_wait_bytes(op, timeout_ms) -> Result[Bytes, FsError]`
+- `async_wait_bool(op, timeout_ms) -> Result[Bool, FsError]`
+- `async_poll_text(op) -> Result[Option[String], FsError]`
+- `async_poll_bytes(op) -> Result[Option[Bytes], FsError]`
+- `async_poll_bool(op) -> Result[Option[Bool], FsError]`
+- `async_cancel_text(op) -> Result[Bool, FsError]`
+- `async_cancel_bytes(op) -> Result[Bool, FsError]`
+- `async_cancel_bool(op) -> Result[Bool, FsError]`
+- `async_wait_many_text(ops, timeout_ms) -> Result[FsAsyncTextSelection, FsError]`
+- `async_wait_many_bytes(ops, timeout_ms) -> Result[FsAsyncBytesSelection, FsError]`
+- `async_wait_many_bool(ops, timeout_ms) -> Result[FsAsyncBoolSelection, FsError]`
+- `async_wait_any_text(op1, op2, timeout_ms) -> Result[FsAsyncTextSelection, FsError]`
+- `async_wait_any_bytes(op1, op2, timeout_ms) -> Result[FsAsyncBytesSelection, FsError]`
+- `async_wait_any_bool(op1, op2, timeout_ms) -> Result[FsAsyncBoolSelection, FsError]`
+- `async_runtime_pressure() -> Result[FsAsyncRuntimePressure, FsError]`
+- `async_shutdown() -> Result[Bool, FsError]`
+- Convenience wrappers: `async_read_text`, `async_read_bytes`, `async_write_text`, `async_write_bytes`, `async_append_text`, `async_append_bytes`
+
 `std/http_server.aic` now exposes:
 
 - `async_accept_submit(listener, timeout_ms) -> Result[AsyncIntOp, NetError]`
@@ -76,6 +106,9 @@ Language-level bridge:
   - `await Result[AsyncStringOp, NetError] -> Result[Bytes, NetError]`
   - `await Result[AsyncIntOp, TlsError] -> Result[Int, TlsError]`
   - `await Result[AsyncStringOp, TlsError] -> Result[Bytes, TlsError]`
+  - `await Result[AsyncFsBoolOp, FsError] -> Result[Bool, FsError]`
+  - `await Result[AsyncFsTextOp, FsError] -> Result[String, FsError]`
+  - `await Result[AsyncFsBytesOp, FsError] -> Result[Bytes, FsError]`
 
 ## Core Async Lowering Model
 
@@ -83,8 +116,9 @@ Language-level bridge:
 - In current codegen, ordinary async returns are lowered to compiler-managed ready `Async[T]` wrapper values with a readiness bit and payload.
 - The non-blocking reactor integration point today is the submit bridge:
   - `await Result[Async*Op, NetError|TlsError]`
-  - runtime polling is delegated to `aic_rt_async_poll_int` / `aic_rt_async_poll_string`
-- This means the repo supports production async net/tls wait paths through the reactor, while agent-facing docs should not describe the current implementation as a general stackless-coroutine future runtime.
+  - `await Result[AsyncFs*Op, FsError]`
+- runtime polling is delegated to `aic_rt_async_poll_int` / `aic_rt_async_poll_string` for net/tls and `aic_rt_conc_join_value` for fs task-backed handles
+- This means the repo supports production async net/tls wait paths through the reactor and task-backed async fs wait paths, while agent-facing docs should not describe the current implementation as a general stackless-coroutine future runtime.
 
 ## Wrapper Semantics
 
@@ -94,7 +128,7 @@ Language-level bridge:
   - `async_tcp_recv(handle, max_bytes, timeout_ms)` = `async_tcp_recv_submit(handle, max_bytes, timeout_ms)` then `async_wait_string(op, timeout_ms)`
 - `std.http_server.async_accept_*` delegates directly to `std.net` async accept handles and preserves `NetError`.
 - `std.http_server.async_read_request` and `std.http_server.async_write_response` are compatibility wrappers over the existing synchronous HTTP server request/response APIs.
-- `std.http_server.async_serve(...)` composes accept + async read + handler dispatch + async write, then closes the accepted connection before returning.
+- `std.http_server.async_serve(...)` composes async accept + compatibility read + handler dispatch + compatibility write, then closes the accepted connection before returning.
 - Wrapper methods preserve submit failures exactly: submit `Err` is returned directly, with no remapping.
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.
@@ -113,6 +147,8 @@ Language-level bridge:
 - Ordinary `await` on `Async[T]` extracts the wrapped payload from the compiler-managed async value.
 - Poll helpers use short wait slices and cooperative yield (`sleep_ms(1)`) between retry windows.
 - Terminal timeout completion remains `Err(Timeout)` (not remapped to `NotFound`).
+- Fs async wait timeout keeps the underlying task pending and releases the claim so a later wait can retry.
+- Sync `std.fs` APIs still report the stable filesystem subset (`NotFound`, `PermissionDenied`, `AlreadyExists`, `InvalidInput`, `Io`); `Timeout` and `Cancelled` are reserved for async filesystem/runtime-control paths.
 
 Example:
 
@@ -146,7 +182,9 @@ let socket = match accepted {
 - Queue-full submission returns `NetError::Timeout`.
 - Wait calls are single-consumer per operation handle.
 - Timeout while waiting does not destroy the in-flight operation; later wait can retry.
+- Fs async submission is bounded by `AIC_RT_LIMIT_FS_ASYNC_OPS`; saturation returns `FsError::Timeout`.
 - `async_runtime_pressure` snapshots expose `active_ops`, `queue_depth`, `op_limit`, and `queue_limit`.
+- `std.fs.async_runtime_pressure` snapshots expose active fs task count and configured fs async op limit; current task-backed backend reports `queue_depth = 0` and `queue_limit = 0`.
 - `tls_async_runtime_pressure` snapshots expose `active_ops` and `op_limit`; current TLS runtime reports `queue_depth = 0` and `queue_limit = 0`.
 - All failures map through existing `NetError` code mapping.
 
@@ -162,6 +200,7 @@ let socket = match accepted {
   - `check_pass` (compile/check gate)
   - `run_pass` (runtime gate)
 - CI also includes `examples/io/async_await_submit_bridge.aic` in both check and run gates.
+- CI also includes `examples/io/fs_async_await_bridge.aic`, `examples/io/fs_async_runtime_controls.aic`, and `examples/io/fs_async_tasks.aic` in both check and run gates for filesystem async coverage.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
 - CI also includes `examples/io/http_server_async_api.aic` in both check and run gates for async HTTP server coverage.

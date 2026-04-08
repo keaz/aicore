@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::codegen::{compile_with_clang, emit_llvm};
+use crate::codegen::{compile_with_clang, emit_llvm_with_resolution_and_options, CodegenOptions};
 use crate::contracts::lower_runtime_asserts;
 use crate::driver::{has_errors, run_frontend};
 use crate::test_harness::{HarnessCase, HarnessMode, HarnessReport};
@@ -244,8 +244,13 @@ fn run_attribute_case(case: &AttributeTestCase, seed: u64) -> anyhow::Result<Str
     }
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &test_file.to_string_lossy())
-        .map_err(|diags| anyhow::anyhow!("llvm generation failed: {:#?}", diags))?;
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &test_file.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .map_err(|diags| anyhow::anyhow!("llvm generation failed: {:#?}", diags))?;
 
     let exe = temp_dir.join("attr-test-bin");
     compile_with_clang(&llvm.llvm_ir, &exe, &temp_dir)?;

@@ -292,7 +292,7 @@ impl<'a> Generator<'a> {
             err, runtime_fn, out_ptr_slot, out_len_slot
         ));
         let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -341,7 +341,7 @@ impl<'a> Generator<'a> {
             ty: LType::Int,
             repr: Some(out_value),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -390,7 +390,7 @@ impl<'a> Generator<'a> {
             err, ptr, len, cap, out_ptr_slot, out_len_slot
         ));
         let payload = self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)?;
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -439,7 +439,7 @@ impl<'a> Generator<'a> {
             ty: LType::Int,
             repr: Some(len),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -491,7 +491,7 @@ impl<'a> Generator<'a> {
             repr: Some("1".to_string()),
         };
 
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -614,7 +614,7 @@ impl<'a> Generator<'a> {
             .push(format!("  {} = icmp ne i64 {}, 0", has_line, out_has_line));
         let line_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
 
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -676,7 +676,7 @@ impl<'a> Generator<'a> {
             ty: LType::Int,
             repr: Some(len),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -722,7 +722,7 @@ impl<'a> Generator<'a> {
             ty: LType::Bool,
             repr: Some("1".to_string()),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -782,7 +782,7 @@ impl<'a> Generator<'a> {
             ty: LType::Int,
             repr: Some(sent),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -844,7 +844,7 @@ impl<'a> Generator<'a> {
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
         let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -893,7 +893,7 @@ impl<'a> Generator<'a> {
             ty: LType::Bool,
             repr: Some("1".to_string()),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -1198,7 +1198,7 @@ impl<'a> Generator<'a> {
             ty: LType::Bool,
             repr: Some("1".to_string()),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -1242,7 +1242,7 @@ impl<'a> Generator<'a> {
             ty: LType::Int,
             repr: Some(signal_code),
         };
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -1392,7 +1392,7 @@ impl<'a> Generator<'a> {
         fctx.lines
             .push(format!("  {} = load i64, i64* {}", offset, offset_slot));
 
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),
@@ -1493,7 +1493,7 @@ impl<'a> Generator<'a> {
             .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
         let ok_payload = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
 
-        let Some(result_ty) = self.fn_sigs.get(name).map(|sig| sig.ret.clone()) else {
+        let Some(result_ty) = self.fn_sig(name).map(|sig| sig.ret.clone()) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{name}' in codegen"),

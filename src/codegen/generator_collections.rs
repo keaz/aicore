@@ -2,7 +2,7 @@ use super::*;
 
 impl<'a> Generator<'a> {
     fn fn_sig_ret_by_name_or_suffix(&self, name: &str) -> Option<LType> {
-        if let Some(sig) = self.fn_sigs.get(name) {
+        if let Some(sig) = self.fn_sig(name) {
             return Some(sig.ret.clone());
         }
         let dotted_suffix = format!(".{name}");
@@ -1772,7 +1772,7 @@ impl<'a> Generator<'a> {
             .fn_sigs
             .get(name)
             .map(|sig| sig.ret.clone())
-            .or_else(|| self.fn_sigs.get(canonical_name).map(|sig| sig.ret.clone()))
+            .or_else(|| self.fn_sig(canonical_name).map(|sig| sig.ret.clone()))
         {
             known
         } else {

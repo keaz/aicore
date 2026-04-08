@@ -2973,6 +2973,8 @@ fn err_code(err: FsError) -> Int {
         PermissionDenied => 2,
         AlreadyExists => 3,
         InvalidInput => 4,
+        Timeout => 6,
+        Cancelled => 7,
         Io => 5,
     }
 }
@@ -3010,6 +3012,8 @@ fn err_code(err: FsError) -> Int {
         PermissionDenied => 2,
         AlreadyExists => 3,
         InvalidInput => 4,
+        Timeout => 6,
+        Cancelled => 7,
         Io => 5,
     }
 }
@@ -3066,6 +3070,445 @@ fn main() -> Int effects { io, fs } capabilities { io, fs  } {
     };
     let removed = ok_bool(delete("bytes.bin"));
     if wrote + appended + payload_ok + removed == 4 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_task_async_helpers_roundtrip() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.concurrent;
+import std.bytes;
+import std.path;
+import std.string;
+
+fn join_bool_task(v: Result[Task[Result[Bool, FsError]], ConcurrencyError]) -> Int effects { concurrency } capabilities { concurrency  } {
+    match v {
+        Ok(task) => match join_value(task) {
+            Ok(result) => match result {
+                Ok(_) => 1,
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn join_text_task(v: Result[Task[Result[String, FsError]], ConcurrencyError], expected: String) -> Int effects { concurrency } capabilities { concurrency  } {
+    match v {
+        Ok(task) => match join_value(task) {
+            Ok(result) => match result {
+                Ok(text) => if text == expected { 1 } else { 0 },
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn join_bytes_task(v: Result[Task[Result[Bytes, FsError]], ConcurrencyError], expected: String) -> Int effects { concurrency } capabilities { concurrency  } {
+    match v {
+        Ok(task) => match join_value(task) {
+            Ok(result) => match result {
+                Ok(payload) => if bytes.to_string_lossy(payload) == expected { 1 } else { 0 },
+                Err(_) => 0,
+            },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs, env, concurrency } capabilities { io, fs, env, concurrency  } {
+    let scratch = match fs.temp_dir("aic_fs_async_tasks_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let text_path = path.join(scratch, "task.txt");
+    let bytes_path = path.join(scratch, "task.bin");
+
+    let write_text_task = spawn_write_text(text_path, "alpha");
+    let write_bytes_task = spawn_write_bytes(bytes_path, bytes.from_string("bi"));
+    let wrote_text = join_bool_task(write_text_task);
+    let wrote_bytes = join_bool_task(write_bytes_task);
+
+    let append_text_task = spawn_append_text(text_path, "-beta");
+    let append_bytes_task = spawn_append_bytes(bytes_path, bytes.from_string("nary"));
+    let appended_text = join_bool_task(append_text_task);
+    let appended_bytes = join_bool_task(append_bytes_task);
+
+    let read_text_task = spawn_read_text(text_path);
+    let read_bytes_task = spawn_read_bytes(bytes_path);
+    let read_text_ok = join_text_task(read_text_task, "alpha-beta");
+    let read_bytes_ok = join_bytes_task(read_bytes_task, "binary");
+
+    let deleted_text = ok_bool(delete(text_path));
+    let deleted_bytes = ok_bool(delete(bytes_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    let score = wrote_text + wrote_bytes + appended_text + appended_bytes + read_text_ok + read_bytes_ok + deleted_text + deleted_bytes + deleted_dir;
+    if score == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_async_submit_wait_roundtrip() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.bytes;
+import std.path;
+import std.vec;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn text_ok(v: Result[String, FsError], expected: String) -> Int {
+    match v {
+        Ok(text) => if text == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn bytes_ok(v: Result[Bytes, FsError], expected: String) -> Int {
+    match v {
+        Ok(payload) => if bytes.to_string_lossy(payload) == expected { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+fn main() -> Int effects { io, fs, env, concurrency, time } capabilities { io, fs, env, concurrency, time  } {
+    let scratch = match fs.temp_dir("aic_fs_async_submit_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let text_path = path.join(scratch, "task.txt");
+    let bytes_path = path.join(scratch, "task.bin");
+
+    let wrote_text = match async_write_text_submit(text_path, "alpha") {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+    let wrote_bytes = match async_write_bytes_submit(bytes_path, bytes.from_string("bi")) {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+
+    let appended_text = match async_append_text_submit(text_path, "-beta") {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+    let appended_bytes = match async_append_bytes_submit(bytes_path, bytes.from_string("nary")) {
+        Ok(op) => ok_bool(async_wait_bool(op, 2000)),
+        Err(_) => 0,
+    };
+
+    let read_text_ok = text_ok(async_read_text(text_path, 2000), "alpha-beta");
+    let read_bytes_ok = bytes_ok(async_read_bytes(bytes_path, 2000), "binary");
+
+    let selected_text_ok = match async_read_text_submit(text_path) {
+        Ok(op) => match async_wait_many_text(vec.vec_of(op), 2000) {
+            Ok(selection) => if selection.index == 0 && selection.text == "alpha-beta" { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let selected_bytes_ok = match async_read_bytes_submit(bytes_path) {
+        Ok(op) => match async_wait_many_bytes(vec.vec_of(op), 2000) {
+            Ok(selection) => if selection.index == 0 && bytes.to_string_lossy(selection.payload) == "binary" { 1 } else { 0 },
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    let deleted_text = ok_bool(delete(text_path));
+    let deleted_bytes = ok_bool(delete(bytes_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    if wrote_text + wrote_bytes + appended_text + appended_bytes + read_text_ok + read_bytes_ok + selected_text_ok + selected_bytes_ok + deleted_text + deleted_bytes + deleted_dir == 11 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_async_await_fs_submit_bridge_roundtrip() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.bytes;
+import std.path;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+async fn main() -> Int effects { io, fs, env, concurrency } capabilities { io, fs, env, concurrency  } {
+    let scratch = match fs.temp_dir("aic_fs_async_await_") {
+        Ok(path) => path,
+        Err(_) => "",
+    };
+    let text_path = path.join(scratch, "await.txt");
+    let bytes_path = path.join(scratch, "await.bin");
+
+    let wrote_text = match await async_write_text_submit(text_path, "alpha") {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let appended_text = match await async_append_text_submit(text_path, "-beta") {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let read_text_ok = match await async_read_text_submit(text_path) {
+        Ok(text) => if text == "alpha-beta" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let wrote_bytes = match await async_write_bytes_submit(bytes_path, bytes.from_string("bi")) {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let appended_bytes = match await async_append_bytes_submit(bytes_path, bytes.from_string("nary")) {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let read_bytes_ok = match await async_read_bytes_submit(bytes_path) {
+        Ok(payload) => if bytes.to_string_lossy(payload) == "binary" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    let deleted_text = ok_bool(delete(text_path));
+    let deleted_bytes = ok_bool(delete(bytes_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    if wrote_text + appended_text + read_text_ok + wrote_bytes + appended_bytes + read_bytes_ok + deleted_text + deleted_bytes + deleted_dir == 9 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_async_runtime_controls_report_pressure_and_shutdown() {
+    let src = r#"
+import std.io;
+import std.fs;
+
+fn main() -> Int effects { io, fs, concurrency } capabilities { io, fs, concurrency  } {
+    let pressure_ok = match async_runtime_pressure() {
+        Ok(pressure) => if pressure.active_ops == 0 && pressure.queue_depth == 0 && pressure.op_limit > 0 && pressure.queue_limit == 0 { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let shutdown_ok = match async_shutdown() {
+        Ok(done) => if done { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let blocked_submit = match async_read_text_submit("after_shutdown.txt") {
+        Ok(_) => 0,
+        Err(err) => match err {
+            Cancelled => 1,
+            _ => 0,
+        },
+    };
+
+    if pressure_ok + shutdown_ok + blocked_submit == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_async_runtime_backpressure_is_deterministic() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.concurrent;
+import std.time;
+
+fn main() -> Int effects { io, fs, concurrency, time } capabilities { io, fs, concurrency, time  } {
+    let blocker = concurrent.spawn_named("fs.blocker", || -> Result[String, FsError] {
+        sleep_ms(40);
+        Ok("held")
+    });
+    let mut attempts = 0;
+    let mut pressure_ok = 0;
+    while attempts < 25 && pressure_ok == 0 {
+        pressure_ok = match async_runtime_pressure() {
+            Ok(pressure) => if pressure.active_ops >= 1 && pressure.queue_depth == 0 && pressure.op_limit == 1 && pressure.queue_limit == 0 { 1 } else { 0 },
+            Err(_) => 0,
+        };
+        if pressure_ok == 0 {
+            sleep_ms(2);
+        } else {
+            ()
+        };
+        attempts = attempts + 1;
+    };
+    let submit_ok = match async_read_text_submit("blocked.txt") {
+        Err(err) => match err {
+            Timeout => 1,
+            _ => 0,
+        },
+        Ok(_) => 0,
+    };
+    let cleanup_ok = match async_wait_text(AsyncFsTextOp { handle: blocker.handle }, 2000) {
+        Ok(text) => if text == "held" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if pressure_ok + submit_ok + cleanup_ok == 3 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_setup_and_args_and_input_and_env(
+        src,
+        &[],
+        "",
+        &[("AIC_RT_LIMIT_FS_ASYNC_OPS", "1")],
+        |_| {},
+    );
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_async_wait_timeout_retry_is_stable() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.concurrent;
+import std.time;
+
+fn main() -> Int effects { io, fs, concurrency, time } capabilities { io, fs, concurrency, time  } {
+    let delayed = concurrent.spawn_named("fs.read_text", || -> Result[String, FsError] {
+        sleep_ms(40);
+        Ok("alpha")
+    });
+    let handle = delayed.handle;
+
+    let timeout_ok = match async_wait_text(AsyncFsTextOp { handle: handle }, 0) {
+        Err(err) => match err {
+            Timeout => 1,
+            _ => 0,
+        },
+        Ok(_) => 0,
+    };
+    let retry_ok = match async_wait_text(AsyncFsTextOp { handle: handle }, 2000) {
+        Ok(text) => if text == "alpha" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+
+    if timeout_ok + retry_ok == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_fs_async_cancel_and_invalid_input_are_stable() {
+    let src = r#"
+import std.io;
+import std.fs;
+import std.concurrent;
+import std.time;
+
+fn main() -> Int effects { io, fs, concurrency, time } capabilities { io, fs, concurrency, time  } {
+    let delayed = concurrent.spawn_named("fs.read_text", || -> Result[String, FsError] {
+        sleep_ms(40);
+        Ok("beta")
+    });
+    let handle = delayed.handle;
+
+    let cancel_ok = match async_cancel_text(AsyncFsTextOp { handle: handle }) {
+        Ok(done) => if done { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let wait_ok = match async_wait_text(AsyncFsTextOp { handle: handle }, 2000) {
+        Err(err) => match err {
+            Cancelled => 1,
+            _ => 0,
+        },
+        Ok(_) => 0,
+    };
+    let invalid_ok = match async_read_text_submit("") {
+        Ok(op) => match async_wait_text(op, 2000) {
+            Err(err) => match err {
+                InvalidInput => 1,
+                _ => 0,
+            },
+            Ok(_) => 0,
+        },
+        Err(_) => 0,
+    };
+
+    if cancel_ok + wait_ok + invalid_ok == 3 {
         print_int(42);
     } else {
         print_int(0);

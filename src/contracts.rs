@@ -1008,6 +1008,7 @@ fn rewrite_struct_inits_in_expr(
                 }),
                 args,
                 arg_names: Vec::new(),
+                symbol: None,
             };
         }
         ir::ExprKind::FieldAccess { base, .. } => {
@@ -1457,10 +1458,12 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             callee,
             args,
             arg_names,
+            symbol,
         } => ir::ExprKind::Call {
             callee: Box::new(clone_expr(callee, alloc)),
             args: args.iter().map(|a| clone_expr(a, alloc)).collect(),
             arg_names: arg_names.clone(),
+            symbol: *symbol,
         },
         ir::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
             template: template.clone(),
@@ -1653,6 +1656,7 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
             callee,
             args,
             arg_names,
+            symbol,
         } => ir::ExprKind::Call {
             callee: Box::new(substitute_result_var(callee, result_name, alloc)),
             args: args
@@ -1660,6 +1664,7 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
                 .map(|a| substitute_result_var(a, result_name, alloc))
                 .collect(),
             arg_names: arg_names.clone(),
+            symbol: *symbol,
         },
         ir::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
             template: template.clone(),

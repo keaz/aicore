@@ -370,6 +370,32 @@ intrinsic fn aic_conc_spawn_fn_named_intrinsic[T](name: String, f: Fn() -> T) ->
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_conc_join_value_intrinsic[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurrency };
+/// `aic_conc_poll_value_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_poll_value_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_conc_poll_value_intrinsic[T](task: Task[T]) -> Result[Option[T], ConcurrencyError] effects { concurrency };
+/// `aic_conc_cancel_value_intrinsic` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `aic_conc_cancel_value_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_conc_cancel_value_intrinsic[T](task: Task[T]) -> Result[Bool, ConcurrencyError] effects { concurrency };
 /// `aic_conc_scope_new_intrinsic` in `std.concurrent`.
 ///
 /// ## Example
@@ -2135,6 +2161,22 @@ fn join_value[T](task: Task[T]) -> Result[T, ConcurrencyError] effects { concurr
     aic_conc_join_value_intrinsic(task)
 }
 
+/// `poll_value_task` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `poll_value_task` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn poll_value_task[T](task: Task[T]) -> Result[Option[T], ConcurrencyError] effects { concurrency } {
+    aic_conc_poll_value_intrinsic(task)
+}
+
 /// `task_handle_u32` in `std.concurrent`.
 fn task_handle_u32[T](task: Task[T]) -> Result[ConcurrencyHandleU32, ConcurrencyError] {
     conc_int_to_u32_result(task.handle)
@@ -2333,6 +2375,22 @@ fn timeout_task(task: Task[Int], timeout_ms: Int) -> Result[Int, ConcurrencyErro
 /// Returns module-defined error variants when the operation fails.
 fn cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
     aic_conc_cancel_intrinsic(task)
+}
+
+/// `cancel_value_task` in `std.concurrent`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.concurrent` and call `cancel_value_task` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn cancel_value_task[T](task: Task[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
+    aic_conc_cancel_value_intrinsic(task)
 }
 
 /// `spawn_group` in `std.concurrent`.

@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::codegen::{
-    compile_with_clang_artifact_with_options, emit_llvm_with_options, ArtifactKind, CodegenOptions,
-    CompileOptions, LinkOptions, OptimizationLevel,
+    compile_with_clang_artifact_with_options, emit_llvm_with_resolution_and_options, ArtifactKind,
+    CodegenOptions, CompileOptions, LinkOptions, OptimizationLevel,
 };
 use crate::contracts::lower_runtime_asserts;
 use crate::diagnostics::Diagnostic;
@@ -422,8 +422,9 @@ impl DaemonState {
         }
 
         let lowered = lower_runtime_asserts(&front.ir);
-        let llvm = match emit_llvm_with_options(
+        let llvm = match emit_llvm_with_resolution_and_options(
             &lowered,
+            Some(&front.resolution),
             &input.to_string_lossy(),
             CodegenOptions { debug_info },
         ) {

@@ -6,7 +6,7 @@ Use these as the canonical entrypoint when checking `std.io`, `std.fs`, `std.env
 ## Index
 
 - Input/output basics: `interactive_greeter.aic`, `interactive_cli.aic`, `stderr_logging.aic`
-- File and byte workflows: `fs_all_ops.aic`, `fs_backup.aic`, `file_processor.aic`, `line_reader.aic`, `binary_file_copy.aic`, `stream_copy.aic`
+- File and byte workflows: `fs_all_ops.aic`, `fs_backup.aic`, `fs_async_await_bridge.aic`, `fs_async_runtime_controls.aic`, `fs_async_tasks.aic`, `file_processor.aic`, `line_reader.aic`, `binary_file_copy.aic`, `stream_copy.aic`
 - Environment and process flows: `env_config.aic`, `env_inspect.aic`, `cli_args.aic`, `process_pipeline.aic`, `subprocess_pipeline.aic`
 - Network and server flows: `tcp_echo.aic`, `tcp_echo_client.aic`, `tcp_socket_tuning.aic`, `http_server_hello.aic`, `http_router.aic`
 - Runtime control and resilience: `async_await_submit_bridge.aic`, `async_net_event_loop.aic`, `async_runtime_pressure_gating.aic`, `retry_with_jitter.aic`, `signal_shutdown.aic`, `worker_pool.aic`, `connection_pool.aic`
