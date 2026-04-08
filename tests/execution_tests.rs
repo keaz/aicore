@@ -10229,6 +10229,287 @@ fn main() -> Int effects { io, net, env, fs } capabilities { io, net, env, fs } 
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_http_server_async_fragmented_body_is_parsed_across_recv_boundaries() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.string;
+import std.env;
+import std.map;
+import std.fs;
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn main() -> Int effects { io, net, env, fs, concurrency } capabilities { io, net, env, fs, concurrency } {
+    let addr_file = read_env_or("AIC_HTTP_ADDR_FILE", "http_async_frag_addr.txt");
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+    let published = if len(addr) > 0 {
+        match write_text(addr_file, addr) {
+            Ok(_) => 1,
+            Err(_) => 0,
+        }
+    } else {
+        0
+    };
+    let server = match http_server.async_accept(listener, 15000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let parsed_ok = match async_read_request(server, 4096, 15000) {
+        Ok(req) => if string.contains(req.method, "POST") && len(req.method) == 4 &&
+            string.contains(req.path, "/frag-async") && len(req.path) == 11 &&
+            string.contains(req.body, "hello") && len(req.body) == 5 &&
+            (match map.get(req.headers, "content-length") {
+                Some(v) => if string.contains(v, "5") && len(v) == 1 { 1 } else { 0 },
+                None => 0,
+            }) == 1 {
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let closed_server = match close(server) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let closed_listener = match close(listener) {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+
+    if published == 1 && parsed_ok == 1 && closed_server + closed_listener == 2 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let addr_file_rel = "http_async_frag_addr.txt";
+    let envs = [("AIC_HTTP_ADDR_FILE", addr_file_rel)];
+    let client_thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let client_thread_setup = std::sync::Arc::clone(&client_thread);
+    let (code, stdout, stderr) = compile_and_run_with_setup_and_args_and_input_and_env(
+        src,
+        &[],
+        "",
+        &envs,
+        |root| {
+            let addr_file = root.join(addr_file_rel);
+            let handle = std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(15);
+                let mut connect_addr: Option<String> = None;
+                while Instant::now() < deadline {
+                    match fs::read_to_string(&addr_file) {
+                        Ok(value) => {
+                            let trimmed = value.trim();
+                            if !trimmed.is_empty() {
+                                connect_addr = Some(trimmed.to_string());
+                                break;
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+
+                let connect_addr = connect_addr.expect("server did not publish listen address");
+                let mut connected: Option<std::net::TcpStream> = None;
+                while Instant::now() < deadline {
+                    match std::net::TcpStream::connect(&connect_addr) {
+                        Ok(stream) => {
+                            connected = Some(stream);
+                            break;
+                        }
+                        Err(_) => std::thread::sleep(Duration::from_millis(20)),
+                    }
+                }
+
+                let mut stream = connected.expect("client failed to connect to server");
+                stream.set_nodelay(true).expect("set_nodelay");
+                stream
+                    .write_all(
+                        b"POST /frag-async HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhe",
+                    )
+                    .expect("write first request chunk");
+                std::thread::sleep(Duration::from_millis(60));
+                stream
+                    .write_all(b"llo")
+                    .expect("write second request chunk");
+                stream.flush().expect("flush request chunks");
+                std::thread::sleep(Duration::from_millis(120));
+            });
+            *client_thread_setup.lock().expect("store client thread") = Some(handle);
+        },
+    );
+    if let Some(handle) = client_thread.lock().expect("take client thread").take() {
+        handle.join().expect("client thread join");
+    } else {
+        panic!("client thread was not started");
+    }
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_async_api_example_smoke() {
+    let src =
+        fs::read_to_string("examples/io/http_server_async_api.aic").expect("read async example");
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_http_server_async_multi_connection_roundtrip() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.http_server;
+import std.string;
+import std.bytes;
+
+fn str_eq(left: String, right: String) -> Int {
+    if len(left) == len(right) && string.contains(left, right) {
+        1
+    } else {
+        0
+    }
+}
+
+fn req_ok(req: Request, expected: String) -> Int {
+    if str_eq(req.method, "GET") == 1 && str_eq(req.path, expected) == 1 {
+        1
+    } else {
+        0
+    }
+}
+
+fn wire_ok(payload: Bytes, expected: String) -> Int {
+    let text = bytes.to_string_lossy(payload);
+    if string.contains(text, "HTTP/1.1 200 OK") && string.ends_with(text, expected) {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let listener = match listen("127.0.0.1:0") {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(v) => v,
+        Err(_) => "",
+    };
+
+    let client1 = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let client2 = match tcp_connect(addr, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let server1 = match http_server.async_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+    let server2 = match http_server.async_accept(listener, 1000) {
+        Ok(h) => h,
+        Err(_) => 0,
+    };
+
+    let sent1 = match tcp_send(
+        client1,
+        bytes.from_string("GET /one HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+    ) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let sent2 = match tcp_send(
+        client2,
+        bytes.from_string("GET /two HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+    ) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+
+    let parsed1 = match async_read_request(server1, 4096, 1000) {
+        Ok(req) => req_ok(req, "/one"),
+        Err(_) => 0,
+    };
+    let parsed2 = match async_read_request(server2, 4096, 1000) {
+        Ok(req) => req_ok(req, "/two"),
+        Err(_) => 0,
+    };
+
+    let wrote1 = match async_write_response(server1, text_response(200, "first")) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+    let wrote2 = match async_write_response(server2, text_response(200, "second")) {
+        Ok(v) => v,
+        Err(_) => 0,
+    };
+
+    let wire1 = match tcp_recv(client1, 512, 1000) {
+        Ok(v) => v,
+        Err(_) => bytes.empty(),
+    };
+    let wire2 = match tcp_recv(client2, 512, 1000) {
+        Ok(v) => v,
+        Err(_) => bytes.empty(),
+    };
+
+    let close_count =
+        (match tcp_close(client1) { Ok(_) => 1, Err(_) => 0 }) +
+        (match tcp_close(client2) { Ok(_) => 1, Err(_) => 0 }) +
+        (match close(server1) { Ok(_) => 1, Err(_) => 0 }) +
+        (match close(server2) { Ok(_) => 1, Err(_) => 0 }) +
+        (match close(listener) { Ok(_) => 1, Err(_) => 0 });
+
+    if sent1 > 0 && sent2 > 0 &&
+        parsed1 == 1 && parsed2 == 1 &&
+        wrote1 > 0 && wrote2 > 0 &&
+        wire_ok(wire1, "first") == 1 &&
+        wire_ok(wire2, "second") == 1 &&
+        close_count == 5 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_http_server_malformed_content_length_returns_invalid_header() {
     let src = r#"
 import std.io;

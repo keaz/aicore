@@ -2370,6 +2370,12 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_http_server_read_request(i64, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i8**, i64*)"));
     assert!(output
         .llvm_ir
+        .contains("declare i64 @aic_rt_http_server_async_read_request(i64, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i8**, i64*)"));
+    assert!(output.llvm_ir.contains(
+        "declare i64 @aic_rt_http_server_async_write_response(i64, i64, i64, i8*, i64, i64, i64*)"
+    ));
+    assert!(output
+        .llvm_ir
         .contains("declare i64 @aic_rt_router_new(i64*)"));
     assert!(output
         .llvm_ir
@@ -2628,6 +2634,8 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_http_server_listen("));
     assert!(runtime_c_source().contains("long aic_rt_http_server_read_request("));
     assert!(runtime_c_source().contains("long aic_rt_http_server_write_response("));
+    assert!(runtime_c_source().contains("long aic_rt_http_server_async_read_request("));
+    assert!(runtime_c_source().contains("long aic_rt_http_server_async_write_response("));
     assert!(runtime_c_source().contains("long aic_rt_router_new(long* out_handle)"));
     assert!(runtime_c_source().contains("long aic_rt_router_add("));
     assert!(runtime_c_source().contains("long aic_rt_router_match("));

@@ -583,7 +583,13 @@ impl<'a> Generator<'a> {
             "declare i64 @aic_rt_http_server_read_request(i64, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i8**, i64*)\n",
         );
         text.push_str(
+            "declare i64 @aic_rt_http_server_async_read_request(i64, i64, i64, i8**, i64*, i8**, i64*, i64*, i64*, i8**, i64*)\n",
+        );
+        text.push_str(
             "declare i64 @aic_rt_http_server_write_response(i64, i64, i64, i8*, i64, i64, i64*)\n",
+        );
+        text.push_str(
+            "declare i64 @aic_rt_http_server_async_write_response(i64, i64, i64, i8*, i64, i64, i64*)\n",
         );
         text.push_str("declare i64 @aic_rt_http_server_close(i64)\n\n");
         text.push_str("declare i64 @aic_rt_router_new(i64*)\n");

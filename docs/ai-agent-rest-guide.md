@@ -67,14 +67,14 @@ This matrix captures implementation state as of the current code/tests and shoul
 | Capability | Status | Evidence anchor |
 |---|---|---|
 | `std.http_server` synchronous server APIs | Supported | Runtime implementations in `src/codegen/runtime/part05.c` + execution test `exec_http_server_parses_request_and_emits_http11_response` |
-| Native async HTTP server APIs (`std.http_server.async_*`) | Partial | Reactor-backed async accept is implemented, but request/response I/O still uses compatibility wrappers in `std/http_server.aic`; `async_serve` now composes through async accept |
+| Native async HTTP server APIs (`std.http_server.async_*`) | Supported | request/response I/O now uses dedicated async runtime bindings in `std/http_server.aic` / `src/codegen/runtime/part05.c`, and `async_serve` composes through native async accept/read/write |
 | HTTP request parsing breadth | Partial | Parser currently accepts HTTP/1.0 + HTTP/1.1, recognized method set, and bounded receive-loop `Content-Length` body handling in `aic_rt_http_server_read_request` |
 | Router dispatch (`exact`, `:param`, trailing `*`, deterministic first-match) | Supported | Runtime router implementation in `part05.c` + execution test `exec_router_matches_paths_params_and_order` |
 | JSON helpers used by REST workflows | Supported | `std/json.aic` APIs + execution test `exec_json_roundtrip_and_object_operations` |
 | Net async reactor APIs (`async_*`) | Supported | `std/net.aic` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable` |
 | `await` submit bridge for async net handles | Supported | execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` + example `examples/io/async_await_submit_bridge.aic` |
 | TLS async reactor APIs (`tls_async_*`) | Partial | API + runtime paths exist; pressure queue fields are fixed zero and full handshake behavior depends on TLS backend availability in tests |
-| REST/async runtime on Windows | Partial | Shared Windows net/async runtime support now backs client-library transport flows and Windows CI smoke coverage (`exec_net_tcp_loopback_echo`, `exec_net_async_wait_negative_paths_are_stable`), but native async HTTP server APIs still do not exist |
+| REST/async runtime on Windows | Partial | Shared Windows net/async runtime support now backs client-library transport flows and Windows CI smoke coverage (`exec_net_tcp_loopback_echo`, `exec_net_async_wait_negative_paths_are_stable`), but native async REST-server validation remains primarily non-Windows |
 
 ## 4. Deterministic End-To-End Workflow
 

@@ -6212,9 +6212,21 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
     );
     assert!(
         source.contains(
+            "intrinsic fn aic_http_server_async_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net };"
+        ),
+        "std/http_server.aic async_read_request runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
             "intrinsic fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net };"
         ),
         "std/http_server.aic write_response runtime binding must be declared as an intrinsic"
+    );
+    assert!(
+        source.contains(
+            "intrinsic fn aic_http_server_async_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net };"
+        ),
+        "std/http_server.aic async_write_response runtime binding must be declared as an intrinsic"
     );
     assert!(
         source.contains(
@@ -6242,15 +6254,15 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
     );
     assert!(
         source.contains(
-            "fn async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }"
+            "fn async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {\n    aic_http_server_async_read_request_intrinsic(conn, max_bytes, timeout_ms)"
         ),
-        "std/http_server.aic must expose async_read_request convenience wrapper"
+        "std/http_server.aic must expose async_read_request over a dedicated native async runtime binding"
     );
     assert!(
         source.contains(
-            "fn async_write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net }"
+            "fn async_write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net } {\n    aic_http_server_async_write_response_intrinsic(conn, http_server_response_to_raw(response))"
         ),
-        "std/http_server.aic must expose async_write_response convenience wrapper"
+        "std/http_server.aic must expose async_write_response over a dedicated native async runtime binding"
     );
     assert!(
         source.contains(
@@ -6259,16 +6271,16 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
         "std/http_server.aic must expose async_serve over the async accept path and map net failures into ServerError"
     );
     assert!(
-        async_doc.contains("| Async HTTP-server API surface | Partial |")
-            && async_doc.contains("`std.http_server` provides async accept plus compatibility read/write wrappers"),
-        "docs/async-event-loop.md must mark the async HTTP server surface as partial until request/response I/O is natively async"
+        async_doc.contains("| Async HTTP-server API surface | Supported |")
+            && async_doc.contains("request/response I/O now uses dedicated async runtime intrinsics"),
+        "docs/async-event-loop.md must describe the async HTTP server surface as supported once request/response I/O is natively async"
     );
     assert!(
         rest_doc
-            .contains("| Native async HTTP server APIs (`std.http_server.async_*`) | Partial |")
+            .contains("| Native async HTTP server APIs (`std.http_server.async_*`) | Supported |")
             && rest_doc
-                .contains("request/response I/O still uses compatibility wrappers in `std/http_server.aic`"),
-        "docs/ai-agent-rest-guide.md must mark native async HTTP server APIs as partial until request/response I/O is natively async"
+                .contains("request/response I/O now uses dedicated async runtime bindings"),
+        "docs/ai-agent-rest-guide.md must mark native async HTTP server APIs as supported once request/response I/O is natively async"
     );
     assert!(
         rest_doc.contains("examples/io/http_server_async_api.aic"),

@@ -1658,8 +1658,24 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_async_read_request_intrinsic",
+        runtime_symbol: "aic_rt_http_server_async_read_request",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Int", "Int"],
+            ret: "Result[Request, ServerError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_http_server_write_response_intrinsic",
         runtime_symbol: "aic_rt_http_server_write_response",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["Int", "Response"],
+            ret: "Result[Int, ServerError]",
+        }],
+    },
+    IntrinsicBindingExpectation {
+        intrinsic: "aic_http_server_async_write_response_intrinsic",
+        runtime_symbol: "aic_rt_http_server_async_write_response",
         signatures: &[IntrinsicSignatureShape {
             params: &["Int", "Response"],
             ret: "Result[Int, ServerError]",

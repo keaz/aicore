@@ -20,7 +20,7 @@ This document defines the runtime model used by async submit/wait APIs in `std.n
 | `await` submit bridge for net/tls async handles | Supported | Runtime poll helpers (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) + execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` |
 | `await` submit bridge for fs async handles | Supported | Task-join helper (`aic_rt_conc_join_value`) + execution test `exec_async_await_fs_submit_bridge_roundtrip` |
 | `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Partial | API/runtime paths are implemented; `tls_async_runtime_pressure` currently reports `queue_depth = 0` and `queue_limit = 0`, and TLS backend availability gates some execution paths |
-| Async HTTP-server API surface | Partial | `std.http_server` provides async accept plus compatibility read/write wrappers in `std/http_server.aic`; `async_serve` now composes through async accept, but request/response I/O is still synchronous under the hood |
+| Async HTTP-server API surface | Supported | request/response I/O now uses dedicated async runtime intrinsics in `src/codegen/runtime/part05.c`, and `async_serve` composes through native async accept/read/write helpers |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
 | Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for `exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`, and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
 
@@ -127,8 +127,8 @@ Language-level bridge:
   - `async_tcp_send(handle, payload, timeout_ms)` = `async_tcp_send_submit(handle, payload)` then `async_wait_int(op, timeout_ms)`
   - `async_tcp_recv(handle, max_bytes, timeout_ms)` = `async_tcp_recv_submit(handle, max_bytes, timeout_ms)` then `async_wait_string(op, timeout_ms)`
 - `std.http_server.async_accept_*` delegates directly to `std.net` async accept handles and preserves `NetError`.
-- `std.http_server.async_read_request` and `std.http_server.async_write_response` are compatibility wrappers over the existing synchronous HTTP server request/response APIs.
-- `std.http_server.async_serve(...)` composes async accept + compatibility read + handler dispatch + compatibility write, then closes the accepted connection before returning.
+- `std.http_server.async_read_request` and `std.http_server.async_write_response` use dedicated async runtime intrinsics over the async net layer rather than falling back to the synchronous HTTP server helpers.
+- `std.http_server.async_serve(...)` composes async accept + native async read + handler dispatch + native async write, then closes the accepted connection before returning.
 - Wrapper methods preserve submit failures exactly: submit `Err` is returned directly, with no remapping.
 - Wait handles are single-consumer. Re-waiting the same completed handle returns `NetError::NotFound`.
 - Timeout while waiting keeps the operation pending and releases the claim so a later wait can retry.

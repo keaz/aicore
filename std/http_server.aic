@@ -148,6 +148,20 @@ intrinsic fn aic_http_server_accept_intrinsic(listener: Int, timeout_ms: Int) ->
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net };
 
+/// `aic_http_server_async_read_request_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_async_read_request_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_http_server_async_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net };
+
 /// `aic_http_server_write_response_intrinsic` in `std.http_server`.
 ///
 /// ## Example
@@ -161,6 +175,20 @@ intrinsic fn aic_http_server_read_request_intrinsic(conn: Int, max_bytes: Int, t
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_http_server_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net };
+
+/// `aic_http_server_async_write_response_intrinsic` in `std.http_server`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.http_server` and call `aic_http_server_async_write_response_intrinsic` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+intrinsic fn aic_http_server_async_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net };
 
 /// `aic_http_server_close_intrinsic` in `std.http_server`.
 ///
@@ -567,7 +595,7 @@ fn async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net } {
-    read_request(conn, max_bytes, timeout_ms)
+    aic_http_server_async_read_request_intrinsic(conn, max_bytes, timeout_ms)
 }
 
 /// `async_write_response` in `std.http_server`.
@@ -583,7 +611,7 @@ fn async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Requ
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn async_write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net } {
-    write_response(conn, response)
+    aic_http_server_async_write_response_intrinsic(conn, http_server_response_to_raw(response))
 }
 
 /// `async_serve` in `std.http_server`.

@@ -3127,6 +3127,83 @@ static long aic_rt_http_server_map_net_error(long net_err) {
     return 8;
 }
 
+static long aic_rt_http_server_async_recv(
+    long conn,
+    long max_bytes,
+    long timeout_ms,
+    char** out_chunk,
+    long* out_chunk_len
+) {
+    if (out_chunk != NULL) {
+        *out_chunk = NULL;
+    }
+    if (out_chunk_len != NULL) {
+        *out_chunk_len = 0;
+    }
+    long op_handle = 0;
+    long submit_rc = aic_rt_net_async_recv_submit(conn, max_bytes, timeout_ms, &op_handle);
+    if (submit_rc != 0) {
+        return submit_rc;
+    }
+
+    long wait_timeout_ms = timeout_ms;
+    if (wait_timeout_ms < LONG_MAX - 50) {
+        wait_timeout_ms += 50;
+    } else {
+        wait_timeout_ms = LONG_MAX;
+    }
+    long wait_rc =
+        aic_rt_net_async_wait_string(op_handle, wait_timeout_ms, out_chunk, out_chunk_len);
+    if (wait_rc == 4) {
+        long cancelled = 0;
+        if (aic_rt_net_async_cancel(op_handle, &cancelled) == 0 && cancelled == 1) {
+            char* cleanup_ptr = NULL;
+            long cleanup_len = 0;
+            long cleanup_rc =
+                aic_rt_net_async_wait_string(op_handle, 50, &cleanup_ptr, &cleanup_len);
+            free(cleanup_ptr);
+            (void)cleanup_rc;
+        }
+    }
+    return wait_rc;
+}
+
+static long aic_rt_http_server_async_send(
+    long conn,
+    const char* payload_ptr,
+    long payload_len,
+    long* out_sent
+) {
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    long op_handle = 0;
+    long submit_rc =
+        aic_rt_net_async_send_submit(conn, payload_ptr, payload_len, payload_len, &op_handle);
+    if (submit_rc != 0) {
+        return submit_rc;
+    }
+
+    long wait_timeout_ms = 30000L;
+    long sent = 0;
+    long wait_rc = aic_rt_net_async_wait_int(op_handle, wait_timeout_ms, &sent);
+    if (wait_rc == 4) {
+        long cancelled = 0;
+        if (aic_rt_net_async_cancel(op_handle, &cancelled) == 0 && cancelled == 1) {
+            long cleanup_sent = 0;
+            long cleanup_rc = aic_rt_net_async_wait_int(op_handle, 50, &cleanup_sent);
+            (void)cleanup_rc;
+        }
+    }
+    if (wait_rc != 0) {
+        return wait_rc;
+    }
+    if (out_sent != NULL) {
+        *out_sent = sent;
+    }
+    return 0;
+}
+
 #define AIC_RT_HTTP_REQUEST_LINE_BYTES_DEFAULT 8192L
 #define AIC_RT_HTTP_REQUEST_LINE_BYTES_MAX (1024L * 1024L)
 #define AIC_RT_HTTP_HEADER_BYTES_DEFAULT (32L * 1024L)
@@ -4395,6 +4472,722 @@ long aic_rt_http_server_write_response(
 
     long sent = 0;
     long send_rc = aic_rt_net_tcp_send(conn, wire, (long)pos, (long)pos, &sent);
+    free(wire);
+    free(order);
+    free(reason);
+
+    if (send_rc != 0) {
+        return aic_rt_http_server_map_net_error(send_rc);
+    }
+    if (out_sent != NULL) {
+        *out_sent = sent;
+    }
+    return 0;
+}
+
+long aic_rt_http_server_async_read_request(
+    long conn,
+    long max_bytes,
+    long timeout_ms,
+    char** out_method_ptr,
+    long* out_method_len,
+    char** out_path_ptr,
+    long* out_path_len,
+    long* out_query_handle,
+    long* out_headers_handle,
+    char** out_body_ptr,
+    long* out_body_len
+) {
+    if (out_method_ptr != NULL) {
+        *out_method_ptr = NULL;
+    }
+    if (out_method_len != NULL) {
+        *out_method_len = 0;
+    }
+    if (out_path_ptr != NULL) {
+        *out_path_ptr = NULL;
+    }
+    if (out_path_len != NULL) {
+        *out_path_len = 0;
+    }
+    if (out_query_handle != NULL) {
+        *out_query_handle = 0;
+    }
+    if (out_headers_handle != NULL) {
+        *out_headers_handle = 0;
+    }
+    if (out_body_ptr != NULL) {
+        *out_body_ptr = NULL;
+    }
+    if (out_body_len != NULL) {
+        *out_body_len = 0;
+    }
+    if (max_bytes <= 0) {
+        return 7;
+    }
+    if (timeout_ms < 0) {
+        return 8;
+    }
+    aic_rt_http_limits_ensure();
+
+    size_t request_line_limit = (size_t)aic_rt_http_request_line_bytes_limit;
+    size_t header_bytes_limit = (size_t)aic_rt_http_header_bytes_limit;
+    long header_count_limit = aic_rt_http_header_count_limit;
+    size_t body_bytes_limit = (size_t)aic_rt_http_body_bytes_limit;
+    long read_idle_ms_limit = aic_rt_http_read_idle_ms_limit;
+    long effective_total_timeout_ms =
+        timeout_ms > 0 ? timeout_ms : aic_rt_http_read_total_ms_limit;
+    long deadline_ms = -1;
+    if (effective_total_timeout_ms > 0) {
+        long now_ms = aic_rt_http_now_ms();
+        if (now_ms >= 0) {
+            if (effective_total_timeout_ms > LONG_MAX - now_ms) {
+                deadline_ms = LONG_MAX;
+            } else {
+                deadline_ms = now_ms + effective_total_timeout_ms;
+            }
+        }
+    }
+
+    size_t max_payload = (size_t)max_bytes;
+    char* payload = (char*)malloc(max_payload + 1);
+    if (payload == NULL) {
+        return 9;
+    }
+    size_t payload_n = 0;
+    payload[0] = '\0';
+
+    size_t header_marker = SIZE_MAX;
+    size_t delimiter_len = 0;
+    size_t line_end = SIZE_MAX;
+    long headers_handle = 0;
+    long content_length = 0;
+    int has_content_length = 0;
+    int has_chunked_transfer = 0;
+    int headers_parsed = 0;
+
+    while (1) {
+        if (header_marker != SIZE_MAX) {
+            if (!headers_parsed) {
+                line_end = 0;
+                while (line_end < header_marker && payload[line_end] != '\n') {
+                    line_end++;
+                }
+                if (line_end >= header_marker) {
+                    free(payload);
+                    return 1;
+                }
+                size_t request_line_len = line_end;
+                if (request_line_len > 0 && payload[request_line_len - 1] == '\r') {
+                    request_line_len--;
+                }
+                if (request_line_len > request_line_limit) {
+                    free(payload);
+                    return 1;
+                }
+
+                size_t headers_start = line_end + 1;
+                if (headers_start > header_marker) {
+                    free(payload);
+                    return 1;
+                }
+                size_t headers_len = header_marker - headers_start;
+                if (headers_len > header_bytes_limit) {
+                    free(payload);
+                    return 3;
+                }
+                long headers_rc = aic_rt_http_server_headers_to_map(
+                    payload + headers_start,
+                    headers_len,
+                    &headers_handle,
+                    &content_length,
+                    &has_content_length,
+                    &has_chunked_transfer,
+                    header_count_limit
+                );
+                if (headers_rc != 0) {
+                    free(payload);
+                    return headers_rc;
+                }
+                headers_parsed = 1;
+
+                if (has_content_length) {
+                    size_t body_start = header_marker + delimiter_len;
+                    if (content_length < 0 ||
+                        (size_t)content_length > body_bytes_limit ||
+                        body_start > max_payload ||
+                        (size_t)content_length > (max_payload - body_start)) {
+                        free(payload);
+                        return 7;
+                    }
+                }
+            }
+
+            size_t body_start = header_marker + delimiter_len;
+            size_t available_body = body_start <= payload_n ? (payload_n - body_start) : 0;
+            if (has_chunked_transfer) {
+                size_t wire_len = 0;
+                size_t decoded_len = 0;
+                int chunk_rc = aic_rt_http_server_chunked_parse(
+                    payload + body_start,
+                    available_body,
+                    NULL,
+                    0,
+                    body_bytes_limit,
+                    &wire_len,
+                    &decoded_len
+                );
+                if (chunk_rc == 0) {
+                    break;
+                }
+                if (chunk_rc == 2) {
+                    free(payload);
+                    return 1;
+                }
+                if (chunk_rc == 3) {
+                    free(payload);
+                    return 7;
+                }
+            } else if (has_content_length && available_body >= (size_t)content_length) {
+                break;
+            } else if (!has_content_length) {
+                break;
+            }
+        }
+
+        if (payload_n >= max_payload) {
+            free(payload);
+            return 7;
+        }
+
+        if (line_end == SIZE_MAX) {
+            for (size_t i = 0; i < payload_n; ++i) {
+                if (payload[i] == '\n') {
+                    line_end = i;
+                    break;
+                }
+            }
+            if (line_end == SIZE_MAX) {
+                if (payload_n > request_line_limit) {
+                    free(payload);
+                    return 1;
+                }
+            } else {
+                size_t request_line_len = line_end;
+                if (request_line_len > 0 && payload[request_line_len - 1] == '\r') {
+                    request_line_len--;
+                }
+                if (request_line_len > request_line_limit) {
+                    free(payload);
+                    return 1;
+                }
+            }
+        }
+        if (header_marker == SIZE_MAX && line_end != SIZE_MAX && line_end + 1 <= payload_n) {
+            size_t header_prefix_len = payload_n - (line_end + 1);
+            if (header_prefix_len > header_bytes_limit + 4) {
+                free(payload);
+                return 3;
+            }
+        }
+
+        long recv_timeout_ms = read_idle_ms_limit;
+        if (deadline_ms >= 0) {
+            long now_ms = aic_rt_http_now_ms();
+            if (now_ms >= 0) {
+                if (now_ms >= deadline_ms) {
+                    free(payload);
+                    return 5;
+                }
+                long remaining_deadline = deadline_ms - now_ms;
+                if (recv_timeout_ms > remaining_deadline) {
+                    recv_timeout_ms = remaining_deadline;
+                }
+            }
+        }
+        if (recv_timeout_ms <= 0) {
+            free(payload);
+            return 5;
+        }
+
+        long remaining = (long)(max_payload - payload_n);
+        char* chunk = NULL;
+        long chunk_len = 0;
+        long recv_rc =
+            aic_rt_http_server_async_recv(conn, remaining, recv_timeout_ms, &chunk, &chunk_len);
+        if (recv_rc != 0) {
+            free(chunk);
+            free(payload);
+            if (recv_rc == 4) {
+                return 5;
+            }
+            if (recv_rc == 8) {
+                return 6;
+            }
+            return 8;
+        }
+        if (chunk == NULL || chunk_len <= 0) {
+            free(chunk);
+            free(payload);
+            return 6;
+        }
+
+        size_t chunk_n = (size_t)chunk_len;
+        if (chunk_n > (max_payload - payload_n)) {
+            free(chunk);
+            free(payload);
+            return 7;
+        }
+        memcpy(payload + payload_n, chunk, chunk_n);
+        payload_n += chunk_n;
+        payload[payload_n] = '\0';
+        free(chunk);
+
+        if (header_marker == SIZE_MAX) {
+            size_t found_marker = SIZE_MAX;
+            size_t found_delim = 0;
+            if (aic_rt_http_server_find_header_delimiter(payload, payload_n, &found_marker, &found_delim)) {
+                header_marker = found_marker;
+                delimiter_len = found_delim;
+            }
+        }
+
+        if (line_end != SIZE_MAX) {
+            size_t request_line_len = line_end;
+            if (request_line_len > 0 && payload[request_line_len - 1] == '\r') {
+                request_line_len--;
+            }
+            if (request_line_len > request_line_limit) {
+                free(payload);
+                return 1;
+            }
+        }
+        if (header_marker == SIZE_MAX && line_end != SIZE_MAX && line_end + 1 <= payload_n) {
+            size_t header_prefix_len = payload_n - (line_end + 1);
+            if (header_prefix_len > header_bytes_limit + 4) {
+                free(payload);
+                return 3;
+            }
+        }
+    }
+
+    if (header_marker == SIZE_MAX || line_end == SIZE_MAX) {
+        free(payload);
+        return 1;
+    }
+
+    size_t request_line_end = line_end;
+    if (request_line_end > 0 && payload[request_line_end - 1] == '\r') {
+        request_line_end--;
+    }
+
+    size_t sp1 = 0;
+    while (sp1 < request_line_end && payload[sp1] != ' ') {
+        sp1++;
+    }
+    if (sp1 == 0 || sp1 >= request_line_end) {
+        free(payload);
+        return 1;
+    }
+    size_t sp2 = sp1 + 1;
+    while (sp2 < request_line_end && payload[sp2] != ' ') {
+        sp2++;
+    }
+    if (sp2 <= sp1 + 1 || sp2 >= request_line_end) {
+        free(payload);
+        return 1;
+    }
+
+    const char* method_ptr = payload;
+    size_t method_len = sp1;
+    const char* target_ptr = payload + sp1 + 1;
+    size_t target_len = sp2 - (sp1 + 1);
+    const char* version_ptr = payload + sp2 + 1;
+    size_t version_len = request_line_end - (sp2 + 1);
+    if (!((version_len == 8 && memcmp(version_ptr, "HTTP/1.1", 8) == 0) ||
+          (version_len == 8 && memcmp(version_ptr, "HTTP/1.0", 8) == 0))) {
+        free(payload);
+        return 1;
+    }
+    if (has_chunked_transfer && memcmp(version_ptr, "HTTP/1.1", 8) != 0) {
+        free(payload);
+        return 3;
+    }
+
+    long method_tag = 0;
+    if (aic_rt_http_parse_method(method_ptr, (long)method_len, (long)method_len, &method_tag) != 0) {
+        free(payload);
+        return 2;
+    }
+    if (aic_rt_http_validate_target(target_ptr, (long)target_len, (long)target_len) != 0) {
+        free(payload);
+        return 4;
+    }
+
+    char* method_owned = aic_rt_copy_bytes(method_ptr, method_len);
+    if (method_owned == NULL) {
+        free(payload);
+        return 9;
+    }
+
+    char* path_owned = NULL;
+    const char* query_src = NULL;
+    size_t query_len = 0;
+    char* query_owned = NULL;
+
+    if (target_len > 0 && target_ptr[0] == '/') {
+        size_t qmark = 0;
+        while (qmark < target_len && target_ptr[qmark] != '?') {
+            qmark++;
+        }
+        size_t path_len = qmark;
+        if (path_len == 0) {
+            path_owned = aic_rt_copy_bytes("/", 1);
+        } else {
+            path_owned = aic_rt_copy_bytes(target_ptr, path_len);
+        }
+        if (path_owned == NULL) {
+            free(method_owned);
+            free(payload);
+            return 9;
+        }
+        if (qmark < target_len) {
+            query_src = target_ptr + qmark + 1;
+            query_len = target_len - (qmark + 1);
+        }
+    } else {
+        char* scheme = NULL;
+        char* host = NULL;
+        char* fragment = NULL;
+        long path_len_long = 0;
+        long query_len_long = 0;
+        long parse_rc = aic_rt_url_parse(
+            target_ptr,
+            (long)target_len,
+            (long)target_len,
+            &scheme,
+            NULL,
+            &host,
+            NULL,
+            NULL,
+            &path_owned,
+            &path_len_long,
+            &query_owned,
+            &query_len_long,
+            &fragment,
+            NULL
+        );
+        free(scheme);
+        free(host);
+        free(fragment);
+        if (parse_rc != 0) {
+            free(path_owned);
+            free(query_owned);
+            free(method_owned);
+            free(payload);
+            return parse_rc == 7 ? 9 : 4;
+        }
+        if (path_owned == NULL || path_len_long <= 0) {
+            free(path_owned);
+            path_owned = aic_rt_copy_bytes("/", 1);
+            if (path_owned == NULL) {
+                free(query_owned);
+                free(method_owned);
+                free(payload);
+                return 9;
+            }
+        }
+        query_src = query_owned;
+        query_len = query_len_long > 0 ? (size_t)query_len_long : 0;
+    }
+
+    long query_handle = 0;
+    long query_rc = aic_rt_http_server_query_to_map(query_src, query_len, &query_handle);
+    if (query_rc != 0) {
+        free(query_owned);
+        free(path_owned);
+        free(method_owned);
+        free(payload);
+        return query_rc;
+    }
+    free(query_owned);
+
+    size_t body_start = header_marker + delimiter_len;
+    size_t available_body = body_start <= payload_n ? (payload_n - body_start) : 0;
+    size_t body_len = 0;
+    char* body_owned = NULL;
+    if (has_chunked_transfer) {
+        size_t wire_len = 0;
+        size_t decoded_len = 0;
+        int chunk_rc = aic_rt_http_server_chunked_parse(
+            payload + body_start,
+            available_body,
+            NULL,
+            0,
+            body_bytes_limit,
+            &wire_len,
+            &decoded_len
+        );
+        if (chunk_rc == 1) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 6;
+        }
+        if (chunk_rc == 2) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 1;
+        }
+        if (chunk_rc == 3) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 7;
+        }
+        body_owned = (char*)malloc(decoded_len + 1);
+        if (body_owned == NULL) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 9;
+        }
+        int copy_rc = aic_rt_http_server_chunked_parse(
+            payload + body_start,
+            available_body,
+            body_owned,
+            decoded_len,
+            body_bytes_limit,
+            &wire_len,
+            &decoded_len
+        );
+        if (copy_rc != 0) {
+            free(body_owned);
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            if (copy_rc == 1) {
+                return 6;
+            }
+            if (copy_rc == 3) {
+                return 7;
+            }
+            return 1;
+        }
+        body_len = decoded_len;
+        body_owned[body_len] = '\0';
+    } else {
+        body_len = available_body;
+        if (has_content_length) {
+            body_len = (size_t)content_length;
+            if (available_body < body_len) {
+                free(path_owned);
+                free(method_owned);
+                free(payload);
+                return 6;
+            }
+        }
+        if (body_len > body_bytes_limit) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 7;
+        }
+        body_owned = aic_rt_copy_bytes(payload + body_start, body_len);
+        if (body_owned == NULL) {
+            free(path_owned);
+            free(method_owned);
+            free(payload);
+            return 9;
+        }
+    }
+    free(payload);
+
+    if (out_method_ptr != NULL) {
+        *out_method_ptr = method_owned;
+    } else {
+        free(method_owned);
+    }
+    if (out_method_len != NULL) {
+        *out_method_len = (long)method_len;
+    }
+    long path_len_out = (long)strlen(path_owned);
+    if (out_path_ptr != NULL) {
+        *out_path_ptr = path_owned;
+    } else {
+        free(path_owned);
+    }
+    if (out_path_len != NULL) {
+        *out_path_len = path_len_out;
+    }
+    if (out_query_handle != NULL) {
+        *out_query_handle = query_handle;
+    }
+    if (out_headers_handle != NULL) {
+        *out_headers_handle = headers_handle;
+    }
+    if (out_body_ptr != NULL) {
+        *out_body_ptr = body_owned;
+    } else {
+        free(body_owned);
+    }
+    if (out_body_len != NULL) {
+        *out_body_len = (long)body_len;
+    }
+    return 0;
+}
+
+long aic_rt_http_server_async_write_response(
+    long conn,
+    long status,
+    long headers_handle,
+    const char* body_ptr,
+    long body_len,
+    long body_cap,
+    long* out_sent
+) {
+    (void)body_cap;
+    if (out_sent != NULL) {
+        *out_sent = 0;
+    }
+    if (status < 100 || status > 599) {
+        return 1;
+    }
+    if (body_len < 0 || (body_len > 0 && body_ptr == NULL)) {
+        return 1;
+    }
+
+    AicMapSlot* headers_slot = aic_rt_map_get_slot(headers_handle);
+    if (headers_slot == NULL || headers_slot->value_kind != 1) {
+        return 3;
+    }
+
+    char* reason = NULL;
+    long reason_len = 0;
+    long reason_rc = aic_rt_http_status_reason(status, &reason, &reason_len);
+    if (reason_rc != 0 || reason == NULL) {
+        free(reason);
+        return 1;
+    }
+
+    size_t* order = aic_rt_map_sorted_order(headers_slot);
+    if (headers_slot->len > 0 && order == NULL) {
+        free(reason);
+        return 9;
+    }
+
+    size_t headers_bytes = 0;
+    for (size_t i = 0; i < headers_slot->len; ++i) {
+        AicMapEntryStorage* entry = &headers_slot->entries[order[i]];
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if ((entry->key_len > 0 && key_ptr == NULL) ||
+            (entry->str_value_len > 0 && value_ptr == NULL)) {
+            continue;
+        }
+        if (aic_rt_ascii_eq_lit_ci(key_ptr, (size_t)entry->key_len, "content-length")) {
+            continue;
+        }
+        long valid = aic_rt_http_validate_header(
+            key_ptr,
+            entry->key_len,
+            entry->key_len,
+            value_ptr,
+            entry->str_value_len,
+            entry->str_value_len
+        );
+        if (valid != 0) {
+            free(order);
+            free(reason);
+            return 3;
+        }
+        headers_bytes += (size_t)entry->key_len + 2 + (size_t)entry->str_value_len + 2;
+    }
+
+    char status_buf[32];
+    int status_len = snprintf(status_buf, sizeof(status_buf), "%ld", status);
+    if (status_len <= 0 || (size_t)status_len >= sizeof(status_buf)) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+    char content_len_buf[32];
+    int content_len_len = snprintf(content_len_buf, sizeof(content_len_buf), "%ld", body_len);
+    if (content_len_len <= 0 || (size_t)content_len_len >= sizeof(content_len_buf)) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+
+    size_t total = 0;
+    total += 9 + (size_t)status_len + 1 + (size_t)reason_len + 2;
+    total += headers_bytes;
+    total += 16 + (size_t)content_len_len + 2;
+    total += 2;
+    total += (size_t)body_len;
+    if (total > (size_t)LONG_MAX) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+
+    char* wire = (char*)malloc(total + 1);
+    if (wire == NULL) {
+        free(order);
+        free(reason);
+        return 9;
+    }
+
+    size_t pos = 0;
+    memcpy(wire + pos, "HTTP/1.1 ", 9);
+    pos += 9;
+    memcpy(wire + pos, status_buf, (size_t)status_len);
+    pos += (size_t)status_len;
+    wire[pos++] = ' ';
+    memcpy(wire + pos, reason, (size_t)reason_len);
+    pos += (size_t)reason_len;
+    wire[pos++] = '\r';
+    wire[pos++] = '\n';
+
+    for (size_t i = 0; i < headers_slot->len; ++i) {
+        AicMapEntryStorage* entry = &headers_slot->entries[order[i]];
+        const char* key_ptr = aic_rt_map_entry_key_ptr(entry);
+        const char* value_ptr = aic_rt_map_entry_str_value_ptr(entry);
+        if ((entry->key_len > 0 && key_ptr == NULL) ||
+            (entry->str_value_len > 0 && value_ptr == NULL)) {
+            continue;
+        }
+        if (aic_rt_ascii_eq_lit_ci(key_ptr, (size_t)entry->key_len, "content-length")) {
+            continue;
+        }
+        memcpy(wire + pos, key_ptr, (size_t)entry->key_len);
+        pos += (size_t)entry->key_len;
+        wire[pos++] = ':';
+        wire[pos++] = ' ';
+        memcpy(wire + pos, value_ptr, (size_t)entry->str_value_len);
+        pos += (size_t)entry->str_value_len;
+        wire[pos++] = '\r';
+        wire[pos++] = '\n';
+    }
+
+    memcpy(wire + pos, "content-length: ", 16);
+    pos += 16;
+    memcpy(wire + pos, content_len_buf, (size_t)content_len_len);
+    pos += (size_t)content_len_len;
+    wire[pos++] = '\r';
+    wire[pos++] = '\n';
+    wire[pos++] = '\r';
+    wire[pos++] = '\n';
+
+    if (body_len > 0) {
+        memcpy(wire + pos, body_ptr, (size_t)body_len);
+        pos += (size_t)body_len;
+    }
+    wire[pos] = '\0';
+
+    long sent = 0;
+    long send_rc = aic_rt_http_server_async_send(conn, wire, (long)pos, &sent);
     free(wire);
     free(order);
     free(reason);

@@ -744,7 +744,9 @@ impl<'a> Generator<'a> {
             "listen" | "aic_http_server_listen_intrinsic" => "listen",
             "accept" | "aic_http_server_accept_intrinsic" => "accept",
             "read_request" | "aic_http_server_read_request_intrinsic" => "read_request",
+            "aic_http_server_async_read_request_intrinsic" => "async_read_request",
             "write_response" | "aic_http_server_write_response_intrinsic" => "write_response",
+            "aic_http_server_async_write_response_intrinsic" => "async_write_response",
             "close" | "aic_http_server_close_intrinsic" => "close",
             "text_response" | "aic_http_server_text_response_intrinsic" => "text_response",
             "json_response" | "aic_http_server_json_response_intrinsic" => "json_response",
@@ -768,7 +770,28 @@ impl<'a> Generator<'a> {
                     "Result[Request, ServerError]",
                 ) =>
             {
-                Some(self.gen_http_server_read_request_call(name, args, span, fctx))
+                Some(self.gen_http_server_read_request_call(
+                    name,
+                    "aic_rt_http_server_read_request",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "async_read_request"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Int", "Int"],
+                    "Result[Request, ServerError]",
+                ) =>
+            {
+                Some(self.gen_http_server_read_request_call(
+                    name,
+                    "aic_rt_http_server_async_read_request",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             "write_response"
                 if self.sig_matches_shape(
@@ -777,7 +800,28 @@ impl<'a> Generator<'a> {
                     "Result[Int, ServerError]",
                 ) =>
             {
-                Some(self.gen_http_server_write_response_call(name, args, span, fctx))
+                Some(self.gen_http_server_write_response_call(
+                    name,
+                    "aic_rt_http_server_write_response",
+                    args,
+                    span,
+                    fctx,
+                ))
+            }
+            "async_write_response"
+                if self.sig_matches_shape(
+                    name,
+                    &["Int", "Response"],
+                    "Result[Int, ServerError]",
+                ) =>
+            {
+                Some(self.gen_http_server_write_response_call(
+                    name,
+                    "aic_rt_http_server_async_write_response",
+                    args,
+                    span,
+                    fctx,
+                ))
             }
             "close" if self.sig_matches_shape(name, &["Int"], "Result[Bool, ServerError]") => {
                 Some(self.gen_http_server_close_call(name, args, span, fctx))
@@ -919,6 +963,7 @@ impl<'a> Generator<'a> {
     pub(super) fn gen_http_server_read_request_call(
         &mut self,
         name: &str,
+        runtime_fn: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -966,8 +1011,9 @@ impl<'a> Generator<'a> {
 
         let err = self.new_temp();
         fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_http_server_read_request(i64 {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {}, i64* {}, i64* {}, i8** {}, i64* {})",
+            "  {} = call i64 @{}(i64 {}, i64 {}, i64 {}, i8** {}, i64* {}, i8** {}, i64* {}, i64* {}, i64* {}, i8** {}, i64* {})",
             err,
+            runtime_fn,
             conn.repr.clone().unwrap_or_else(|| "0".to_string()),
             max_bytes.repr.clone().unwrap_or_else(|| "0".to_string()),
             timeout.repr.clone().unwrap_or_else(|| "0".to_string()),
@@ -1091,6 +1137,7 @@ impl<'a> Generator<'a> {
     pub(super) fn gen_http_server_write_response_call(
         &mut self,
         name: &str,
+        runtime_fn: &str,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -1129,8 +1176,9 @@ impl<'a> Generator<'a> {
         fctx.lines.push(format!("  {} = alloca i64", sent_slot));
         let err = self.new_temp();
         fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_http_server_write_response(i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
+            "  {} = call i64 @{}(i64 {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i64* {})",
             err,
+            runtime_fn,
             conn.repr.clone().unwrap_or_else(|| "0".to_string()),
             status.repr.clone().unwrap_or_else(|| "0".to_string()),
             headers_handle,
