@@ -461,17 +461,24 @@ fn fold_vec[T, U](items: Vec[T], init: U, f: Fn(U, T) -> U) -> U
 
 ---
 
-## [REST-T8] True async runtime with event loop
+## [REST-T8] Historical async runtime design record
+
+Historical note as of 2026-04-08:
+
+- The reactor-backed async runtime described by this epic now exists in the main repo; see `docs/async-event-loop.md` for current behavior and evidence anchors.
+- `std.net` async submit/wait/cancel/poll/wait-many/shutdown and the `await` submit bridge are implemented.
+- `std.http_server` async accept/read/write/serve wrappers are also present and exercised by the current example/CI matrix.
+- The backlog text below is retained as design history and should not be read as the current support contract.
 
 **Severity**: 🟡 Moderate  
 **Estimate**: XL  
 **Dependencies**: REST-T1, REST-T4, REST-T7
 
-### Background
+### Original Background
 
 AICore has `async fn` / `await` syntax that type-checks, and `std.concurrent` provides thread-based task spawning. However, there is no non-blocking I/O event loop. For a production REST microservice, blocking one OS thread per connection doesn't scale — you need an event loop that multiplexes many connections on few threads.
 
-### Proposed Design
+### Original Proposed Design
 
 ```aic
 // async handler
@@ -493,7 +500,7 @@ fn run_server(addr: String, handler: Fn(HttpRequest) -> Async[HttpResponse]) -> 
 }
 ```
 
-### Definition of Done
+### Original Definition of Done
 
 - [ ] Design event loop architecture: epoll (Linux) / kqueue (macOS) based
 - [ ] Implement non-blocking TCP accept/read/write in C runtime
@@ -505,7 +512,7 @@ fn run_server(addr: String, handler: Fn(HttpRequest) -> Async[HttpResponse]) -> 
 - [ ] Execution test: async echo server handling multiple concurrent connections
 - [ ] Performance test: compare with thread-per-connection baseline
 
-### Acceptance Criteria
+### Original Acceptance Criteria
 
 - `async fn` compiles to a state machine, not a thread spawn
 - `await` suspends the current task without blocking an OS thread

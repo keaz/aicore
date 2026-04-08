@@ -1,0 +1,44 @@
+import std.io;
+
+trait Fetch[T] {
+    async fn get(self: T) -> Int;
+}
+
+trait DynFetch {
+    async fn get(self: Self) -> Int;
+}
+
+struct PlusOne {
+    base: Int,
+}
+
+struct DynPlusOne {
+    base: Int,
+}
+
+impl Fetch[PlusOne] {
+    async fn get(self: PlusOne) -> Int {
+        self.base + 1
+    }
+}
+
+impl DynFetch[DynPlusOne] {
+    async fn get(self: DynPlusOne) -> Int {
+        self.base + 1
+    }
+}
+
+async fn via_bound[T: Fetch](value: T) -> Int {
+    await value.get()
+}
+
+async fn via_dyn(value: dyn DynFetch) -> Int {
+    await value.get()
+}
+
+async fn main() -> Int effects { io } capabilities { io  } {
+    let from_bound = await via_bound(PlusOne { base: 19 });
+    let from_dyn = await via_dyn(DynPlusOne { base: 21 });
+    print_int(from_bound + from_dyn);
+    0
+}

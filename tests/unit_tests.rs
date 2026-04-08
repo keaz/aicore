@@ -580,6 +580,76 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_async_trait_method_static_dispatch_generic_call_typechecks() {
+    let src = r#"
+trait Fetch[T] {
+    async fn get(self: T) -> Int;
+}
+
+struct Worker { base: Int }
+
+impl Fetch[Worker] {
+    async fn get(self: Worker) -> Int {
+        self.base + 1
+    }
+}
+
+async fn eval[T: Fetch](x: T) -> Int {
+    await x.get()
+}
+
+async fn main() -> Int {
+    await eval(Worker { base: 41 })
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
+fn unit_async_dyn_trait_method_call_typechecks() {
+    let src = r#"
+trait Fetch {
+    async fn get(self: Self) -> Int;
+}
+
+struct Worker { base: Int }
+
+impl Fetch[Worker] {
+    async fn get(self: Worker) -> Int {
+        self.base + 1
+    }
+}
+
+async fn score(x: dyn Fetch) -> Int {
+    await x.get()
+}
+
+async fn main() -> Int {
+    await score(Worker { base: 41 })
+}
+"#;
+    let (program, parse_diags) = parse(src, "unit.aic");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+    let ir = build(&program.expect("program"));
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(out.diagnostics.is_empty(), "diags={:#?}", out.diagnostics);
+}
+
+#[test]
 fn unit_dyn_trait_object_safety_rejects_trait_generics() {
     let src = r#"
 trait Score[T] {

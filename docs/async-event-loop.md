@@ -77,6 +77,15 @@ Language-level bridge:
   - `await Result[AsyncIntOp, TlsError] -> Result[Int, TlsError]`
   - `await Result[AsyncStringOp, TlsError] -> Result[Bytes, TlsError]`
 
+## Core Async Lowering Model
+
+- `async fn` still has a distinct surface type: call sites see `Async[T]` and must consume it with `await`.
+- In current codegen, ordinary async returns are lowered to compiler-managed ready `Async[T]` wrapper values with a readiness bit and payload.
+- The non-blocking reactor integration point today is the submit bridge:
+  - `await Result[Async*Op, NetError|TlsError]`
+  - runtime polling is delegated to `aic_rt_async_poll_int` / `aic_rt_async_poll_string`
+- This means the repo supports production async net/tls wait paths through the reactor, while agent-facing docs should not describe the current implementation as a general stackless-coroutine future runtime.
+
 ## Wrapper Semantics
 
 - `async_accept`, `async_tcp_send`, and `async_tcp_recv` are thin wrappers over submit + wait:
@@ -101,6 +110,7 @@ Language-level bridge:
 - Polling uses reactor-backed helpers:
   - `aic_rt_async_poll_int`
   - `aic_rt_async_poll_string`
+- Ordinary `await` on `Async[T]` extracts the wrapped payload from the compiler-managed async value.
 - Poll helpers use short wait slices and cooperative yield (`sleep_ms(1)`) between retry windows.
 - Terminal timeout completion remains `Err(Timeout)` (not remapped to `NotFound`).
 

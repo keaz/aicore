@@ -966,6 +966,37 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_async_trait_method_static_dispatch_returns_deterministic_value() {
+    let src = r#"
+import std.io;
+
+trait Fetch[T] {
+    async fn get(self: T) -> Int;
+}
+
+struct Worker { base: Int }
+
+impl Fetch[Worker] {
+    async fn get(self: Worker) -> Int {
+        self.base + 1
+    }
+}
+
+async fn eval[T: Fetch](x: T) -> Int {
+    await x.get()
+}
+
+async fn main() -> Int effects { io } capabilities { io  } {
+    print_int(await eval(Worker { base: 41 }));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
 fn exec_dyn_trait_direct_dispatch_vtable_call() {
     let src = r#"
 import std.io;
@@ -985,6 +1016,37 @@ impl Handler[PlusOne] {
 fn main() -> Int effects { io } capabilities { io  } {
     let h: dyn Handler = PlusOne { base: 41 };
     print_int(h.value());
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[test]
+fn exec_async_dyn_trait_dispatch_vtable_call() {
+    let src = r#"
+import std.io;
+
+trait Fetch {
+    async fn get(self: Self) -> Int;
+}
+
+struct Worker { base: Int }
+
+impl Fetch[Worker] {
+    async fn get(self: Worker) -> Int {
+        self.base + 1
+    }
+}
+
+async fn score(x: dyn Fetch) -> Int {
+    await x.get()
+}
+
+async fn main() -> Int effects { io } capabilities { io  } {
+    print_int(await score(Worker { base: 41 }));
     0
 }
 "#;
