@@ -1334,7 +1334,7 @@ match helper() {
 }
 
 #[test]
-fn async_fn_and_await_lower_to_async_value_wrap_and_extract() {
+fn async_fn_and_await_lower_to_future_handle_and_driver_calls() {
     let dir = tempdir().expect("tempdir");
     let file = dir.path().join("async_lowering_state_shape.aic");
     fs::write(
@@ -1366,25 +1366,47 @@ value
     assert!(
         output
             .llvm_ir
-            .contains("define { i1, i64 } @aic_ping(i64 %arg0)"),
+            .contains("define { i8*, i8*, i8* } @aic_ping(i64 %arg0)"),
         "async function should lower to Async[Int] return type\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("define i64 @__aic_async_poll_0"),
+        "async lowering should materialize a generated poll helper for the future frame\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("switch i32 %async_state"),
+        "async lowering should dispatch through an explicit state slot\nllvm={}",
         output.llvm_ir
     );
     assert!(
         output
             .llvm_ir
-            .contains("insertvalue { i1, i64 } undef, i1 1, 0"),
-        "async return should wrap ready state\nllvm={}",
+            .contains("call i64 @aic_rt_async_poll_once(i8*"),
+        "await inside async functions should poll child futures once and suspend on pending\nllvm={}",
         output.llvm_ir
     );
     assert!(
-        output.llvm_ir.contains("extractvalue { i1, i64 }"),
-        "await should lower to Async value extraction\nllvm={}",
+        output.llvm_ir.contains("ret i64 1"),
+        "async poll helpers should surface pending as rc=1\nllvm={}",
         output.llvm_ir
     );
     assert!(
-        output.llvm_ir.contains("call { i1, i64 } @aic_main()"),
-        "entry wrapper should call async main and unwrap result\nllvm={}",
+        output.llvm_ir.contains("call void @aic_rt_async_drop(i8*"),
+        "await should drop completed futures after extracting their result\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        !output.llvm_ir.contains("@__aic_async_ready_poll_"),
+        "general async lowering should no longer route ordinary async fns through ready-wrapper helpers\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output
+            .llvm_ir
+            .contains("call { i8*, i8*, i8* } @aic_main()"),
+        "entry wrapper should call async main through the future handle ABI\nllvm={}",
         output.llvm_ir
     );
 }
@@ -1423,27 +1445,34 @@ let _server = match accepted {
     assert!(
         output
             .llvm_ir
-            .contains("declare i64 @aic_rt_async_poll_int(i64, i64*)"),
-        "await submit bridge should declare async int poll helper\nllvm={}",
+            .contains("declare i64 @aic_rt_net_async_poll_int_once(i64, i64*)"),
+        "await submit bridge in async state machines should declare one-shot int poll helper\nllvm={}",
         output.llvm_ir
     );
     assert!(
         output
             .llvm_ir
-            .contains("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)"),
-        "await submit bridge should declare async string poll helper\nllvm={}",
+            .contains("declare i64 @aic_rt_net_async_poll_string_once(i64, i8**, i64*)"),
+        "await submit bridge in async state machines should declare one-shot string poll helper\nllvm={}",
         output.llvm_ir
     );
     assert!(
-        output.llvm_ir.contains("call i64 @aic_rt_async_poll_int("),
+        output
+            .llvm_ir
+            .contains("call i64 @aic_rt_net_async_poll_int_once("),
         "await submit bridge should poll int reactor operation\nllvm={}",
         output.llvm_ir
     );
     assert!(
         output
             .llvm_ir
-            .contains("call i64 @aic_rt_async_poll_string("),
+            .contains("call i64 @aic_rt_net_async_poll_string_once("),
         "await submit bridge should poll string reactor operation\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("ret i64 1"),
+        "submit-bridge await in async functions should suspend with rc=1 while the op is pending\nllvm={}",
         output.llvm_ir
     );
     assert!(
@@ -1493,27 +1522,34 @@ let _recv_score = match recv {
     assert!(
         output
             .llvm_ir
-            .contains("declare i64 @aic_rt_async_poll_int(i64, i64*)"),
-        "tls await submit bridge should declare async int poll helper\nllvm={}",
+            .contains("declare i64 @aic_rt_tls_async_poll_int_once(i64, i64*)"),
+        "tls await submit bridge should declare one-shot int poll helper\nllvm={}",
         output.llvm_ir
     );
     assert!(
         output
             .llvm_ir
-            .contains("declare i64 @aic_rt_async_poll_string(i64, i8**, i64*)"),
-        "tls await submit bridge should declare async string poll helper\nllvm={}",
+            .contains("declare i64 @aic_rt_tls_async_poll_string_once(i64, i8**, i64*)"),
+        "tls await submit bridge should declare one-shot string poll helper\nllvm={}",
         output.llvm_ir
     );
     assert!(
-        output.llvm_ir.contains("call i64 @aic_rt_async_poll_int("),
+        output
+            .llvm_ir
+            .contains("call i64 @aic_rt_tls_async_poll_int_once("),
         "tls await submit bridge should poll int reactor operation\nllvm={}",
         output.llvm_ir
     );
     assert!(
         output
             .llvm_ir
-            .contains("call i64 @aic_rt_async_poll_string("),
+            .contains("call i64 @aic_rt_tls_async_poll_string_once("),
         "tls await submit bridge should poll string reactor operation\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("ret i64 1"),
+        "tls submit-bridge await should suspend with rc=1 while pending\nllvm={}",
         output.llvm_ir
     );
     assert!(
@@ -1570,20 +1606,27 @@ let _payload_score = match payload {
     let output = emit_llvm(&lowered, &file.to_string_lossy()).expect("llvm");
 
     assert!(
-        output.llvm_ir.contains("call i64 @aic_rt_conc_join_value("),
-        "fs await submit bridge should join task-backed async operations\nllvm={}",
+        output.llvm_ir.contains("call i64 @aic_rt_conc_join_poll("),
+        "fs await submit bridge in async state machines should use nonblocking task polling\nllvm={}",
         output.llvm_ir
     );
     assert!(
-        !output.llvm_ir.contains("call i64 @aic_rt_async_poll_int("),
+        !output
+            .llvm_ir
+            .contains("call i64 @aic_rt_net_async_poll_int_once("),
         "fs await submit bridge should not use net int poll helpers\nllvm={}",
         output.llvm_ir
     );
     assert!(
         !output
             .llvm_ir
-            .contains("call i64 @aic_rt_async_poll_string("),
+            .contains("call i64 @aic_rt_net_async_poll_string_once("),
         "fs await submit bridge should not use net string poll helpers\nllvm={}",
+        output.llvm_ir
+    );
+    assert!(
+        output.llvm_ir.contains("ret i64 1"),
+        "fs submit-bridge await should suspend with rc=1 while the task is pending\nllvm={}",
         output.llvm_ir
     );
 }

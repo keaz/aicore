@@ -3244,7 +3244,9 @@ struct Generator<'a> {
     generic_fn_instances_by_symbol: BTreeMap<ir::SymbolId, Vec<GenericFnInstance>>,
     active_type_bindings: Option<BTreeMap<String, String>>,
     closure_counter: usize,
+    async_counter: usize,
     deferred_fn_defs: Vec<Vec<String>>,
+    async_ready_helpers: BTreeMap<String, (String, String)>,
     fn_value_adapters: BTreeMap<String, String>,
     function_modules_by_symbol: BTreeMap<ir::SymbolId, String>,
     recursive_call_targets: BTreeMap<String, BTreeSet<String>>,
@@ -3276,6 +3278,49 @@ struct FnCtx {
     current_fn_llvm_name: String,
     current_fn_sig: FnSig,
     tail_return_mode: bool,
+    suppress_lifetime_end: bool,
+    async_poll_ctx: Option<AsyncPollCtx>,
+}
+
+#[derive(Debug, Clone)]
+struct AsyncFramePlan {
+    frame_ty: LType,
+    frame_llvm: String,
+    state_index: usize,
+    await_storage_index: usize,
+    param_indices: Vec<usize>,
+    local_indices: BTreeMap<ir::SymbolId, usize>,
+    local_types: BTreeMap<ir::SymbolId, LType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AsyncPendingKind {
+    Future,
+    NetInt,
+    NetString,
+    TlsInt,
+    TlsString,
+    FsTask,
+}
+
+#[derive(Debug, Clone)]
+struct AsyncPendingState {
+    state_id: i32,
+    label: String,
+    kind: AsyncPendingKind,
+}
+
+#[derive(Debug, Clone)]
+struct AsyncPollCtx {
+    state_ptr: String,
+    await_storage_ptr: String,
+    local_ptrs: BTreeMap<ir::SymbolId, String>,
+    state_labels: Vec<(i32, String)>,
+    pending_states: Vec<AsyncPendingState>,
+    next_state_id: i32,
+    dispatch_placeholder: String,
+    completed_label: String,
+    invalid_label: String,
 }
 
 struct CallSigOverrideGuard {
@@ -4052,13 +4097,7 @@ fn llvm_type(ty: &LType) -> String {
         LType::String => "{ i8*, i64, i64 }".to_string(),
         LType::Fn(_) => "{ i8*, i8* }".to_string(),
         LType::DynTrait(_) => "{ i8*, i8* }".to_string(),
-        LType::Async(inner) => {
-            if matches!(&**inner, LType::Unit) {
-                "{ i1 }".to_string()
-            } else {
-                format!("{{ i1, {} }}", llvm_type(inner))
-            }
-        }
+        LType::Async(_) => "{ i8*, i8*, i8* }".to_string(),
         LType::Struct(layout) => {
             if layout.fields.is_empty() {
                 "{}".to_string()
@@ -4112,13 +4151,7 @@ fn default_value(ty: &LType) -> String {
         LType::String => "{ i8* null, i64 0, i64 0 }".to_string(),
         LType::Fn(_) => "{ i8* null, i8* null }".to_string(),
         LType::DynTrait(_) => "{ i8* null, i8* null }".to_string(),
-        LType::Async(inner) => {
-            if matches!(&**inner, LType::Unit) {
-                "{ i1 0 }".to_string()
-            } else {
-                format!("{{ i1 0, {} {} }}", llvm_type(inner), default_value(inner))
-            }
-        }
+        LType::Async(_) => "{ i8* null, i8* null, i8* null }".to_string(),
         LType::Struct(layout) => {
             if layout.fields.is_empty() {
                 "{}".to_string()

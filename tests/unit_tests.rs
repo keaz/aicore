@@ -8752,6 +8752,82 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn unit_frontend_stamps_inferred_let_types_into_async_ir_only() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("main.aic");
+    fs::write(
+        &path,
+        r#"
+async fn task() -> Int {
+    let number = 41;
+    let text = "ok";
+    number
+}
+
+fn main() -> Int {
+    let sync_value = 7;
+    sync_value
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diags={:#?}",
+        out.diagnostics
+    );
+
+    let task_fn = out
+        .ir
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ir::Item::Function(func) if func.name == "task" => Some(func),
+            _ => None,
+        })
+        .expect("expected task function item");
+    let task_let_types = task_fn
+        .body
+        .stmts
+        .iter()
+        .filter_map(|stmt| match stmt {
+            aicore::ir::Stmt::Let { ty: Some(ty), .. } => out
+                .ir
+                .types
+                .iter()
+                .find(|def| def.id == *ty)
+                .map(|def| def.repr.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        task_let_types,
+        vec!["Int".to_string(), "String".to_string()]
+    );
+
+    let main_fn = out
+        .ir
+        .items
+        .iter()
+        .find_map(|item| match item {
+            aicore::ir::Item::Function(func) if func.name == "main" => Some(func),
+            _ => None,
+        })
+        .expect("expected main function item");
+    assert!(
+        matches!(
+            main_fn.body.stmts.first(),
+            Some(aicore::ir::Stmt::Let { ty: None, .. })
+        ),
+        "non-async let bindings should keep their inferred type off the IR surface\nir={:#?}",
+        out.ir
+    );
+}
+
+#[test]
 fn unit_named_arguments_allow_reordered_calls() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("main.aic");

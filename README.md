@@ -333,7 +333,7 @@ async fn main() -> () effects { net, io } capabilities { net, io } {
 - `async fn` returns `Async[T]` — consumed only via `await`
 - `await` is valid only inside `async fn`
 - Async functions participate in the same effect checking as synchronous functions
-- Current codegen lowers ordinary async returns to compiler-managed `Async[T]` wrapper values; runtime-backed waiting is provided by the `await Result[Async*Op, NetError|TlsError|FsError]` submit bridge used by `std.net`, `std.tls`, and `std.fs`
+- Current codegen lowers ordinary async returns to compiler-managed `Async[T]` future handles with frame/poll/drop hooks and an explicit state slot; `await` inside `async fn` lowers to resumable suspension points, while runtime-backed waiting for I/O handles is provided by the `await Result[Async*Op, NetError|TlsError|FsError]` submit bridge used by `std.net`, `std.tls`, and `std.fs`
 
 ### Error Handling
 

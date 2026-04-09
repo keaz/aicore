@@ -113,12 +113,22 @@ Language-level bridge:
 ## Core Async Lowering Model
 
 - `async fn` still has a distinct surface type: call sites see `Async[T]` and must consume it with `await`.
-- In current codegen, ordinary async returns are lowered to compiler-managed ready `Async[T]` wrapper values with a readiness bit and payload.
-- The non-blocking reactor integration point today is the submit bridge:
+- Current codegen lowers ordinary async functions to compiler-managed future frames with:
+  - an explicit `state` slot
+  - persisted parameter/local storage for values that must survive suspension
+  - generated poll/drop helpers attached to the `Async[T]` handle
+- `await` inside `async fn` lowers to resumable suspension points:
+  - ordinary `await Async[T]` polls the child future once with `aic_rt_async_poll_once`
+  - pending child work returns `1` from the generated poll helper and resumes from the stored state on the next poll
+  - completed child futures are dropped after their result is extracted
+- The non-blocking reactor/task integration point for I/O-backed work is the submit bridge:
   - `await Result[Async*Op, NetError|TlsError]`
   - `await Result[AsyncFs*Op, FsError]`
-- runtime polling is delegated to `aic_rt_async_poll_int` / `aic_rt_async_poll_string` for net/tls and `aic_rt_conc_join_value` for fs task-backed handles
-- This means the repo supports production async net/tls wait paths through the reactor and task-backed async fs wait paths, while agent-facing docs should not describe the current implementation as a general stackless-coroutine future runtime.
+- submit-bridge polling is delegated to one-shot runtime helpers inside the async state machine:
+  - `aic_rt_net_async_poll_int_once` / `aic_rt_net_async_poll_string_once`
+  - `aic_rt_tls_async_poll_int_once` / `aic_rt_tls_async_poll_string_once`
+  - `aic_rt_conc_join_poll` for fs task-backed handles
+- Outside an async state machine, `await Async[T]` still uses the runtime drive loop (`aic_rt_async_drive`) to poll a future to completion.
 
 ## Wrapper Semantics
 
@@ -141,11 +151,14 @@ Language-level bridge:
 ## Await Submit Bridge Semantics
 
 - `await async_accept_submit(listener, timeout_ms)` lowers to runtime polling over the submit handle.
-- Polling uses reactor-backed helpers:
-  - `aic_rt_async_poll_int`
-  - `aic_rt_async_poll_string`
-- Ordinary `await` on `Async[T]` extracts the wrapped payload from the compiler-managed async value.
-- Poll helpers use short wait slices and cooperative yield (`sleep_ms(1)`) between retry windows.
+- Polling inside async state machines uses reactor-backed one-shot helpers:
+  - `aic_rt_net_async_poll_int_once`
+  - `aic_rt_net_async_poll_string_once`
+  - `aic_rt_tls_async_poll_int_once`
+  - `aic_rt_tls_async_poll_string_once`
+  - `aic_rt_conc_join_poll`
+- Ordinary `await` on `Async[T]` inside async state machines polls once and suspends; outside async state machines it is driven to completion by `aic_rt_async_drive`.
+- Drive-loop polling still uses short wait slices and cooperative yield (`sleep_ms(1)`) between retry windows.
 - Terminal timeout completion remains `Err(Timeout)` (not remapped to `NotFound`).
 - Fs async wait timeout keeps the underlying task pending and releases the claim so a later wait can retry.
 - Sync `std.fs` APIs still report the stable filesystem subset (`NotFound`, `PermissionDenied`, `AlreadyExists`, `InvalidInput`, `Io`); `Timeout` and `Cancelled` are reserved for async filesystem/runtime-control paths.

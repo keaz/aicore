@@ -6496,6 +6496,200 @@ long aic_rt_tls_version(long tls_handle, long* out_version) {
 
 #define AIC_RT_ASYNC_POLL_SLICE_MS 5
 
+long aic_rt_net_async_poll_int_once(long op_handle, long* out_value) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_poll_int_once", 2);
+    aic_rt_net_async_limits_ensure();
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
+        return 6;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (op->op_kind != AIC_RT_NET_ASYNC_OP_ACCEPT && op->op_kind != AIC_RT_NET_ASYNC_OP_SEND) {
+        pthread_mutex_unlock(&op->mutex);
+        return 6;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (!op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return -1;
+    }
+
+    long err = op->err_code;
+    long out = op->out_int;
+    aic_rt_net_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err == 0 && out_value != NULL) {
+        *out_value = out;
+    }
+    return err;
+}
+
+long aic_rt_net_async_poll_string_once(long op_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("async_poll_string_once", 2);
+    aic_rt_net_async_limits_ensure();
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
+        return 6;
+    }
+    AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (op->op_kind != AIC_RT_NET_ASYNC_OP_RECV) {
+        pthread_mutex_unlock(&op->mutex);
+        return 6;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 1;
+    }
+    if (!op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return -1;
+    }
+
+    long err = op->err_code;
+    char* text = op->out_string_ptr;
+    long text_len = op->out_string_len;
+    op->out_string_ptr = NULL;
+    op->out_string_len = 0;
+    aic_rt_net_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err == 0) {
+        if (out_ptr != NULL) {
+            *out_ptr = text;
+        } else {
+            free(text);
+        }
+        if (out_len != NULL) {
+            *out_len = text_len;
+        }
+    } else {
+        free(text);
+    }
+    return err;
+}
+
+long aic_rt_tls_async_poll_int_once(long op_handle, long* out_value) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_poll_int_once", 2);
+    aic_rt_tls_limits_ensure();
+    if (out_value != NULL) {
+        *out_value = 0;
+    }
+    if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
+        return 5;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->op_kind != AIC_RT_TLS_ASYNC_OP_SEND) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (!op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return -1;
+    }
+
+    long err = op->err_code;
+    long out = op->out_int;
+    aic_rt_tls_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err == 0 && out_value != NULL) {
+        *out_value = out;
+    }
+    return err;
+}
+
+long aic_rt_tls_async_poll_string_once(long op_handle, char** out_ptr, long* out_len) {
+    AIC_RT_SANDBOX_BLOCK_NET("tls_async_poll_string_once", 2);
+    aic_rt_tls_limits_ensure();
+    if (out_ptr != NULL) {
+        *out_ptr = NULL;
+    }
+    if (out_len != NULL) {
+        *out_len = 0;
+    }
+    if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
+        return 5;
+    }
+    AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
+    int lock_rc = pthread_mutex_lock(&op->mutex);
+    if (lock_rc != 0) {
+        return 7;
+    }
+    if (!op->active) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->op_kind != AIC_RT_TLS_ASYNC_OP_RECV) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (op->claimed) {
+        pthread_mutex_unlock(&op->mutex);
+        return 5;
+    }
+    if (!op->done) {
+        pthread_mutex_unlock(&op->mutex);
+        return -1;
+    }
+
+    long err = op->err_code;
+    char* text = op->out_string_ptr;
+    long text_len = op->out_string_len;
+    op->out_string_ptr = NULL;
+    op->out_string_len = 0;
+    aic_rt_tls_async_reset_op(op);
+    pthread_mutex_unlock(&op->mutex);
+    if (err == 0) {
+        if (out_ptr != NULL) {
+            *out_ptr = text;
+        } else {
+            free(text);
+        }
+        if (out_len != NULL) {
+            *out_len = text_len;
+        }
+    } else {
+        free(text);
+    }
+    return err;
+}
+
 long aic_rt_async_poll_int(long op_handle, long* out_value) {
     if (out_value != NULL) {
         *out_value = 0;

@@ -4194,6 +4194,35 @@ long aic_rt_conc_join_poll(long handle, long* out_value) {
     return aic_rt_conc_join_internal(handle, 0, 1, out_value);
 }
 
+typedef long (*AicAsyncPollFn)(void* frame, void* out_value);
+typedef void (*AicAsyncDropFn)(void* frame);
+
+long aic_rt_async_poll_once(void* frame, void* poll_fn_raw, void* out_value) {
+    if (poll_fn_raw == NULL) {
+        return 4;
+    }
+    AicAsyncPollFn poll_fn = (AicAsyncPollFn)poll_fn_raw;
+    return poll_fn(frame, out_value);
+}
+
+long aic_rt_async_drive(void* frame, void* poll_fn_raw, void* out_value) {
+    for (;;) {
+        long rc = aic_rt_async_poll_once(frame, poll_fn_raw, out_value);
+        if (rc != 1) {
+            return rc;
+        }
+        aic_rt_time_sleep_ms(1);
+    }
+}
+
+void aic_rt_async_drop(void* frame, void* drop_fn_raw) {
+    if (frame == NULL || drop_fn_raw == NULL) {
+        return;
+    }
+    AicAsyncDropFn drop_fn = (AicAsyncDropFn)drop_fn_raw;
+    drop_fn(frame);
+}
+
 long aic_rt_conc_cancel(long handle, long* out_cancelled);
 
 long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value) {

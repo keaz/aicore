@@ -69,7 +69,9 @@ impl<'a> Generator<'a> {
             generic_fn_instances_by_symbol: BTreeMap::new(),
             active_type_bindings: None,
             closure_counter: 0,
+            async_counter: 0,
             deferred_fn_defs: Vec::new(),
+            async_ready_helpers: BTreeMap::new(),
             fn_value_adapters: BTreeMap::new(),
             function_modules_by_symbol,
             recursive_call_targets,
@@ -1196,6 +1198,16 @@ impl<'a> Generator<'a> {
         let _module_guard = self.type_module_guard_for_symbol(func.symbol);
         let previous_bindings = self.active_type_bindings.clone();
         self.active_type_bindings = bindings;
+        let (line, _) = self.span_line_col(func.span);
+        let debug_scope = self
+            .debug
+            .as_mut()
+            .map(|debug| debug.new_subprogram(&func.name, llvm_name, line));
+        if func.is_async {
+            self.gen_async_function_with_signature(func, sig, llvm_name, debug_scope);
+            self.active_type_bindings = previous_bindings;
+            return;
+        }
         let async_inner_ret = if func.is_async {
             if let LType::Async(inner) = &sig.ret {
                 Some((**inner).clone())
@@ -1211,12 +1223,6 @@ impl<'a> Generator<'a> {
         for (idx, ty) in sig.params.iter().enumerate() {
             param_defs.push(format!("{} %arg{}", llvm_type(ty), idx));
         }
-
-        let (line, _) = self.span_line_col(func.span);
-        let debug_scope = self
-            .debug
-            .as_mut()
-            .map(|debug| debug.new_subprogram(&func.name, llvm_name, line));
 
         if let Some(scope) = debug_scope {
             self.out.push(format!(
@@ -1249,6 +1255,8 @@ impl<'a> Generator<'a> {
             current_fn_llvm_name: llvm_name.to_string(),
             current_fn_sig: sig.clone(),
             tail_return_mode: false,
+            suppress_lifetime_end: false,
+            async_poll_ctx: None,
         };
         fctx.lines.push("entry:".to_string());
 
@@ -1286,10 +1294,18 @@ impl<'a> Generator<'a> {
                 let async_value = if let Some(value) = tail {
                     self.build_ready_async_value(value, inner_ty, &mut fctx)
                 } else {
-                    Value {
-                        ty: LType::Async(Box::new(inner_ty.clone())),
-                        repr: Some(default_value(&LType::Async(Box::new(inner_ty.clone())))),
-                    }
+                    self.build_ready_async_value(
+                        Value {
+                            ty: inner_ty.clone(),
+                            repr: if *inner_ty == LType::Unit {
+                                None
+                            } else {
+                                Some(default_value(inner_ty))
+                            },
+                        },
+                        inner_ty,
+                        &mut fctx,
+                    )
                 };
                 fctx.lines.push(format!(
                     "  ret {} {}",
@@ -1362,6 +1378,636 @@ impl<'a> Generator<'a> {
         self.active_type_bindings = previous_bindings;
     }
 
+    fn gen_async_function_with_signature(
+        &mut self,
+        func: &ir::Function,
+        sig: &FnSig,
+        llvm_name: &str,
+        debug_scope: Option<usize>,
+    ) {
+        let LType::Async(_) = &sig.ret else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5020",
+                format!("async function '{}' must lower to Async[T]", func.name),
+                self.file,
+                func.span,
+            ));
+            return;
+        };
+
+        let suffix = self.async_counter;
+        self.async_counter += 1;
+        let frame_repr = format!("__AicAsyncFrame_{suffix}");
+        let Some(frame_plan) = self.build_async_frame_plan(func, sig, &frame_repr) else {
+            return;
+        };
+        let poll_name = format!("__aic_async_poll_{suffix}");
+        let drop_name = format!("__aic_async_drop_{suffix}");
+
+        self.emit_async_constructor_wrapper(
+            func,
+            sig,
+            llvm_name,
+            debug_scope,
+            &frame_plan,
+            &poll_name,
+            &drop_name,
+        );
+        let pending_states = self.emit_async_poll_helper(func, sig, &frame_plan, &poll_name);
+        self.emit_async_drop_helper(func, sig, &frame_plan, &drop_name, &pending_states);
+    }
+
+    fn emit_async_constructor_wrapper(
+        &mut self,
+        func: &ir::Function,
+        sig: &FnSig,
+        llvm_name: &str,
+        debug_scope: Option<usize>,
+        frame_plan: &AsyncFramePlan,
+        poll_name: &str,
+        drop_name: &str,
+    ) {
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+
+        let llvm_ret = llvm_type(&sig.ret);
+        let mut param_defs = Vec::new();
+        for (idx, ty) in sig.params.iter().enumerate() {
+            param_defs.push(format!("{} %arg{}", llvm_type(ty), idx));
+        }
+        if let Some(scope) = debug_scope {
+            self.out.push(format!(
+                "define {} @{}({}) !dbg !{} {{",
+                llvm_ret,
+                llvm_name,
+                param_defs.join(", "),
+                scope
+            ));
+        } else {
+            self.out.push(format!(
+                "define {} @{}({}) {{",
+                llvm_ret,
+                llvm_name,
+                param_defs.join(", ")
+            ));
+        }
+        self.out.push("entry:".to_string());
+        let frame_size_ptr = self.new_temp();
+        self.out.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            frame_size_ptr, frame_plan.frame_llvm, frame_plan.frame_llvm
+        ));
+        let frame_size = self.new_temp();
+        self.out.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            frame_size, frame_plan.frame_llvm, frame_size_ptr
+        ));
+        let frame_raw = self.new_temp();
+        self.out.push(format!(
+            "  {} = call i8* @malloc(i64 {})",
+            frame_raw, frame_size
+        ));
+        let frame_ptr = self.new_temp();
+        self.out.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            frame_ptr, frame_raw, frame_plan.frame_llvm
+        ));
+        self.out.push(format!(
+            "  store {} {}, {}* {}",
+            frame_plan.frame_llvm,
+            default_value(&frame_plan.frame_ty),
+            frame_plan.frame_llvm,
+            frame_ptr
+        ));
+        for (idx, field_index) in frame_plan.param_indices.iter().enumerate() {
+            let Some(param_ty) = sig.params.get(idx) else {
+                continue;
+            };
+            let field_ptr = self.new_temp();
+            self.out.push(format!(
+                "  {} = getelementptr inbounds {}, {}* {}, i32 0, i32 {}",
+                field_ptr, frame_plan.frame_llvm, frame_plan.frame_llvm, frame_ptr, field_index
+            ));
+            self.out.push(format!(
+                "  store {} %arg{}, {}* {}",
+                llvm_type(param_ty),
+                idx,
+                llvm_type(param_ty),
+                field_ptr
+            ));
+        }
+
+        let with_frame = self.new_temp();
+        self.out.push(format!(
+            "  {} = insertvalue {} undef, i8* {}, 0",
+            with_frame, llvm_ret, frame_raw
+        ));
+        let with_poll = self.new_temp();
+        self.out.push(format!(
+            "  {} = insertvalue {} {}, i8* bitcast (i64 (i8*, i8*)* @{} to i8*), 1",
+            with_poll, llvm_ret, with_frame, poll_name
+        ));
+        let repr = self.new_temp();
+        self.out.push(format!(
+            "  {} = insertvalue {} {}, i8* bitcast (void (i8*)* @{} to i8*), 2",
+            repr, llvm_ret, with_poll, drop_name
+        ));
+        self.out.push(format!("  ret {} {}", llvm_ret, repr));
+        self.out.push("}".to_string());
+        self.out.push(String::new());
+        let _ = func;
+    }
+
+    fn emit_async_poll_helper(
+        &mut self,
+        func: &ir::Function,
+        sig: &FnSig,
+        frame_plan: &AsyncFramePlan,
+        poll_name: &str,
+    ) -> Vec<(i32, AsyncPendingKind)> {
+        let LType::Async(inner_ret) = &sig.ret else {
+            return Vec::new();
+        };
+        let entry_label = "entry".to_string();
+        let start_label = self.new_label("async_state_0");
+        let completed_label = self.new_label("async_completed");
+        let invalid_label = self.new_label("async_invalid");
+        let dispatch_placeholder = format!("  ; __aic_async_dispatch_{poll_name}");
+        let mut fctx = FnCtx {
+            lines: vec![entry_label.clone() + ":"],
+            vars: vec![BTreeMap::new()],
+            drop_scopes: vec![DropScope::default()],
+            terminated: false,
+            current_label: start_label.clone(),
+            ret_ty: (**inner_ret).clone(),
+            async_inner_ret: None,
+            debug_scope: None,
+            loop_stack: Vec::new(),
+            current_fn_name: poll_name.to_string(),
+            current_fn_llvm_name: poll_name.to_string(),
+            current_fn_sig: FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
+                params: vec![LType::Async(Box::new((**inner_ret).clone()))],
+                ret: LType::Int,
+            },
+            tail_return_mode: false,
+            suppress_lifetime_end: true,
+            async_poll_ctx: None,
+        };
+
+        let frame_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* %frame_raw to {}*",
+            frame_ptr, frame_plan.frame_llvm
+        ));
+        let state_ptr = self.emit_async_frame_field_ptr(
+            &frame_plan.frame_llvm,
+            &frame_ptr,
+            frame_plan.state_index,
+            &mut fctx,
+        );
+        let await_storage_ptr = self.emit_async_frame_field_ptr(
+            &frame_plan.frame_llvm,
+            &frame_ptr,
+            frame_plan.await_storage_index,
+            &mut fctx,
+        );
+
+        let mut local_ptrs = BTreeMap::new();
+        for (symbol, field_index) in &frame_plan.local_indices {
+            let ptr = self.emit_async_frame_field_ptr(
+                &frame_plan.frame_llvm,
+                &frame_ptr,
+                *field_index,
+                &mut fctx,
+            );
+            local_ptrs.insert(*symbol, ptr);
+        }
+        for (idx, param) in func.params.iter().enumerate() {
+            let Some(field_index) = frame_plan.param_indices.get(idx) else {
+                continue;
+            };
+            let Some(param_ty) = sig.params.get(idx).cloned() else {
+                continue;
+            };
+            let ptr = self.emit_async_frame_field_ptr(
+                &frame_plan.frame_llvm,
+                &frame_ptr,
+                *field_index,
+                &mut fctx,
+            );
+            fctx.vars.last_mut().expect("scope").insert(
+                param.name.clone(),
+                Local {
+                    symbol: Some(param.symbol),
+                    ty: param_ty,
+                    ptr,
+                },
+            );
+            fctx.drop_scopes[0].locals.insert(
+                param.symbol,
+                DropSlot {
+                    ty: sig.params[idx].clone(),
+                    ptr: fctx
+                        .vars
+                        .last()
+                        .expect("scope")
+                        .get(&param.name)
+                        .expect("param")
+                        .ptr
+                        .clone(),
+                    skip_resource_cleanup: false,
+                },
+            );
+            fctx.drop_scopes[0].lexical_order.push(param.symbol);
+        }
+
+        fctx.lines.push(dispatch_placeholder.clone());
+        fctx.lines.push(format!("{start_label}:"));
+
+        fctx.async_poll_ctx = Some(AsyncPollCtx {
+            state_ptr: state_ptr.clone(),
+            await_storage_ptr,
+            local_ptrs,
+            state_labels: vec![(0, start_label.clone())],
+            pending_states: Vec::new(),
+            next_state_id: 1,
+            dispatch_placeholder: dispatch_placeholder.clone(),
+            completed_label: completed_label.clone(),
+            invalid_label: invalid_label.clone(),
+        });
+
+        fctx.tail_return_mode = true;
+        let tail = self.gen_block_with_expected_tail(&func.body, Some(inner_ret), &mut fctx);
+        fctx.tail_return_mode = false;
+        if !fctx.terminated {
+            let value = tail.unwrap_or(Value {
+                ty: (**inner_ret).clone(),
+                repr: if **inner_ret == LType::Unit {
+                    None
+                } else {
+                    Some(default_value(inner_ret))
+                },
+            });
+            self.emit_async_poll_return(value, func.body.span, &mut fctx);
+        }
+
+        let async_ctx = fctx.async_poll_ctx.clone().expect("async poll ctx");
+        if let Some(idx) = fctx
+            .lines
+            .iter()
+            .position(|line| line == &async_ctx.dispatch_placeholder)
+        {
+            let dispatch = self.emit_async_dispatch_lines(&async_ctx);
+            fctx.lines.splice(idx..=idx, dispatch);
+        }
+        fctx.lines.push(format!("{}:", completed_label));
+        fctx.lines.push("  ret i64 4".to_string());
+        fctx.lines.push(format!("{}:", invalid_label));
+        fctx.lines.push("  ret i64 4".to_string());
+
+        let mut lines = Vec::new();
+        lines.push(format!(
+            "define i64 @{}(i8* %frame_raw, i8* %out_raw) {{",
+            poll_name
+        ));
+        lines.extend(fctx.lines);
+        lines.push("}".to_string());
+        self.deferred_fn_defs.push(lines);
+        async_ctx
+            .pending_states
+            .iter()
+            .map(|state| (state.state_id, state.kind))
+            .collect()
+    }
+
+    fn emit_async_drop_helper(
+        &mut self,
+        func: &ir::Function,
+        sig: &FnSig,
+        frame_plan: &AsyncFramePlan,
+        drop_name: &str,
+        pending_states: &[(i32, AsyncPendingKind)],
+    ) {
+        self.extern_decls
+            .insert("declare void @aic_rt_heap_free(i8*)".to_string());
+        self.extern_decls
+            .insert("declare void @aic_rt_async_drop(i8*, i8*)".to_string());
+
+        let mut lines = vec![
+            format!("define void @{}(i8* %frame_raw) {{", drop_name),
+            "entry:".to_string(),
+            format!(
+                "  %frame = bitcast i8* %frame_raw to {}*",
+                frame_plan.frame_llvm
+            ),
+        ];
+        let state_ptr = self.new_temp();
+        lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* %frame, i32 0, i32 {}",
+            state_ptr, frame_plan.frame_llvm, frame_plan.frame_llvm, frame_plan.state_index
+        ));
+        let state = self.new_temp();
+        lines.push(format!("  {} = load i32, i32* {}", state, state_ptr));
+
+        let await_slot_ptr = self.new_temp();
+        lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* %frame, i32 0, i32 {}",
+            await_slot_ptr,
+            frame_plan.frame_llvm,
+            frame_plan.frame_llvm,
+            frame_plan.await_storage_index
+        ));
+
+        let mut pending_cases = Vec::new();
+        let mut async_case_fctx = FnCtx {
+            lines: Vec::new(),
+            vars: vec![BTreeMap::new()],
+            drop_scopes: vec![DropScope::default()],
+            terminated: false,
+            current_label: "entry".to_string(),
+            ret_ty: LType::Unit,
+            async_inner_ret: None,
+            debug_scope: None,
+            loop_stack: Vec::new(),
+            current_fn_name: drop_name.to_string(),
+            current_fn_llvm_name: drop_name.to_string(),
+            current_fn_sig: FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
+                params: vec![sig.ret.clone()],
+                ret: LType::Unit,
+            },
+            tail_return_mode: false,
+            suppress_lifetime_end: true,
+            async_poll_ctx: None,
+        };
+
+        let cleanup_done_label = self.new_label("async_drop_cleanup_done");
+        pending_cases.push(format!(
+            "  switch i32 {}, label %{} [",
+            state, cleanup_done_label
+        ));
+        for (state_id, _) in pending_states {
+            pending_cases.push(format!(
+                "    i32 {}, label %async_drop_state_{}",
+                state_id, state_id
+            ));
+        }
+        pending_cases.push("  ]".to_string());
+        lines.extend(pending_cases);
+
+        for (state_id, kind) in pending_states {
+            lines.push(format!("async_drop_state_{}:", state_id));
+            match kind {
+                AsyncPendingKind::Future => {
+                    let typed = self.new_temp();
+                    lines.push(format!(
+                        "  {} = bitcast {}* {} to {}*",
+                        typed,
+                        llvm_type(&self.async_await_storage_ty()),
+                        await_slot_ptr,
+                        llvm_type(&LType::Async(Box::new(LType::Unit)))
+                    ));
+                    let slot = DropSlot {
+                        ty: LType::Async(Box::new(LType::Unit)),
+                        ptr: typed,
+                        skip_resource_cleanup: false,
+                    };
+                    self.emit_async_drop_action(&slot, &mut async_case_fctx);
+                }
+                AsyncPendingKind::NetInt => {
+                    let typed = self.new_temp();
+                    lines.push(format!(
+                        "  {} = bitcast {}* {} to i64*",
+                        typed,
+                        llvm_type(&self.async_await_storage_ty()),
+                        await_slot_ptr
+                    ));
+                    let handle = self.new_temp();
+                    lines.push(format!("  {} = load i64, i64* {}", handle, typed));
+                    let cancelled = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", cancelled));
+                    let cancel = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_net_async_cancel(i64 {}, i64* {})",
+                        cancel, handle, cancelled
+                    ));
+                    let discard = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", discard));
+                    let wait = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_net_async_wait_int(i64 {}, i64 0, i64* {})",
+                        wait, handle, discard
+                    ));
+                    let _ = (cancel, wait);
+                }
+                AsyncPendingKind::NetString => {
+                    let typed = self.new_temp();
+                    lines.push(format!(
+                        "  {} = bitcast {}* {} to i64*",
+                        typed,
+                        llvm_type(&self.async_await_storage_ty()),
+                        await_slot_ptr
+                    ));
+                    let handle = self.new_temp();
+                    lines.push(format!("  {} = load i64, i64* {}", handle, typed));
+                    let cancelled = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", cancelled));
+                    let cancel = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_net_async_cancel(i64 {}, i64* {})",
+                        cancel, handle, cancelled
+                    ));
+                    let out_ptr = self.new_temp();
+                    lines.push(format!("  {} = alloca i8*", out_ptr));
+                    let out_len = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", out_len));
+                    let wait = self.new_temp();
+                    lines.push(format!(
+                            "  {} = call i64 @aic_rt_net_async_wait_string(i64 {}, i64 0, i8** {}, i64* {})",
+                            wait, handle, out_ptr, out_len
+                        ));
+                    let _ = (cancel, wait);
+                }
+                AsyncPendingKind::TlsInt => {
+                    let typed = self.new_temp();
+                    lines.push(format!(
+                        "  {} = bitcast {}* {} to i64*",
+                        typed,
+                        llvm_type(&self.async_await_storage_ty()),
+                        await_slot_ptr
+                    ));
+                    let handle = self.new_temp();
+                    lines.push(format!("  {} = load i64, i64* {}", handle, typed));
+                    let cancelled = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", cancelled));
+                    let cancel = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_tls_async_cancel(i64 {}, i64* {})",
+                        cancel, handle, cancelled
+                    ));
+                    let discard = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", discard));
+                    let wait = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_tls_async_wait_int(i64 {}, i64 0, i64* {})",
+                        wait, handle, discard
+                    ));
+                    let _ = (cancel, wait);
+                }
+                AsyncPendingKind::TlsString => {
+                    let typed = self.new_temp();
+                    lines.push(format!(
+                        "  {} = bitcast {}* {} to i64*",
+                        typed,
+                        llvm_type(&self.async_await_storage_ty()),
+                        await_slot_ptr
+                    ));
+                    let handle = self.new_temp();
+                    lines.push(format!("  {} = load i64, i64* {}", handle, typed));
+                    let cancelled = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", cancelled));
+                    let cancel = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_tls_async_cancel(i64 {}, i64* {})",
+                        cancel, handle, cancelled
+                    ));
+                    let out_ptr = self.new_temp();
+                    lines.push(format!("  {} = alloca i8*", out_ptr));
+                    let out_len = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", out_len));
+                    let wait = self.new_temp();
+                    lines.push(format!(
+                            "  {} = call i64 @aic_rt_tls_async_wait_string(i64 {}, i64 0, i8** {}, i64* {})",
+                            wait, handle, out_ptr, out_len
+                        ));
+                    let _ = (cancel, wait);
+                }
+                AsyncPendingKind::FsTask => {
+                    let typed = self.new_temp();
+                    lines.push(format!(
+                        "  {} = bitcast {}* {} to i64*",
+                        typed,
+                        llvm_type(&self.async_await_storage_ty()),
+                        await_slot_ptr
+                    ));
+                    let handle = self.new_temp();
+                    lines.push(format!("  {} = load i64, i64* {}", handle, typed));
+                    let cancelled = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", cancelled));
+                    let discard = self.new_temp();
+                    lines.push(format!("  {} = alloca i64", discard));
+                    let cancel = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_conc_cancel(i64 {}, i64* {})",
+                        cancel, handle, cancelled
+                    ));
+                    let join = self.new_temp();
+                    lines.push(format!(
+                        "  {} = call i64 @aic_rt_conc_join(i64 {}, i64* {})",
+                        join, handle, discard
+                    ));
+                    let _ = (cancel, join);
+                }
+            }
+            lines.extend(async_case_fctx.lines.drain(..));
+            lines.push(format!("  br label %{}", cleanup_done_label));
+        }
+
+        lines.push(format!("{}:", cleanup_done_label));
+        let mut cleanup_fctx = FnCtx {
+            lines: Vec::new(),
+            vars: vec![BTreeMap::new()],
+            drop_scopes: vec![DropScope::default()],
+            terminated: false,
+            current_label: cleanup_done_label.clone(),
+            ret_ty: LType::Unit,
+            async_inner_ret: None,
+            debug_scope: None,
+            loop_stack: Vec::new(),
+            current_fn_name: drop_name.to_string(),
+            current_fn_llvm_name: drop_name.to_string(),
+            current_fn_sig: FnSig {
+                is_extern: false,
+                extern_symbol: None,
+                extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
+                params: vec![sig.ret.clone()],
+                ret: LType::Unit,
+            },
+            tail_return_mode: false,
+            suppress_lifetime_end: true,
+            async_poll_ctx: None,
+        };
+        for (idx, param) in func.params.iter().enumerate() {
+            let Some(field_index) = frame_plan.param_indices.get(idx) else {
+                continue;
+            };
+            let Some(param_ty) = sig.params.get(idx).cloned() else {
+                continue;
+            };
+            let ptr = self.new_temp();
+            lines.push(format!(
+                "  {} = getelementptr inbounds {}, {}* %frame, i32 0, i32 {}",
+                ptr, frame_plan.frame_llvm, frame_plan.frame_llvm, field_index
+            ));
+            cleanup_fctx.vars.last_mut().expect("scope").insert(
+                param.name.clone(),
+                Local {
+                    symbol: Some(param.symbol),
+                    ty: param_ty,
+                    ptr: ptr.clone(),
+                },
+            );
+            cleanup_fctx.drop_scopes[0].locals.insert(
+                param.symbol,
+                DropSlot {
+                    ty: sig.params[idx].clone(),
+                    ptr,
+                    skip_resource_cleanup: false,
+                },
+            );
+            cleanup_fctx.drop_scopes[0].lexical_order.push(param.symbol);
+        }
+        for (symbol, field_index) in &frame_plan.local_indices {
+            let ptr = self.new_temp();
+            lines.push(format!(
+                "  {} = getelementptr inbounds {}, {}* %frame, i32 0, i32 {}",
+                ptr, frame_plan.frame_llvm, frame_plan.frame_llvm, field_index
+            ));
+            let local_ty = frame_plan
+                .local_types
+                .get(symbol)
+                .cloned()
+                .unwrap_or(LType::Unit);
+            cleanup_fctx.drop_scopes[0].locals.insert(
+                *symbol,
+                DropSlot {
+                    ty: local_ty,
+                    ptr,
+                    skip_resource_cleanup: false,
+                },
+            );
+            cleanup_fctx.drop_scopes[0].lexical_order.push(*symbol);
+        }
+        self.emit_scope_drops_at(0, &mut cleanup_fctx);
+        lines.extend(cleanup_fctx.lines);
+        lines.push("  call void @aic_rt_heap_free(i8* %frame_raw)".to_string());
+        lines.push("  ret void".to_string());
+        lines.push("}".to_string());
+        self.deferred_fn_defs.push(lines);
+        let _ = (func, sig);
+    }
+
     pub(super) fn gen_entry_wrapper(&mut self) {
         let Some(main_sig) = self.fn_sig("main").cloned() else {
             return;
@@ -1406,21 +2052,67 @@ impl<'a> Generator<'a> {
                 self.out.push("  ret i32 0".to_string());
             }
             LType::Async(ref inner) => {
+                self.extern_decls
+                    .insert("declare i64 @aic_rt_async_drive(i8*, i8*, i8*)".to_string());
+                self.extern_decls
+                    .insert("declare void @aic_rt_async_drop(i8*, i8*)".to_string());
                 let async_reg = self.new_temp();
                 self.out.push(format!(
                     "  {} = call {} @aic_main()",
                     async_reg,
                     llvm_type(&main_sig.ret)
                 ));
+                let frame = self.new_temp();
+                let poll = self.new_temp();
+                let drop_fn = self.new_temp();
+                self.out.push(format!(
+                    "  {} = extractvalue {} {}, 0",
+                    frame,
+                    llvm_type(&main_sig.ret),
+                    async_reg
+                ));
+                self.out.push(format!(
+                    "  {} = extractvalue {} {}, 1",
+                    poll,
+                    llvm_type(&main_sig.ret),
+                    async_reg
+                ));
+                self.out.push(format!(
+                    "  {} = extractvalue {} {}, 2",
+                    drop_fn,
+                    llvm_type(&main_sig.ret),
+                    async_reg
+                ));
                 match inner.as_ref() {
                     ty if is_integral_type(ty) => {
+                        let out_slot = self.new_temp();
+                        self.out
+                            .push(format!("  {} = alloca {}", out_slot, llvm_type(ty)));
+                        let out_raw = self.new_temp();
+                        self.out.push(format!(
+                            "  {} = bitcast {}* {} to i8*",
+                            out_raw,
+                            llvm_type(ty),
+                            out_slot
+                        ));
+                        let drive_rc = self.new_temp();
+                        self.out.push(format!(
+                            "  {} = call i64 @aic_rt_async_drive(i8* {}, i8* {}, i8* {})",
+                            drive_rc, frame, poll, out_raw
+                        ));
+                        let _ = drive_rc;
+                        self.out.push(format!(
+                            "  call void @aic_rt_async_drop(i8* {}, i8* {})",
+                            frame, drop_fn
+                        ));
                         let value = self.new_temp();
                         let c = self.new_temp();
                         self.out.push(format!(
-                            "  {} = extractvalue {} {}, 1",
+                            "  {} = load {}, {}* {}",
                             value,
-                            llvm_type(&main_sig.ret),
-                            async_reg
+                            llvm_type(ty),
+                            llvm_type(ty),
+                            out_slot
                         ));
                         let width = integer_width_bits(ty).unwrap_or(64);
                         if width > 32 {
@@ -1449,18 +2141,39 @@ impl<'a> Generator<'a> {
                         self.out.push(format!("  ret i32 {}", c));
                     }
                     LType::Bool => {
+                        let out_slot = self.new_temp();
+                        self.out.push(format!("  {} = alloca i1", out_slot));
+                        let out_raw = self.new_temp();
+                        self.out
+                            .push(format!("  {} = bitcast i1* {} to i8*", out_raw, out_slot));
+                        let drive_rc = self.new_temp();
+                        self.out.push(format!(
+                            "  {} = call i64 @aic_rt_async_drive(i8* {}, i8* {}, i8* {})",
+                            drive_rc, frame, poll, out_raw
+                        ));
+                        let _ = drive_rc;
+                        self.out.push(format!(
+                            "  call void @aic_rt_async_drop(i8* {}, i8* {})",
+                            frame, drop_fn
+                        ));
                         let value = self.new_temp();
                         let c = self.new_temp();
-                        self.out.push(format!(
-                            "  {} = extractvalue {} {}, 1",
-                            value,
-                            llvm_type(&main_sig.ret),
-                            async_reg
-                        ));
+                        self.out
+                            .push(format!("  {} = load i1, i1* {}", value, out_slot));
                         self.out.push(format!("  {} = zext i1 {} to i32", c, value));
                         self.out.push(format!("  ret i32 {}", c));
                     }
                     LType::Unit => {
+                        let drive_rc = self.new_temp();
+                        self.out.push(format!(
+                            "  {} = call i64 @aic_rt_async_drive(i8* {}, i8* {}, i8* null)",
+                            drive_rc, frame, poll
+                        ));
+                        let _ = drive_rc;
+                        self.out.push(format!(
+                            "  call void @aic_rt_async_drop(i8* {}, i8* {})",
+                            frame, drop_fn
+                        ));
                         self.out.push("  ret i32 0".to_string());
                     }
                     _ => {
@@ -1486,6 +2199,313 @@ impl<'a> Generator<'a> {
         }
         self.out.push("}".to_string());
         self.out.push(String::new());
+    }
+
+    fn async_await_storage_ty(&self) -> LType {
+        LType::Struct(StructLayoutType {
+            repr: "__AsyncAwaitStorage".to_string(),
+            fields: vec![
+                StructFieldType {
+                    name: "w0".to_string(),
+                    ty: LType::Int,
+                },
+                StructFieldType {
+                    name: "w1".to_string(),
+                    ty: LType::Int,
+                },
+                StructFieldType {
+                    name: "w2".to_string(),
+                    ty: LType::Int,
+                },
+                StructFieldType {
+                    name: "w3".to_string(),
+                    ty: LType::Int,
+                },
+            ],
+        })
+    }
+
+    fn collect_async_locals_in_block(
+        &mut self,
+        block: &ir::Block,
+        locals: &mut Vec<(ir::SymbolId, String, LType)>,
+    ) -> Option<()> {
+        for stmt in &block.stmts {
+            match stmt {
+                ir::Stmt::Let {
+                    symbol,
+                    name,
+                    ty,
+                    span,
+                    expr,
+                    ..
+                } => {
+                    let Some(ty_id) = ty else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E5020",
+                            format!(
+                                "async lowering requires a concrete local type for '{}'",
+                                name
+                            ),
+                            self.file,
+                            *span,
+                        ));
+                        return None;
+                    };
+                    let local_ty = self.type_from_id(*ty_id, *span)?;
+                    locals.push((*symbol, name.clone(), local_ty));
+                    self.collect_async_locals_in_expr(expr, locals)?;
+                }
+                ir::Stmt::Assign { expr, .. }
+                | ir::Stmt::Expr { expr, .. }
+                | ir::Stmt::Assert { expr, .. } => {
+                    self.collect_async_locals_in_expr(expr, locals)?;
+                }
+                ir::Stmt::Return { expr, .. } => {
+                    if let Some(expr) = expr {
+                        self.collect_async_locals_in_expr(expr, locals)?;
+                    }
+                }
+            }
+        }
+        if let Some(tail) = &block.tail {
+            self.collect_async_locals_in_expr(tail, locals)?;
+        }
+        Some(())
+    }
+
+    fn collect_async_locals_in_expr(
+        &mut self,
+        expr: &ir::Expr,
+        locals: &mut Vec<(ir::SymbolId, String, LType)>,
+    ) -> Option<()> {
+        match &expr.kind {
+            ir::ExprKind::Call { callee, args, .. } => {
+                self.collect_async_locals_in_expr(callee, locals)?;
+                for arg in args {
+                    self.collect_async_locals_in_expr(arg, locals)?;
+                }
+            }
+            ir::ExprKind::Unary { expr: inner, .. }
+            | ir::ExprKind::Borrow { expr: inner, .. }
+            | ir::ExprKind::Await { expr: inner }
+            | ir::ExprKind::Try { expr: inner } => {
+                self.collect_async_locals_in_expr(inner, locals)?;
+            }
+            ir::ExprKind::Binary { lhs, rhs, .. } => {
+                self.collect_async_locals_in_expr(lhs, locals)?;
+                self.collect_async_locals_in_expr(rhs, locals)?;
+            }
+            ir::ExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                self.collect_async_locals_in_expr(cond, locals)?;
+                self.collect_async_locals_in_block(then_block, locals)?;
+                self.collect_async_locals_in_block(else_block, locals)?;
+            }
+            ir::ExprKind::While { cond, body } => {
+                self.collect_async_locals_in_expr(cond, locals)?;
+                self.collect_async_locals_in_block(body, locals)?;
+            }
+            ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+                self.collect_async_locals_in_block(body, locals)?;
+            }
+            ir::ExprKind::Break { expr } => {
+                if let Some(expr) = expr {
+                    self.collect_async_locals_in_expr(expr, locals)?;
+                }
+            }
+            ir::ExprKind::Match { expr, arms } => {
+                self.collect_async_locals_in_expr(expr, locals)?;
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        self.collect_async_locals_in_expr(guard, locals)?;
+                    }
+                    self.collect_async_locals_in_expr(&arm.body, locals)?;
+                }
+            }
+            ir::ExprKind::StructInit { fields, .. } => {
+                for (_, value, _) in fields {
+                    self.collect_async_locals_in_expr(value, locals)?;
+                }
+            }
+            ir::ExprKind::FieldAccess { base, .. } => {
+                self.collect_async_locals_in_expr(base, locals)?;
+            }
+            ir::ExprKind::Closure { .. }
+            | ir::ExprKind::Var(_)
+            | ir::ExprKind::Int(_)
+            | ir::ExprKind::Float(_)
+            | ir::ExprKind::Bool(_)
+            | ir::ExprKind::Char(_)
+            | ir::ExprKind::String(_)
+            | ir::ExprKind::TemplateLiteral { .. }
+            | ir::ExprKind::Unit
+            | ir::ExprKind::Continue => {}
+        }
+        Some(())
+    }
+
+    fn build_async_frame_plan(
+        &mut self,
+        func: &ir::Function,
+        sig: &FnSig,
+        frame_repr: &str,
+    ) -> Option<AsyncFramePlan> {
+        let mut fields = Vec::new();
+        fields.push(StructFieldType {
+            name: "state".to_string(),
+            ty: LType::Int32,
+        });
+        fields.push(StructFieldType {
+            name: "await_slot".to_string(),
+            ty: self.async_await_storage_ty(),
+        });
+
+        let mut param_indices = Vec::with_capacity(sig.params.len());
+        for (idx, ty) in sig.params.iter().enumerate() {
+            param_indices.push(fields.len());
+            fields.push(StructFieldType {
+                name: format!("arg{idx}"),
+                ty: ty.clone(),
+            });
+        }
+
+        let mut collected_locals = Vec::new();
+        self.collect_async_locals_in_block(&func.body, &mut collected_locals)?;
+        let mut local_indices = BTreeMap::new();
+        let mut local_types = BTreeMap::new();
+        for (symbol, name, ty) in collected_locals {
+            let field_index = fields.len();
+            fields.push(StructFieldType {
+                name: format!("{}_{}", name, symbol.0),
+                ty: ty.clone(),
+            });
+            local_indices.insert(symbol, field_index);
+            local_types.insert(symbol, ty);
+        }
+
+        let frame_ty = LType::Struct(StructLayoutType {
+            repr: frame_repr.to_string(),
+            fields,
+        });
+        let frame_llvm = llvm_type(&frame_ty);
+        Some(AsyncFramePlan {
+            frame_ty,
+            frame_llvm,
+            state_index: 0,
+            await_storage_index: 1,
+            param_indices,
+            local_indices,
+            local_types,
+        })
+    }
+
+    fn emit_async_frame_field_ptr(
+        &mut self,
+        frame_llvm: &str,
+        frame_ptr: &str,
+        field_index: usize,
+        fctx: &mut FnCtx,
+    ) -> String {
+        let ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* {}, i32 0, i32 {}",
+            ptr, frame_llvm, frame_llvm, frame_ptr, field_index
+        ));
+        ptr
+    }
+
+    fn emit_async_poll_return(&mut self, value: Value, span: crate::span::Span, fctx: &mut FnCtx) {
+        let Some(state_ptr) = fctx
+            .async_poll_ctx
+            .as_ref()
+            .map(|async_ctx| async_ctx.state_ptr.clone())
+        else {
+            return;
+        };
+        let ret_ty = fctx.ret_ty.clone();
+        let Some(value) = self.coerce_value_to_expected(value, &ret_ty, span, fctx) else {
+            fctx.lines.push("  ret i64 4".to_string());
+            fctx.terminated = true;
+            return;
+        };
+        if ret_ty != LType::Unit {
+            let out_typed = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast i8* %out_raw to {}*",
+                out_typed,
+                llvm_type(&ret_ty)
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&ret_ty),
+                coerce_repr(&value, &ret_ty),
+                llvm_type(&ret_ty),
+                out_typed
+            ));
+        }
+        fctx.lines
+            .push(format!("  store i32 -1, i32* {}", state_ptr));
+        fctx.lines.push("  ret i64 0".to_string());
+        fctx.terminated = true;
+    }
+
+    fn emit_async_dispatch_lines(&self, async_ctx: &AsyncPollCtx) -> Vec<String> {
+        let mut lines = vec![format!(
+            "  %async_state = load i32, i32* {}",
+            async_ctx.state_ptr
+        )];
+        let mut cases = vec![
+            format!("    i32 -1, label %{}", async_ctx.completed_label),
+            format!("    i32 0, label %{}", async_ctx.state_labels[0].1),
+        ];
+        cases.extend(
+            async_ctx
+                .pending_states
+                .iter()
+                .map(|state| format!("    i32 {}, label %{}", state.state_id, state.label)),
+        );
+        lines.push(format!(
+            "  switch i32 %async_state, label %{} [",
+            async_ctx.invalid_label
+        ));
+        lines.extend(cases);
+        lines.push("  ]".to_string());
+        lines
+    }
+
+    fn register_async_pending_state(
+        &mut self,
+        kind: AsyncPendingKind,
+        fctx: &mut FnCtx,
+    ) -> Option<(i32, String)> {
+        let label = self.new_label("async_resume");
+        let async_ctx = fctx.async_poll_ctx.as_mut()?;
+        let state_id = async_ctx.next_state_id;
+        async_ctx.next_state_id += 1;
+        async_ctx.state_labels.push((state_id, label.clone()));
+        async_ctx.pending_states.push(AsyncPendingState {
+            state_id,
+            label: label.clone(),
+            kind,
+        });
+        Some((state_id, label))
+    }
+
+    fn async_storage_ptr_for_type(&mut self, ty: &LType, fctx: &mut FnCtx) -> Option<String> {
+        let async_ctx = fctx.async_poll_ctx.as_ref()?;
+        let ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast {}* {} to {}*",
+            ptr,
+            llvm_type(&self.async_await_storage_ty()),
+            async_ctx.await_storage_ptr,
+            llvm_type(ty)
+        ));
+        Some(ptr)
     }
 
     pub(super) fn gen_block(&mut self, block: &ir::Block, fctx: &mut FnCtx) -> Option<Value> {
@@ -1530,9 +2550,19 @@ impl<'a> Generator<'a> {
                         // later statements do not cascade into unrelated unknown-local
                         // diagnostics while backend errors are already being reported.
                         if let Some(expected) = expected.clone() {
-                            let ptr = self.new_temp();
-                            fctx.lines
-                                .push(format!("  {} = alloca {}", ptr, llvm_type(&expected)));
+                            let ptr = fctx
+                                .async_poll_ctx
+                                .as_ref()
+                                .and_then(|async_ctx| async_ctx.local_ptrs.get(symbol).cloned())
+                                .unwrap_or_else(|| {
+                                    let ptr = self.new_temp();
+                                    fctx.lines.push(format!(
+                                        "  {} = alloca {}",
+                                        ptr,
+                                        llvm_type(&expected)
+                                    ));
+                                    ptr
+                                });
                             fctx.lines.push(format!(
                                 "  store {} {}, {}* {}",
                                 llvm_type(&expected),
@@ -1595,9 +2625,16 @@ impl<'a> Generator<'a> {
                         }
                     }
                     self.mark_moved_resource_locals_in_expr(expr, fctx);
-                    let ptr = self.new_temp();
-                    fctx.lines
-                        .push(format!("  {} = alloca {}", ptr, llvm_type(&expected)));
+                    let ptr = fctx
+                        .async_poll_ctx
+                        .as_ref()
+                        .and_then(|async_ctx| async_ctx.local_ptrs.get(symbol).cloned())
+                        .unwrap_or_else(|| {
+                            let ptr = self.new_temp();
+                            fctx.lines
+                                .push(format!("  {} = alloca {}", ptr, llvm_type(&expected)));
+                            ptr
+                        });
                     let repr = coerce_repr(&value, &expected);
                     fctx.lines.push(format!(
                         "  store {} {}, {}* {}",
@@ -1685,7 +2722,9 @@ impl<'a> Generator<'a> {
                             self.gen_expr_with_expected(expr, Some(&ret_hint), fctx)
                         {
                             self.emit_scope_drops_to_depth(0, fctx);
-                            if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                            if fctx.async_poll_ctx.is_some() {
+                                self.emit_async_poll_return(value, expr.span, fctx);
+                            } else if let Some(async_inner) = fctx.async_inner_ret.clone() {
                                 let Some(value) = self.coerce_value_to_expected(
                                     value,
                                     &async_inner,
@@ -1720,12 +2759,32 @@ impl<'a> Generator<'a> {
                         }
                     } else {
                         self.emit_scope_drops_to_depth(0, fctx);
-                        if let Some(async_inner) = fctx.async_inner_ret.clone() {
-                            let async_ty = LType::Async(Box::new(async_inner));
+                        if fctx.async_poll_ctx.is_some() {
+                            self.emit_async_poll_return(
+                                Value {
+                                    ty: LType::Unit,
+                                    repr: None,
+                                },
+                                block.span,
+                                fctx,
+                            );
+                        } else if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                            let ready = self.build_ready_async_value(
+                                Value {
+                                    ty: async_inner.clone(),
+                                    repr: if async_inner == LType::Unit {
+                                        None
+                                    } else {
+                                        Some(default_value(&async_inner))
+                                    },
+                                },
+                                &async_inner,
+                                fctx,
+                            );
                             fctx.lines.push(format!(
                                 "  ret {} {}",
-                                llvm_type(&async_ty),
-                                default_value(&async_ty)
+                                llvm_type(&ready.ty),
+                                ready.repr.unwrap_or_else(|| default_value(&ready.ty))
                             ));
                         } else {
                             fctx.lines.push("  ret void".to_string());
@@ -1818,13 +2877,15 @@ impl<'a> Generator<'a> {
                 continue;
             };
             if !local.skip_resource_cleanup {
-                if let Some(drop_method) = self.drop_impl_method_for_type(&local.ty) {
+                if matches!(local.ty, LType::Async(_)) {
+                    self.emit_async_drop_action(local, fctx);
+                } else if let Some(drop_method) = self.drop_impl_method_for_type(&local.ty) {
                     self.emit_trait_drop_action(&drop_method, local, fctx);
                 } else if let Some(action) = resource_drop_action_for_type(&local.ty) {
                     self.emit_resource_drop_action(action, local, fctx);
                 }
             }
-            if type_has_runtime_drop(&local.ty) {
+            if type_has_runtime_drop(&local.ty) && !fctx.suppress_lifetime_end {
                 let cast = self.new_temp();
                 fctx.lines.push(format!(
                     "  {} = bitcast {}* {} to i8*",
@@ -1959,34 +3020,222 @@ impl<'a> Generator<'a> {
         }
     }
 
+    pub(super) fn ensure_async_ready_helpers(&mut self, inner_ty: &LType) -> (String, String) {
+        let key = render_type(inner_ty);
+        if let Some(existing) = self.async_ready_helpers.get(&key) {
+            return existing.clone();
+        }
+
+        self.extern_decls
+            .insert("declare void @aic_rt_heap_free(i8*)".to_string());
+
+        let suffix = self.async_counter;
+        self.async_counter += 1;
+        let poll_name = format!("__aic_async_ready_poll_{suffix}");
+        let drop_name = format!("__aic_async_ready_drop_{suffix}");
+        let frame_ty = if *inner_ty == LType::Unit {
+            "{ i1 }".to_string()
+        } else {
+            format!("{{ i1, {} }}", llvm_type(inner_ty))
+        };
+
+        let mut poll_lines = vec![
+            format!("define i64 @{}(i8* %frame_raw, i8* %out_raw) {{", poll_name),
+            "entry:".to_string(),
+            format!("  %frame = bitcast i8* %frame_raw to {}*", frame_ty),
+            format!("  %loaded = load {}, {}* %frame", frame_ty, frame_ty),
+            format!("  %consumed = extractvalue {} %loaded, 0", frame_ty),
+            "  %was_ready = xor i1 %consumed, true".to_string(),
+            "  br i1 %was_ready, label %mark_ready, label %done".to_string(),
+            "mark_ready:".to_string(),
+        ];
+        if *inner_ty != LType::Unit {
+            poll_lines.push(format!("  %payload = extractvalue {} %loaded, 1", frame_ty));
+            poll_lines.push(format!(
+                "  %out_typed = bitcast i8* %out_raw to {}*",
+                llvm_type(inner_ty)
+            ));
+            poll_lines.push(format!(
+                "  store {} %payload, {}* %out_typed",
+                llvm_type(inner_ty),
+                llvm_type(inner_ty)
+            ));
+        }
+        poll_lines.push(format!(
+            "  %updated = insertvalue {} %loaded, i1 1, 0",
+            frame_ty
+        ));
+        poll_lines.push(format!(
+            "  store {} %updated, {}* %frame",
+            frame_ty, frame_ty
+        ));
+        poll_lines.push("  br label %done".to_string());
+        poll_lines.push("done:".to_string());
+        poll_lines.push("  ret i64 0".to_string());
+        poll_lines.push("}".to_string());
+
+        let mut drop_lines = vec![
+            format!("define void @{}(i8* %frame_raw) {{", drop_name),
+            "entry:".to_string(),
+            format!("  %frame = bitcast i8* %frame_raw to {}*", frame_ty),
+            format!("  %loaded = load {}, {}* %frame", frame_ty, frame_ty),
+        ];
+        if *inner_ty != LType::Unit && self.type_needs_explicit_drop(inner_ty) {
+            drop_lines.push(format!(
+                "  %consumed = extractvalue {} %loaded, 0",
+                frame_ty
+            ));
+            drop_lines
+                .push("  br i1 %consumed, label %free_frame, label %drop_payload".to_string());
+            drop_lines.push("drop_payload:".to_string());
+            drop_lines.push(format!("  %payload = extractvalue {} %loaded, 1", frame_ty));
+            drop_lines.push(format!("  %payload_slot = alloca {}", llvm_type(inner_ty)));
+            drop_lines.push(format!(
+                "  store {} %payload, {}* %payload_slot",
+                llvm_type(inner_ty),
+                llvm_type(inner_ty)
+            ));
+            let mut helper_ctx = FnCtx {
+                lines: Vec::new(),
+                vars: Vec::new(),
+                drop_scopes: Vec::new(),
+                terminated: false,
+                current_label: "drop_payload".to_string(),
+                ret_ty: LType::Unit,
+                async_inner_ret: None,
+                debug_scope: None,
+                loop_stack: Vec::new(),
+                current_fn_name: drop_name.clone(),
+                current_fn_llvm_name: drop_name.clone(),
+                current_fn_sig: FnSig {
+                    is_extern: false,
+                    extern_symbol: None,
+                    extern_abi: None,
+                    is_intrinsic: false,
+                    intrinsic_abi: None,
+                    params: vec![LType::Async(Box::new(inner_ty.clone()))],
+                    ret: LType::Unit,
+                },
+                tail_return_mode: false,
+                suppress_lifetime_end: true,
+                async_poll_ctx: None,
+            };
+            let slot = DropSlot {
+                ty: inner_ty.clone(),
+                ptr: "%payload_slot".to_string(),
+                skip_resource_cleanup: false,
+            };
+            if matches!(inner_ty, LType::Async(_)) {
+                self.emit_async_drop_action(&slot, &mut helper_ctx);
+            } else if let Some(drop_method) = self.drop_impl_method_for_type(inner_ty) {
+                self.emit_trait_drop_action(&drop_method, &slot, &mut helper_ctx);
+            } else if let Some(action) = resource_drop_action_for_type(inner_ty) {
+                self.emit_resource_drop_action(action, &slot, &mut helper_ctx);
+            }
+            drop_lines.extend(helper_ctx.lines);
+            drop_lines.push("  br label %free_frame".to_string());
+            drop_lines.push("free_frame:".to_string());
+        }
+        drop_lines.push("  call void @aic_rt_heap_free(i8* %frame_raw)".to_string());
+        drop_lines.push("  ret void".to_string());
+        drop_lines.push("}".to_string());
+
+        self.deferred_fn_defs.push(poll_lines);
+        self.deferred_fn_defs.push(drop_lines);
+        self.async_ready_helpers
+            .insert(key, (poll_name.clone(), drop_name.clone()));
+        (poll_name, drop_name)
+    }
+
     pub(super) fn build_ready_async_value(
         &mut self,
         value: Value,
         inner_ty: &LType,
         fctx: &mut FnCtx,
     ) -> Value {
+        self.extern_decls
+            .insert("declare i8* @malloc(i64)".to_string());
+        let (poll_name, drop_name) = self.ensure_async_ready_helpers(inner_ty);
         let async_ty = LType::Async(Box::new(inner_ty.clone()));
-        let ready_state = self.new_temp();
-        fctx.lines.push(format!(
-            "  {} = insertvalue {} undef, i1 1, 0",
-            ready_state,
-            llvm_type(&async_ty)
-        ));
-        let repr = if matches!(inner_ty, LType::Unit) {
-            ready_state
+        let frame_ty = if *inner_ty == LType::Unit {
+            "{ i1 }".to_string()
         } else {
-            let with_value = self.new_temp();
-            let payload = coerce_repr(&value, inner_ty);
+            format!("{{ i1, {} }}", llvm_type(inner_ty))
+        };
+        let frame_size_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = getelementptr inbounds {}, {}* null, i32 1",
+            frame_size_ptr, frame_ty, frame_ty
+        ));
+        let frame_size = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = ptrtoint {}* {} to i64",
+            frame_size, frame_ty, frame_size_ptr
+        ));
+        let frame_raw = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = call i8* @malloc(i64 {})",
+            frame_raw, frame_size
+        ));
+        let frame_ptr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = bitcast i8* {} to {}*",
+            frame_ptr, frame_raw, frame_ty
+        ));
+
+        let frame_value = if *inner_ty == LType::Unit {
+            let ready = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} undef, i1 0, 0",
+                ready, frame_ty
+            ));
+            ready
+        } else {
+            let ready = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = insertvalue {} undef, i1 0, 0",
+                ready, frame_ty
+            ));
+            let with_payload = self.new_temp();
             fctx.lines.push(format!(
                 "  {} = insertvalue {} {}, {} {}, 1",
-                with_value,
-                llvm_type(&async_ty),
-                ready_state,
+                with_payload,
+                frame_ty,
+                ready,
                 llvm_type(inner_ty),
-                payload
+                coerce_repr(&value, inner_ty)
             ));
-            with_value
+            with_payload
         };
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            frame_ty, frame_value, frame_ty, frame_ptr
+        ));
+
+        let with_frame = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} undef, i8* {}, 0",
+            with_frame,
+            llvm_type(&async_ty),
+            frame_raw
+        ));
+        let with_poll = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} {}, i8* bitcast (i64 (i8*, i8*)* @{} to i8*), 1",
+            with_poll,
+            llvm_type(&async_ty),
+            with_frame,
+            poll_name
+        ));
+        let repr = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = insertvalue {} {}, i8* bitcast (void (i8*)* @{} to i8*), 2",
+            repr,
+            llvm_type(&async_ty),
+            with_poll,
+            drop_name
+        ));
+
         Value {
             ty: async_ty,
             repr: Some(repr),
@@ -2419,8 +3668,60 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
+        if fctx.async_poll_ctx.is_some() {
+            return self.gen_async_poll_await(inner, span, fctx);
+        }
         let awaited = self.gen_expr(inner, fctx)?;
         if let LType::Async(output_ty) = awaited.ty.clone() {
+            let repr = awaited.repr.unwrap_or_else(|| default_value(&awaited.ty));
+            self.extern_decls
+                .insert("declare i64 @aic_rt_async_drive(i8*, i8*, i8*)".to_string());
+            self.extern_decls
+                .insert("declare void @aic_rt_async_drop(i8*, i8*)".to_string());
+            let frame = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 0",
+                frame,
+                llvm_type(&awaited.ty),
+                repr
+            ));
+            let poll = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 1",
+                poll,
+                llvm_type(&awaited.ty),
+                repr
+            ));
+            let drop_fn = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 2",
+                drop_fn,
+                llvm_type(&awaited.ty),
+                repr
+            ));
+            let out_arg = if matches!(&*output_ty, LType::Unit) {
+                "null".to_string()
+            } else {
+                let out_slot = self.alloc_entry_slot(&output_ty, fctx);
+                let out_raw = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = bitcast {}* {} to i8*",
+                    out_raw,
+                    llvm_type(&output_ty),
+                    out_slot
+                ));
+                out_raw
+            };
+            let drive_rc = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 @aic_rt_async_drive(i8* {}, i8* {}, i8* {})",
+                drive_rc, frame, poll, out_arg
+            ));
+            let _ = drive_rc;
+            fctx.lines.push(format!(
+                "  call void @aic_rt_async_drop(i8* {}, i8* {})",
+                frame, drop_fn
+            ));
             if matches!(&*output_ty, LType::Unit) {
                 return Some(Value {
                     ty: LType::Unit,
@@ -2428,16 +3729,24 @@ impl<'a> Generator<'a> {
                 });
             }
             let value = self.new_temp();
-            let repr = awaited.repr.unwrap_or_else(|| default_value(&awaited.ty));
+            let out_slot = out_arg;
             fctx.lines.push(format!(
-                "  {} = extractvalue {} {}, 1",
+                "  {} = bitcast i8* {} to {}*",
                 value,
-                llvm_type(&awaited.ty),
-                repr
+                out_slot,
+                llvm_type(&output_ty)
+            ));
+            let loaded = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded,
+                llvm_type(&output_ty),
+                llvm_type(&output_ty),
+                value
             ));
             return Some(Value {
                 ty: (*output_ty).clone(),
-                repr: Some(value),
+                repr: Some(loaded),
             });
         }
 
@@ -2467,8 +3776,499 @@ impl<'a> Generator<'a> {
         None
     }
 
+    fn gen_async_poll_await(
+        &mut self,
+        inner: &ir::Expr,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let awaited = self.gen_expr(inner, fctx)?;
+        let state_ptr = fctx
+            .async_poll_ctx
+            .as_ref()
+            .map(|ctx| ctx.state_ptr.clone())?;
+
+        if let LType::Async(output_ty) = awaited.ty.clone() {
+            self.extern_decls
+                .insert("declare i64 @aic_rt_async_poll_once(i8*, i8*, i8*)".to_string());
+            self.extern_decls
+                .insert("declare void @aic_rt_async_drop(i8*, i8*)".to_string());
+
+            let storage_ptr = self.async_storage_ptr_for_type(&awaited.ty, fctx)?;
+            let repr = awaited.repr.unwrap_or_else(|| default_value(&awaited.ty));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&awaited.ty),
+                repr,
+                llvm_type(&awaited.ty),
+                storage_ptr
+            ));
+
+            let (state_id, resume_label) =
+                self.register_async_pending_state(AsyncPendingKind::Future, fctx)?;
+            fctx.lines
+                .push(format!("  store i32 {}, i32* {}", state_id, state_ptr));
+            fctx.lines.push(format!("  br label %{}", resume_label));
+            fctx.lines.push(format!("{}:", resume_label));
+            let storage_ptr = self.async_storage_ptr_for_type(&awaited.ty, fctx)?;
+            let loaded_future = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded_future,
+                llvm_type(&awaited.ty),
+                llvm_type(&awaited.ty),
+                storage_ptr
+            ));
+            let frame = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 0",
+                frame,
+                llvm_type(&awaited.ty),
+                loaded_future
+            ));
+            let poll = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 1",
+                poll,
+                llvm_type(&awaited.ty),
+                loaded_future
+            ));
+            let drop_fn = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = extractvalue {} {}, 2",
+                drop_fn,
+                llvm_type(&awaited.ty),
+                loaded_future
+            ));
+
+            let out_arg = if matches!(&*output_ty, LType::Unit) {
+                "null".to_string()
+            } else {
+                let out_slot = self.alloc_entry_slot(&output_ty, fctx);
+                let out_raw = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = bitcast {}* {} to i8*",
+                    out_raw,
+                    llvm_type(&output_ty),
+                    out_slot
+                ));
+                out_raw
+            };
+            let poll_rc = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 @aic_rt_async_poll_once(i8* {}, i8* {}, i8* {})",
+                poll_rc, frame, poll, out_arg
+            ));
+            let is_pending = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 1", is_pending, poll_rc));
+            let pending_label = self.new_label("await_pending");
+            let check_ready_label = self.new_label("await_check_ready");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                is_pending, pending_label, check_ready_label
+            ));
+            fctx.lines.push(format!("{}:", pending_label));
+            fctx.lines.push("  ret i64 1".to_string());
+            fctx.lines.push(format!("{}:", check_ready_label));
+            let is_ready = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", is_ready, poll_rc));
+            let ready_label = self.new_label("await_ready");
+            let error_label = self.new_label("await_error");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                is_ready, ready_label, error_label
+            ));
+            fctx.lines.push(format!("{}:", error_label));
+            fctx.lines.push(format!("  ret i64 {}", poll_rc));
+            fctx.lines.push(format!("{}:", ready_label));
+            fctx.lines.push(format!(
+                "  call void @aic_rt_async_drop(i8* {}, i8* {})",
+                frame, drop_fn
+            ));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&awaited.ty),
+                default_value(&awaited.ty),
+                llvm_type(&awaited.ty),
+                storage_ptr
+            ));
+            if matches!(&*output_ty, LType::Unit) {
+                return Some(Value {
+                    ty: LType::Unit,
+                    repr: None,
+                });
+            }
+            let typed_out = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = bitcast i8* {} to {}*",
+                typed_out,
+                out_arg,
+                llvm_type(&output_ty)
+            ));
+            let loaded = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                loaded,
+                llvm_type(&output_ty),
+                llvm_type(&output_ty),
+                typed_out
+            ));
+            return Some(Value {
+                ty: (*output_ty).clone(),
+                repr: Some(loaded),
+            });
+        }
+
+        let Some((ok_idx, err_idx, submit_ok_ty, submit_err_ty, output_ty, op_name, err_name)) =
+            self.classify_await_submit_result(&awaited.ty, span)
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5002",
+                "await expects Async[T] or Result[Async*Op, NetError/TlsError/FsError] during codegen",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        let Some((output_layout, output_ok_ty, output_err_ty, _output_ok_idx, output_err_idx)) =
+            self.result_layout_parts(&output_ty, span)
+        else {
+            return None;
+        };
+        if output_err_ty != submit_err_ty {
+            self.diagnostics.push(Diagnostic::error(
+                "E5002",
+                "await submit bridge requires matching submit error payload type",
+                self.file,
+                span,
+            ));
+            return None;
+        }
+
+        let submitted_repr = awaited
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&awaited.ty));
+        let tag = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            tag,
+            llvm_type(&awaited.ty),
+            submitted_repr
+        ));
+        let is_ok = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = icmp eq i32 {}, {}", is_ok, tag, ok_idx));
+        let ok_label = self.new_label("await_submit_ok");
+        let err_label = self.new_label("await_submit_err");
+        let done_label = self.new_label("await_submit_done");
+        let out_slot = self.alloc_entry_slot(&output_ty, fctx);
+        fctx.lines.push(format!(
+            "  br i1 {}, label %{}, label %{}",
+            is_ok, ok_label, err_label
+        ));
+        fctx.lines.push(format!("{}:", err_label));
+        let err_payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            err_payload,
+            llvm_type(&awaited.ty),
+            submitted_repr,
+            err_idx + 1
+        ));
+        let err_value = self.build_enum_variant(
+            &output_layout,
+            output_err_idx,
+            Some(Value {
+                ty: submit_err_ty.clone(),
+                repr: Some(err_payload),
+            }),
+            span,
+            fctx,
+        )?;
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&output_ty),
+            err_value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&output_ty)),
+            llvm_type(&output_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+
+        fctx.lines.push(format!("{}:", ok_label));
+        let op_payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            op_payload,
+            llvm_type(&awaited.ty),
+            submitted_repr,
+            ok_idx + 1
+        ));
+        let op_value = Value {
+            ty: submit_ok_ty.clone(),
+            repr: Some(op_payload),
+        };
+        let op_handle = self.extract_named_handle_from_value(
+            &op_value,
+            &op_name,
+            "await submit bridge",
+            span,
+            fctx,
+        )?;
+        let storage_ptr = self.async_storage_ptr_for_type(&LType::Int, fctx)?;
+        fctx.lines
+            .push(format!("  store i64 {}, i64* {}", op_handle, storage_ptr));
+        let pending_kind = match (op_name.as_str(), err_name.as_str()) {
+            ("AsyncIntOp", "NetError") => AsyncPendingKind::NetInt,
+            ("AsyncStringOp", "NetError") => AsyncPendingKind::NetString,
+            ("AsyncIntOp", "TlsError") => AsyncPendingKind::TlsInt,
+            ("AsyncStringOp", "TlsError") => AsyncPendingKind::TlsString,
+            _ => AsyncPendingKind::FsTask,
+        };
+        let (state_id, resume_label) = self.register_async_pending_state(pending_kind, fctx)?;
+        fctx.lines
+            .push(format!("  store i32 {}, i32* {}", state_id, state_ptr));
+        fctx.lines.push(format!("  br label %{}", resume_label));
+        fctx.lines.push(format!("{}:", resume_label));
+        let storage_ptr = self.async_storage_ptr_for_type(&LType::Int, fctx)?;
+        let loaded_handle = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load i64, i64* {}",
+            loaded_handle, storage_ptr
+        ));
+
+        let bridged_result = if matches!(
+            (op_name.as_str(), err_name.as_str()),
+            ("AsyncStringOp", "NetError") | ("AsyncStringOp", "TlsError")
+        ) {
+            let helper = if err_name == "TlsError" {
+                self.extern_decls.insert(
+                    "declare i64 @aic_rt_tls_async_poll_string_once(i64, i8**, i64*)".to_string(),
+                );
+                "@aic_rt_tls_async_poll_string_once"
+            } else {
+                self.extern_decls.insert(
+                    "declare i64 @aic_rt_net_async_poll_string_once(i64, i8**, i64*)".to_string(),
+                );
+                "@aic_rt_net_async_poll_string_once"
+            };
+            let out_ptr_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+            let out_len_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+            let poll_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 {}(i64 {}, i8** {}, i64* {})",
+                poll_err, helper, loaded_handle, out_ptr_slot, out_len_slot
+            ));
+            let is_pending = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, -1", is_pending, poll_err));
+            let pending_label = self.new_label("await_submit_pending");
+            let ready_label = self.new_label("await_submit_ready");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                is_pending, pending_label, ready_label
+            ));
+            fctx.lines.push(format!("{}:", pending_label));
+            fctx.lines.push("  ret i64 1".to_string());
+            fctx.lines.push(format!("{}:", ready_label));
+            let out_ptr = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = load i8*, i8** {}", out_ptr, out_ptr_slot));
+            let out_len = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = load i64, i64* {}", out_len, out_len_slot));
+            let data_value = self.build_string_value(&out_ptr, &out_len, &out_len, fctx);
+            let payload = if output_ok_ty == LType::String {
+                data_value
+            } else {
+                self.build_bytes_value_from_data(
+                    &output_ok_ty,
+                    data_value,
+                    "await submit bridge",
+                    span,
+                    fctx,
+                )?
+            };
+            if err_name == "TlsError" {
+                self.wrap_tls_result(&output_ty, payload, &poll_err, span, fctx)?
+            } else {
+                self.wrap_net_result(&output_ty, payload, &poll_err, span, fctx)?
+            }
+        } else if matches!(
+            (op_name.as_str(), err_name.as_str()),
+            ("AsyncIntOp", "NetError") | ("AsyncIntOp", "TlsError")
+        ) {
+            let helper = if err_name == "TlsError" {
+                self.extern_decls
+                    .insert("declare i64 @aic_rt_tls_async_poll_int_once(i64, i64*)".to_string());
+                "@aic_rt_tls_async_poll_int_once"
+            } else {
+                self.extern_decls
+                    .insert("declare i64 @aic_rt_net_async_poll_int_once(i64, i64*)".to_string());
+                "@aic_rt_net_async_poll_int_once"
+            };
+            let out_int_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i64", out_int_slot));
+            let poll_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 {}(i64 {}, i64* {})",
+                poll_err, helper, loaded_handle, out_int_slot
+            ));
+            let is_pending = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, -1", is_pending, poll_err));
+            let pending_label = self.new_label("await_submit_pending");
+            let ready_label = self.new_label("await_submit_ready");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                is_pending, pending_label, ready_label
+            ));
+            fctx.lines.push(format!("{}:", pending_label));
+            fctx.lines.push("  ret i64 1".to_string());
+            fctx.lines.push(format!("{}:", ready_label));
+            let out_int = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = load i64, i64* {}", out_int, out_int_slot));
+            let payload = Value {
+                ty: LType::Int,
+                repr: Some(out_int),
+            };
+            if err_name == "TlsError" {
+                self.wrap_tls_result(&output_ty, payload, &poll_err, span, fctx)?
+            } else {
+                self.wrap_net_result(&output_ty, payload, &poll_err, span, fctx)?
+            }
+        } else {
+            let joined_slot = self.new_temp();
+            fctx.lines.push(format!("  {} = alloca i64", joined_slot));
+            let join_err = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = call i64 @aic_rt_conc_join_poll(i64 {}, i64* {})",
+                join_err, loaded_handle, joined_slot
+            ));
+            let is_pending = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 2", is_pending, join_err));
+            let pending_label = self.new_label("await_submit_pending");
+            let ready_label = self.new_label("await_submit_ready");
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                is_pending, pending_label, ready_label
+            ));
+            fctx.lines.push(format!("{}:", pending_label));
+            fctx.lines.push("  ret i64 1".to_string());
+            fctx.lines.push(format!("{}:", ready_label));
+            let joined_value = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load i64, i64* {}",
+                joined_value, joined_slot
+            ));
+            let joined_payload = self.load_boxed_runtime_value(
+                &output_ty,
+                &joined_value,
+                "await_submit_fs",
+                span,
+                fctx,
+            )?;
+            let runtime_done = self.new_temp();
+            fctx.lines
+                .push(format!("  {} = icmp eq i64 {}, 0", runtime_done, join_err));
+            let ok_payload_label = self.new_label("await_submit_fs_ok");
+            let err_payload_label = self.new_label("await_submit_fs_err");
+            let payload_done_label = self.new_label("await_submit_fs_done");
+            let payload_slot = self.alloc_entry_slot(&output_ty, fctx);
+            fctx.lines.push(format!(
+                "  br i1 {}, label %{}, label %{}",
+                runtime_done, ok_payload_label, err_payload_label
+            ));
+            fctx.lines.push(format!("{}:", ok_payload_label));
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&output_ty),
+                joined_payload
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&output_ty)),
+                llvm_type(&output_ty),
+                payload_slot
+            ));
+            fctx.lines
+                .push(format!("  br label %{}", payload_done_label));
+            fctx.lines.push(format!("{}:", err_payload_label));
+            let async_err_payload =
+                self.build_fs_error_from_concurrency_code(&output_err_ty, &join_err, span, fctx)?;
+            let async_err_value = self.build_enum_variant(
+                &output_layout,
+                output_err_idx,
+                Some(async_err_payload),
+                span,
+                fctx,
+            )?;
+            fctx.lines.push(format!(
+                "  store {} {}, {}* {}",
+                llvm_type(&output_ty),
+                async_err_value
+                    .repr
+                    .clone()
+                    .unwrap_or_else(|| default_value(&output_ty)),
+                llvm_type(&output_ty),
+                payload_slot
+            ));
+            fctx.lines
+                .push(format!("  br label %{}", payload_done_label));
+            fctx.lines.push(format!("{}:", payload_done_label));
+            let bridged = self.new_temp();
+            fctx.lines.push(format!(
+                "  {} = load {}, {}* {}",
+                bridged,
+                llvm_type(&output_ty),
+                llvm_type(&output_ty),
+                payload_slot
+            ));
+            Value {
+                ty: output_ty.clone(),
+                repr: Some(bridged),
+            }
+        };
+
+        fctx.lines.push(format!(
+            "  store {} {}, {}* {}",
+            llvm_type(&output_ty),
+            bridged_result
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&output_ty)),
+            llvm_type(&output_ty),
+            out_slot
+        ));
+        fctx.lines.push(format!("  br label %{}", done_label));
+        fctx.lines.push(format!("{}:", done_label));
+        let out_reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            out_reg,
+            llvm_type(&output_ty),
+            llvm_type(&output_ty),
+            out_slot
+        ));
+        Some(Value {
+            ty: output_ty,
+            repr: Some(out_reg),
+        })
+    }
+
     pub(super) fn type_needs_explicit_drop(&self, ty: &LType) -> bool {
-        self.drop_impl_method_for_type(ty).is_some() || resource_drop_action_for_type(ty).is_some()
+        matches!(ty, LType::Async(_))
+            || self.drop_impl_method_for_type(ty).is_some()
+            || resource_drop_action_for_type(ty).is_some()
     }
 
     pub(super) fn drop_impl_method_for_type(&self, ty: &LType) -> Option<String> {
@@ -2582,8 +4382,42 @@ impl<'a> Generator<'a> {
         ));
     }
 
+    pub(super) fn emit_async_drop_action(&mut self, local: &DropSlot, fctx: &mut FnCtx) {
+        let LType::Async(_) = &local.ty else {
+            return;
+        };
+        self.extern_decls
+            .insert("declare void @aic_rt_async_drop(i8*, i8*)".to_string());
+        let loaded = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            loaded,
+            llvm_type(&local.ty),
+            llvm_type(&local.ty),
+            local.ptr
+        ));
+        let frame = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            frame,
+            llvm_type(&local.ty),
+            loaded
+        ));
+        let drop_fn = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 2",
+            drop_fn,
+            llvm_type(&local.ty),
+            loaded
+        ));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_async_drop(i8* {}, i8* {})",
+            frame, drop_fn
+        ));
+    }
+
     pub(super) fn try_emit_musttail_return(&mut self, expr: &ir::Expr, fctx: &mut FnCtx) -> bool {
-        if fctx.async_inner_ret.is_some() {
+        if fctx.async_inner_ret.is_some() || fctx.async_poll_ctx.is_some() {
             return false;
         }
         let ir::ExprKind::Call { callee, args, .. } = &expr.kind else {
@@ -2597,7 +4431,8 @@ impl<'a> Generator<'a> {
         expr: &ir::Expr,
         fctx: &mut FnCtx,
     ) -> bool {
-        if !fctx.tail_return_mode || fctx.async_inner_ret.is_some() {
+        if !fctx.tail_return_mode || fctx.async_inner_ret.is_some() || fctx.async_poll_ctx.is_some()
+        {
             return false;
         }
         let ir::ExprKind::Call { callee, args, .. } = &expr.kind else {
@@ -2845,6 +4680,18 @@ impl<'a> Generator<'a> {
                         llvm_type(&local.ty),
                         local.ptr
                     ));
+                    if fctx.async_poll_ctx.is_some()
+                        && local.symbol.is_some()
+                        && self.type_needs_explicit_drop(&local.ty)
+                    {
+                        fctx.lines.push(format!(
+                            "  store {} {}, {}* {}",
+                            llvm_type(&local.ty),
+                            default_value(&local.ty),
+                            llvm_type(&local.ty),
+                            local.ptr
+                        ));
+                    }
                     Some(Value {
                         ty: local.ty,
                         repr: Some(reg),
@@ -5749,6 +7596,8 @@ impl<'a> Generator<'a> {
                 ret: ret_ty.clone(),
             },
             tail_return_mode: false,
+            suppress_lifetime_end: false,
+            async_poll_ctx: None,
         };
 
         if captures.is_empty() {

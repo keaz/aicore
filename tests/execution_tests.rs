@@ -433,6 +433,56 @@ async fn main() -> Int effects { io } capabilities { io  } {
     assert_eq!(stdout, "42\n");
 }
 
+#[test]
+fn exec_async_nested_future_suspends_through_inner_fs_awaits() {
+    let src = r#"
+import std.fs;
+import std.io;
+import std.path;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+async fn write_then_read(path_str: String) -> Int effects { fs, concurrency } capabilities { fs, concurrency } {
+    let wrote = match await async_write_text_submit(path_str, "alpha") {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let read_ok = match await async_read_text_submit(path_str) {
+        Ok(text) => if text == "alpha" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    wrote + read_ok
+}
+
+async fn main() -> Int effects { io, fs, concurrency, env } capabilities { io, fs, concurrency, env  } {
+    let scratch = match fs.temp_dir("aic_async_nested_") {
+        Ok(path_str) => path_str,
+        Err(_) => "",
+    };
+    let file_path = path.join(scratch, "nested.txt");
+    let fut = write_then_read(file_path);
+    let score = await fut;
+    let deleted_file = ok_bool(delete(file_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    if score == 2 && deleted_file == 1 && deleted_dir == 1 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
 #[cfg(not(target_os = "windows"))]
 #[test]
 fn exec_async_await_submit_bridge_drives_reactor_without_task_spawn() {

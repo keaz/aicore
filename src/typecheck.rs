@@ -40,6 +40,7 @@ pub struct TypecheckOutput {
     pub generic_instantiations: Vec<ir::GenericInstantiation>,
     pub call_graph: BTreeMap<String, Vec<String>>,
     pub holes: Vec<TypedHole>,
+    pub let_binding_types: BTreeMap<ir::SymbolId, String>,
     pub call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
     pub call_symbols: BTreeMap<ir::NodeId, ir::SymbolId>,
     pub call_target_modules: BTreeMap<ir::NodeId, Vec<String>>,
@@ -185,6 +186,7 @@ struct Checker<'a> {
     type_aliases: BTreeMap<String, AliasDef>,
     const_types: BTreeMap<String, String>,
     typed_holes: Vec<TypedHole>,
+    let_binding_types: BTreeMap<ir::SymbolId, String>,
     fn_param_holes: BTreeMap<(String, usize), DeferredHole>,
     fn_param_inferred: BTreeMap<(String, usize), String>,
     fn_return_holes: BTreeMap<String, DeferredHole>,
@@ -556,6 +558,7 @@ impl<'a> Checker<'a> {
             effect_usage: BTreeMap::new(),
             effect_reasons: BTreeMap::new(),
             call_graph: BTreeMap::new(),
+            let_binding_types: BTreeMap::new(),
             function_spans: BTreeMap::new(),
             current_function: None,
             current_module: None,
@@ -685,6 +688,7 @@ impl<'a> Checker<'a> {
             generic_instantiations,
             call_graph,
             holes: self.typed_holes,
+            let_binding_types: self.let_binding_types,
             call_arg_orders: self.call_arg_orders,
             call_symbols: self.call_symbols,
             call_target_modules: self.call_target_modules,
@@ -3881,6 +3885,7 @@ impl<'a> Checker<'a> {
         for stmt in &block.stmts {
             match stmt {
                 ir::Stmt::Let {
+                    symbol,
                     name,
                     ty,
                     expr,
@@ -3929,6 +3934,7 @@ impl<'a> Checker<'a> {
                         } else {
                             expected_ann_ty
                         };
+                        self.let_binding_types.insert(*symbol, binding_ty.clone());
                         scope.insert(name.clone(), binding_ty);
                     } else {
                         let expr_ty =
@@ -3936,6 +3942,7 @@ impl<'a> Checker<'a> {
                         if contains_unresolved_type(&expr_ty) {
                             pending_unresolved_lets.push((name.clone(), *span));
                         }
+                        self.let_binding_types.insert(*symbol, expr_ty.clone());
                         scope.insert(name.clone(), expr_ty);
                     }
                 }

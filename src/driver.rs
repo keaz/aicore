@@ -183,6 +183,7 @@ pub fn run_frontend_with_options(
     );
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
+    apply_let_binding_types(&mut ir, &typecheck.let_binding_types);
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
     apply_call_symbols(&mut ir, &typecheck.call_symbols);
     apply_call_target_modules(&mut ir, &typecheck.call_target_modules);
@@ -412,6 +413,171 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
             }
         }
         ir::ExprKind::FieldAccess { base, .. } => reorder_call_args_in_expr(base, orders),
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit
+        | ir::ExprKind::Var(_) => {}
+    }
+}
+
+fn intern_type_id(program: &mut ir::Program, repr: &str) -> ir::TypeId {
+    if let Some(existing) = program.types.iter().find(|ty| ty.repr == repr) {
+        return existing.id;
+    }
+    let next_id = program
+        .types
+        .iter()
+        .map(|ty| ty.id.0)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+    let id = ir::TypeId(next_id);
+    program.types.push(ir::TypeDef {
+        id,
+        repr: repr.to_string(),
+    });
+    id
+}
+
+fn apply_let_binding_types(
+    program: &mut ir::Program,
+    let_binding_types: &BTreeMap<ir::SymbolId, String>,
+) {
+    let type_ids = let_binding_types
+        .iter()
+        .map(|(symbol, repr)| (*symbol, intern_type_id(program, repr)))
+        .collect::<BTreeMap<_, _>>();
+    for item in &mut program.items {
+        match item {
+            ir::Item::Function(func) => {
+                if func.is_async {
+                    apply_let_binding_types_in_block(&mut func.body, &type_ids);
+                }
+            }
+            ir::Item::Struct(_) => {}
+            ir::Item::Enum(_) => {}
+            ir::Item::Trait(trait_def) => {
+                for method in &mut trait_def.methods {
+                    if method.is_async {
+                        apply_let_binding_types_in_block(&mut method.body, &type_ids);
+                    }
+                }
+            }
+            ir::Item::Impl(impl_def) => {
+                for method in &mut impl_def.methods {
+                    if method.is_async {
+                        apply_let_binding_types_in_block(&mut method.body, &type_ids);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn apply_let_binding_types_in_block(
+    block: &mut ir::Block,
+    let_binding_types: &BTreeMap<ir::SymbolId, ir::TypeId>,
+) {
+    for stmt in &mut block.stmts {
+        match stmt {
+            ir::Stmt::Let {
+                symbol, ty, expr, ..
+            } => {
+                if ty.is_none() {
+                    if let Some(type_id) = let_binding_types.get(symbol) {
+                        *ty = Some(*type_id);
+                    }
+                }
+                apply_let_binding_types_in_expr(expr, let_binding_types);
+            }
+            ir::Stmt::Assign { expr, .. }
+            | ir::Stmt::Expr { expr, .. }
+            | ir::Stmt::Assert { expr, .. } => {
+                apply_let_binding_types_in_expr(expr, let_binding_types);
+            }
+            ir::Stmt::Return {
+                expr: Some(expr), ..
+            } => apply_let_binding_types_in_expr(expr, let_binding_types),
+            ir::Stmt::Return { expr: None, .. } => {}
+        }
+    }
+    if let Some(tail) = &mut block.tail {
+        apply_let_binding_types_in_expr(tail, let_binding_types);
+    }
+}
+
+fn apply_let_binding_types_in_expr(
+    expr: &mut ir::Expr,
+    let_binding_types: &BTreeMap<ir::SymbolId, ir::TypeId>,
+) {
+    match &mut expr.kind {
+        ir::ExprKind::Call { callee, args, .. } => {
+            apply_let_binding_types_in_expr(callee, let_binding_types);
+            for arg in args {
+                apply_let_binding_types_in_expr(arg, let_binding_types);
+            }
+        }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                apply_let_binding_types_in_expr(arg, let_binding_types);
+            }
+        }
+        ir::ExprKind::Closure { body, .. } => {
+            apply_let_binding_types_in_block(body, let_binding_types);
+        }
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            apply_let_binding_types_in_expr(cond, let_binding_types);
+            apply_let_binding_types_in_block(then_block, let_binding_types);
+            apply_let_binding_types_in_block(else_block, let_binding_types);
+        }
+        ir::ExprKind::While { cond, body } => {
+            apply_let_binding_types_in_expr(cond, let_binding_types);
+            apply_let_binding_types_in_block(body, let_binding_types);
+        }
+        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            apply_let_binding_types_in_block(body, let_binding_types);
+        }
+        ir::ExprKind::Break { expr: Some(inner) } => {
+            apply_let_binding_types_in_expr(inner, let_binding_types);
+        }
+        ir::ExprKind::Break { expr: None } | ir::ExprKind::Continue => {}
+        ir::ExprKind::Match {
+            expr: scrutinee,
+            arms,
+        } => {
+            apply_let_binding_types_in_expr(scrutinee, let_binding_types);
+            for arm in arms {
+                if let Some(guard) = arm.guard.as_mut() {
+                    apply_let_binding_types_in_expr(guard, let_binding_types);
+                }
+                apply_let_binding_types_in_expr(&mut arm.body, let_binding_types);
+            }
+        }
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            apply_let_binding_types_in_expr(lhs, let_binding_types);
+            apply_let_binding_types_in_expr(rhs, let_binding_types);
+        }
+        ir::ExprKind::Unary { expr: inner, .. }
+        | ir::ExprKind::Borrow { expr: inner, .. }
+        | ir::ExprKind::Await { expr: inner }
+        | ir::ExprKind::Try { expr: inner } => {
+            apply_let_binding_types_in_expr(inner, let_binding_types);
+        }
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                apply_let_binding_types_in_expr(value, let_binding_types);
+            }
+        }
+        ir::ExprKind::FieldAccess { base, .. } => {
+            apply_let_binding_types_in_expr(base, let_binding_types);
+        }
         ir::ExprKind::Int(_)
         | ir::ExprKind::Float(_)
         | ir::ExprKind::Bool(_)
