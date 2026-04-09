@@ -1,0 +1,49 @@
+module example.io.async_nested_futures;
+
+import std.fs;
+import std.io;
+import std.path;
+
+fn ok_bool(v: Result[Bool, FsError]) -> Int {
+    match v {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
+async fn write_then_read(path_str: String) -> Int effects { fs, concurrency } capabilities { fs, concurrency } {
+    let wrote = match await async_write_text_submit(path_str, "alpha") {
+        Ok(value) => if value { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    let read_ok = match await async_read_text_submit(path_str) {
+        Ok(text) => if text == "alpha" { 1 } else { 0 },
+        Err(_) => 0,
+    };
+    wrote + read_ok
+}
+
+async fn orchestrate_roundtrip(path_str: String) -> Int effects { fs, concurrency } capabilities { fs, concurrency } {
+    let child_future = write_then_read(path_str);
+    let child_score = await child_future;
+    if child_score == 2 { 40 } else { 0 }
+}
+
+async fn main() -> Int effects { io, fs, concurrency, env } capabilities { io, fs, concurrency, env  } {
+    let scratch = match fs.temp_dir("aic_async_nested_") {
+        Ok(path_str) => path_str,
+        Err(_) => "",
+    };
+    let file_path = path.join(scratch, "nested.txt");
+
+    let nested_score = await orchestrate_roundtrip(file_path);
+    let deleted_file = ok_bool(delete(file_path));
+    let deleted_dir = ok_bool(delete(scratch));
+
+    if nested_score + deleted_file + deleted_dir == 42 {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

@@ -7,6 +7,7 @@ This tree mixes onboarding examples, runnable subsystem demos, negative fixtures
 - `core/core_language_tour.aic` - broad syntax and type-system tour
 - `core/traits_and_dispatch_tour.aic` - traits, impls, and dispatch patterns
 - `core/async_trait_methods.aic` - async trait methods through generic and dyn dispatch
+- `io/async_nested_futures.aic` - nested async futures suspending through filesystem submit awaits
 - `core/effects_capabilities_patterns_tour.aic` - effects, capabilities, and pattern matching
 - `io/README.md` - IO/runtime examples grouped by subsystem
 - `data/README.md` - bytes, JSON, regex, URL/HTTP, and time examples
