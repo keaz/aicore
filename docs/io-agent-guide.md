@@ -53,6 +53,9 @@ Treat error enums as control-flow boundaries, not exceptions.
 - Windows:
   - `aic build --target x86_64-windows` allows non-std `net`/`tls` usage; the backend links `ws2_32` and uses the shared proc/net/concurrency runtime.
   - Windows CI smoke covers `std.proc` lifecycle paths, TCP loopback, async wait failure paths, and deterministic worker-pool behavior.
+  - The smoke-backed `std.net` subset is TCP loopback plus async accept/recv wait/cancel/shutdown client-transport flows.
+  - UDP, DNS, socket-tuning, peer-address, and shutdown-tuning helpers share the runtime backend but are not yet covered by Windows CI smoke; keep typed `NetError` branches in libraries that target those paths on Windows.
+  - Unsupported socket-option paths return `NetError::Io`; invalid-handle/type misuse remains `NetError::InvalidInput`.
   - `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`.
   - `std.tls` remains backend-dependent; async TLS APIs stay partial where backend availability or pressure accounting is not yet uniform.
   - `std.signal` remains unsupported and returns `SignalError::UnsupportedPlatform`.

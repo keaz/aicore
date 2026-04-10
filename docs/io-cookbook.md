@@ -209,7 +209,7 @@ fn connect_or_skip(addr: String) -> Int effects { net } {
 
 Current runtime caveats to account for:
 
-- Windows `std.net`: backend/runtime failures can surface as `NetError::Io`.
+- Windows `std.net`: TCP loopback plus async accept/recv wait/cancel/shutdown client-transport paths are smoke-backed; UDP/DNS/socket-tuning share the backend but are not yet Windows-smoke-backed, and unsupported socket-option paths can surface `NetError::Io`.
 - Windows `std.proc`: `spawn`, `run`, `run_with`, `run_timeout`, `pipe`, and `pipe_chain` can surface `ProcError::Io`; `wait`, `kill`, and `is_running` can surface `ProcError::UnknownProcess`.
 - Windows `std.signal`: unsupported and returns `SignalError::UnsupportedPlatform`.
 

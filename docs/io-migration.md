@@ -102,7 +102,8 @@ Current `std.net` signatures are stable, but runtime support differs by platform
 
 Migration action:
 
-- keep typed fallback branches for `NetError::Io` until Windows runtime support is expanded.
+- when targeting Windows, treat TCP loopback plus async accept/recv wait/cancel/shutdown as the smoke-backed `std.net` subset.
+- keep typed fallback branches around UDP/DNS/socket-tuning paths until your library validates them on Windows, and always branch `NetError::Io` separately from `InvalidInput` / `ConnectionClosed`.
 
 ## Diagnostic Migration Map
 

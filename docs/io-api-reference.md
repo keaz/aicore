@@ -616,7 +616,10 @@ Notes:
 - `tcp_recv` and async recv wait paths return `NetError::ConnectionClosed` on peer EOF/close.
 - `async_cancel_*` keeps peer-close distinct by surfacing `NetError::Cancelled` on cancelled waits.
 - `dns_lookup_all` returns de-duplicated numeric addresses sorted lexicographically for deterministic failover iteration.
-- On Windows, current runtime implementation returns `NetError::Io` for all `std.net` APIs.
+- Windows `std.net` service-library contract:
+  - Supported and CI-smoke-backed: TCP loopback (`tcp_listen`, `tcp_local_addr`, `tcp_connect`, `tcp_accept`, `tcp_send`, `tcp_recv`, `tcp_close`) and async transport lifecycle (`async_accept_submit`, `async_tcp_recv_submit`, `async_wait_*`, `async_cancel_*`, `async_shutdown`) on the shared Windows backend.
+  - Partial on Windows: UDP/DNS/socket tuning/shutdown/peer-address helpers are implemented in the shared runtime backend, but are not yet covered by Windows CI smoke; service libraries targeting Windows should keep typed fallbacks around those paths until broader validation lands.
+  - Unsupported socket-option/platform paths return `NetError::Io` deterministically; invalid-handle/type misuse remains `NetError::InvalidInput`.
 - `tcp_send_timeout` and `tcp_stream_send_timeout` enforce a total write timeout budget.
 - `tcp_stream_recv_exact*` keeps reading until `expected_bytes` is satisfied or the deadline expires.
 - `tcp_stream_recv_framed*` expects a 4-byte big-endian length prefix and enforces `max_frame_bytes`.

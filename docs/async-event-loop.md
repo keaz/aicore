@@ -22,7 +22,9 @@ This document defines the runtime model used by async submit/wait APIs in `std.n
 | `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Slot-backed TLS async runtime reports active and occupied-slot pressure, and execution tests cover timeout/cancel/shutdown/backpressure paths against a local TLS harness |
 | Async HTTP-server API surface | Supported | request/response I/O now uses dedicated async runtime intrinsics in `src/codegen/runtime/part05.c`, and `async_serve` composes through native async accept/read/write helpers |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
-| Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for `exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`, and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
+| Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for TCP loopback plus async accept/recv wait/cancel/shutdown lifecycle (`exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`) and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
+
+Windows coverage in this document is intentionally low-level: the supported substrate is the transport/runtime contract that service libraries build on, while native async REST-server validation remains a separate, narrower coverage problem.
 
 ## API Surface
 

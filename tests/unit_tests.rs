@@ -5446,6 +5446,104 @@ fn unit_tls_async_pressure_docs_match_slot_backed_runtime_contract() {
 }
 
 #[test]
+fn unit_windows_std_net_support_contract_is_consistent_across_docs() {
+    let readme = fs::read_to_string("README.md").expect("read README.md");
+    let io_api =
+        fs::read_to_string("docs/io-api-reference.md").expect("read docs/io-api-reference.md");
+    let io_runtime =
+        fs::read_to_string("docs/io-runtime/README.md").expect("read docs/io-runtime/README.md");
+    let net_runtime = fs::read_to_string("docs/io-runtime/net-time-rand.md")
+        .expect("read docs/io-runtime/net-time-rand.md");
+    let async_runtime =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+    let io_agent =
+        fs::read_to_string("docs/io-agent-guide.md").expect("read docs/io-agent-guide.md");
+    let rest_guide = fs::read_to_string("docs/ai-agent-rest-guide.md")
+        .expect("read docs/ai-agent-rest-guide.md");
+    let io_migration =
+        fs::read_to_string("docs/io-migration.md").expect("read docs/io-migration.md");
+    let boundary = fs::read_to_string("docs/prod-readiness/service-and-p2p-capability-boundary.md")
+        .expect("read docs/prod-readiness/service-and-p2p-capability-boundary.md");
+    let ci = fs::read_to_string(".github/workflows/ci.yml").expect("read .github/workflows/ci.yml");
+
+    let blanket_claim = "returns `NetError::Io` for all `std.net` APIs";
+    for (name, doc) in [
+        ("README", &readme),
+        ("io-api-reference", &io_api),
+        ("io-runtime README", &io_runtime),
+        ("net-time-rand", &net_runtime),
+        ("async-event-loop", &async_runtime),
+        ("io-agent-guide", &io_agent),
+        ("ai-agent-rest-guide", &rest_guide),
+        ("io-migration", &io_migration),
+        ("service-and-p2p boundary", &boundary),
+    ] {
+        assert!(
+            !doc.contains(blanket_claim),
+            "{name} must not claim that all Windows std.net APIs collapse to NetError::Io"
+        );
+    }
+
+    assert!(
+        readme.contains("| Windows `std.net` substrate | Partial |")
+            && readme.contains(
+                "TCP loopback plus async accept/recv wait/cancel/shutdown client-transport paths"
+            ),
+        "README support matrix must summarize the current Windows std.net substrate contract"
+    );
+    assert!(
+        io_api.contains("Windows `std.net` service-library contract:")
+            && io_api.contains("TCP loopback (`tcp_listen`, `tcp_local_addr`, `tcp_connect`, `tcp_accept`, `tcp_send`, `tcp_recv`, `tcp_close`)")
+            && io_api.contains("UDP/DNS/socket tuning/shutdown/peer-address helpers are implemented in the shared runtime backend, but are not yet covered by Windows CI smoke"),
+        "io-api-reference must classify the Windows std.net substrate into supported and partial low-level capabilities"
+    );
+    assert!(
+        io_runtime.contains("### Windows `std.net` Service-Library Contract")
+            && io_runtime.contains("| TCP listen/connect/accept/send/recv/close | Supported |")
+            && io_runtime.contains("| UDP bind/send/recv/close | Partial |")
+            && io_runtime.contains("| DNS lookup/lookup_all/reverse | Partial |"),
+        "io-runtime README must expose a Windows std.net contract matrix for service-library authors"
+    );
+    assert!(
+        net_runtime.contains("Supported and Windows-smoke-backed: TCP loopback and async accept/recv wait/cancel/shutdown client-transport paths.")
+            && net_runtime.contains("Partial on Windows: UDP/DNS/socket tuning/shutdown/peer-address helpers are implemented in the shared runtime backend, but are not yet covered by Windows CI smoke."),
+        "net-time-rand docs must distinguish Windows-smoke-backed transport paths from partial low-level helpers"
+    );
+    assert!(
+        async_runtime.contains("| Windows async runtime backend | Supported (client-runtime scope) |")
+            && async_runtime.contains("TCP loopback plus async accept/recv wait/cancel/shutdown lifecycle")
+            && async_runtime.contains("transport/runtime contract that service libraries build on"),
+        "async runtime docs must scope Windows support to the low-level client/runtime transport subset"
+    );
+    assert!(
+        io_agent.contains("smoke-backed `std.net` subset is TCP loopback plus async accept/recv wait/cancel/shutdown client-transport flows")
+            && io_agent.contains("UDP, DNS, socket-tuning, peer-address, and shutdown-tuning helpers share the runtime backend but are not yet covered by Windows CI smoke"),
+        "io-agent guide must tell library authors which Windows std.net paths are backed by coverage"
+    );
+    assert!(
+        rest_guide.contains("TCP loopback plus async accept/recv wait/cancel/shutdown client-library transport flows")
+            && rest_guide.contains("UDP/DNS/socket-tuning still lack Windows smoke coverage"),
+        "REST guide must keep the Windows transport contract narrower than full REST-server coverage"
+    );
+    assert!(
+        io_migration.contains("smoke-backed `std.net` subset")
+            && io_migration.contains("keep typed fallback branches around UDP/DNS/socket-tuning paths"),
+        "io migration guide must tell Windows-targeting libraries which std.net paths still need local validation"
+    );
+    assert!(
+        boundary.contains("Issue `#393` resolves the documentation/support-contract side of this gap")
+            && boundary.contains("supported and smoke-backed: TCP loopback plus async accept/recv wait/cancel/shutdown transport flows"),
+        "production-readiness boundary doc must record the resolved Windows std.net support-contract gap"
+    );
+    assert!(
+        ci.contains("cargo test --locked --test execution_tests exec_net_tcp_loopback_echo -- --exact")
+            && ci.contains("cargo test --locked --test execution_tests exec_net_async_wait_negative_paths_are_stable -- --exact")
+            && ci.contains("cargo test --locked --test e7_build_hermetic_tests build_windows_target_allows_net_effect_usage_without_e6007 -- --exact"),
+        "Windows CI smoke must keep validating the supported std.net substrate"
+    );
+}
+
+#[test]
 fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
     let runtime_doc =
         fs::read_to_string("docs/io-concurrency-runtime.md").expect("read io concurrency runtime");

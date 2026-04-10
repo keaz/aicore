@@ -74,7 +74,7 @@ This matrix captures implementation state as of the current code/tests and shoul
 | Net async reactor APIs (`async_*`) | Supported | `std/net.aic` + execution tests `exec_net_async_event_loop_multi_connection`, `exec_net_async_wait_many_paths_are_stable` |
 | `await` submit bridge for async net handles | Supported | execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` + example `examples/io/async_await_submit_bridge.aic` |
 | TLS async reactor APIs (`tls_async_*`) | Supported | Slot-backed runtime reports active and occupied-slot pressure, and execution tests cover timeout/cancel/shutdown/backpressure paths with a local TLS harness |
-| REST/async runtime on Windows | Partial | Shared Windows net/async runtime support now backs client-library transport flows and Windows CI smoke coverage (`exec_net_tcp_loopback_echo`, `exec_net_async_wait_negative_paths_are_stable`), but native async REST-server validation remains primarily non-Windows |
+| REST/async runtime on Windows | Partial | Shared Windows net/async runtime support smoke-backs TCP loopback plus async accept/recv wait/cancel/shutdown client-library transport flows (`exec_net_tcp_loopback_echo`, `exec_net_async_wait_negative_paths_are_stable`); UDP/DNS/socket-tuning still lack Windows smoke coverage, and native async REST-server validation remains primarily non-Windows |
 
 ## 4. Deterministic End-To-End Workflow
 

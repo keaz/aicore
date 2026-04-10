@@ -186,7 +186,10 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - `exec_runtime_net_async_multi_worker_service_load_is_stable`
   - `exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free`
   - the lifecycle churn tests catch leak/regression paths under low limits, and the multi-worker service-load test exercises concurrent accept/recv/send flow with `AIC_RT_LIMIT_NET_ASYNC_WORKERS=4`.
-- Unsupported socket-option paths return `NetError::Io` deterministically (including current Windows runtime behavior).
+- Windows service-library contract:
+  - Supported and Windows-smoke-backed: TCP loopback and async accept/recv wait/cancel/shutdown client-transport paths.
+  - Partial on Windows: UDP/DNS/socket tuning/shutdown/peer-address helpers are implemented in the shared runtime backend, but are not yet covered by Windows CI smoke.
+  - Unsupported socket-option paths return `NetError::Io` deterministically; invalid-handle/type misuse remains typed as `NetError::InvalidInput`.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 
 ### Example

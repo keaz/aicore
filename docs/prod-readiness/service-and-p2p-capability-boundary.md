@@ -132,11 +132,11 @@ The runtime and tests already cover more than just simple `Content-Length` reque
 
 This is mainly a documentation/support-matrix alignment issue, not a request for more core-language surface.
 
-### Windows support is still a substrate-quality concern
+### Windows support was a substrate-quality concern
 
-The current documentation is not fully aligned on Windows `std.net` support.
+The repository previously had conflicting Windows `std.net` support claims.
 
-Some docs describe shared backend support and smoke coverage, while other docs still describe `std.net` as returning `NetError::Io` on Windows. That is a core runtime support-contract problem, not a library concern.
+Some docs described shared backend support and smoke coverage, while others claimed that all `std.net` APIs returned `NetError::Io` on Windows. That was a core runtime support-contract problem, not a library concern.
 
 ## Language / Runtime Gaps That Still Need Work
 
@@ -144,14 +144,13 @@ Only the items below should be tracked as core language/runtime work from this a
 
 ### 1. Cross-platform runtime support contract for `std.net` service paths
 
-Windows runtime behavior and documentation are still mixed enough that service authors cannot treat the support contract as settled.
+Issue `#393` resolves the documentation/support-contract side of this gap by classifying the current Windows substrate explicitly:
 
-This belongs in the language/runtime because it concerns:
+- supported and smoke-backed: TCP loopback plus async accept/recv wait/cancel/shutdown transport flows
+- partial but implemented: UDP, DNS, socket-tuning, peer-address, and shutdown-tuning helpers
+- typed fallback: unsupported socket-option paths return `NetError::Io`, and invalid-handle misuse remains `NetError::InvalidInput`
 
-- runtime implementation parity
-- typed error guarantees
-- support-matrix truthfulness
-- CI-backed validation of actual low-level transport behavior
+The remaining core-runtime gap from this assessment is broader Windows validation depth, especially for native async REST-server execution paths already tracked separately.
 
 ## Items Explicitly Not Requested As Core-Language Work
 
@@ -177,7 +176,7 @@ These already cover adjacent runtime work and should not be duplicated:
 
 ## New Issues To Track From This Assessment
 
-The remaining open issue created from this document should stay limited to:
+The new issues created from this document have now been implemented in the core runtime/documentation branch:
 
-- `#392` `[ASYNC-READY-T8] Scale async runtime beyond the single event-loop worker thread` has been implemented in the core runtime and should move out of the open gap list once the repo state is published.
+- `#392` `[ASYNC-READY-T8] Scale async runtime beyond the single event-loop worker thread`
 - `#393` `[IO-READY-T1] Reconcile and validate the Windows std.net support contract for service libraries`

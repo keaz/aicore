@@ -45,11 +45,26 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 
 - Linux/macOS: full runtime support for fs/env/path/proc/net/time/rand/retry/concurrency.
 - Linux/macOS: `std.signal` supports SIGINT/SIGTERM/SIGHUP registration + blocking waits.
-- Windows: `std.proc`, `std.net`, and `std.concurrent` use the shared runtime backend and are validated by Windows CI smoke coverage for proc lifecycle, TCP loopback, async wait failure paths, and deterministic worker-pool behavior.
+- Windows: `std.proc`, `std.net`, and `std.concurrent` use the shared runtime backend and are validated by Windows CI smoke coverage for proc lifecycle, TCP loopback, async wait failure paths, deterministic worker-pool behavior, and Windows-target `net` lowering smoke.
+- Windows `std.net` supported substrate: TCP loopback (`tcp_listen`/`tcp_local_addr`/`tcp_connect`/`tcp_accept`/`tcp_send`/`tcp_recv`/`tcp_close`) plus async accept/recv wait/cancel/shutdown client-transport flows.
+- Windows `std.net` partial substrate: UDP, DNS, socket tuning, peer-address, and shutdown-tuning helpers are implemented through the shared runtime backend but are not yet covered by Windows CI smoke; library authors should keep typed `NetError` branches around those paths until broader validation lands.
+- Windows `std.net` typed fallback contract: unsupported socket-option paths return `NetError::Io`; invalid-handle/type misuse remains `NetError::InvalidInput`; peer-close still surfaces `NetError::ConnectionClosed`.
 - Windows: `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`; branch on typed errors instead of assuming success.
 - Windows: `std.tls` remains backend-dependent; when the TLS backend is available, async pressure snapshots report occupied-slot depth and configured slot limit rather than a separate reactor queue.
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.
+
+### Windows `std.net` Service-Library Contract
+
+| Capability | Windows status | Evidence / notes |
+|---|---|---|
+| TCP listen/connect/accept/send/recv/close | Supported | Windows CI smoke: `exec_net_tcp_loopback_echo` |
+| Async accept/recv wait/cancel/shutdown transport lifecycle | Supported | Windows CI smoke: `exec_net_async_wait_negative_paths_are_stable` |
+| Windows-target `net` lowering/build path | Supported | Windows-target smoke: `build_windows_target_allows_net_effect_usage_without_e6007` |
+| UDP bind/send/recv/close | Partial | Shared runtime backend exists; not yet covered by Windows CI smoke |
+| DNS lookup/lookup_all/reverse | Partial | Shared runtime backend exists; not yet covered by Windows CI smoke |
+| Socket tuning, peer-address, and shutdown-tuning helpers | Partial | Shared runtime backend exists; unsupported socket-option paths return `NetError::Io`, invalid-handle misuse remains `NetError::InvalidInput`; not yet covered by Windows CI smoke |
+| Native async REST-server execution paths | Partial | Separate from the low-level transport contract; Windows coverage remains narrower than Linux/macOS |
 
 ## Quick-Start Templates
 
