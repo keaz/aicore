@@ -609,6 +609,7 @@ Notes:
   - `AIC_RT_LIMIT_NET_HANDLES` (default/max: `128`)
   - `AIC_RT_LIMIT_NET_ASYNC_OPS` (default/max: `512`)
   - `AIC_RT_LIMIT_NET_ASYNC_QUEUE` (default/max: `64`)
+  - `AIC_RT_LIMIT_NET_ASYNC_WORKERS` (default: `1`, max: `32`, clamped to the async op limit)
   - `AIC_RT_LIMIT_TLS_HANDLES` (default/max: `128`)
   - `AIC_RT_LIMIT_TLS_ASYNC_OPS` (default/max: `256`)
   - `AIC_RT_LIMIT_CONC_TASKS` / `AIC_RT_LIMIT_CONC_CHANNELS` / `AIC_RT_LIMIT_CONC_MUTEXES` (default/max: `128` each)
@@ -632,10 +633,11 @@ Notes:
   - `async_wait_many_*` returns the winning operation index and payload/value across arbitrary in-flight op sets.
   - `async_wait_any_*` is a compatibility wrapper over `async_wait_many_*` for two-op selection.
   - `async_runtime_pressure` exposes active/queued snapshot metrics and configured limits for adaptive submit gating.
+  - Net async pressure is aggregated across the worker pool; `queue_depth` / `queue_limit` describe the shared submission queue, not a per-worker queue.
   - Phase-1 fixed-width wrappers expose non-negative domains via `UInt32` (`*_u32` APIs) without breaking legacy `Int` signatures.
 - Recommended baseline for protocol clients: enable `tcp_set_nodelay(..., true)` for request/response latency and `tcp_set_keepalive(..., true)` for pooled long-lived connections, then tune buffer sizes with measured traffic.
 - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
-- Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS` to peak in-flight async ops per process and size `AIC_RT_LIMIT_NET_ASYNC_QUEUE` to absorb expected burst submissions.
+- Capacity planning baseline: set `AIC_RT_LIMIT_NET_ASYNC_OPS` to peak in-flight async ops per process, size `AIC_RT_LIMIT_NET_ASYNC_QUEUE` to absorb expected burst submissions, and raise `AIC_RT_LIMIT_NET_ASYNC_WORKERS` above `1` when service libraries need to spread async socket progress across multiple cores.
 - Failover baseline: call `dns_lookup_all(host)` once per retry window, then iterate returned addresses in order while applying your per-attempt timeout budget.
 - For unsupported socket options/platforms, socket-tuning APIs return `NetError::Io` deterministically.
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
@@ -647,6 +649,7 @@ Notes:
   - `net_parse_host_port` parses exactly one `host:port` boundary and rejects missing/extra separators with `NetError::InvalidInput`.
   - `net_format_host_port` is canonical formatter behavior: decimal port, no hidden runtime-side widening/narrowing, no ABI field-layout changes.
 - Runnable lifecycle example: `examples/io/async_lifecycle_controls.aic`.
+- Runnable worker-pool example: `examples/io/async_net_worker_pool.aic`.
 - Runnable wait-many orchestration example: `examples/io/async_wait_many_orchestration.aic`.
 - Adaptive pressure-gating example: `examples/io/async_runtime_pressure_gating.aic`.
 - Typed endpoint migration example: `examples/data/net_typed_endpoint_u16.aic`.

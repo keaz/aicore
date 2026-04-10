@@ -16214,6 +16214,222 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     assert_eq!(stdout, "42\n", "stderr={stderr}");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_runtime_net_async_multi_worker_service_load_is_stable() {
+    let src = r#"
+import std.io;
+import std.net;
+import std.bytes;
+import std.vec;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn zero_pressure() -> AsyncRuntimePressure {
+    AsyncRuntimePressure {
+        active_ops: 0,
+        queue_depth: 0,
+        op_limit: 0,
+        queue_limit: 0,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+    let listener = match tcp_listen("127.0.0.1:0") {
+        Ok(handle) => handle,
+        Err(_) => 0,
+    };
+    let addr = match tcp_local_addr(listener) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+
+    let mut accept_ops: Vec[AsyncIntOp] = vec.new_vec();
+    let mut i = 0;
+    while i < 16 {
+        accept_ops = match async_accept_submit(listener, 2000) {
+            Ok(op) => vec.push(accept_ops, op),
+            Err(_) => accept_ops,
+        };
+        i = i + 1;
+    };
+
+    let mut clients: Vec[Int] = vec.new_vec();
+    i = 0;
+    while i < 16 {
+        clients = match tcp_connect(addr, 1000) {
+            Ok(handle) => vec.push(clients, handle),
+            Err(_) => clients,
+        };
+        i = i + 1;
+    };
+
+    let mut servers: Vec[Int] = vec.new_vec();
+    i = 0;
+    while i < 16 {
+        servers = match vec.get(accept_ops, i) {
+            Some(op) => match async_wait_int(op, 2000) {
+                Ok(handle) => vec.push(servers, handle),
+                Err(_) => servers,
+            },
+            None => servers,
+        };
+        i = i + 1;
+    };
+    let accepted_ok = if vec.vec_len(servers) == 16 { 1 } else { 0 };
+
+    let mut recv_ops: Vec[AsyncStringOp] = vec.new_vec();
+    i = 0;
+    while i < 16 {
+        recv_ops = match vec.get(servers, i) {
+            Some(handle) => match async_tcp_recv_submit(handle, 64, 2000) {
+                Ok(op) => vec.push(recv_ops, op),
+                Err(_) => recv_ops,
+            },
+            None => recv_ops,
+        };
+        i = i + 1;
+    };
+
+    let pressure_ok = match async_runtime_pressure() {
+        Ok(value) => if value.op_limit == 64 &&
+            value.queue_limit == 32 &&
+            value.active_ops + value.queue_depth >= 16 {
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let mut sent_total = 0;
+    i = 0;
+    while i < 16 {
+        let sent = match vec.get(clients, i) {
+            Some(handle) => match tcp_send(handle, bytes.from_string("ping")) {
+                Ok(written) => written,
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        sent_total = sent_total + sent;
+        i = i + 1;
+    };
+
+    let mut recv_total = 0;
+    i = 0;
+    while i < 16 {
+        let received = match vec.get(recv_ops, i) {
+            Some(op) => match async_wait_string(op, 2000) {
+                Ok(payload) => bytes.byte_len(payload),
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        recv_total = recv_total + received;
+        i = i + 1;
+    };
+
+    let mut send_ops: Vec[AsyncIntOp] = vec.new_vec();
+    i = 0;
+    while i < 16 {
+        send_ops = match vec.get(servers, i) {
+            Some(handle) => match async_tcp_send_submit(handle, bytes.from_string("pong")) {
+                Ok(op) => vec.push(send_ops, op),
+                Err(_) => send_ops,
+            },
+            None => send_ops,
+        };
+        i = i + 1;
+    };
+
+    let mut ack_total = 0;
+    i = 0;
+    while i < 16 {
+        let sent = match vec.get(send_ops, i) {
+            Some(op) => match async_wait_int(op, 2000) {
+                Ok(written) => written,
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        ack_total = ack_total + sent;
+        i = i + 1;
+    };
+
+    let mut echo_total = 0;
+    i = 0;
+    while i < 16 {
+        let echoed = match vec.get(clients, i) {
+            Some(handle) => match tcp_recv(handle, 16, 2000) {
+                Ok(payload) => bytes.byte_len(payload),
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        echo_total = echo_total + echoed;
+        i = i + 1;
+    };
+
+    let shutdown_ok = match async_shutdown() {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+
+    let mut close_count = match tcp_close(listener) {
+        Ok(value) => bool_to_int(value),
+        Err(_) => 0,
+    };
+    i = 0;
+    while i < 16 {
+        close_count = close_count + match vec.get(clients, i) {
+            Some(handle) => match tcp_close(handle) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        close_count = close_count + match vec.get(servers, i) {
+            Some(handle) => match tcp_close(handle) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            },
+            None => 0,
+        };
+        i = i + 1;
+    };
+
+    let score = accepted_ok +
+        pressure_ok +
+        (if sent_total == 64 { 1 } else { 0 }) +
+        (if recv_total == 64 { 1 } else { 0 }) +
+        (if ack_total == 64 { 1 } else { 0 }) +
+        (if echo_total == 64 { 1 } else { 0 }) +
+        shutdown_ok +
+        (if close_count == 33 { 1 } else { 0 });
+    if score == 8 {
+        print_int(42);
+    } else {
+        print_int(score);
+    };
+    0
+}
+"#;
+
+    let envs = [
+        ("AIC_RT_LIMIT_NET_HANDLES", "64"),
+        ("AIC_RT_LIMIT_NET_ASYNC_OPS", "64"),
+        ("AIC_RT_LIMIT_NET_ASYNC_QUEUE", "32"),
+        ("AIC_RT_LIMIT_NET_ASYNC_WORKERS", "4"),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_setup_and_args_and_input_and_env(src, &[], "", &envs, |_| {});
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
 #[test]
 fn exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free() {
     let backend_enabled = tls_backend_enabled_for_tests();

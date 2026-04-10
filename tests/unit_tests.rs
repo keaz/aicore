@@ -10568,6 +10568,7 @@ fn unit_runtime_handle_limits_are_env_configurable_and_documented() {
         "AIC_RT_LIMIT_NET_HANDLES",
         "AIC_RT_LIMIT_NET_ASYNC_OPS",
         "AIC_RT_LIMIT_NET_ASYNC_QUEUE",
+        "AIC_RT_LIMIT_NET_ASYNC_WORKERS",
         "AIC_RT_LIMIT_TLS_HANDLES",
         "AIC_RT_LIMIT_TLS_ASYNC_OPS",
     ] {
@@ -10595,6 +10596,7 @@ fn unit_client_runtime_sustained_load_suite_is_wired_and_documented() {
         fs::read_to_string("tests/execution_tests.rs").expect("read tests/execution_tests.rs");
     for test_name in [
         "fn exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free()",
+        "fn exec_runtime_net_async_multi_worker_service_load_is_stable()",
         "fn exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free()",
         "fn exec_runtime_pool_churn_sustained_cycles_are_leak_free()",
     ] {
@@ -10613,6 +10615,10 @@ fn unit_client_runtime_sustained_load_suite_is_wired_and_documented() {
     assert!(
         net_doc.contains("exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free"),
         "net runtime docs must reference net sustained-load test"
+    );
+    assert!(
+        net_doc.contains("exec_runtime_net_async_multi_worker_service_load_is_stable"),
+        "net runtime docs must reference multi-worker async net sustained-load test"
     );
     assert!(
         net_doc.contains("exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free"),

@@ -143,6 +143,36 @@
           "max_ms": 7800.0
         }
       }
+    },
+    {
+      "id": "async_net_multi_worker_service_load",
+      "description": "Shared-queue multi-worker async net service-load path",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "execution_tests",
+        "exec_runtime_net_async_multi_worker_service_load_is_stable",
+        "--",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "thresholds": {
+        "linux": {
+          "baseline_ms": 2400.0,
+          "max_ms": 6200.0
+        },
+        "macos": {
+          "baseline_ms": 2700.0,
+          "max_ms": 7000.0
+        },
+        "windows": {
+          "baseline_ms": 3600.0,
+          "max_ms": 8600.0
+        }
+      }
     }
   ]
 }

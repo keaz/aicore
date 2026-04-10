@@ -118,6 +118,7 @@ fn main() -> Int effects { io, net } {
 - Route matching and precedence: `examples/io/http_router.aic`
 - Subprocess orchestration: `examples/io/process_pipeline.aic`
 - Networking TCP loopback: `examples/io/tcp_echo.aic`
+- Async worker-pool loopback: `examples/io/async_net_worker_pool.aic`
 - Async submit+await bridge (reactor polling): `examples/io/async_await_submit_bridge.aic`
 - Retry/backoff + timeout pattern: `examples/io/retry_with_jitter.aic`
 - Graceful shutdown via OS signal: `examples/io/signal_shutdown.aic` (manual signal required)

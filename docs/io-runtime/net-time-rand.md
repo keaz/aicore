@@ -147,7 +147,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - TCP/UDP handles are bounded runtime resources; always close handles.
 - Runtime handle ceilings are process-start configurable:
   - `AIC_RT_LIMIT_FS_FILES`, `AIC_RT_LIMIT_PROC_HANDLES`
-  - `AIC_RT_LIMIT_NET_HANDLES`, `AIC_RT_LIMIT_NET_ASYNC_OPS`, `AIC_RT_LIMIT_NET_ASYNC_QUEUE`
+  - `AIC_RT_LIMIT_NET_HANDLES`, `AIC_RT_LIMIT_NET_ASYNC_OPS`, `AIC_RT_LIMIT_NET_ASYNC_QUEUE`, `AIC_RT_LIMIT_NET_ASYNC_WORKERS`
   - `AIC_RT_LIMIT_TLS_HANDLES`, `AIC_RT_LIMIT_TLS_ASYNC_OPS`
   - `AIC_RT_LIMIT_CONC_TASKS`, `AIC_RT_LIMIT_CONC_CHANNELS`, `AIC_RT_LIMIT_CONC_MUTEXES`
   - values outside the accepted range fall back to deterministic defaults.
@@ -173,16 +173,19 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - `async_wait_many_*` provides deterministic N-op selection helpers.
   - `async_wait_any_*` remains a compatibility wrapper over `async_wait_many_*`.
   - `async_runtime_pressure` reports active/queued snapshots and configured limits for adaptive submit gating.
+  - `AIC_RT_LIMIT_NET_ASYNC_WORKERS` scales socket progress beyond a single worker thread while keeping the async API surface unchanged.
+  - `queue_depth` / `queue_limit` stay process-wide because the worker pool shares a single bounded submit queue.
 - Recommended protocol-client defaults:
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.
   - Tune keepalive probes with `tcp_set_keepalive_idle_secs`, `tcp_set_keepalive_interval_secs`, and `tcp_set_keepalive_count` when idle-failure detection latency matters.
   - Start buffer sizing with moderate values (for example `8192`-`65536`) and tune by measured throughput/latency.
-  - Size `AIC_RT_LIMIT_NET_ASYNC_OPS` for peak in-flight async requests and `AIC_RT_LIMIT_NET_ASYNC_QUEUE` for expected submit bursts.
+  - Size `AIC_RT_LIMIT_NET_ASYNC_OPS` for peak in-flight async requests, `AIC_RT_LIMIT_NET_ASYNC_QUEUE` for expected submit bursts, and `AIC_RT_LIMIT_NET_ASYNC_WORKERS` for the amount of cross-core async socket progress you want per process.
 - Sustained-load lifecycle verification is CI-gated:
   - `exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free`
+  - `exec_runtime_net_async_multi_worker_service_load_is_stable`
   - `exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free`
-  - both tests run repeated submit/wait/cancel cycles under low runtime limits to catch handle/op leak regressions.
+  - the lifecycle churn tests catch leak/regression paths under low limits, and the multi-worker service-load test exercises concurrent accept/recv/send flow with `AIC_RT_LIMIT_NET_ASYNC_WORKERS=4`.
 - Unsupported socket-option paths return `NetError::Io` deterministically (including current Windows runtime behavior).
 - Invalid-handle/type socket-control calls remain typed (`NetError::InvalidInput`), and shutdown on already-closed streams may surface `NetError::ConnectionClosed` depending on platform socket state.
 
@@ -191,6 +194,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
 - `examples/io/tcp_echo.aic`
 - `examples/io/tcp_socket_tuning.aic`
 - `examples/io/async_lifecycle_controls.aic`
+- `examples/io/async_net_worker_pool.aic`
 - `examples/io/async_wait_many_orchestration.aic`
 
 ## `std.time` (`effects { time }`)

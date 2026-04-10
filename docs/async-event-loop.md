@@ -4,7 +4,7 @@ This document defines the runtime model used by async submit/wait APIs in `std.n
 
 ## Scope
 
-- Single-process, single event-loop worker thread.
+- Single-process runtime with a configurable async worker pool (`1..=32` worker threads, default `1`).
 - Bounded operation queue with deterministic backpressure.
 - Reactor-based non-blocking socket progress for async TCP accept/send/recv.
 - Async submit/wait API surface for TCP accept/send/recv.
@@ -176,8 +176,9 @@ let socket = match accepted {
 ## Runtime Architecture
 
 - Queue capacity is configurable at process start via `AIC_RT_LIMIT_NET_ASYNC_QUEUE` (bounded by compile-time hard maximum) and enforced on submit.
-- Submit paths enqueue opaque operation handles and operation metadata.
-- A dedicated worker thread activates operations and advances them through a reactor.
+- Worker-pool size is configurable at process start via `AIC_RT_LIMIT_NET_ASYNC_WORKERS` (default `1`, max `32`, clamped to the async op limit).
+- Submit paths enqueue opaque operation handles and operation metadata into a shared bounded queue.
+- A worker pool activates operations from the shared queue and advances them through per-thread reactors.
 - Reactor backends:
   - Linux: `epoll`
   - macOS/BSD: `kqueue`
@@ -197,6 +198,9 @@ let socket = match accepted {
 - Timeout while waiting does not destroy the in-flight operation; later wait can retry.
 - Fs async submission is bounded by `AIC_RT_LIMIT_FS_ASYNC_OPS`; saturation returns `FsError::Timeout`.
 - `async_runtime_pressure` snapshots expose `active_ops`, `queue_depth`, `op_limit`, and `queue_limit`.
+- Net async pressure remains process-wide over the worker pool:
+  - `active_ops` aggregates in-flight operations across all workers.
+  - `queue_depth` / `queue_limit` describe the shared bounded submission queue rather than a per-worker queue.
 - `std.fs.async_runtime_pressure` snapshots expose active fs task count and configured fs async op limit; current task-backed backend reports `queue_depth = 0` and `queue_limit = 0`.
 - `tls_async_runtime_pressure` snapshots expose active in-flight ops plus occupied-slot pressure.
 - TLS uses slot-backed worker capacity rather than the net reactor queue, so `queue_depth` mirrors occupied TLS async slots and `queue_limit` mirrors the configured TLS async slot limit.
@@ -207,6 +211,7 @@ let socket = match accepted {
 - Regression tests in `tests/execution_tests.rs` cover:
   - multi-connection async flow (`exec_net_async_event_loop_multi_connection`)
   - queue saturation + shutdown (`exec_net_async_queue_backpressure_and_shutdown`)
+  - multi-worker concurrent service load (`exec_runtime_net_async_multi_worker_service_load_is_stable`)
   - 1000 concurrent accepts on a single thread (`exec_net_async_accept_1000_connections_single_thread`)
   - async submit+await bridge polling (`exec_async_await_submit_bridge_drives_reactor_without_task_spawn`)
   - negative async-wait paths (`exec_net_async_wait_negative_paths_are_stable`) for invalid handles, timeout retry semantics, and single-consumer re-wait behavior
@@ -214,6 +219,7 @@ let socket = match accepted {
   - `check_pass` (compile/check gate)
   - `run_pass` (runtime gate)
 - CI also includes `examples/io/async_await_submit_bridge.aic` in both check and run gates.
+- CI also includes `examples/io/async_net_worker_pool.aic` in both check and run gates for concurrent multi-connection worker-pool coverage.
 - CI also includes `examples/io/fs_async_await_bridge.aic`, `examples/io/fs_async_runtime_controls.aic`, and `examples/io/fs_async_tasks.aic` in both check and run gates for filesystem async coverage.
 - CI also includes `examples/io/tls_async_submit_wait.aic` in both check and run gates for TLS async submit/wait contract coverage.
 - CI also includes `examples/io/async_lifecycle_controls.aic` in both check and run gates for lifecycle controls coverage.
