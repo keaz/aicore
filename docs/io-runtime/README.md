@@ -50,7 +50,8 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 - Windows `std.net` partial substrate: UDP, DNS, socket tuning, peer-address, and shutdown-tuning helpers are implemented through the shared runtime backend but are not yet covered by Windows CI smoke; library authors should keep typed `NetError` branches around those paths until broader validation lands.
 - Windows `std.net` typed fallback contract: unsupported socket-option paths return `NetError::Io`; invalid-handle/type misuse remains `NetError::InvalidInput`; peer-close still surfaces `NetError::ConnectionClosed`.
 - Windows: `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`; branch on typed errors instead of assuming success.
-- Windows: `std.tls` remains backend-dependent; when the TLS backend is available, async pressure snapshots report occupied-slot depth and configured slot limit rather than a separate reactor queue.
+- `std.tls` is supported on builds that compile the OpenSSL-backed TLS runtime; on builds without TLS backend support, `std.tls` APIs return typed `TlsError::ProtocolError`.
+- On supported TLS builds, async pressure snapshots report occupied-slot depth and configured slot limit rather than a separate reactor queue.
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.
 

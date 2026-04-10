@@ -2,6 +2,8 @@ import std.bytes;
 import std.io;
 import std.net;
 import std.tls;
+import std.time;
+import std.vec;
 
 fn touched_async_int_result(r: Result[AsyncIntOp, TlsError]) -> Int {
     match r {
@@ -38,6 +40,20 @@ fn touched_bool_result(r: Result[Bool, TlsError]) -> Int {
     }
 }
 
+fn touched_option_int_result(r: Result[Option[Int], TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn touched_option_bytes_result(r: Result[Option[Bytes], TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
 fn touched_pressure_result(r: Result[AsyncRuntimePressure, TlsError]) -> Int {
     match r {
         Ok(_) => 1,
@@ -52,7 +68,21 @@ fn touched_pressure_u32_result(r: Result[AsyncRuntimePressureU32, TlsError]) -> 
     }
 }
 
-fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concurrency } {
+fn touched_int_selection_result(r: Result[TlsAsyncIntSelection, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn touched_string_selection_result(r: Result[TlsAsyncStringSelection, TlsError]) -> Int {
+    match r {
+        Ok(_) => 1,
+        Err(_) => 1,
+    }
+}
+
+fn main() -> Int effects { io, net, concurrency, time } capabilities { io, net, concurrency, time } {
     let bad_stream = TlsStream { handle: -1 };
     let score = touched_async_int_result(tls_async_send_submit(
             bad_stream,
@@ -64,10 +94,18 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
         + touched_bytes_result(tls_async_recv(bad_stream, 8, 10))
         + touched_int_result(tls_async_wait_int(AsyncIntOp { handle: -1 }, 10))
         + touched_bytes_result(tls_async_wait_string(AsyncStringOp { handle: -1 }, 10))
+        + touched_bool_result(tls_async_cancel_int(AsyncIntOp { handle: -1 }))
+        + touched_bool_result(tls_async_cancel_string(AsyncStringOp { handle: -1 }))
+        + touched_option_int_result(tls_async_poll_int(AsyncIntOp { handle: -1 }))
+        + touched_option_bytes_result(tls_async_poll_string(AsyncStringOp { handle: -1 }))
+        + touched_int_selection_result(tls_async_wait_many_int(vec.vec_of(AsyncIntOp { handle: -1 }), 10))
+        + touched_string_selection_result(tls_async_wait_many_string(vec.vec_of(AsyncStringOp { handle: -1 }), 10))
+        + touched_int_selection_result(tls_async_wait_any_int(AsyncIntOp { handle: -1 }, AsyncIntOp { handle: -2 }, 10))
+        + touched_string_selection_result(tls_async_wait_any_string(AsyncStringOp { handle: -1 }, AsyncStringOp { handle: -2 }, 10))
         + touched_pressure_result(tls_async_runtime_pressure())
         + touched_pressure_u32_result(tls_async_runtime_pressure_u32())
         + touched_bool_result(tls_async_shutdown());
-    if score == 9 {
+    if score == 17 {
         print_int(42);
     } else {
         print_int(score);

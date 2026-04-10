@@ -5544,6 +5544,73 @@ fn unit_windows_std_net_support_contract_is_consistent_across_docs() {
 }
 
 #[test]
+fn unit_tls_async_support_contract_and_example_coverage_are_aligned() {
+    let readme = fs::read_to_string("README.md").expect("read README.md");
+    let async_runtime =
+        fs::read_to_string("docs/async-event-loop.md").expect("read docs/async-event-loop.md");
+    let io_runtime =
+        fs::read_to_string("docs/io-runtime/README.md").expect("read docs/io-runtime/README.md");
+    let io_agent =
+        fs::read_to_string("docs/io-agent-guide.md").expect("read docs/io-agent-guide.md");
+    let tls_api = fs::read_to_string("docs/std-api/tls.md").expect("read docs/std-api/tls.md");
+    let example = fs::read_to_string("examples/io/tls_async_submit_wait.aic")
+        .expect("read tls async example");
+    let execution_tests =
+        fs::read_to_string("tests/execution_tests.rs").expect("read tests/execution_tests.rs");
+    let examples_ci =
+        fs::read_to_string("scripts/ci/examples.sh").expect("read scripts/ci/examples.sh");
+    let boundary = fs::read_to_string("docs/prod-readiness/service-and-p2p-capability-boundary.md")
+        .expect("read docs/prod-readiness/service-and-p2p-capability-boundary.md");
+
+    assert!(
+        readme.contains(
+            "builds compiled without TLS backend support return typed `TlsError::ProtocolError`"
+        ),
+        "README must document the explicit no-backend TLS fallback contract"
+    );
+    assert!(
+        async_runtime.contains("OpenSSL-backed builds report slot-backed TLS async pressure")
+            && async_runtime.contains("exec_tls_async_wait_selection_and_poll_paths_are_stable"),
+        "async runtime docs must describe the supported TLS build constraint and lifecycle coverage"
+    );
+    assert!(
+        !io_runtime.contains("std.tls` remains backend-dependent")
+            && io_runtime.contains("`std.tls` is supported on builds that compile the OpenSSL-backed TLS runtime"),
+        "io runtime README must replace the stale TLS backend-dependent caveat with an explicit support contract"
+    );
+    assert!(
+        !io_agent.contains("async TLS APIs stay partial")
+            && io_agent.contains("builds without TLS backend support return typed `TlsError::ProtocolError`"),
+        "io agent guide must not describe TLS async support as partial once the support contract is explicit"
+    );
+    assert!(
+        tls_api.contains("On builds without TLS backend support, async and sync `std.tls` APIs return `TlsError::ProtocolError`."),
+        "std TLS API docs must document the typed no-backend fallback contract"
+    );
+    assert!(
+        example.contains("tls_async_cancel_int(")
+            && example.contains("tls_async_poll_string(")
+            && example.contains("tls_async_wait_many_int(")
+            && example.contains("tls_async_wait_any_string("),
+        "TLS async example must exercise the lifecycle helper surface in CI"
+    );
+    assert!(
+        execution_tests.contains("fn exec_tls_async_wait_selection_and_poll_paths_are_stable()"),
+        "execution coverage must include the live TLS async poll/wait-any/wait-many lifecycle test"
+    );
+    assert!(
+        examples_ci.contains("\"examples/io/tls_async_submit_wait.aic\"")
+            && examples_ci
+                .contains("expect_run_value \"examples/io/tls_async_submit_wait.aic\" \"42\""),
+        "examples CI must keep the TLS async example in both check and run gates"
+    );
+    assert!(
+        !boundary.contains("`#385` `[ASYNC-READY-T5] Complete TLS async runtime parity and production diagnostics`"),
+        "production-readiness boundary doc must stop listing #385 as an open adjacent issue once implemented"
+    );
+}
+
+#[test]
 fn unit_concurrency_docs_include_fixed_width_capacity_and_index_wrappers() {
     let runtime_doc =
         fs::read_to_string("docs/io-concurrency-runtime.md").expect("read io concurrency runtime");

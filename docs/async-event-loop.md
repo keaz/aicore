@@ -19,7 +19,7 @@ This document defines the runtime model used by async submit/wait APIs in `std.n
 | `std.fs` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Task-backed runtime bridge in `std/fs.aic` + `src/codegen/runtime/part03.c` + execution tests `exec_fs_async_submit_wait_roundtrip`, `exec_fs_async_runtime_backpressure_is_deterministic`, `exec_fs_async_wait_timeout_retry_is_stable` |
 | `await` submit bridge for net/tls async handles | Supported | Runtime poll helpers (`aic_rt_async_poll_int`, `aic_rt_async_poll_string`) + execution test `exec_async_await_submit_bridge_drives_reactor_without_task_spawn` |
 | `await` submit bridge for fs async handles | Supported | Task-join helper (`aic_rt_conc_join_value`) + execution test `exec_async_await_fs_submit_bridge_roundtrip` |
-| `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Supported | Slot-backed TLS async runtime reports active and occupied-slot pressure, and execution tests cover timeout/cancel/shutdown/backpressure paths against a local TLS harness |
+| `std.tls` async submit/wait/cancel/poll/wait-many/shutdown | Supported | OpenSSL-backed builds report slot-backed TLS async pressure, and execution tests cover timeout/cancel/poll/wait-many/shutdown/backpressure paths against a local TLS harness; builds without TLS backend support return typed `TlsError::ProtocolError` |
 | Async HTTP-server API surface | Supported | request/response I/O now uses dedicated async runtime intrinsics in `src/codegen/runtime/part05.c`, and `async_serve` composes through native async accept/read/write helpers |
 | Linux/macOS runtime backend | Supported | Reactor-backed async paths are execution-tested on non-Windows targets |
 | Windows async runtime backend | Supported (client-runtime scope) | Shared reactor backend in `src/codegen/runtime/part04.c` + Windows CI smoke coverage for TCP loopback plus async accept/recv wait/cancel/shutdown lifecycle (`exec_net_async_wait_negative_paths_are_stable`, `exec_net_tcp_loopback_echo`) and Windows-target build smoke in `tests/e7_build_hermetic_tests.rs` |
@@ -217,6 +217,7 @@ let socket = match accepted {
   - 1000 concurrent accepts on a single thread (`exec_net_async_accept_1000_connections_single_thread`)
   - async submit+await bridge polling (`exec_async_await_submit_bridge_drives_reactor_without_task_spawn`)
   - negative async-wait paths (`exec_net_async_wait_negative_paths_are_stable`) for invalid handles, timeout retry semantics, and single-consumer re-wait behavior
+  - TLS async lifecycle controls (`exec_tls_async_wait_selection_and_poll_paths_are_stable`, `exec_tls_async_cancel_reports_typed_cancelled_error`, `exec_tls_async_pressure_shutdown_and_backpressure_are_deterministic`, `exec_runtime_tls_async_lifecycle_sustained_churn_is_leak_free`)
 - CI example coverage in `scripts/ci/examples.sh` includes `examples/io/async_net_event_loop.aic` in both:
   - `check_pass` (compile/check gate)
   - `run_pass` (runtime gate)

@@ -15321,6 +15321,177 @@ fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, 
 }
 
 #[test]
+fn exec_tls_async_wait_selection_and_poll_paths_are_stable() {
+    let backend_enabled = tls_backend_enabled_for_tests();
+    let openssl_cli_available = openssl_cli_available_for_tests();
+    if !(backend_enabled && openssl_cli_available) {
+        return;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.net;
+import std.time;
+import std.env;
+import std.bytes;
+import std.vec;
+
+fn bool_to_int(value: Bool) -> Int {
+    if value { 1 } else { 0 }
+}
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn tls_cfg() -> TlsConfig {
+    TlsConfig {
+        verify_server: false,
+        ca_cert_path: none_string(),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some("localhost"),
+    }
+}
+
+fn connect_tls() -> Result[TlsStream, TlsError] effects { net, env } capabilities { net, env } {
+    let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+    tls_connect_addr(addr, tls_cfg(), 5000)
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn int_selection_ok(selection: TlsAsyncIntSelection) -> Int {
+    if selection.index == 0 && selection.value > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn string_selection_ok(selection: TlsAsyncStringSelection) -> Int {
+    if selection.index == 0 && bytes.byte_len(selection.payload) > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io, net, env, concurrency, time } capabilities { io, net, env, concurrency, time } {
+    let request = bytes.from_string("GET / HTTP/1.0\r\nHost: localhost\r\n\r\n");
+    let result = match connect_tls() {
+        Err(_) => 0,
+        Ok(stream) => if true {
+            let recv_ready = match tls_async_recv_submit(stream, 2048, 10000) {
+                Ok(value) => value,
+                Err(_) => AsyncStringOp { handle: 0 },
+            };
+
+            let poll_none_ok = match tls_async_poll_string(AsyncStringOp { handle: recv_ready.handle }) {
+                Ok(option) => match option {
+                    None() => 1,
+                    Some(_) => 0,
+                },
+                Err(_) => 0,
+            };
+
+            let send_many_ok = match tls_async_send_submit(stream, request, 2000) {
+                Ok(op) => match tls_async_wait_many_int(vec.vec_of(op), 10000) {
+                    Ok(selection) => int_selection_ok(selection),
+                    Err(_) => 0,
+                },
+                Err(_) => 0,
+            };
+
+            let wait_many_ok = match tls_async_wait_many_string(vec.vec_of(AsyncStringOp { handle: recv_ready.handle }), 10000) {
+                Ok(selection) => string_selection_ok(selection),
+                Err(_) => 0,
+            };
+
+            let recv_cancel = match tls_async_recv_submit(stream, 2048, 10000) {
+                Ok(value) => value,
+                Err(_) => AsyncStringOp { handle: 0 },
+            };
+            let cancel_ok = match tls_async_cancel_string(AsyncStringOp { handle: recv_cancel.handle }) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+            let cancel_wait_ok = match tls_async_wait_string(AsyncStringOp { handle: recv_cancel.handle }, 10000) {
+                Ok(_) => 0,
+                Err(err) => if tls_code(err) == 9 { 1 } else { 0 },
+            };
+
+            let shutdown_ok = match tls_async_shutdown() {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+            let close_ok = match tls_close(stream) {
+                Ok(value) => bool_to_int(value),
+                Err(_) => 0,
+            };
+
+            let score = poll_none_ok * 100000
+                + send_many_ok * 10000
+                + wait_many_ok * 1000
+                + cancel_ok * 100
+                + cancel_wait_ok * 10
+                + shutdown_ok;
+            if score == 111111 && close_ok == 1 {
+                42
+            } else {
+                score + close_ok
+            }
+        } else {
+            0
+        },
+    };
+
+    print_int(result);
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls selection listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let envs = [("AIC_TLS_ADDR", addr_env.as_str())];
+    let (code, stdout, stderr) =
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            generate_local_tls_cert(root);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
+        });
+    if code != 0 && stderr.contains("[aic][tls-policy][unsafe]") {
+        return;
+    }
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
 fn exec_tls_async_pressure_shutdown_and_backpressure_are_deterministic() {
     let backend_enabled = tls_backend_enabled_for_tests();
     let openssl_cli_available = openssl_cli_available_for_tests();

@@ -57,7 +57,8 @@ Treat error enums as control-flow boundaries, not exceptions.
   - UDP, DNS, socket-tuning, peer-address, and shutdown-tuning helpers share the runtime backend but are not yet covered by Windows CI smoke; keep typed `NetError` branches in libraries that target those paths on Windows.
   - Unsupported socket-option paths return `NetError::Io`; invalid-handle/type misuse remains `NetError::InvalidInput`.
   - `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`.
-  - `std.tls` remains backend-dependent; async TLS APIs stay partial where backend availability or pressure accounting is not yet uniform.
+  - `std.tls` is supported on builds that compile the OpenSSL-backed TLS runtime; builds without TLS backend support return typed `TlsError::ProtocolError`.
+  - On supported TLS builds, async TLS APIs are fully surfaced, and `tls_async_runtime_pressure` reports occupied-slot depth and configured slot limit rather than a reactor queue.
   - `std.signal` remains unsupported and returns `SignalError::UnsupportedPlatform`.
   - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.
 - Postgres TLS/SCRAM replay reference (`examples/io/postgres_tls_scram_reference.aic`):

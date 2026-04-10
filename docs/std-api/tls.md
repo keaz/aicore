@@ -286,6 +286,7 @@ fn main() -> Int effects { net } capabilities { net } {
 - `tls_async_wait_int` / `tls_async_wait_string` timeout returns `TlsError::Timeout` while keeping the operation pending for retry.
 - `tls_async_cancel_*` causes subsequent waits on the cancelled op to resolve as `TlsError::Cancelled`.
 - Re-waiting a consumed TLS async op returns `TlsError::ProtocolError`.
+- On builds without TLS backend support, async and sync `std.tls` APIs return `TlsError::ProtocolError`.
 - Runnable async submit/wait usage example: `examples/io/tls_async_submit_wait.aic`.
 - Certificate metadata APIs (`tls_peer_subject`, `tls_peer_issuer`, `tls_peer_fingerprint_sha256`, `tls_peer_san_entries`) provide generic primitives for external pinning/policy libraries.
 - `tls_peer_san_entries` returns an empty vector when SAN is absent; unsupported runtime metadata paths map to `TlsError::ProtocolError`.

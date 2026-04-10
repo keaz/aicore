@@ -171,7 +171,6 @@ Those should be built as libraries on top of the current and future low-level ru
 
 These already cover adjacent runtime work and should not be duplicated:
 
-- `#385` `[ASYNC-READY-T5] Complete TLS async runtime parity and production diagnostics`
 - `#391` `[ASYNC-READY-T7] Add Windows coverage for native async REST server paths`
 
 ## New Issues To Track From This Assessment
