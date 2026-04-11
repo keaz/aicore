@@ -44,6 +44,20 @@ enum TupleLetPattern {
     Tuple { items: Vec<TupleLetPattern> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttributeTarget {
+    Function,
+    Struct,
+    Field,
+    Enum,
+    Variant,
+    Trait,
+    Impl,
+    Param,
+    TypeAlias,
+    Const,
+}
+
 impl<'a> Parser<'a> {
     fn parse_program(&mut self) -> Option<Program> {
         let start = self.current_span().start;
@@ -102,12 +116,15 @@ impl<'a> Parser<'a> {
         let attrs = self.parse_attributes();
         let visibility = self.parse_visibility_modifier();
         if self.at_kind(|k| matches!(k, TokenKind::KwExtern)) {
+            self.validate_attributes(&attrs, AttributeTarget::Function);
             self.parse_extern_function(attrs, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwIntrinsic)) {
+            self.validate_attributes(&attrs, AttributeTarget::Function);
             self.parse_intrinsic_function(attrs, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwType)) {
+            self.validate_attributes(&attrs, AttributeTarget::TypeAlias);
             if visibility != Visibility::Private {
                 self.diagnostics.push(
                     Diagnostic::error(
@@ -121,6 +138,7 @@ impl<'a> Parser<'a> {
             }
             self.parse_type_alias(attrs).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwConst)) {
+            self.validate_attributes(&attrs, AttributeTarget::Const);
             if visibility != Visibility::Private {
                 self.diagnostics.push(
                     Diagnostic::error(
@@ -145,6 +163,7 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
+            self.validate_attributes(&attrs, AttributeTarget::Function);
             self.parse_function(attrs, false, true, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
@@ -159,19 +178,25 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
+            self.validate_attributes(&attrs, AttributeTarget::Function);
             self.parse_function(attrs, true, false, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
             let start = self.current_span().start;
+            self.validate_attributes(&attrs, AttributeTarget::Function);
             self.parse_function(attrs, false, false, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwStruct)) {
+            self.validate_attributes(&attrs, AttributeTarget::Struct);
             self.parse_struct(attrs, visibility).map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
+            self.validate_attributes(&attrs, AttributeTarget::Enum);
             self.parse_enum(attrs, visibility).map(Item::Enum)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwTrait)) {
+            self.validate_attributes(&attrs, AttributeTarget::Trait);
             self.parse_trait(attrs, visibility).map(Item::Trait)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwImpl)) {
+            self.validate_attributes(&attrs, AttributeTarget::Impl);
             self.parse_impl(attrs, visibility).map(Item::Impl)
         } else {
             let span = self.current_span();
@@ -232,6 +257,178 @@ impl<'a> Parser<'a> {
             "expected ')' after visibility modifier",
         );
         Visibility::Crate
+    }
+
+    fn validate_attributes(&mut self, attrs: &[Attribute], target: AttributeTarget) {
+        for (index, attr) in attrs.iter().enumerate() {
+            if !self.is_known_web_attribute(&attr.name) {
+                continue;
+            }
+            self.validate_web_attribute_target(attr, target);
+            self.validate_web_attribute_shape(attr);
+            if self.is_singleton_web_attribute(&attr.name) {
+                for earlier in &attrs[..index] {
+                    if earlier.name == attr.name {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1096",
+                                format!("duplicate framework attribute `#[{}]`", attr.name),
+                                self.file,
+                                attr.span,
+                            )
+                            .with_help("remove the duplicate attribute on this declaration"),
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn validate_web_attribute_target(&mut self, attr: &Attribute, target: AttributeTarget) {
+        let allowed = match attr.name.as_str() {
+            "get" | "post" | "put" | "patch" | "delete" => target == AttributeTarget::Function,
+            "filter" => target == AttributeTarget::Struct,
+            "body" | "header" | "path" | "query" => target == AttributeTarget::Param,
+            "validate" => target == AttributeTarget::Field || target == AttributeTarget::Param,
+            _ => true,
+        };
+        if !allowed {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1096",
+                    format!(
+                        "framework attribute `#[{}]` is not supported on {}",
+                        attr.name,
+                        self.attribute_target_label(target)
+                    ),
+                    self.file,
+                    attr.span,
+                )
+                .with_help(self.attribute_target_help(&attr.name)),
+            );
+        }
+    }
+
+    fn validate_web_attribute_shape(&mut self, attr: &Attribute) {
+        let valid = match attr.name.as_str() {
+            "get" | "post" | "put" | "patch" | "delete" => self.has_one_positional_string(attr),
+            "filter" => self.has_named_int(attr, "order"),
+            "body" => attr.args.is_empty(),
+            "header" | "path" | "query" => self.has_one_positional_string(attr),
+            "validate" => !attr.args.is_empty(),
+            _ => true,
+        };
+        if !valid {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1097",
+                    format!(
+                        "invalid argument shape for framework attribute `#[{}]`",
+                        attr.name
+                    ),
+                    self.file,
+                    attr.span,
+                )
+                .with_help(self.attribute_shape_help(&attr.name)),
+            );
+        }
+    }
+
+    fn is_known_web_attribute(&self, name: &str) -> bool {
+        matches!(
+            name,
+            "get"
+                | "post"
+                | "put"
+                | "patch"
+                | "delete"
+                | "filter"
+                | "body"
+                | "header"
+                | "path"
+                | "query"
+                | "validate"
+        )
+    }
+
+    fn is_singleton_web_attribute(&self, name: &str) -> bool {
+        self.is_known_web_attribute(name)
+    }
+
+    fn has_one_positional_string(&self, attr: &Attribute) -> bool {
+        if attr.args.len() != 1 {
+            return false;
+        }
+        matches!(
+            &attr.args[0],
+            AttributeArg::Positional(AttributeValue {
+                kind: AttributeValueKind::String(_),
+                ..
+            })
+        )
+    }
+
+    fn has_named_int(&self, attr: &Attribute, expected_name: &str) -> bool {
+        if attr.args.len() != 1 {
+            return false;
+        }
+        matches!(
+            &attr.args[0],
+            AttributeArg::Named {
+                name,
+                value:
+                    AttributeValue {
+                        kind: AttributeValueKind::Int(_),
+                        ..
+                    },
+                ..
+            } if name == expected_name
+        )
+    }
+
+    fn attribute_target_label(&self, target: AttributeTarget) -> &'static str {
+        match target {
+            AttributeTarget::Function => "a function",
+            AttributeTarget::Struct => "a struct",
+            AttributeTarget::Field => "a struct field",
+            AttributeTarget::Enum => "an enum",
+            AttributeTarget::Variant => "an enum variant",
+            AttributeTarget::Trait => "a trait",
+            AttributeTarget::Impl => "an impl block",
+            AttributeTarget::Param => "a parameter",
+            AttributeTarget::TypeAlias => "a type alias",
+            AttributeTarget::Const => "a const item",
+        }
+    }
+
+    fn attribute_target_help(&self, name: &str) -> &'static str {
+        match name {
+            "get" | "post" | "put" | "patch" | "delete" => {
+                "place route attributes on handler functions"
+            }
+            "filter" => "place filter attributes on filter structs",
+            "body" | "header" | "path" | "query" => {
+                "place extractor attributes on handler parameters"
+            }
+            "validate" => "place validation attributes on DTO fields or handler parameters",
+            _ => "move the attribute to a supported declaration",
+        }
+    }
+
+    fn attribute_shape_help(&self, name: &str) -> &'static str {
+        match name {
+            "get" | "post" | "put" | "patch" | "delete" => {
+                "use a single path literal, for example #[get(\"/users/:id\")]"
+            }
+            "filter" => "use #[filter(order = 10)]",
+            "body" => "use #[body] without arguments",
+            "header" => "use a single header literal, for example #[header(\"x-request-id\")]",
+            "path" => "use a single path-parameter literal, for example #[path(\"id\")]",
+            "query" => "use a single query-parameter literal, for example #[query(\"page\")]",
+            "validate" => "use at least one validation rule, for example #[validate(required)]",
+            _ => "use a supported framework attribute shape",
+        }
     }
 
     fn parse_attributes(&mut self) -> Vec<Attribute> {
@@ -719,6 +916,7 @@ impl<'a> Parser<'a> {
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
             let field_start = self.current_span().start;
             let field_attrs = self.parse_attributes();
+            self.validate_attributes(&field_attrs, AttributeTarget::Field);
             let field_visibility = self.parse_visibility_modifier();
             let (field_name, _) = self.expect_ident("E1012", "expected field name")?;
             self.expect(
@@ -788,6 +986,7 @@ impl<'a> Parser<'a> {
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
             let var_start = self.current_span().start;
             let variant_attrs = self.parse_attributes();
+            self.validate_attributes(&variant_attrs, AttributeTarget::Variant);
             let (var_name, _) = self.expect_ident("E1017", "expected enum variant name")?;
             let payload = if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
                 self.bump();
@@ -864,6 +1063,7 @@ impl<'a> Parser<'a> {
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
             let method_start = self.current_span().start;
             let method_attrs = self.parse_attributes();
+            self.validate_attributes(&method_attrs, AttributeTarget::Function);
             let method_visibility = self.parse_visibility_modifier();
             let mut is_async = false;
             let mut is_unsafe = false;
@@ -925,6 +1125,7 @@ impl<'a> Parser<'a> {
             while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
                 let method_start = self.current_span().start;
                 let method_attrs = self.parse_attributes();
+                self.validate_attributes(&method_attrs, AttributeTarget::Function);
                 let method_visibility = self.parse_visibility_modifier();
                 let mut is_async = false;
                 let mut is_unsafe = false;
@@ -1372,6 +1573,7 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
             let attrs = self.parse_attributes();
+            self.validate_attributes(&attrs, AttributeTarget::Param);
             if allow_self_receiver && params.is_empty() {
                 if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
                     let recv_start = self.current_span().start;
@@ -4378,6 +4580,90 @@ async fn show_user(
         assert_eq!(handler.attrs[0].name, "get");
         assert_eq!(handler.params[0].attrs[0].name, "path");
         assert_eq!(handler.params[1].attrs[0].name, "header");
+    }
+
+    #[test]
+    fn parses_framework_attribute_contract_shapes() {
+        let src = r#"
+#[filter(order = 10)]
+struct RequestIdFilter {}
+
+struct CreateUser {
+    #[validate(required)]
+    name: String,
+}
+
+#[post("/users")]
+fn create_user(
+    #[body] payload: CreateUser,
+    #[query("verbose")] verbose: String,
+    #[header("x-request-id")] request_id: String
+) -> Int {
+    0
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let program = program.expect("program");
+
+        let filter = match &program.items[0] {
+            Item::Struct(value) => value,
+            other => panic!("expected struct, got {other:?}"),
+        };
+        assert_eq!(filter.attrs[0].name, "filter");
+
+        let dto = match &program.items[1] {
+            Item::Struct(value) => value,
+            other => panic!("expected struct, got {other:?}"),
+        };
+        assert_eq!(dto.fields[0].attrs[0].name, "validate");
+
+        let handler = match &program.items[2] {
+            Item::Function(value) => value,
+            other => panic!("expected function, got {other:?}"),
+        };
+        assert_eq!(handler.attrs[0].name, "post");
+        assert_eq!(handler.params[0].attrs[0].name, "body");
+        assert_eq!(handler.params[1].attrs[0].name, "query");
+        assert_eq!(handler.params[2].attrs[0].name, "header");
+    }
+
+    #[test]
+    fn reports_invalid_framework_attribute_targets_and_shapes() {
+        let src = r#"
+#[get("/bad")]
+struct BadRoute {}
+
+#[filter(10)]
+struct BadFilter {}
+
+fn bad(
+    #[body("payload")] payload: Int,
+    #[header("x-request-id")]
+    #[header("x-request-id")] request_id: String
+) -> Int {
+    0
+}
+"#;
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "E1096" && d.message.contains("not supported")),
+            "diagnostics={diagnostics:#?}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "E1096" && d.message.contains("duplicate framework attribute")),
+            "diagnostics={diagnostics:#?}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "E1097" && d.message.contains("invalid argument shape")),
+            "diagnostics={diagnostics:#?}"
+        );
     }
 
     #[test]
