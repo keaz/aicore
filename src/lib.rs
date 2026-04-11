@@ -57,3 +57,4 @@ pub mod testgen;
 pub mod toolchain;
 pub mod typecheck;
 pub mod unused_analysis;
+pub mod web_annotations;

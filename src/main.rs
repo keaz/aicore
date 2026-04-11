@@ -124,6 +124,12 @@ enum Command {
         )]
         max_errors: usize,
     },
+    WebGen {
+        #[arg(default_value = "src/main.aic")]
+        input: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
     Ast {
         #[arg(default_value = "src/main.aic")]
         input: PathBuf,
@@ -1418,6 +1424,17 @@ fn run_cli() -> anyhow::Result<i32> {
             if has_any_errors {
                 EXIT_DIAGNOSTIC_ERROR
             } else {
+                EXIT_OK
+            }
+        }
+        Command::WebGen { input, offline } => {
+            let mut generation = aicore::web_annotations::generate_for_path(&input, offline)?;
+            sort_diagnostics(&mut generation.diagnostics);
+            if has_errors(&generation.diagnostics) {
+                print!("{}", diagnostics_pretty(&generation.diagnostics));
+                EXIT_DIAGNOSTIC_ERROR
+            } else {
+                print!("{}", generation.source);
                 EXIT_OK
             }
         }

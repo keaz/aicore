@@ -34,6 +34,8 @@ Recent core-language additions:
 - `E1060-E1062`: assignment statement parsing errors.
 - `E1063-E1068`: `extern`/`unsafe` parsing and declaration form errors.
 - `E1093`: invalid `intrinsic fn` declaration form (signature-only rules).
+- `E1096`: framework source attribute target, duplicate, or route/filter/validation shape error.
+- `E1097`: framework source attribute argument or generated validation rule error.
 - `E1069-E1074`: `Fn(...) -> ...` type and closure literal parsing errors.
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.

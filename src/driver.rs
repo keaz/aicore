@@ -27,6 +27,7 @@ use crate::package_workflow::{native_link_config, NativeLinkConfig};
 use crate::resolver::{self, Resolution};
 use crate::telemetry;
 use crate::typecheck::{self, TypecheckOutput};
+use crate::web_annotations;
 
 pub struct FrontendOutput {
     pub ast: ast::Program,
@@ -92,7 +93,7 @@ pub fn run_frontend_with_options(
     let mut diagnostics = Vec::new();
     diagnostics.append(&mut load.diagnostics);
 
-    let ast = if let Some(ast) = load.program {
+    let mut ast = if let Some(ast) = load.program {
         ast
     } else {
         return Ok(FrontendOutput {
@@ -143,6 +144,14 @@ pub fn run_frontend_with_options(
             timings,
         });
     };
+    let mut item_modules = load.item_modules.clone();
+    let annotation_file = web_annotations::entry_module_file(&ast, &load.module_files)
+        .unwrap_or_else(|| file.clone());
+    diagnostics.extend(web_annotations::augment_program(
+        &mut ast,
+        &mut item_modules,
+        &annotation_file,
+    ));
 
     let ir_build_started = Instant::now();
     let mut ir = ir_builder::build(&ast);
@@ -151,13 +160,13 @@ pub fn run_frontend_with_options(
     diagnostics.extend(normalize_effect_declarations_with_context(
         &mut ir,
         &file,
-        Some(&load.item_modules),
+        Some(&item_modules),
         Some(&load.module_files),
     ));
     diagnostics.extend(normalize_capability_declarations_with_context(
         &mut ir,
         &file,
-        Some(&load.item_modules),
+        Some(&item_modules),
         Some(&load.module_files),
     ));
     timings.effect_normalize_ms = elapsed_ms(normalize_started);
@@ -166,7 +175,7 @@ pub fn run_frontend_with_options(
     let (resolution, resolve_diags) = resolver::resolve_with_item_modules_imports_and_files(
         &ir,
         &file,
-        Some(&load.item_modules),
+        Some(&item_modules),
         Some(&load.module_imports),
         Some(&load.module_files),
     );
@@ -178,7 +187,7 @@ pub fn run_frontend_with_options(
         &ir,
         &resolution,
         &file,
-        Some(&load.item_modules),
+        Some(&item_modules),
         Some(&load.module_files),
     );
     timings.typecheck_ms = elapsed_ms(typecheck_started);
@@ -193,7 +202,7 @@ pub fn run_frontend_with_options(
     diagnostics.extend(verify_static_with_context(
         &ir,
         &file,
-        Some(&load.item_modules),
+        Some(&item_modules),
         Some(&load.module_files),
     ));
     timings.verify_ms = elapsed_ms(verify_started);
@@ -249,7 +258,7 @@ pub fn run_frontend_with_options(
         resolution,
         typecheck,
         diagnostics,
-        item_modules: load.item_modules,
+        item_modules,
         timings,
     })
 }
