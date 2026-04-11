@@ -171,6 +171,7 @@ pub enum TokenKind {
     Pipe,
     OrOr,
     Bang,
+    Hash,
     Question,
     Underscore,
 
@@ -298,6 +299,7 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::Bang, Span::new(start, self.offset));
                     }
                 }
+                '#' => self.single(TokenKind::Hash),
                 '?' => self.single(TokenKind::Question),
                 '<' => {
                     let start = self.offset;
@@ -1118,6 +1120,18 @@ mod tests {
             .iter()
             .any(|t| matches!(t.kind, TokenKind::KwIntrinsic)));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::KwUnsafe)));
+    }
+
+    #[test]
+    fn lexes_attribute_tokens() {
+        let src = r#"#[get("/health")] fn main() -> Int { 0 }"#;
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Hash)));
+        assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::LBracket)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "get")));
     }
 
     #[test]

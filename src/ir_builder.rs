@@ -68,6 +68,7 @@ impl Builder {
                 ir::Param {
                     symbol: sym,
                     name: param.name.clone(),
+                    attrs: param.attrs.clone(),
                     ty: self.lower_type(&param.ty),
                     span: param.span,
                 }
@@ -77,6 +78,7 @@ impl Builder {
             symbol,
             name: func.name.clone(),
             visibility: func.visibility,
+            attrs: func.attrs.clone(),
             is_async: func.is_async,
             is_unsafe: func.is_unsafe,
             is_extern: func.is_extern,
@@ -113,6 +115,7 @@ impl Builder {
                     symbol: sym,
                     name: field.name.clone(),
                     visibility: field.visibility,
+                    attrs: field.attrs.clone(),
                     ty: self.lower_type(&field.ty),
                     default_value: field
                         .default_value
@@ -126,6 +129,7 @@ impl Builder {
             symbol,
             name: def.name.clone(),
             visibility: def.visibility,
+            attrs: def.attrs.clone(),
             generics: def
                 .generics
                 .iter()
@@ -183,6 +187,7 @@ impl Builder {
             symbol,
             name,
             visibility: ast::Visibility::Private,
+            attrs: Vec::new(),
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -218,6 +223,7 @@ impl Builder {
                 ir::VariantDef {
                     symbol: sym,
                     name: variant.name.clone(),
+                    attrs: variant.attrs.clone(),
                     payload: variant.payload.as_ref().map(|t| self.lower_type(t)),
                     span: variant.span,
                 }
@@ -227,6 +233,7 @@ impl Builder {
             symbol,
             name: def.name.clone(),
             visibility: def.visibility,
+            attrs: def.attrs.clone(),
             generics: def
                 .generics
                 .iter()
@@ -246,6 +253,7 @@ impl Builder {
             symbol,
             name: def.name.clone(),
             visibility: def.visibility,
+            attrs: def.attrs.clone(),
             generics: def
                 .generics
                 .iter()
@@ -288,6 +296,7 @@ impl Builder {
                 symbol,
                 trait_name: def.trait_name.clone(),
                 visibility: def.visibility,
+                attrs: def.attrs.clone(),
                 trait_args: Vec::new(),
                 target: Some(self.lower_type(&target)),
                 methods,
@@ -312,6 +321,7 @@ impl Builder {
             symbol,
             trait_name: def.trait_name.clone(),
             visibility: def.visibility,
+            attrs: def.attrs.clone(),
             trait_args: def
                 .trait_args
                 .iter()
@@ -338,6 +348,7 @@ impl Builder {
                 ir::Param {
                     symbol: sym,
                     name: param.name.clone(),
+                    attrs: param.attrs.clone(),
                     ty: self.lower_type(&param.ty),
                     span: param.span,
                 }
@@ -347,6 +358,7 @@ impl Builder {
             symbol,
             name: method.name.clone(),
             visibility: method.visibility,
+            attrs: method.attrs.clone(),
             is_async: method.is_async,
             is_unsafe: method.is_unsafe,
             is_extern: false,
@@ -389,6 +401,7 @@ impl Builder {
                 ir::Param {
                     symbol: sym,
                     name: param.name.clone(),
+                    attrs: param.attrs.clone(),
                     ty: self.lower_type(&param_ty),
                     span: param.span,
                 }
@@ -399,6 +412,7 @@ impl Builder {
             symbol,
             name: lowered_name,
             visibility: method.visibility,
+            attrs: method.attrs.clone(),
             is_async: method.is_async,
             is_unsafe: method.is_unsafe,
             is_extern: method.is_extern,

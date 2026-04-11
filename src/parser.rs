@@ -99,11 +99,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item(&mut self) -> Option<Item> {
+        let attrs = self.parse_attributes();
         let visibility = self.parse_visibility_modifier();
         if self.at_kind(|k| matches!(k, TokenKind::KwExtern)) {
-            self.parse_extern_function(visibility).map(Item::Function)
+            self.parse_extern_function(attrs, visibility)
+                .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwIntrinsic)) {
-            self.parse_intrinsic_function(visibility)
+            self.parse_intrinsic_function(attrs, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwType)) {
             if visibility != Visibility::Private {
@@ -117,7 +119,7 @@ impl<'a> Parser<'a> {
                     .with_help("remove the visibility modifier from this `type` alias"),
                 );
             }
-            self.parse_type_alias().map(Item::Function)
+            self.parse_type_alias(attrs).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwConst)) {
             if visibility != Visibility::Private {
                 self.diagnostics.push(
@@ -130,7 +132,7 @@ impl<'a> Parser<'a> {
                     .with_help("remove the visibility modifier from this `const` item"),
                 );
             }
-            self.parse_const_item().map(Item::Function)
+            self.parse_const_item(attrs).map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwUnsafe)) {
             let start = self.current_span().start;
             self.bump();
@@ -143,7 +145,7 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(false, true, start, false, visibility)
+            self.parse_function(attrs, false, true, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
             let start = self.current_span().start;
@@ -157,20 +159,20 @@ impl<'a> Parser<'a> {
                 ));
                 return None;
             }
-            self.parse_function(true, false, start, false, visibility)
+            self.parse_function(attrs, true, false, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwFn)) {
             let start = self.current_span().start;
-            self.parse_function(false, false, start, false, visibility)
+            self.parse_function(attrs, false, false, start, false, visibility)
                 .map(Item::Function)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwStruct)) {
-            self.parse_struct(visibility).map(Item::Struct)
+            self.parse_struct(attrs, visibility).map(Item::Struct)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwEnum)) {
-            self.parse_enum(visibility).map(Item::Enum)
+            self.parse_enum(attrs, visibility).map(Item::Enum)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwTrait)) {
-            self.parse_trait(visibility).map(Item::Trait)
+            self.parse_trait(attrs, visibility).map(Item::Trait)
         } else if self.at_kind(|k| matches!(k, TokenKind::KwImpl)) {
-            self.parse_impl(visibility).map(Item::Impl)
+            self.parse_impl(attrs, visibility).map(Item::Impl)
         } else {
             let span = self.current_span();
             self.diagnostics.push(
@@ -232,8 +234,191 @@ impl<'a> Parser<'a> {
         Visibility::Crate
     }
 
+    fn parse_attributes(&mut self) -> Vec<Attribute> {
+        let mut attrs = Vec::new();
+        while self.at_kind(|k| matches!(k, TokenKind::Hash))
+            && self
+                .peek(1)
+                .map(|token| matches!(token.kind, TokenKind::LBracket))
+                .unwrap_or(false)
+        {
+            let start = self.current_span().start;
+            self.bump(); // #
+            self.bump(); // [
+            let Some((name, _)) = self.expect_ident("E1094", "expected attribute name after '#['")
+            else {
+                self.recover_to_attribute_end();
+                continue;
+            };
+
+            let mut args = Vec::new();
+            if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+                self.bump();
+                while !self.at_kind(|k| matches!(k, TokenKind::RParen | TokenKind::Eof)) {
+                    let arg_start = self.current_span().start;
+                    if matches!(self.current().kind, TokenKind::Ident(_))
+                        && self
+                            .peek(1)
+                            .map(|token| matches!(token.kind, TokenKind::Eq))
+                            .unwrap_or(false)
+                    {
+                        let Some((arg_name, arg_name_span)) =
+                            self.expect_ident("E1095", "expected attribute argument name")
+                        else {
+                            self.recover_to_attribute_delimiter();
+                            continue;
+                        };
+                        self.bump(); // =
+                        let Some(value) = self.parse_attribute_value() else {
+                            self.recover_to_attribute_delimiter();
+                            continue;
+                        };
+                        args.push(AttributeArg::Named {
+                            name: arg_name,
+                            value: value.clone(),
+                            span: Span::new(arg_name_span.start, value.span.end),
+                        });
+                    } else if let Some(value) = self.parse_attribute_value() {
+                        let _ = arg_start;
+                        args.push(AttributeArg::Positional(value));
+                    } else {
+                        self.recover_to_attribute_delimiter();
+                        continue;
+                    }
+
+                    if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+                let _ = self.expect(
+                    |k| matches!(k, TokenKind::RParen),
+                    "E1095",
+                    "expected ')' after attribute arguments",
+                );
+            }
+
+            let close = match self.expect(
+                |k| matches!(k, TokenKind::RBracket),
+                "E1094",
+                "expected ']' after attribute",
+            ) {
+                Some(span) => span,
+                None => {
+                    self.recover_to_attribute_end();
+                    continue;
+                }
+            };
+            attrs.push(Attribute {
+                name,
+                args,
+                span: Span::new(start, close.end),
+            });
+        }
+        attrs
+    }
+
+    fn parse_attribute_value(&mut self) -> Option<AttributeValue> {
+        let token = self.current().clone();
+        match token.kind {
+            TokenKind::String(value) => {
+                self.bump();
+                Some(AttributeValue {
+                    kind: AttributeValueKind::String(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Int(value) => {
+                self.bump();
+                Some(AttributeValue {
+                    kind: AttributeValueKind::Int(value.value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Minus => {
+                let start = token.span.start;
+                self.bump();
+                let next = self.current().clone();
+                match next.kind {
+                    TokenKind::Int(value) => {
+                        self.bump();
+                        Some(AttributeValue {
+                            kind: AttributeValueKind::Int(0 - value.value),
+                            span: Span::new(start, next.span.end),
+                        })
+                    }
+                    _ => {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1095",
+                                "expected integer literal after '-' in attribute argument",
+                                self.file,
+                                next.span,
+                            )
+                            .with_help("use literals like -1 or 42 inside attribute arguments"),
+                        );
+                        None
+                    }
+                }
+            }
+            TokenKind::KwTrue => {
+                self.bump();
+                Some(AttributeValue {
+                    kind: AttributeValueKind::Bool(BoolLiteral::True),
+                    span: token.span,
+                })
+            }
+            TokenKind::KwFalse => {
+                self.bump();
+                Some(AttributeValue {
+                    kind: AttributeValueKind::Bool(BoolLiteral::False),
+                    span: token.span,
+                })
+            }
+            TokenKind::Ident(value) => {
+                self.bump();
+                Some(AttributeValue {
+                    kind: AttributeValueKind::Ident(value),
+                    span: token.span,
+                })
+            }
+            _ => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1095",
+                        "expected attribute argument value",
+                        self.file,
+                        token.span,
+                    )
+                    .with_help(
+                        "use string, int, bool, or identifier values in attribute arguments",
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    fn recover_to_attribute_delimiter(&mut self) {
+        while !self.at_kind(|k| matches!(k, TokenKind::Comma | TokenKind::RParen | TokenKind::Eof))
+        {
+            self.bump();
+        }
+    }
+
+    fn recover_to_attribute_end(&mut self) {
+        while !self.at_kind(|k| matches!(k, TokenKind::RBracket | TokenKind::Eof)) {
+            self.bump();
+        }
+        if self.at_kind(|k| matches!(k, TokenKind::RBracket)) {
+            self.bump();
+        }
+    }
+
     fn parse_function(
         &mut self,
+        attrs: Vec<Attribute>,
         is_async: bool,
         is_unsafe: bool,
         start: usize,
@@ -280,6 +465,7 @@ impl<'a> Parser<'a> {
         Some(Function {
             name,
             visibility,
+            attrs,
             is_async,
             is_unsafe,
             is_extern: false,
@@ -298,7 +484,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_extern_function(&mut self, visibility: Visibility) -> Option<Function> {
+    fn parse_extern_function(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Option<Function> {
         let start = self.current_span().start;
         self.bump(); // extern
         let abi_token = self.current().clone();
@@ -390,6 +580,7 @@ impl<'a> Parser<'a> {
         Some(Function {
             name,
             visibility,
+            attrs,
             is_async: false,
             is_unsafe: false,
             is_extern: true,
@@ -412,7 +603,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_intrinsic_function(&mut self, visibility: Visibility) -> Option<Function> {
+    fn parse_intrinsic_function(
+        &mut self,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+    ) -> Option<Function> {
         let start = self.current_span().start;
         self.bump(); // intrinsic
 
@@ -488,6 +683,7 @@ impl<'a> Parser<'a> {
         Some(Function {
             name,
             visibility,
+            attrs,
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -509,7 +705,7 @@ impl<'a> Parser<'a> {
             span,
         })
     }
-    fn parse_struct(&mut self, visibility: Visibility) -> Option<StructDef> {
+    fn parse_struct(&mut self, attrs: Vec<Attribute>, visibility: Visibility) -> Option<StructDef> {
         let start = self.current_span().start;
         self.bump(); // struct
         let (name, _) = self.expect_ident("E1010", "expected struct name")?;
@@ -522,6 +718,7 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
             let field_start = self.current_span().start;
+            let field_attrs = self.parse_attributes();
             let field_visibility = self.parse_visibility_modifier();
             let (field_name, _) = self.expect_ident("E1012", "expected field name")?;
             self.expect(
@@ -542,6 +739,7 @@ impl<'a> Parser<'a> {
             fields.push(Field {
                 name: field_name,
                 visibility: field_visibility,
+                attrs: field_attrs,
                 ty: ty.clone(),
                 default_value,
                 span: Span::new(field_start, field_end),
@@ -568,6 +766,7 @@ impl<'a> Parser<'a> {
         Some(StructDef {
             name,
             visibility,
+            attrs,
             generics,
             fields,
             invariant,
@@ -575,7 +774,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_enum(&mut self, visibility: Visibility) -> Option<EnumDef> {
+    fn parse_enum(&mut self, attrs: Vec<Attribute>, visibility: Visibility) -> Option<EnumDef> {
         let start = self.current_span().start;
         self.bump(); // enum
         let (name, _) = self.expect_ident("E1015", "expected enum name")?;
@@ -588,6 +787,7 @@ impl<'a> Parser<'a> {
         let mut variants = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
             let var_start = self.current_span().start;
+            let variant_attrs = self.parse_attributes();
             let (var_name, _) = self.expect_ident("E1017", "expected enum variant name")?;
             let payload = if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
                 self.bump();
@@ -607,6 +807,7 @@ impl<'a> Parser<'a> {
                 .unwrap_or(self.previous_span().end);
             variants.push(VariantDef {
                 name: var_name,
+                attrs: variant_attrs,
                 payload,
                 span: Span::new(var_start, end),
             });
@@ -624,13 +825,14 @@ impl<'a> Parser<'a> {
         Some(EnumDef {
             name,
             visibility,
+            attrs,
             generics,
             variants,
             span: Span::new(start, close.end),
         })
     }
 
-    fn parse_trait(&mut self, visibility: Visibility) -> Option<TraitDef> {
+    fn parse_trait(&mut self, attrs: Vec<Attribute>, visibility: Visibility) -> Option<TraitDef> {
         let start = self.current_span().start;
         self.bump(); // trait
         let (name, _) = self.expect_ident("E1053", "expected trait name")?;
@@ -646,6 +848,7 @@ impl<'a> Parser<'a> {
             return Some(TraitDef {
                 name,
                 visibility,
+                attrs,
                 generics,
                 methods: Vec::new(),
                 span: Span::new(start, end),
@@ -660,6 +863,7 @@ impl<'a> Parser<'a> {
         let mut methods = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
             let method_start = self.current_span().start;
+            let method_attrs = self.parse_attributes();
             let method_visibility = self.parse_visibility_modifier();
             let mut is_async = false;
             let mut is_unsafe = false;
@@ -685,6 +889,7 @@ impl<'a> Parser<'a> {
                 continue;
             }
             if let Some(method) = self.parse_trait_method_signature(
+                method_attrs,
                 is_async,
                 is_unsafe,
                 method_start,
@@ -703,13 +908,14 @@ impl<'a> Parser<'a> {
         Some(TraitDef {
             name,
             visibility,
+            attrs,
             generics,
             methods,
             span: Span::new(start, close.end),
         })
     }
 
-    fn parse_impl(&mut self, visibility: Visibility) -> Option<ImplDef> {
+    fn parse_impl(&mut self, attrs: Vec<Attribute>, visibility: Visibility) -> Option<ImplDef> {
         let start = self.current_span().start;
         self.bump(); // impl
         let head_ty = self.parse_type()?;
@@ -718,6 +924,7 @@ impl<'a> Parser<'a> {
             let mut methods = Vec::new();
             while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
                 let method_start = self.current_span().start;
+                let method_attrs = self.parse_attributes();
                 let method_visibility = self.parse_visibility_modifier();
                 let mut is_async = false;
                 let mut is_unsafe = false;
@@ -742,9 +949,14 @@ impl<'a> Parser<'a> {
                     self.recover_item();
                     continue;
                 }
-                if let Some(method) =
-                    self.parse_function(is_async, is_unsafe, method_start, true, method_visibility)
-                {
+                if let Some(method) = self.parse_function(
+                    method_attrs,
+                    is_async,
+                    is_unsafe,
+                    method_start,
+                    true,
+                    method_visibility,
+                ) {
                     methods.push(method);
                 } else {
                     self.recover_item();
@@ -771,6 +983,7 @@ impl<'a> Parser<'a> {
                 return Some(ImplDef {
                     trait_name: head_name,
                     visibility,
+                    attrs,
                     trait_args: head_args,
                     target: None,
                     methods,
@@ -781,6 +994,7 @@ impl<'a> Parser<'a> {
             return Some(ImplDef {
                 trait_name: head_name,
                 visibility,
+                attrs,
                 trait_args: Vec::new(),
                 target: Some(head_ty),
                 methods,
@@ -812,6 +1026,7 @@ impl<'a> Parser<'a> {
         Some(ImplDef {
             trait_name,
             visibility,
+            attrs,
             trait_args,
             target: None,
             methods: Vec::new(),
@@ -820,7 +1035,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_type_alias(&mut self) -> Option<Function> {
+    fn parse_type_alias(&mut self, attrs: Vec<Attribute>) -> Option<Function> {
         let start = self.current_span().start;
         self.bump(); // type
         let (alias_name, _) = self.expect_ident("E1075", "expected alias name after `type`")?;
@@ -840,6 +1055,7 @@ impl<'a> Parser<'a> {
         Some(Function {
             name: encode_internal_type_alias(&alias_name),
             visibility: Visibility::Private,
+            attrs,
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -862,7 +1078,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_const_item(&mut self) -> Option<Function> {
+    fn parse_const_item(&mut self, attrs: Vec<Attribute>) -> Option<Function> {
         let start = self.current_span().start;
         self.bump(); // const
         let (const_name, _) = self.expect_ident("E1078", "expected constant name after `const`")?;
@@ -888,6 +1104,7 @@ impl<'a> Parser<'a> {
         Some(Function {
             name: encode_internal_const(&const_name),
             visibility: Visibility::Private,
+            attrs,
             is_async: false,
             is_unsafe: false,
             is_extern: false,
@@ -1080,6 +1297,7 @@ impl<'a> Parser<'a> {
 
     fn parse_trait_method_signature(
         &mut self,
+        attrs: Vec<Attribute>,
         is_async: bool,
         is_unsafe: bool,
         start: usize,
@@ -1127,6 +1345,7 @@ impl<'a> Parser<'a> {
         Some(Function {
             name,
             visibility,
+            attrs,
             is_async,
             is_unsafe,
             is_extern: false,
@@ -1152,6 +1371,7 @@ impl<'a> Parser<'a> {
     fn parse_params(&mut self, allow_self_receiver: bool) -> Option<Vec<Param>> {
         let mut params = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+            let attrs = self.parse_attributes();
             if allow_self_receiver && params.is_empty() {
                 if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
                     let recv_start = self.current_span().start;
@@ -1173,6 +1393,7 @@ impl<'a> Parser<'a> {
                     let span = Span::new(recv_start, recv_span.end);
                     params.push(Param {
                         name: "self".to_string(),
+                        attrs,
                         ty: self.self_type_expr(span),
                         span,
                     });
@@ -1191,6 +1412,7 @@ impl<'a> Parser<'a> {
                     self.bump();
                     params.push(Param {
                         name: "self".to_string(),
+                        attrs,
                         ty: self.self_type_expr(span),
                         span,
                     });
@@ -1211,6 +1433,7 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             params.push(Param {
                 name,
+                attrs,
                 ty: ty.clone(),
                 span: Span::new(start, ty.span.end),
             });
@@ -4106,6 +4329,55 @@ fn main() -> Int {
             panic!("expected let stmt");
         };
         assert!(matches!(expr.kind, ExprKind::Closure { .. }));
+    }
+
+    #[test]
+    fn parses_general_attributes_on_items_fields_params_and_variants() {
+        let src = r#"
+#[controller("/users")]
+struct UsersController {
+    #[required]
+    name: String,
+}
+
+enum Reply {
+    #[status(code = 200)]
+    Ok(String),
+}
+
+#[get("/:id")]
+async fn show_user(
+    #[path("id")] id: String,
+    #[header("x-request-id")] request_id: String
+) -> Int {
+    0
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let program = program.expect("program");
+
+        let controller = match &program.items[0] {
+            Item::Struct(value) => value,
+            other => panic!("expected struct, got {other:?}"),
+        };
+        assert_eq!(controller.attrs.len(), 1);
+        assert_eq!(controller.attrs[0].name, "controller");
+        assert_eq!(controller.fields[0].attrs[0].name, "required");
+
+        let reply = match &program.items[1] {
+            Item::Enum(value) => value,
+            other => panic!("expected enum, got {other:?}"),
+        };
+        assert_eq!(reply.variants[0].attrs[0].name, "status");
+
+        let handler = match &program.items[2] {
+            Item::Function(value) => value,
+            other => panic!("expected function, got {other:?}"),
+        };
+        assert_eq!(handler.attrs[0].name, "get");
+        assert_eq!(handler.params[0].attrs[0].name, "path");
+        assert_eq!(handler.params[1].attrs[0].name, "header");
     }
 
     #[test]

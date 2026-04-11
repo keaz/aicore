@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, UnaryOp};
+use crate::ast::{
+    decode_internal_const, decode_internal_type_alias, Attribute, AttributeArg, AttributeValue,
+    AttributeValueKind, BinOp, BoolLiteral, UnaryOp,
+};
 use crate::ir;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
@@ -108,14 +111,17 @@ fn split_top_level(input: &str) -> Vec<String> {
 
 fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::TypeId, String>) {
     if let Some(name) = decode_internal_type_alias(&f.name) {
+        format_attributes(out, &f.attrs, 0);
         format_type_alias(out, name, f, type_map);
         return;
     }
     if let Some(name) = decode_internal_const(&f.name) {
+        format_attributes(out, &f.attrs, 0);
         format_const(out, name, f, type_map);
         return;
     }
 
+    format_attributes(out, &f.attrs, 0);
     if f.is_extern {
         out.push_str("extern \"");
         out.push_str(f.extern_abi.as_deref().unwrap_or("C"));
@@ -126,7 +132,18 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
         out.push_str(
             &f.params
                 .iter()
-                .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
+                .map(|p| {
+                    if p.attrs.is_empty() {
+                        format!("{}: {}", p.name, display_type(type_map, &p.ty))
+                    } else {
+                        format!(
+                            "{}{}: {}",
+                            format_attributes_inline(&p.attrs),
+                            p.name,
+                            display_type(type_map, &p.ty)
+                        )
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", "),
         );
@@ -144,7 +161,18 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
         out.push_str(
             &f.params
                 .iter()
-                .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
+                .map(|p| {
+                    if p.attrs.is_empty() {
+                        format!("{}: {}", p.name, display_type(type_map, &p.ty))
+                    } else {
+                        format!(
+                            "{}{}: {}",
+                            format_attributes_inline(&p.attrs),
+                            p.name,
+                            display_type(type_map, &p.ty)
+                        )
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", "),
         );
@@ -183,7 +211,18 @@ fn format_function(out: &mut String, f: &ir::Function, type_map: &BTreeMap<ir::T
     out.push_str(
         &f.params
             .iter()
-            .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
+            .map(|p| {
+                if p.attrs.is_empty() {
+                    format!("{}: {}", p.name, display_type(type_map, &p.ty))
+                } else {
+                    format!(
+                        "{}{}: {}",
+                        format_attributes_inline(&p.attrs),
+                        p.name,
+                        display_type(type_map, &p.ty)
+                    )
+                }
+            })
             .collect::<Vec<_>>()
             .join(", "),
     );
@@ -256,11 +295,13 @@ fn format_const(
 }
 
 fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::TypeId, String>) {
+    format_attributes(out, &s.attrs, 0);
     out.push_str("struct ");
     out.push_str(&s.name);
     format_generic_params(out, &s.generics);
     out.push_str(" {\n");
     for field in &s.fields {
+        format_attributes(out, &field.attrs, 4);
         out.push_str("    ");
         out.push_str(&field.name);
         out.push_str(": ");
@@ -276,11 +317,13 @@ fn format_struct(out: &mut String, s: &ir::StructDef, type_map: &BTreeMap<ir::Ty
 }
 
 fn format_enum(out: &mut String, e: &ir::EnumDef, type_map: &BTreeMap<ir::TypeId, String>) {
+    format_attributes(out, &e.attrs, 0);
     out.push_str("enum ");
     out.push_str(&e.name);
     format_generic_params(out, &e.generics);
     out.push_str(" {\n");
     for variant in &e.variants {
+        format_attributes(out, &variant.attrs, 4);
         out.push_str("    ");
         out.push_str(&variant.name);
         if let Some(ty) = variant.payload {
@@ -294,6 +337,7 @@ fn format_enum(out: &mut String, e: &ir::EnumDef, type_map: &BTreeMap<ir::TypeId
 }
 
 fn format_trait(out: &mut String, t: &ir::TraitDef, type_map: &BTreeMap<ir::TypeId, String>) {
+    format_attributes(out, &t.attrs, 0);
     out.push_str("trait ");
     out.push_str(&t.name);
     format_generic_params(out, &t.generics);
@@ -311,6 +355,7 @@ fn format_trait(out: &mut String, t: &ir::TraitDef, type_map: &BTreeMap<ir::Type
 }
 
 fn format_impl(out: &mut String, i: &ir::ImplDef, type_map: &BTreeMap<ir::TypeId, String>) {
+    format_attributes(out, &i.attrs, 0);
     if i.is_inherent {
         out.push_str("impl ");
         if let Some(target) = i.target.as_ref() {
@@ -320,6 +365,7 @@ fn format_impl(out: &mut String, i: &ir::ImplDef, type_map: &BTreeMap<ir::TypeId
         }
         out.push_str(" {\n");
         for method in &i.methods {
+            format_attributes(out, &method.attrs, 4);
             out.push_str("    ");
             format_method_signature(out, method, type_map);
             out.push(' ');
@@ -349,6 +395,7 @@ fn format_impl(out: &mut String, i: &ir::ImplDef, type_map: &BTreeMap<ir::TypeId
     }
     out.push_str(" {\n");
     for method in &i.methods {
+        format_attributes(out, &method.attrs, 4);
         out.push_str("    ");
         format_method_signature(out, method, type_map);
         out.push(' ');
@@ -376,7 +423,18 @@ fn format_method_signature(
         &method
             .params
             .iter()
-            .map(|p| format!("{}: {}", p.name, display_type(type_map, &p.ty)))
+            .map(|p| {
+                if p.attrs.is_empty() {
+                    format!("{}: {}", p.name, display_type(type_map, &p.ty))
+                } else {
+                    format!(
+                        "{}{}: {}",
+                        format_attributes_inline(&p.attrs),
+                        p.name,
+                        display_type(type_map, &p.ty)
+                    )
+                }
+            })
             .collect::<Vec<_>>()
             .join(", "),
     );
@@ -405,6 +463,58 @@ fn format_method_signature(
     if let Some(ens) = &method.ensures {
         out.push_str(" ensures ");
         format_expr(out, ens, 0, type_map, 0);
+    }
+}
+
+fn format_attributes(out: &mut String, attrs: &[Attribute], indent: usize) {
+    for attr in attrs {
+        out.push_str(&" ".repeat(indent));
+        out.push_str(&format_single_attribute(attr));
+        out.push('\n');
+    }
+}
+
+fn format_attributes_inline(attrs: &[Attribute]) -> String {
+    attrs
+        .iter()
+        .map(format_single_attribute)
+        .collect::<Vec<_>>()
+        .join(" ")
+        + " "
+}
+
+fn format_single_attribute(attr: &Attribute) -> String {
+    let mut out = String::new();
+    out.push_str("#[");
+    out.push_str(&attr.name);
+    if !attr.args.is_empty() {
+        out.push('(');
+        out.push_str(
+            &attr
+                .args
+                .iter()
+                .map(|arg| match arg {
+                    AttributeArg::Positional(value) => format_attribute_value(value),
+                    AttributeArg::Named { name, value, .. } => {
+                        format!("{name} = {}", format_attribute_value(value))
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        out.push(')');
+    }
+    out.push(']');
+    out
+}
+
+fn format_attribute_value(value: &AttributeValue) -> String {
+    match &value.kind {
+        AttributeValueKind::String(text) => format!("\"{}\"", escape_aic_string_literal(text)),
+        AttributeValueKind::Int(number) => number.to_string(),
+        AttributeValueKind::Bool(BoolLiteral::True) => "true".to_string(),
+        AttributeValueKind::Bool(BoolLiteral::False) => "false".to_string(),
+        AttributeValueKind::Ident(name) => name.clone(),
     }
 }
 
@@ -1296,6 +1406,46 @@ fn main() -> Float {
         );
         assert!(
             formatted_once.contains("-> Float64"),
+            "formatted={formatted_once}"
+        );
+
+        let (reparsed, reparsed_diags) = parse(&formatted_once, "formatted.aic");
+        assert!(
+            reparsed_diags.is_empty(),
+            "reparse diagnostics={reparsed_diags:#?}\nformatted={formatted_once}"
+        );
+        let reformatted = format_program(&build(&reparsed.expect("program")));
+        assert_eq!(formatted_once, reformatted);
+    }
+
+    #[test]
+    fn formats_attributes_stably() {
+        let src = r#"
+#[controller("/users")]
+struct UsersController {
+    #[required]
+    name: String,
+}
+
+#[get("/:id")]
+async fn show_user(#[path("id")] id: String) -> Int {
+    id;
+    0
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diagnostics={diagnostics:#?}");
+        let formatted_once = format_program(&build(&program.expect("program")));
+        assert!(
+            formatted_once.contains("#[controller(\"/users\")]"),
+            "formatted={formatted_once}"
+        );
+        assert!(
+            formatted_once.contains("#[required]"),
+            "formatted={formatted_once}"
+        );
+        assert!(
+            formatted_once.contains("show_user(#[path(\"id\")] id: String)"),
             "formatted={formatted_once}"
         );
 

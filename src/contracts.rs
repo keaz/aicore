@@ -815,6 +815,7 @@ fn build_invariant_helpers(
             .map(|field| ir::Param {
                 symbol: ir::SymbolId(alloc.next_symbol()),
                 name: field.name.clone(),
+                attrs: Vec::new(),
                 ty: field.ty,
                 span: field.span,
             })
@@ -863,6 +864,7 @@ fn build_invariant_helpers(
             symbol: ir::SymbolId(alloc.next_symbol()),
             name: helper_name,
             visibility: crate::ast::Visibility::Private,
+            attrs: Vec::new(),
             is_async: false,
             is_unsafe: false,
             is_extern: false,

@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, UnaryOp, Visibility};
+use crate::ast::{Attribute, BinOp, UnaryOp, Visibility};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -195,6 +195,8 @@ pub struct Function {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     #[serde(default)]
     pub is_async: bool,
     #[serde(default)]
@@ -223,6 +225,8 @@ pub struct Function {
 pub struct Param {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub ty: TypeId,
     pub span: Span,
 }
@@ -241,6 +245,8 @@ pub struct StructDef {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub generics: Vec<GenericParam>,
     pub fields: Vec<Field>,
     pub invariant: Option<Expr>,
@@ -253,6 +259,8 @@ pub struct Field {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub ty: TypeId,
     #[serde(default)]
     pub default_value: Option<Expr>,
@@ -265,6 +273,8 @@ pub struct EnumDef {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<VariantDef>,
     pub span: Span,
@@ -276,6 +286,8 @@ pub struct TraitDef {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub generics: Vec<GenericParam>,
     #[serde(default)]
     pub methods: Vec<Function>,
@@ -288,6 +300,8 @@ pub struct ImplDef {
     pub trait_name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     #[serde(default)]
     pub trait_args: Vec<TypeId>,
     #[serde(default)]
@@ -303,6 +317,8 @@ pub struct ImplDef {
 pub struct VariantDef {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub payload: Option<TypeId>,
     pub span: Span,
 }

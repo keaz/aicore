@@ -102,6 +102,8 @@ pub struct Function {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     #[serde(default)]
     pub is_async: bool,
     #[serde(default)]
@@ -129,6 +131,8 @@ pub struct Function {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Param {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub ty: TypeExpr,
     pub span: Span,
 }
@@ -146,6 +150,8 @@ pub struct StructDef {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub generics: Vec<GenericParam>,
     pub fields: Vec<Field>,
     pub invariant: Option<Expr>,
@@ -157,6 +163,8 @@ pub struct Field {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub ty: TypeExpr,
     #[serde(default)]
     pub default_value: Option<Expr>,
@@ -168,6 +176,8 @@ pub struct EnumDef {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub generics: Vec<GenericParam>,
     pub variants: Vec<VariantDef>,
     pub span: Span,
@@ -178,6 +188,8 @@ pub struct TraitDef {
     pub name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub generics: Vec<GenericParam>,
     #[serde(default)]
     pub methods: Vec<Function>,
@@ -189,6 +201,8 @@ pub struct ImplDef {
     pub trait_name: String,
     #[serde(default)]
     pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     #[serde(default)]
     pub trait_args: Vec<TypeExpr>,
     #[serde(default)]
@@ -203,8 +217,48 @@ pub struct ImplDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariantDef {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attrs: Vec<Attribute>,
     pub payload: Option<TypeExpr>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attribute {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<AttributeArg>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AttributeArg {
+    Positional(AttributeValue),
+    Named {
+        name: String,
+        value: AttributeValue,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributeValue {
+    pub kind: AttributeValueKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AttributeValueKind {
+    String(String),
+    Int(i64),
+    Bool(BoolLiteral),
+    Ident(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoolLiteral {
+    True,
+    False,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
