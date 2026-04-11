@@ -547,7 +547,7 @@ fn render_route_wrapper(route: &RouteSpec) -> String {
 
 fn render_validator(spec: &ValidatorSpec) -> String {
     let fn_name = format!(
-        "__aicore_web_validate_{}_with_mode",
+        "aicore_web_validate_{}_with_mode",
         sanitize_ident(&spec.struct_name)
     );
     let mut source = String::new();
