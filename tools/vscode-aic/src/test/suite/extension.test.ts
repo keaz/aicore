@@ -319,6 +319,9 @@ suite('AICore VSCode Extension Integration', () => {
         keywords?: {
           patterns?: Array<{ name?: string; match?: string }>;
         };
+        attribute?: { name?: string; begin?: string; end?: string };
+        char?: { name?: string; match?: string };
+        ['template-string']?: { name?: string; begin?: string; end?: string };
       };
     };
 
@@ -340,5 +343,22 @@ suite('AICore VSCode Extension Integration', () => {
       storageKeywords?.match?.includes('struct'),
       'storage.type.aic pattern must include struct keyword coverage'
     );
+    assert.ok(
+      controlKeywords?.match?.includes('capabilities'),
+      'keyword.control.aic pattern must include capabilities keyword coverage'
+    );
+    assert.ok(
+      controlKeywords?.match?.includes('pub'),
+      'keyword.control.aic pattern must include visibility keyword coverage'
+    );
+    assert.ok(
+      storageKeywords?.match?.includes('intrinsic'),
+      'storage.type.aic pattern must include intrinsic keyword coverage'
+    );
+    assert.equal(grammar.repository?.attribute?.name, 'meta.annotation.aic');
+    assert.equal(grammar.repository?.attribute?.begin, '#\\[');
+    assert.equal(grammar.repository?.attribute?.end, '\\]');
+    assert.equal(grammar.repository?.char?.name, 'constant.character.aic');
+    assert.equal(grammar.repository?.['template-string']?.name, 'string.interpolated.aic');
   });
 });

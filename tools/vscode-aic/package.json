@@ -94,6 +94,9 @@
           ],
           "property": [
             "variable.other.property.aic"
+          ],
+          "decorator": [
+            "entity.name.function.decorator.aic"
           ]
         }
       }

@@ -77,7 +77,11 @@ const LSP_KEYWORDS: &[&str] = &[
     "import",
     "async",
     "extern",
+    "intrinsic",
     "unsafe",
+    "pub",
+    "priv",
+    "crate",
     "fn",
     "type",
     "const",
@@ -85,6 +89,7 @@ const LSP_KEYWORDS: &[&str] = &[
     "enum",
     "trait",
     "impl",
+    "dyn",
     "let",
     "mut",
     "return",
@@ -157,6 +162,151 @@ const MOD_ASYNC: u32 = 1 << 5;
 const MOD_EFFECTFUL: u32 = 1 << 6;
 
 #[derive(Debug, Clone, Copy)]
+struct AttributeCompletion {
+    name: &'static str,
+    snippet: &'static str,
+    detail: &'static str,
+    documentation: &'static str,
+}
+
+const ATTRIBUTE_COMPLETIONS: &[AttributeCompletion] = &[
+    AttributeCompletion {
+        name: "get",
+        snippet: "get(\"${1:/path}\")]",
+        detail: "route attribute on a handler function",
+        documentation: "Marks a handler function as a GET route. Use `#[get(\"/path\")]`.",
+    },
+    AttributeCompletion {
+        name: "post",
+        snippet: "post(\"${1:/path}\")]",
+        detail: "route attribute on a handler function",
+        documentation: "Marks a handler function as a POST route. Use `#[post(\"/path\")]`.",
+    },
+    AttributeCompletion {
+        name: "put",
+        snippet: "put(\"${1:/path}\")]",
+        detail: "route attribute on a handler function",
+        documentation: "Marks a handler function as a PUT route. Use `#[put(\"/path\")]`.",
+    },
+    AttributeCompletion {
+        name: "patch",
+        snippet: "patch(\"${1:/path}\")]",
+        detail: "route attribute on a handler function",
+        documentation: "Marks a handler function as a PATCH route. Use `#[patch(\"/path\")]`.",
+    },
+    AttributeCompletion {
+        name: "delete",
+        snippet: "delete(\"${1:/path}\")]",
+        detail: "route attribute on a handler function",
+        documentation: "Marks a handler function as a DELETE route. Use `#[delete(\"/path\")]`.",
+    },
+    AttributeCompletion {
+        name: "filter",
+        snippet: "filter(order = ${1:10})]",
+        detail: "web filter attribute on a struct",
+        documentation: "Marks a struct as a request filter. Use `#[filter(order = 10)]`.",
+    },
+    AttributeCompletion {
+        name: "body",
+        snippet: "body]",
+        detail: "request body extractor attribute on a handler parameter",
+        documentation: "Marks a handler parameter as the request body. Use `#[body]`.",
+    },
+    AttributeCompletion {
+        name: "header",
+        snippet: "header(\"${1:x-request-id}\")]",
+        detail: "header extractor attribute on a handler parameter",
+        documentation: "Binds a handler parameter to an HTTP header. Use `#[header(\"x-request-id\")]`.",
+    },
+    AttributeCompletion {
+        name: "path",
+        snippet: "path(\"${1:id}\")]",
+        detail: "path extractor attribute on a handler parameter",
+        documentation: "Binds a handler parameter to a route path parameter. Use `#[path(\"id\")]`.",
+    },
+    AttributeCompletion {
+        name: "query",
+        snippet: "query(\"${1:page}\")]",
+        detail: "query extractor attribute on a handler parameter",
+        documentation: "Binds a handler parameter to a query parameter. Use `#[query(\"page\")]`.",
+    },
+    AttributeCompletion {
+        name: "validate",
+        snippet: "validate(${1:required})]",
+        detail: "validation attribute on a DTO field or handler parameter",
+        documentation: "Adds validation rules to a field or parameter. Use rules such as `required`, `min_length`, `max_length`, `min`, `max`, `one_of`, or `custom`.",
+    },
+    AttributeCompletion {
+        name: "test",
+        snippet: "test]",
+        detail: "attribute test marker on a function",
+        documentation: "Marks a function for `aic test` attribute-based discovery. Use `#[test]`.",
+    },
+    AttributeCompletion {
+        name: "should_panic",
+        snippet: "should_panic]",
+        detail: "attribute test expected-panic marker",
+        documentation: "Marks a `#[test]` function as expected to fail. Use `#[test]` with `#[should_panic]`.",
+    },
+];
+
+const VALIDATE_RULE_COMPLETIONS: &[AttributeCompletion] = &[
+    AttributeCompletion {
+        name: "required",
+        snippet: "required",
+        detail: "validation rule",
+        documentation: "Requires a value to be present.",
+    },
+    AttributeCompletion {
+        name: "min_length",
+        snippet: "min_length = ${1:1}",
+        detail: "validation rule",
+        documentation: "Requires a string value to have at least the provided length.",
+    },
+    AttributeCompletion {
+        name: "max_length",
+        snippet: "max_length = ${1:255}",
+        detail: "validation rule",
+        documentation: "Requires a string value to have at most the provided length.",
+    },
+    AttributeCompletion {
+        name: "min",
+        snippet: "min = ${1:0}",
+        detail: "validation rule",
+        documentation: "Requires a numeric value to be at least the provided bound.",
+    },
+    AttributeCompletion {
+        name: "max",
+        snippet: "max = ${1:100}",
+        detail: "validation rule",
+        documentation: "Requires a numeric value to be at most the provided bound.",
+    },
+    AttributeCompletion {
+        name: "one_of",
+        snippet: "one_of = \"${1:a,b}\"",
+        detail: "validation rule",
+        documentation: "Requires a value to match one of a comma-separated list of allowed values.",
+    },
+    AttributeCompletion {
+        name: "custom",
+        snippet: "custom = \"${1:validator_name}\"",
+        detail: "validation rule",
+        documentation: "Delegates validation to a named custom validator.",
+    },
+];
+
+#[derive(Debug, Clone)]
+enum AttributeCompletionContext {
+    Name {
+        range: Value,
+        insert_prefix: &'static str,
+    },
+    ValidateRule {
+        range: Value,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
 struct SemanticToken {
     line: usize,
     character: usize,
@@ -223,7 +373,7 @@ impl LspServer {
                                 "documentFormattingProvider": true,
                                 "completionProvider": {
                                     "resolveProvider": false,
-                                    "triggerCharacters": [".", ":"]
+                                    "triggerCharacters": [".", ":", "#", "["]
                                 },
                                 "renameProvider": true,
                                 "codeActionProvider": true,
@@ -490,6 +640,14 @@ impl LspServer {
     fn hover_response(&self, message: &Value) -> anyhow::Result<Value> {
         let (uri, line, character) = request_position(message)?;
         let text = self.document_text(&uri)?;
+        if let Some(attribute_name) = attribute_name_at_position(&text, line, character) {
+            return Ok(json!({
+                "contents": {
+                    "kind": "markdown",
+                    "value": attribute_hover_markdown(&attribute_name)
+                }
+            }));
+        }
         let Some(symbol) = word_at_position(&text, line, character) else {
             return Ok(Value::Null);
         };
@@ -890,6 +1048,7 @@ impl LspServer {
         };
 
         let mut ranges = collect_ast_folding_ranges(&program, &source);
+        ranges.extend(collect_attribute_folding_ranges(&program, &source));
         ranges.extend(collect_comment_folding_ranges(&source));
         ranges.sort_by_key(folding_range_sort_key);
         ranges.dedup_by(|lhs, rhs| lhs == rhs);
@@ -997,9 +1156,13 @@ impl LspServer {
             return Ok(json!([]));
         };
         let source = self.document_text(&uri)?;
+        let attribute_context = completion_attribute_context(message, &source);
         let import_context = completion_import_context(&source, &uri);
         let declarations = build_symbol_index(&path)?;
         let mut items = Vec::new();
+        if let Some(context) = attribute_context {
+            items.extend(attribute_completion_items(context));
+        }
         for (name, decls) in declarations {
             let first = &decls[0];
             let detail = if let Some(summary) = &first.doc_summary {
@@ -1366,7 +1529,8 @@ impl LspServer {
         }
 
         collect_const_semantic_tokens(&mut tokens, &source);
-        collect_comment_and_decorator_tokens(&mut tokens, &source);
+        collect_attribute_semantic_tokens(&mut tokens, &source, &program);
+        collect_comment_tokens(&mut tokens, &source);
 
         for keyword in LSP_KEYWORDS {
             for (start, end) in find_word_occurrences(&source, keyword) {
@@ -1770,7 +1934,100 @@ fn collect_const_semantic_tokens(tokens: &mut Vec<SemanticToken>, source: &str) 
     }
 }
 
-fn collect_comment_and_decorator_tokens(tokens: &mut Vec<SemanticToken>, source: &str) {
+fn collect_attribute_semantic_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    program: &ast::Program,
+) {
+    for item in &program.items {
+        match item {
+            ast::Item::Function(func) => collect_function_attribute_tokens(tokens, source, func),
+            ast::Item::Struct(strukt) => {
+                push_attribute_semantic_tokens(tokens, source, &strukt.attrs);
+                for field in &strukt.fields {
+                    push_attribute_semantic_tokens(tokens, source, &field.attrs);
+                }
+            }
+            ast::Item::Enum(enm) => {
+                push_attribute_semantic_tokens(tokens, source, &enm.attrs);
+                for variant in &enm.variants {
+                    push_attribute_semantic_tokens(tokens, source, &variant.attrs);
+                }
+            }
+            ast::Item::Trait(trait_def) => {
+                push_attribute_semantic_tokens(tokens, source, &trait_def.attrs);
+                for method in &trait_def.methods {
+                    collect_function_attribute_tokens(tokens, source, method);
+                }
+            }
+            ast::Item::Impl(impl_def) => {
+                push_attribute_semantic_tokens(tokens, source, &impl_def.attrs);
+                for method in &impl_def.methods {
+                    collect_function_attribute_tokens(tokens, source, method);
+                }
+            }
+        }
+    }
+}
+
+fn collect_function_attribute_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    func: &ast::Function,
+) {
+    push_attribute_semantic_tokens(tokens, source, &func.attrs);
+    for param in &func.params {
+        push_attribute_semantic_tokens(tokens, source, &param.attrs);
+    }
+}
+
+fn push_attribute_semantic_tokens(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    attrs: &[ast::Attribute],
+) {
+    for attr in attrs {
+        push_multiline_offset_semantic_token(
+            tokens,
+            source,
+            attr.span.start,
+            attr.span.end,
+            TOKEN_DECORATOR,
+            0,
+        );
+    }
+}
+
+fn push_multiline_offset_semantic_token(
+    tokens: &mut Vec<SemanticToken>,
+    source: &str,
+    start: usize,
+    end: usize,
+    token_type: usize,
+    token_modifiers: u32,
+) {
+    let mut cursor = start.min(source.len());
+    let end = end.min(source.len());
+    while cursor < end {
+        let line_end = source[cursor..end]
+            .find('\n')
+            .map(|rel| cursor + rel)
+            .unwrap_or(end);
+        if line_end > cursor {
+            push_offset_semantic_token(
+                tokens,
+                source,
+                cursor,
+                line_end,
+                token_type,
+                token_modifiers,
+            );
+        }
+        cursor = if line_end < end { line_end + 1 } else { end };
+    }
+}
+
+fn collect_comment_tokens(tokens: &mut Vec<SemanticToken>, source: &str) {
     let mut line_start = 0usize;
     for line in source.split_inclusive('\n') {
         let trimmed = line.trim_start();
@@ -1779,14 +2036,6 @@ fn collect_comment_and_decorator_tokens(tokens: &mut Vec<SemanticToken>, source:
             let start = line_start + indent;
             let end = line_start + line.trim_end_matches(['\r', '\n']).len();
             push_offset_semantic_token(tokens, source, start, end, TOKEN_COMMENT, 0);
-        } else if trimmed.starts_with("#[") {
-            let decorator_len = trimmed
-                .find(']')
-                .map(|idx| idx + 1)
-                .unwrap_or_else(|| trimmed.trim_end_matches(['\r', '\n']).len());
-            let start = line_start + indent;
-            let end = start.saturating_add(decorator_len);
-            push_offset_semantic_token(tokens, source, start, end, TOKEN_DECORATOR, 0);
         }
         line_start = line_start.saturating_add(line.len());
     }
@@ -2625,6 +2874,64 @@ fn collect_ast_folding_ranges(program: &ast::Program, source: &str) -> Vec<Value
     ranges
 }
 
+fn collect_attribute_folding_ranges(program: &ast::Program, source: &str) -> Vec<Value> {
+    let mut ranges = Vec::new();
+    for item in &program.items {
+        match item {
+            ast::Item::Function(func) => {
+                collect_function_attribute_folding_ranges(func, source, &mut ranges)
+            }
+            ast::Item::Struct(def) => {
+                push_attributes_folding_ranges(&def.attrs, source, &mut ranges);
+                for field in &def.fields {
+                    push_attributes_folding_ranges(&field.attrs, source, &mut ranges);
+                }
+            }
+            ast::Item::Enum(def) => {
+                push_attributes_folding_ranges(&def.attrs, source, &mut ranges);
+                for variant in &def.variants {
+                    push_attributes_folding_ranges(&variant.attrs, source, &mut ranges);
+                }
+            }
+            ast::Item::Trait(def) => {
+                push_attributes_folding_ranges(&def.attrs, source, &mut ranges);
+                for method in &def.methods {
+                    collect_function_attribute_folding_ranges(method, source, &mut ranges);
+                }
+            }
+            ast::Item::Impl(def) => {
+                push_attributes_folding_ranges(&def.attrs, source, &mut ranges);
+                for method in &def.methods {
+                    collect_function_attribute_folding_ranges(method, source, &mut ranges);
+                }
+            }
+        }
+    }
+    ranges
+}
+
+fn collect_function_attribute_folding_ranges(
+    func: &ast::Function,
+    source: &str,
+    ranges: &mut Vec<Value>,
+) {
+    push_attributes_folding_ranges(&func.attrs, source, ranges);
+    for param in &func.params {
+        push_attributes_folding_ranges(&param.attrs, source, ranges);
+    }
+}
+
+fn push_attributes_folding_ranges(attrs: &[ast::Attribute], source: &str, ranges: &mut Vec<Value>) {
+    for attr in attrs {
+        push_folding_range_for_span(ranges, source, attr.span, Some("region"));
+    }
+    if attrs.len() > 1 {
+        let start = attrs.first().map(|attr| attr.span.start).unwrap_or(0);
+        let end = attrs.last().map(|attr| attr.span.end).unwrap_or(start);
+        push_folding_range_for_span(ranges, source, Span::new(start, end), Some("region"));
+    }
+}
+
 fn collect_block_folding_ranges(block: &ast::Block, source: &str, ranges: &mut Vec<Value>) {
     push_folding_range_for_span(ranges, source, block.span, Some("region"));
 
@@ -2813,10 +3120,18 @@ fn selection_chain_for_offset(
     let mut stmt_spans = Vec::new();
     let mut block_spans = Vec::new();
     let mut function_spans = Vec::new();
+    let mut declaration_spans = Vec::new();
+    let mut attribute_spans = Vec::new();
 
     for item in &program.items {
         match item {
             ast::Item::Function(func) => {
+                collect_function_attribute_selection_spans(
+                    func,
+                    offset,
+                    &mut attribute_spans,
+                    &mut declaration_spans,
+                );
                 if span_contains_offset(func.span, offset) {
                     function_spans.push(func.span);
                 }
@@ -2828,8 +3143,57 @@ fn selection_chain_for_offset(
                     &mut expr_spans,
                 );
             }
+            ast::Item::Struct(def) => {
+                collect_attribute_selection_spans(
+                    &def.attrs,
+                    def.span,
+                    offset,
+                    &mut attribute_spans,
+                    &mut declaration_spans,
+                );
+                for field in &def.fields {
+                    collect_attribute_selection_spans(
+                        &field.attrs,
+                        field.span,
+                        offset,
+                        &mut attribute_spans,
+                        &mut declaration_spans,
+                    );
+                }
+            }
+            ast::Item::Enum(def) => {
+                collect_attribute_selection_spans(
+                    &def.attrs,
+                    def.span,
+                    offset,
+                    &mut attribute_spans,
+                    &mut declaration_spans,
+                );
+                for variant in &def.variants {
+                    collect_attribute_selection_spans(
+                        &variant.attrs,
+                        variant.span,
+                        offset,
+                        &mut attribute_spans,
+                        &mut declaration_spans,
+                    );
+                }
+            }
             ast::Item::Trait(def) => {
+                collect_attribute_selection_spans(
+                    &def.attrs,
+                    def.span,
+                    offset,
+                    &mut attribute_spans,
+                    &mut declaration_spans,
+                );
                 for method in &def.methods {
+                    collect_function_attribute_selection_spans(
+                        method,
+                        offset,
+                        &mut attribute_spans,
+                        &mut declaration_spans,
+                    );
                     if span_contains_offset(method.span, offset) {
                         function_spans.push(method.span);
                     }
@@ -2843,7 +3207,20 @@ fn selection_chain_for_offset(
                 }
             }
             ast::Item::Impl(def) => {
+                collect_attribute_selection_spans(
+                    &def.attrs,
+                    def.span,
+                    offset,
+                    &mut attribute_spans,
+                    &mut declaration_spans,
+                );
                 for method in &def.methods {
+                    collect_function_attribute_selection_spans(
+                        method,
+                        offset,
+                        &mut attribute_spans,
+                        &mut declaration_spans,
+                    );
                     if span_contains_offset(method.span, offset) {
                         function_spans.push(method.span);
                     }
@@ -2856,16 +3233,17 @@ fn selection_chain_for_offset(
                     );
                 }
             }
-            ast::Item::Struct(_) | ast::Item::Enum(_) => {}
         }
     }
 
     let mut chain = Vec::<Span>::new();
     for candidate in [
+        smallest_span(&attribute_spans),
         smallest_span(&expr_spans),
         smallest_span(&stmt_spans),
         smallest_span(&block_spans),
         smallest_span(&function_spans),
+        smallest_span(&declaration_spans),
         if span_contains_offset(program.span, offset) {
             Some(program.span)
         } else {
@@ -2906,6 +3284,60 @@ fn selection_chain_for_offset(
     }
     parent
         .unwrap_or_else(|| fallback_selection_range(&json!({"line": line, "character": character})))
+}
+
+fn collect_function_attribute_selection_spans(
+    func: &ast::Function,
+    offset: usize,
+    attribute_spans: &mut Vec<Span>,
+    declaration_spans: &mut Vec<Span>,
+) {
+    collect_attribute_selection_spans(
+        &func.attrs,
+        func.span,
+        offset,
+        attribute_spans,
+        declaration_spans,
+    );
+    for param in &func.params {
+        collect_attribute_selection_spans(
+            &param.attrs,
+            param.span,
+            offset,
+            attribute_spans,
+            declaration_spans,
+        );
+    }
+}
+
+fn collect_attribute_selection_spans(
+    attrs: &[ast::Attribute],
+    owner_span: Span,
+    offset: usize,
+    attribute_spans: &mut Vec<Span>,
+    declaration_spans: &mut Vec<Span>,
+) {
+    if attrs.is_empty() {
+        return;
+    }
+    for attr in attrs {
+        if span_contains_offset(attr.span, offset) {
+            attribute_spans.push(attr.span);
+        }
+    }
+    let extended = extended_attribute_owner_span(attrs, owner_span);
+    if span_contains_offset(extended, offset) {
+        declaration_spans.push(extended);
+    }
+}
+
+fn extended_attribute_owner_span(attrs: &[ast::Attribute], owner_span: Span) -> Span {
+    let start = attrs
+        .first()
+        .map(|attr| attr.span.start)
+        .unwrap_or(owner_span.start)
+        .min(owner_span.start);
+    Span::new(start, owner_span.end)
 }
 
 fn collect_block_selection_spans(
@@ -3185,7 +3617,7 @@ fn document_symbols_for_file(path: &Path, source: &str) -> anyhow::Result<Vec<Va
                             offset_range_to_lsp_range(source, field.span.start, field.span.end);
                         json!({
                             "name": field.name,
-                            "detail": render_type_expr(&field.ty),
+                            "detail": format!("{}{}", render_attribute_prefix(&field.attrs), render_type_expr(&field.ty)),
                             "kind": 8,
                             "range": field_range.clone(),
                             "selectionRange": field_range,
@@ -3213,14 +3645,15 @@ fn document_symbols_for_file(path: &Path, source: &str) -> anyhow::Result<Vec<Va
                     .variants
                     .iter()
                     .map(|variant| {
-                        let variant_range = offset_range_to_lsp_range(
-                            source,
-                            variant.span.start,
-                            variant.span.end,
-                        );
+                        let variant_range =
+                            offset_range_to_lsp_range(source, variant.span.start, variant.span.end);
                         json!({
                             "name": variant.name,
-                            "detail": variant.payload.as_ref().map(render_type_expr).unwrap_or_default(),
+                            "detail": format!(
+                                "{}{}",
+                                render_attribute_prefix(&variant.attrs),
+                                variant.payload.as_ref().map(render_type_expr).unwrap_or_default()
+                            ),
                             "kind": 22,
                             "range": variant_range.clone(),
                             "selectionRange": variant_range,
@@ -3761,7 +4194,7 @@ fn render_function_signature(func: &ast::Function) -> String {
     let params = func
         .params
         .iter()
-        .map(|p| format!("{}: {}", p.name, render_type_expr(&p.ty)))
+        .map(render_param_signature)
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -3776,15 +4209,31 @@ fn render_function_signature(func: &ast::Function) -> String {
         format!(" capabilities {{ {} }}", func.capabilities.join(", "))
     };
 
-    format!(
-        "fn {}{}({}) -> {}{}{}",
-        func.name,
-        generics,
-        params,
-        render_type_expr(&func.ret_type),
-        effects,
-        capabilities
-    )
+    let mut head = render_attribute_prefix(&func.attrs);
+    if func.is_extern {
+        head.push_str("extern \"");
+        head.push_str(func.extern_abi.as_deref().unwrap_or("C"));
+        head.push_str("\" ");
+    }
+    if func.is_intrinsic {
+        head.push_str("intrinsic ");
+    }
+    if func.is_async {
+        head.push_str("async ");
+    }
+    if func.is_unsafe {
+        head.push_str("unsafe ");
+    }
+    head.push_str("fn ");
+    head.push_str(&func.name);
+    head.push_str(&generics);
+    head.push('(');
+    head.push_str(&params);
+    head.push_str(") -> ");
+    head.push_str(&render_type_expr(&func.ret_type));
+    head.push_str(&effects);
+    head.push_str(&capabilities);
+    head
 }
 
 fn render_struct_signature(strukt: &ast::StructDef) -> String {
@@ -3792,10 +4241,23 @@ fn render_struct_signature(strukt: &ast::StructDef) -> String {
     let fields = strukt
         .fields
         .iter()
-        .map(|f| format!("{}: {}", f.name, render_type_expr(&f.ty)))
+        .map(|f| {
+            format!(
+                "{}{}: {}",
+                render_attribute_prefix(&f.attrs),
+                f.name,
+                render_type_expr(&f.ty)
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
-    format!("struct {}{} {{ {} }}", strukt.name, generics, fields)
+    format!(
+        "{}struct {}{} {{ {} }}",
+        render_attribute_prefix(&strukt.attrs),
+        strukt.name,
+        generics,
+        fields
+    )
 }
 
 fn render_enum_signature(enm: &ast::EnumDef) -> String {
@@ -3804,34 +4266,48 @@ fn render_enum_signature(enm: &ast::EnumDef) -> String {
         .variants
         .iter()
         .map(|v| {
+            let prefix = render_attribute_prefix(&v.attrs);
             if let Some(payload) = &v.payload {
-                format!("{}({})", v.name, render_type_expr(payload))
+                format!("{}{}({})", prefix, v.name, render_type_expr(payload))
             } else {
-                v.name.clone()
+                format!("{prefix}{}", v.name)
             }
         })
         .collect::<Vec<_>>()
         .join(" | ");
-    format!("enum {}{} {{ {} }}", enm.name, generics, variants)
+    format!(
+        "{}enum {}{} {{ {} }}",
+        render_attribute_prefix(&enm.attrs),
+        enm.name,
+        generics,
+        variants
+    )
 }
 
 fn render_enum_variant_signature(enum_name: &str, variant: &ast::VariantDef) -> String {
+    let prefix = render_attribute_prefix(&variant.attrs);
     if let Some(payload) = &variant.payload {
         format!(
-            "{}::{}({})",
+            "{}{}::{}({})",
+            prefix,
             enum_name,
             variant.name,
             render_type_expr(payload)
         )
     } else {
-        format!("{}::{}", enum_name, variant.name)
+        format!("{}{}::{}", prefix, enum_name, variant.name)
     }
 }
 
 fn render_trait_signature(trait_def: &ast::TraitDef) -> String {
     let generics = render_generic_params(&trait_def.generics, "<", ">");
     if trait_def.methods.is_empty() {
-        return format!("trait {}{};", trait_def.name, generics);
+        return format!(
+            "{}trait {}{};",
+            render_attribute_prefix(&trait_def.attrs),
+            trait_def.name,
+            generics
+        );
     }
     let methods = trait_def
         .methods
@@ -3839,7 +4315,13 @@ fn render_trait_signature(trait_def: &ast::TraitDef) -> String {
         .map(|method| format!("{};", render_function_signature(method)))
         .collect::<Vec<_>>()
         .join(" ");
-    format!("trait {}{} {{ {} }}", trait_def.name, generics, methods)
+    format!(
+        "{}trait {}{} {{ {} }}",
+        render_attribute_prefix(&trait_def.attrs),
+        trait_def.name,
+        generics,
+        methods
+    )
 }
 
 fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
@@ -3856,9 +4338,18 @@ fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
             .map(render_type_expr)
             .unwrap_or_else(|| impl_def.trait_name.clone());
         if methods.is_empty() {
-            return format!("impl {} {{}}", target);
+            return format!(
+                "{}impl {} {{}}",
+                render_attribute_prefix(&impl_def.attrs),
+                target
+            );
         }
-        return format!("impl {} {{ {} }}", target, methods);
+        return format!(
+            "{}impl {} {{ {} }}",
+            render_attribute_prefix(&impl_def.attrs),
+            target,
+            methods
+        );
     }
 
     let args = impl_def
@@ -3868,9 +4359,82 @@ fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     if methods.is_empty() {
-        return format!("impl {}<{}>;", impl_def.trait_name, args);
+        return format!(
+            "{}impl {}<{}>;",
+            render_attribute_prefix(&impl_def.attrs),
+            impl_def.trait_name,
+            args
+        );
     }
-    format!("impl {}<{}> {{ {} }}", impl_def.trait_name, args, methods)
+    format!(
+        "{}impl {}<{}> {{ {} }}",
+        render_attribute_prefix(&impl_def.attrs),
+        impl_def.trait_name,
+        args,
+        methods
+    )
+}
+
+fn render_param_signature(param: &ast::Param) -> String {
+    format!(
+        "{}{}: {}",
+        render_attribute_prefix(&param.attrs),
+        param.name,
+        render_type_expr(&param.ty)
+    )
+}
+
+fn render_attribute_prefix(attrs: &[ast::Attribute]) -> String {
+    if attrs.is_empty() {
+        return String::new();
+    }
+    format!(
+        "{} ",
+        attrs
+            .iter()
+            .map(render_attribute)
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+fn render_attribute(attr: &ast::Attribute) -> String {
+    let mut out = format!("#[{}", attr.name);
+    if !attr.args.is_empty() {
+        out.push('(');
+        out.push_str(
+            &attr
+                .args
+                .iter()
+                .map(render_attribute_arg)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        out.push(')');
+    }
+    out.push(']');
+    out
+}
+
+fn render_attribute_arg(arg: &ast::AttributeArg) -> String {
+    match arg {
+        ast::AttributeArg::Positional(value) => render_attribute_value(value),
+        ast::AttributeArg::Named { name, value, .. } => {
+            format!("{name} = {}", render_attribute_value(value))
+        }
+    }
+}
+
+fn render_attribute_value(value: &ast::AttributeValue) -> String {
+    match &value.kind {
+        ast::AttributeValueKind::String(text) => {
+            format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+        }
+        ast::AttributeValueKind::Int(number) => number.to_string(),
+        ast::AttributeValueKind::Bool(ast::BoolLiteral::True) => "true".to_string(),
+        ast::AttributeValueKind::Bool(ast::BoolLiteral::False) => "false".to_string(),
+        ast::AttributeValueKind::Ident(name) => name.clone(),
+    }
 }
 
 fn render_generic_params(generics: &[ast::GenericParam], open: &str, close: &str) -> String {
@@ -4233,6 +4797,182 @@ fn completion_kind(kind: &str) -> i32 {
     }
 }
 
+fn completion_attribute_context(
+    message: &Value,
+    source: &str,
+) -> Option<AttributeCompletionContext> {
+    let position = message.get("params")?.get("position")?;
+    let line = position.get("line")?.as_u64()? as usize;
+    let character = position.get("character")?.as_u64()? as usize;
+    let offset = line_char_to_offset(source, line, character)?;
+    completion_attribute_context_at_offset(source, offset)
+}
+
+fn completion_attribute_context_at_offset(
+    source: &str,
+    offset: usize,
+) -> Option<AttributeCompletionContext> {
+    let offset = offset.min(source.len());
+    let line_start = source[..offset].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+    let prefix = &source[line_start..offset];
+    let trimmed_prefix = prefix.trim_end();
+
+    if trimmed_prefix.ends_with('#') && !trimmed_prefix.ends_with("#[") {
+        return Some(AttributeCompletionContext::Name {
+            range: offset_range_to_lsp_range(source, offset, offset),
+            insert_prefix: "[",
+        });
+    }
+
+    let attr_rel = prefix.rfind("#[")?;
+    let attr_start = line_start + attr_rel;
+    let after_open = &source[attr_start + 2..offset];
+    if after_open.contains(']') {
+        return None;
+    }
+
+    let open_paren = after_open.rfind('(');
+    let close_paren = after_open.rfind(')');
+    if let Some(open_paren) = open_paren {
+        if close_paren.map(|idx| idx < open_paren).unwrap_or(true) {
+            let attr_name = after_open[..open_paren].trim();
+            if attr_name == "validate" {
+                let start = identifier_start_before(source, offset);
+                return Some(AttributeCompletionContext::ValidateRule {
+                    range: offset_range_to_lsp_range(source, start, offset),
+                });
+            }
+            return None;
+        }
+    }
+
+    let leading_ws = after_open
+        .len()
+        .saturating_sub(after_open.trim_start().len());
+    let replacement_start = attr_start + 2 + leading_ws;
+    Some(AttributeCompletionContext::Name {
+        range: offset_range_to_lsp_range(source, replacement_start, offset),
+        insert_prefix: "",
+    })
+}
+
+fn attribute_completion_items(context: AttributeCompletionContext) -> Vec<Value> {
+    match context {
+        AttributeCompletionContext::Name {
+            range,
+            insert_prefix,
+        } => ATTRIBUTE_COMPLETIONS
+            .iter()
+            .map(|completion| {
+                let new_text = format!("{insert_prefix}{}", completion.snippet);
+                json!({
+                    "label": completion.name,
+                    "kind": 15,
+                    "detail": completion.detail,
+                    "documentation": {
+                        "kind": "markdown",
+                        "value": completion.documentation
+                    },
+                    "insertTextFormat": 2,
+                    "textEdit": {
+                        "range": range.clone(),
+                        "newText": new_text
+                    },
+                    "sortText": format!("0-attribute-{}", completion.name)
+                })
+            })
+            .collect(),
+        AttributeCompletionContext::ValidateRule { range } => VALIDATE_RULE_COMPLETIONS
+            .iter()
+            .map(|completion| {
+                json!({
+                    "label": completion.name,
+                    "kind": 15,
+                    "detail": completion.detail,
+                    "documentation": {
+                        "kind": "markdown",
+                        "value": completion.documentation
+                    },
+                    "insertTextFormat": 2,
+                    "textEdit": {
+                        "range": range.clone(),
+                        "newText": completion.snippet
+                    },
+                    "sortText": format!("0-validate-rule-{}", completion.name)
+                })
+            })
+            .collect(),
+    }
+}
+
+fn attribute_name_at_position(source: &str, line: usize, character: usize) -> Option<String> {
+    let offset = line_char_to_offset(source, line, character)?.min(source.len());
+    let search_end = offset.min(source.len());
+    let attr_start = source[..search_end].rfind("#[")?;
+    if source[attr_start + 2..search_end].contains(']') {
+        return None;
+    }
+
+    let mut name_start = attr_start + 2;
+    while name_start < source.len() && source.as_bytes()[name_start].is_ascii_whitespace() {
+        name_start += 1;
+    }
+    if name_start >= source.len() || !is_ident_start_byte(source.as_bytes()[name_start]) {
+        return None;
+    }
+
+    let mut name_end = name_start + 1;
+    while name_end < source.len() && is_word_byte(source.as_bytes()[name_end]) {
+        name_end += 1;
+    }
+
+    let attr_close = source[attr_start..]
+        .find(']')
+        .map(|rel| attr_start + rel)
+        .unwrap_or(source.len());
+    if offset < name_start || offset > name_end || offset > attr_close {
+        return None;
+    }
+
+    Some(source[name_start..name_end].to_string())
+}
+
+fn attribute_hover_markdown(name: &str) -> String {
+    if let Some(completion) = ATTRIBUTE_COMPLETIONS
+        .iter()
+        .find(|completion| completion.name == name)
+    {
+        return format!(
+            "```aic\n#[{}]\n```\n\n{}",
+            completion.name, completion.documentation
+        );
+    }
+
+    if VALIDATE_RULE_COMPLETIONS
+        .iter()
+        .any(|completion| completion.name == name)
+    {
+        return format!(
+            "```aic\n{}\n```\n\nValidation rule used inside `#[validate(...)]`.",
+            name
+        );
+    }
+
+    format!(
+        "```aic\n#[{}]\n```\n\nAICore source attribute. Unknown attributes are preserved in the AST/IR; framework-specific validation applies only to recognized attributes.",
+        name
+    )
+}
+
+fn identifier_start_before(source: &str, offset: usize) -> usize {
+    let bytes = source.as_bytes();
+    let mut start = offset.min(bytes.len());
+    while start > 0 && is_word_byte(bytes[start - 1]) {
+        start -= 1;
+    }
+    start
+}
+
 fn find_word_occurrences(source: &str, needle: &str) -> Vec<(usize, usize)> {
     if needle.is_empty() {
         return Vec::new();
@@ -4402,6 +5142,10 @@ fn is_word_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
+fn is_ident_start_byte(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_'
+}
+
 fn line_char_to_offset(source: &str, line: usize, character: usize) -> Option<usize> {
     let mut current_line = 0usize;
     let mut line_start = 0usize;
@@ -4520,7 +5264,7 @@ fn write_message(writer: &mut dyn Write, message: &Value) -> anyhow::Result<()> 
 mod tests {
     use super::{
         full_document_range, line_char_to_offset, offset_to_line_char, word_at_position, LspServer,
-        MOD_DECLARATION, MOD_DEPRECATED, MOD_EFFECTFUL, MOD_MUTABLE, MOD_READONLY,
+        MOD_DECLARATION, MOD_DEPRECATED, MOD_EFFECTFUL, MOD_MUTABLE, MOD_READONLY, TOKEN_DECORATOR,
         TOKEN_ENUM_MEMBER, TOKEN_FUNCTION, TOKEN_PROPERTY, TOKEN_TYPE_PARAMETER, TOKEN_VARIABLE,
     };
     use serde_json::{json, Value};
@@ -4633,7 +5377,10 @@ mod tests {
             .expect("initialize response");
         let completion_provider = &responses[0]["result"]["capabilities"]["completionProvider"];
         assert_eq!(completion_provider["resolveProvider"], false);
-        assert_eq!(completion_provider["triggerCharacters"], json!([".", ":"]));
+        assert_eq!(
+            completion_provider["triggerCharacters"],
+            json!([".", ":", "#", "["])
+        );
         assert_eq!(
             responses[0]["result"]["capabilities"]["documentSymbolProvider"],
             true
@@ -5445,6 +6192,208 @@ fn compute(x: Int) -> Int {
             );
             cursor = parent;
         }
+    }
+
+    #[test]
+    fn lsp_supports_source_attributes_across_editor_features() {
+        let workspace = temp_workspace("attributes");
+        let src_dir = workspace.join("src");
+        fs::create_dir_all(&src_dir).expect("create src directory");
+
+        let main_path = src_dir.join("main.aic");
+        let source = r#"module sample.attrs;
+
+struct Payload {
+    #[validate(required)]
+    name: String,
+}
+
+#[get(
+    "/users/:id"
+)]
+async fn show_user(#[path("id")] id: String) -> Int effects { io } {
+    id;
+    0
+}
+
+#[test]
+#[should_panic]
+fn test_show_user_panics() -> () {
+    assert(false);
+}
+"#;
+        fs::write(&main_path, source).expect("write main source");
+        let workspace_uri = format!("file://{}", workspace.display());
+        let main_uri = format!("file://{}", main_path.display());
+
+        let mut server = LspServer::default();
+        let _ = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "rootUri": workspace_uri
+                }
+            }))
+            .expect("initialize response");
+
+        let get_offset = source.find("#[get").expect("get attribute") + "#[".len();
+        let (get_line, get_char) = offset_to_line_char(source, get_offset);
+        let completion_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": get_line, "character": get_char }
+                }
+            }))
+            .expect("attribute completion response");
+        let completions = completion_response[0]["result"]
+            .as_array()
+            .expect("completion item array");
+        let get_completion = completions
+            .iter()
+            .find(|item| item["label"].as_str() == Some("get"))
+            .expect("get attribute completion");
+        assert_eq!(get_completion["insertTextFormat"], json!(2));
+        assert_eq!(
+            get_completion["textEdit"]["newText"],
+            json!("get(\"${1:/path}\")]")
+        );
+
+        let validate_rule_offset =
+            source.find("#[validate(").expect("validate attribute") + "#[validate(".len();
+        let (validate_rule_line, validate_rule_char) =
+            offset_to_line_char(source, validate_rule_offset);
+        let rule_completion_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": validate_rule_line, "character": validate_rule_char }
+                }
+            }))
+            .expect("validation rule completion response");
+        let rule_completions = rule_completion_response[0]["result"]
+            .as_array()
+            .expect("rule completion item array");
+        assert!(
+            rule_completions
+                .iter()
+                .any(|item| item["label"].as_str() == Some("min_length")),
+            "validate(...) should complete validation rules"
+        );
+
+        let hover_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "textDocument/hover",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "position": { "line": get_line, "character": get_char }
+                }
+            }))
+            .expect("attribute hover response");
+        let hover_markdown = hover_response[0]["result"]["contents"]["value"]
+            .as_str()
+            .expect("attribute hover markdown");
+        assert!(
+            hover_markdown.contains("GET route"),
+            "hover should explain known attributes"
+        );
+
+        let doc_symbols_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "textDocument/documentSymbol",
+                "params": {
+                    "textDocument": { "uri": main_uri }
+                }
+            }))
+            .expect("document symbol response");
+        let doc_symbols = doc_symbols_response[0]["result"]
+            .as_array()
+            .expect("document symbols array");
+        let show_symbol = doc_symbols
+            .iter()
+            .find(|symbol| symbol["name"].as_str() == Some("show_user"))
+            .expect("show_user document symbol");
+        assert!(
+            show_symbol["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("#[get"),
+            "document symbol detail should include attributes"
+        );
+
+        let semantic_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "textDocument/semanticTokens/full",
+                "params": {
+                    "textDocument": { "uri": main_uri }
+                }
+            }))
+            .expect("semantic token response");
+        let tokens = decode_semantic_tokens(&semantic_response[0]["result"]["data"]);
+        let attr_start = source.find("#[get").expect("attribute start");
+        let (attr_line, attr_char) = offset_to_line_char(source, attr_start);
+        find_decoded_token(&tokens, attr_line, attr_char, TOKEN_DECORATOR)
+            .expect("decorator semantic token for source attribute");
+
+        let folding_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "textDocument/foldingRange",
+                "params": {
+                    "textDocument": { "uri": main_uri }
+                }
+            }))
+            .expect("folding range response");
+        let folding_ranges = folding_response[0]["result"]
+            .as_array()
+            .expect("folding ranges array");
+        assert!(
+            folding_ranges.iter().any(|range| {
+                range["startLine"].as_u64() == Some(attr_line as u64)
+                    && range["endLine"]
+                        .as_u64()
+                        .is_some_and(|end| end > attr_line as u64)
+            }),
+            "multi-line attributes should be foldable"
+        );
+
+        let selection_response = server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "textDocument/selectionRange",
+                "params": {
+                    "textDocument": { "uri": main_uri },
+                    "positions": [
+                        { "line": get_line, "character": get_char }
+                    ]
+                }
+            }))
+            .expect("selection range response");
+        let selections = selection_response[0]["result"]
+            .as_array()
+            .expect("selection range array");
+        assert!(
+            selection_chain_depth(&selections[0]) >= 3,
+            "selection range should expand from attribute to declaration and module"
+        );
+
+        let _ = fs::remove_dir_all(workspace);
     }
 
     #[test]

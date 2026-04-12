@@ -1589,6 +1589,31 @@ mod tests {
     }
 
     #[test]
+    fn testgen_ignores_previously_materialized_testgen_fixtures() {
+        let project = tempdir().expect("tempdir");
+        write_testgen_fixture(project.path());
+
+        let first = generate(
+            project.path(),
+            TestgenStrategy::Boundary,
+            &["function".to_string(), "normalize_age".to_string()],
+            19,
+            Some(project.path()),
+        )
+        .expect("first materialized generate");
+        let second = generate(
+            project.path(),
+            TestgenStrategy::Boundary,
+            &["function".to_string(), "normalize_age".to_string()],
+            19,
+            Some(project.path()),
+        )
+        .expect("second materialized generate");
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn testgen_rejects_unsupported_strategy_target_pairs() {
         let project = tempdir().expect("tempdir");
         write_testgen_fixture(project.path());

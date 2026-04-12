@@ -83,7 +83,7 @@ function handleMessage(message: LspMessage): void {
           hoverProvider: true,
           completionProvider: {
             resolveProvider: false,
-            triggerCharacters: ['.', ':'],
+            triggerCharacters: ['.', ':', '#', '['],
           },
         },
       });

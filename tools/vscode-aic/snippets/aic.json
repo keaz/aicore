@@ -77,11 +77,42 @@
     "prefix": "test",
     "body": [
       "#[test]",
-      "fn test_${1:name}() {",
+      "fn test_${1:name}() -> () {",
       "\tassert_eq(${2:actual}, ${3:expected});",
       "}"
     ],
     "description": "Unit test skeleton"
+  },
+  "Route handler": {
+    "prefix": "route",
+    "body": [
+      "#[${1|get,post,put,patch,delete|}(\"${2:/path}\")]",
+      "async fn ${3:handler}(${4:params}) -> ${5:Int} effects { ${6:io} } {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Annotated web route handler"
+  },
+  "Request body parameter": {
+    "prefix": "body",
+    "body": [
+      "#[body] ${1:payload}: ${2:Type}"
+    ],
+    "description": "Request body parameter attribute"
+  },
+  "Request extractor parameter": {
+    "prefix": "extract",
+    "body": [
+      "#[${1|path,query,header|}(\"${2:name}\")] ${3:name}: ${4:String}"
+    ],
+    "description": "Path, query, or header extractor parameter attribute"
+  },
+  "Validation attribute": {
+    "prefix": "validate",
+    "body": [
+      "#[validate(${1|required,min_length = 1,max_length = 255,min = 0,max = 100|})]"
+    ],
+    "description": "Validation attribute for DTO fields or parameters"
   },
   "Module template": {
     "prefix": "mod",

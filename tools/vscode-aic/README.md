@@ -9,11 +9,14 @@ aic lsp
 ## Features
 
 - Syntax highlighting for `.aic` files
+- Syntax highlighting for AICore attributes (`#[...]`), char literals, and template strings
 - AICore file icons in Explorer via language icon contribution
 - Autocomplete (language server completions + editor suggestions)
+- Attribute completions and hover help for route, extractor, validation, and test attributes
 - Doc-aware hover/completion (`///` summary in completion detail + full markdown docs in hover/completion docs)
 - Auto-import suggestions for unimported module symbols (completion inserts `import ...;`)
 - Code snippets for common AICore patterns (`fn`, `struct`, `match`, contracts, effects)
+- Attribute snippets for route handlers, extractors, validation rules, and attribute tests
 - Status bar language server health indicator (starting/running/error/stopped + diagnostics count)
 - Inline error lens diagnostics with severity colors (error/warning/info)
 - Semantic highlighting for mutable/readonly variables, effectful calls, and deprecated APIs

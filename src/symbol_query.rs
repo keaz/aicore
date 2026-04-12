@@ -253,6 +253,10 @@ fn index_symbols(entry_path: &Path) -> anyhow::Result<SymbolIndexReport> {
         files_indexed += 1;
 
         let module_name = program.module.as_ref().map(|module| module.path.join("."));
+        if is_generated_testgen_module(module_name.as_deref()) {
+            continue;
+        }
+
         if let Some(module_decl) = &program.module {
             let module_value = module_name
                 .clone()
@@ -1119,6 +1123,10 @@ fn symbol_index_root(entry_path: &Path) -> PathBuf {
     machine_paths::canonical_machine_path_buf(&root)
 }
 
+fn is_generated_testgen_module(module: Option<&str>) -> bool {
+    module.is_some_and(|name| name == "generated.testgen" || name.starts_with("generated.testgen."))
+}
+
 fn find_project_root(entry: &Path) -> PathBuf {
     let mut cursor = entry
         .parent()
@@ -1240,6 +1248,62 @@ fn helper() -> Int {
         assert_eq!(report.symbols[0].kind, SymbolKind::Function);
         let expected = crate::machine_paths::canonical_machine_path(&src.join("main.aic"));
         assert_eq!(report.symbols[0].location.file, expected);
+    }
+
+    #[test]
+    fn generated_testgen_modules_do_not_shadow_source_symbols() {
+        let dir = tempdir().expect("tempdir");
+        let src = dir.path().join("src");
+        let generated = dir.path().join("tests/generated");
+        fs::create_dir_all(&src).expect("mkdir src");
+        fs::create_dir_all(&generated).expect("mkdir generated tests");
+
+        fs::write(
+            src.join("main.aic"),
+            r#"module demo.main;
+fn validate_user(age: Int) -> Bool requires age >= 0 {
+    true
+}
+"#,
+        )
+        .expect("write source");
+        fs::write(
+            generated.join("boundary_validate_user.aic"),
+            r#"module generated.testgen.boundary.validate_user;
+fn validate_user(age: Int) -> Bool requires age >= 0 {
+    true
+}
+
+#[test]
+fn test_validate_user_boundary_accepts_age_ge_0() -> () {
+    assert(validate_user(0));
+}
+"#,
+        )
+        .expect("write generated testgen fixture");
+
+        let report = query_symbols(
+            dir.path(),
+            QueryFilters {
+                kind: Some(SymbolKind::Function),
+                name_pattern: Some("validate*".to_string()),
+                module_pattern: None,
+                effects: Vec::new(),
+                has_contract: true,
+                has_invariant: false,
+                generic_over: None,
+                has_requires: false,
+                has_ensures: false,
+                limit: None,
+            },
+        )
+        .expect("query symbols");
+
+        assert_eq!(report.files_scanned, 2);
+        assert_eq!(report.files_indexed, 2);
+        assert_eq!(report.matched_symbols, 1);
+        assert_eq!(report.symbols[0].module.as_deref(), Some("demo.main"));
+        assert_eq!(report.symbols[0].name, "validate_user");
     }
 
     #[test]

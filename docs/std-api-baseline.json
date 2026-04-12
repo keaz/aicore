@@ -2234,7 +2234,7 @@
     {
       "module": "std.fs",
       "kind": "enum",
-      "signature": "FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Io }"
+      "signature": "FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Timeout, Cancelled, Io }"
     },
     {
       "module": "std.fs",

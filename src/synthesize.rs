@@ -1190,6 +1190,10 @@ fn build_type_index(project_root: &Path) -> anyhow::Result<TypeIndex> {
         let Some(program) = program else {
             continue;
         };
+        let module_name = program.module.as_ref().map(|module| module.path.join("."));
+        if is_generated_testgen_module(module_name.as_deref()) {
+            continue;
+        }
 
         index.extend_from_program(&program, &source);
     }
@@ -1242,6 +1246,10 @@ fn collect_aic_files(root: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
 fn path_has_component(path: &Path, needle: &str) -> bool {
     path.components()
         .any(|component| component.as_os_str().to_string_lossy() == needle)
+}
+
+fn is_generated_testgen_module(module: Option<&str>) -> bool {
+    module.is_some_and(|name| name == "generated.testgen" || name.starts_with("generated.testgen."))
 }
 
 impl TypeIndex {
@@ -2423,6 +2431,40 @@ mod tests {
             .content
             .contains("assert(!(result == true));"));
         assert!(format_text(&response).contains("synthesize: spec validate_user"));
+    }
+
+    #[test]
+    fn synthesize_ignores_generated_testgen_dependency_shapes() {
+        let project = tempdir().expect("tempdir");
+        write_spec_project(
+            project.path(),
+            concat!(
+                "spec fn validate_user(user: User) -> Result[Bool, ValidationError] {\n",
+                "    ensures result == Ok(false)\n",
+                "}\n",
+            ),
+        );
+        let generated = project.path().join("tests/generated");
+        fs::create_dir_all(&generated).expect("mkdir generated tests");
+        fs::write(
+            generated.join("boundary_validate_user.aic"),
+            concat!(
+                "module generated.testgen.boundary.validate_user;\n\n",
+                "enum ValidationError {\n",
+                "    Internal,\n",
+                "}\n\n",
+                "#[test]\n",
+                "fn test_validate_user_generated() -> () {\n",
+                "    assert(true);\n",
+                "}\n",
+            ),
+        )
+        .expect("write generated testgen fixture");
+
+        let response =
+            synthesize_from_spec(project.path(), "validate_user").expect("synthesize response");
+        assert_eq!(response.phase, "synthesize");
+        assert_eq!(response.artifacts.len(), 2);
     }
 
     #[test]

@@ -136,6 +136,8 @@ Stable `symbols` flags include:
 - `--format <format>` (`text|json`)
 - `--json` (machine-readable symbols response envelope; equivalent to `--format json`)
 
+Symbol indexing skips testgen-owned modules under `generated.testgen.*` so generated attribute-test fixtures do not shadow user-authored source symbols in `aic query`, `aic symbols`, `aic context`, or `aic testgen` target selection.
+
 Stable `scaffold` flags include:
 
 - `struct <name> --field <NAME:TYPE>... [--with-invariant <expr>]`
@@ -515,6 +517,7 @@ Synthesis behavior:
 - emits a self-contained attribute-test fixture with at least one happy-path test and one failing contract test when supported by the spec
 - reports non-lowerable clauses in `notes[]` instead of forcing them into runnable artifacts
 - reports spec parse/signature-type failures against the original spec file path with line/column spans and remediation hints on stderr
+- ignores previously materialized `generated.testgen.*` fixtures when resolving project type dependencies, so generated tests do not create duplicate type definitions for later synthesis runs
 
 ## `aic testgen` output modes
 
@@ -547,6 +550,7 @@ Generation behavior:
 - `exhaustive-match` emits one attribute test per enum variant with a generated exhaustive `match`
 - `effect-coverage` emits a declared-effect `run-pass` fixture and, for effectful targets, a missing-effect `compile-fail` fixture
 - generated values are deterministic for a fixed seed and selector
+- previously materialized `generated.testgen.*` fixtures are ignored for future target discovery, so rerunning the same command stays idempotent
 - unsupported strategy/target pairs fail with actionable diagnostics instead of producing partial output
 
 ## `aic patch` output modes

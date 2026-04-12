@@ -7,7 +7,16 @@
       "include": "#comment"
     },
     {
+      "include": "#attribute"
+    },
+    {
+      "include": "#template-string"
+    },
+    {
       "include": "#string"
+    },
+    {
+      "include": "#char"
     },
     {
       "include": "#declaration-function"
@@ -40,6 +49,101 @@
         }
       ]
     },
+    "attribute": {
+      "name": "meta.annotation.aic",
+      "begin": "#\\[",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.annotation.begin.aic"
+        }
+      },
+      "end": "\\]",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.annotation.end.aic"
+        }
+      },
+      "patterns": [
+        {
+          "name": "entity.name.function.decorator.aic",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#char"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "name": "keyword.operator.assignment.aic",
+          "match": "="
+        },
+        {
+          "name": "punctuation.separator.comma.aic",
+          "match": ","
+        },
+        {
+          "name": "punctuation.section.parens.aic",
+          "match": "[()]"
+        }
+      ]
+    },
+    "template-string": {
+      "name": "string.interpolated.aic",
+      "begin": "[f$]\"",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.aic"
+        }
+      },
+      "end": "\"",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.aic"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.aic",
+          "match": "\\\\(?:[\"\\\\/bfnrt{}]|u\\{[0-9A-Fa-f]+\\}|u[0-9A-Fa-f]{4})"
+        },
+        {
+          "name": "meta.interpolation.aic",
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.aic"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.aic"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#operators"
+            }
+          ]
+        }
+      ]
+    },
     "string": {
       "name": "string.quoted.double.aic",
       "begin": "\"",
@@ -57,9 +161,13 @@
       "patterns": [
         {
           "name": "constant.character.escape.aic",
-          "match": "\\\\(?:[\"\\\\/bfnrt]|u[0-9A-Fa-f]{4})"
+          "match": "\\\\(?:[\"\\\\/bfnrt{}]|u\\{[0-9A-Fa-f]+\\}|u[0-9A-Fa-f]{4})"
         }
       ]
+    },
+    "char": {
+      "name": "constant.character.aic",
+      "match": "'(?:\\\\(?:['\"\\\\/bfnrt]|u\\{[0-9A-Fa-f]+\\}|u[0-9A-Fa-f]{4})|[^'\\\\])'"
     },
     "declaration-function": {
       "patterns": [
@@ -95,11 +203,11 @@
       "patterns": [
         {
           "name": "keyword.control.aic",
-          "match": "\\b(async|await|break|const|continue|effects|else|ensures|extern|for|if|impl|in|invariant|let|loop|match|module|mut|requires|return|unsafe|where|while)\\b"
+          "match": "\\b(async|await|break|capabilities|const|continue|crate|effects|else|ensures|extern|for|if|impl|in|invariant|let|loop|match|module|mut|priv|pub|requires|return|unsafe|where|while)\\b"
         },
         {
           "name": "storage.type.aic",
-          "match": "\\b(enum|fn|struct|trait|type)\\b"
+          "match": "\\b(dyn|enum|fn|intrinsic|struct|trait|type)\\b"
         }
       ]
     },

@@ -2,6 +2,13 @@
 
 All notable changes to the AICore VS Code extension are documented in this file.
 
+## Unreleased
+
+### Added
+
+- TextMate grammar coverage for AICore attributes (`#[...]`), char literals, template strings, and newer language keywords.
+- Snippets for route/extractor/validation attributes and corrected attribute-test function snippets.
+
 ## [0.1.3] - 2026-03-01
 
 ### Added

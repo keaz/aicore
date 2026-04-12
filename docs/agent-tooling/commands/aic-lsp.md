@@ -66,7 +66,7 @@ From the server `initialize` response:
 - `documentSymbolProvider`
 - `workspaceSymbolProvider`
 - `documentFormattingProvider`
-- `completionProvider` (trigger characters: `.` and `:`)
+- `completionProvider` (trigger characters: `.`, `:`, `#`, and `[`)
 - `renameProvider`
 - `codeActionProvider`
 - `semanticTokensProvider` (full)
@@ -74,6 +74,13 @@ From the server `initialize` response:
 - `callHierarchyProvider`
 - `foldingRangeProvider`
 - `selectionRangeProvider`
+
+Attribute-specific support:
+
+- Semantic decorator tokens for `#[...]` attributes, including multi-line attribute forms.
+- Hover help for known framework/test attributes and generic preserved attributes.
+- Snippet completions for framework route/extractor/validation attributes and attribute-test markers.
+- Selection and folding ranges include attribute spans where they are present in source.
 
 ## Inlay hint settings
 

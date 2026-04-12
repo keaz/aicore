@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (251 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (253 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -122,6 +122,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1090` | Malformed visibility modifier (expected `pub` or `pub(crate)`). | `pub(package) fn main() -> Int { 0 }` | `pub(crate) fn main() -> Int { 0 }` |
 | `E1091` | Visibility modifiers are not supported on `type` aliases or `const` items. | `pub type Count = Int;` | `type Count = Int;` |
 | `E1093` | Invalid intrinsic declaration form (missing `fn`/`;`, body present, or unsupported contracts/generics). | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool { false }` | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool;` |
+| `E1094` | Malformed source attribute delimiter or missing attribute name. | `#[] fn main() -> Int { 0 }` | `#[test] fn main() -> Int { 0 }` |
+| `E1095` | Malformed source attribute argument list or argument value. | `#[validate(min =)] struct User { age: Int }` | `#[validate(min = 0)] struct User { age: Int }` |
 | `E1100` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1101` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1102` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
