@@ -1,0 +1,175 @@
+module compiler.ir;
+
+import compiler.source;
+
+pub struct IrNodeId {
+    pub value: Int,
+} invariant value >= 0
+
+pub struct IrSymbolId {
+    pub value: Int,
+} invariant value >= 0
+
+pub struct IrTypeId {
+    pub value: Int,
+} invariant value >= 0
+
+pub enum IrSymbolKind {
+    IrFunctionSymbol,
+    IrStructSymbol,
+    IrEnumSymbol,
+    IrTraitSymbol,
+    IrImplSymbol,
+    IrConstSymbol,
+    IrModuleSymbol,
+}
+
+pub enum IrTypeKind {
+    IrUnitType,
+    IrBoolType,
+    IrIntType,
+    IrFloatType,
+    IrStringType,
+    IrNamedType(String),
+    IrFunctionType(String),
+    IrUnknownType,
+}
+
+pub struct IrSymbol {
+    pub id: IrSymbolId,
+    pub name: String,
+    pub kind: IrSymbolKind,
+    pub span: SourceSpan,
+}
+
+pub struct IrTypeDef {
+    pub id: IrTypeId,
+    pub name: String,
+    pub kind: IrTypeKind,
+    pub span: SourceSpan,
+}
+
+pub struct IrFunction {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub return_type: IrTypeId,
+    pub span: SourceSpan,
+}
+
+pub struct IrProgramStats {
+    pub symbol_count: Int,
+    pub type_count: Int,
+    pub function_count: Int,
+} invariant symbol_count >= 0 && type_count >= 0 && function_count >= 0
+
+pub fn node_id(value: Int) -> IrNodeId requires value >= 0 ensures result.value == value {
+    IrNodeId { value: value }
+}
+
+pub fn symbol_id(value: Int) -> IrSymbolId requires value >= 0 ensures result.value == value {
+    IrSymbolId { value: value }
+}
+
+pub fn type_id(value: Int) -> IrTypeId requires value >= 0 ensures result.value == value {
+    IrTypeId { value: value }
+}
+
+pub fn next_node_id(value: IrNodeId) -> IrNodeId ensures result.value == value.value + 1 {
+    IrNodeId {
+        value: value.value + 1,
+    }
+}
+
+pub fn next_symbol_id(value: IrSymbolId) -> IrSymbolId ensures result.value == value.value + 1 {
+    IrSymbolId {
+        value: value.value + 1,
+    }
+}
+
+pub fn next_type_id(value: IrTypeId) -> IrTypeId ensures result.value == value.value + 1 {
+    IrTypeId {
+        value: value.value + 1,
+    }
+}
+
+pub fn symbol(id: IrSymbolId, name: String, kind: IrSymbolKind, span: SourceSpan) -> IrSymbol {
+    IrSymbol {
+        id: id,
+        name: name,
+        kind: kind,
+        span: span,
+    }
+}
+
+pub fn type_def(id: IrTypeId, name: String, kind: IrTypeKind, span: SourceSpan) -> IrTypeDef {
+    IrTypeDef {
+        id: id,
+        name: name,
+        kind: kind,
+        span: span,
+    }
+}
+
+pub fn function(symbol: IrSymbolId, name: String, return_type: IrTypeId, span: SourceSpan) -> IrFunction {
+    IrFunction {
+        symbol: symbol,
+        name: name,
+        return_type: return_type,
+        span: span,
+    }
+}
+
+pub fn program_stats(symbol_count: Int, type_count: Int, function_count: Int) -> IrProgramStats
+requires symbol_count >= 0 && type_count >= 0 && function_count >= 0
+ensures result.symbol_count == symbol_count && result.type_count == type_count && result.function_count == function_count {
+    IrProgramStats {
+        symbol_count: symbol_count,
+        type_count: type_count,
+        function_count: function_count,
+    }
+}
+
+pub fn is_type_symbol(value: IrSymbolKind) -> Bool {
+    match value {
+        IrStructSymbol => true,
+        IrEnumSymbol => true,
+        IrTraitSymbol => true,
+        IrFunctionSymbol => false,
+        IrImplSymbol => false,
+        IrConstSymbol => false,
+        IrModuleSymbol => false,
+    }
+}
+
+pub fn is_value_symbol(value: IrSymbolKind) -> Bool {
+    match value {
+        IrFunctionSymbol => true,
+        IrConstSymbol => true,
+        IrStructSymbol => false,
+        IrEnumSymbol => false,
+        IrTraitSymbol => false,
+        IrImplSymbol => false,
+        IrModuleSymbol => false,
+    }
+}
+
+pub fn is_concrete_type(value: IrTypeKind) -> Bool {
+    match value {
+        IrUnknownType => false,
+        IrUnitType => true,
+        IrBoolType => true,
+        IrIntType => true,
+        IrFloatType => true,
+        IrStringType => true,
+        IrNamedType(_) => true,
+        IrFunctionType(_) => true,
+    }
+}
+
+pub fn same_symbol_id(left: IrSymbolId, right: IrSymbolId) -> Bool {
+    left.value == right.value
+}
+
+pub fn same_type_id(left: IrTypeId, right: IrTypeId) -> Bool {
+    left.value == right.value
+}

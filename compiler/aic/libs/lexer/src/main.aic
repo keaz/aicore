@@ -1,0 +1,357 @@
+module compiler.lexer;
+
+import compiler.source;
+import compiler.syntax;
+import std.option;
+import std.string;
+import std.vec;
+
+pub struct LexerCursor {
+    pub source: SourceId,
+    pub text: String,
+    pub offset: Int,
+}
+
+pub struct LexResult {
+    pub token: Token,
+    pub next_offset: Int,
+}
+
+pub fn lexer_cursor(source: SourceId, text: String, offset: Int) -> LexerCursor
+requires offset >= 0 {
+    LexerCursor {
+        source: source,
+        text: text,
+        offset: offset,
+    }
+}
+
+pub fn scan_token(cursor: LexerCursor) -> LexResult {
+    scan_token_at(cursor.source, cursor.text, cursor.offset)
+}
+
+pub fn scan_significant_token(cursor: LexerCursor) -> LexResult {
+    scan_significant_token_at(cursor.source, cursor.text, cursor.offset)
+}
+
+pub fn lex_all(source: SourceId, text: String) -> Vec[Token] {
+    let text_len = string.len(text);
+    let mut out: Vec[Token] = vec.new_vec();
+    let mut offset = 0;
+    let mut done = false;
+    while !done {
+        let result = scan_token_at(source, text, offset);
+        let next_offset = result.next_offset;
+        let reached_eof = next_offset == offset && offset >= text_len;
+        out = vec.push(out, result.token);
+        if reached_eof {
+            done = true;
+        } else if next_offset <= offset {
+            done = true;
+        } else {
+            offset = next_offset;
+        };
+    };
+    out
+}
+
+pub fn scan_significant_token_at(source: SourceId, text: String, offset: Int) -> LexResult
+requires offset >= 0 {
+    let mut result = scan_token_at(source, text, offset);
+    while is_trivia(result.token) {
+        result = scan_token_at(source, text, result.next_offset);
+    };
+    result
+}
+
+pub fn scan_token_at(source: SourceId, text: String, offset: Int) -> LexResult
+requires offset >= 0 {
+    let text_len = string.len(text);
+    if offset >= text_len {
+        LexResult {
+            token: eof(source, offset),
+            next_offset: offset,
+        }
+    } else {
+        let ch = char_or_empty(text, offset);
+        if ch == "f" && char_or_empty(text, offset + 1) == "\"" {
+            scan_quoted_literal(source, text, offset, TemplateLiteral(), 2, "\"")
+        } else if ch == "$" && char_or_empty(text, offset + 1) == "\"" {
+            scan_quoted_literal(source, text, offset, TemplateLiteral(), 2, "\"")
+        } else if ch == "_" && !is_identifier_continue(char_or_empty(text, offset + 1)) {
+            fixed_token(source, text, offset, 1, Delimiter())
+        } else if is_identifier_start(ch) {
+            scan_word(source, text, offset)
+        } else if is_ascii_digit(ch) {
+            scan_number(source, text, offset)
+        } else if is_whitespace_char(ch) {
+            scan_whitespace(source, text, offset)
+        } else if ch == "/" && char_or_empty(text, offset + 1) == "/" {
+            scan_line_comment(source, text, offset)
+        } else if ch == "\"" {
+            scan_quoted_literal(source, text, offset, StringLiteral(), 1, "\"")
+        } else if ch == "'" {
+            scan_quoted_literal(source, text, offset, CharLiteral(), 1, "'")
+        } else {
+            scan_punctuation(source, text, offset)
+        }
+    }
+}
+
+pub fn char_or_empty(text: String, offset: Int) -> String {
+    match string.char_at(text, offset) {
+        Some(ch) => ch,
+        None => "",
+    }
+}
+
+pub fn is_whitespace_char(ch: String) -> Bool {
+    ch == " " || ch == "\n" || ch == "\r" || ch == "\t"
+}
+
+pub fn is_line_break(ch: String) -> Bool {
+    ch == "\n" || ch == "\r"
+}
+
+pub fn is_operator_lexeme(lexeme: String) -> Bool {
+    lexeme == "+" || lexeme == "-" || lexeme == "*" || lexeme == "/" || lexeme == "%" || lexeme == "~" || lexeme == "->" || lexeme == "=" || lexeme == "==" || lexeme == "=>" || lexeme == "!" || lexeme == "!=" || lexeme == "<" || lexeme == "<=" || lexeme == "<<" || lexeme == "<<=" || lexeme == ">" || lexeme == ">=" || lexeme == ">>" || lexeme == ">>=" || lexeme == ">>>" || lexeme == ">>>=" || lexeme == "&" || lexeme == "&&" || lexeme == "&=" || lexeme == "|" || lexeme == "||" || lexeme == "|=" || lexeme == "^" || lexeme == "^=" || lexeme == "?"
+}
+
+pub fn is_delimiter_lexeme(lexeme: String) -> Bool {
+    lexeme == "(" || lexeme == ")" || lexeme == "{" || lexeme == "}" || lexeme == "[" || lexeme == "]" || lexeme == "," || lexeme == ":" || lexeme == "::" || lexeme == ";" || lexeme == "." || lexeme == ".." || lexeme == "#" || lexeme == "_"
+}
+
+fn scan_word(source: SourceId, text: String, offset: Int) -> LexResult {
+    let text_len = string.len(text);
+    let mut end = offset;
+    while end < text_len && is_identifier_continue(char_or_empty(text, end)) {
+        end = end + 1;
+    };
+    let word = string.substring(text, offset, end);
+    LexResult {
+        token: classify_word(word, span(source, offset, end)),
+        next_offset: end,
+    }
+}
+
+fn scan_number(source: SourceId, text: String, offset: Int) -> LexResult {
+    let text_len = string.len(text);
+    let mut end = offset;
+    while end < text_len && is_ascii_digit(char_or_empty(text, end)) {
+        end = end + 1;
+    };
+
+    if char_or_empty(text, end) == "." && char_or_empty(text, end + 1) != "." && is_ascii_digit(char_or_empty(text, end + 1)) {
+        end = end + 1;
+        while end < text_len && is_ascii_digit(char_or_empty(text, end)) {
+            end = end + 1;
+        };
+        fixed_token(source, text, offset, end - offset, FloatLiteral())
+    } else {
+        fixed_token(source, text, offset, end - offset, IntegerLiteral())
+    }
+}
+
+fn scan_whitespace(source: SourceId, text: String, offset: Int) -> LexResult {
+    let text_len = string.len(text);
+    let mut end = offset;
+    while end < text_len && is_whitespace_char(char_or_empty(text, end)) {
+        end = end + 1;
+    };
+    fixed_token(source, text, offset, end - offset, Whitespace())
+}
+
+fn scan_line_comment(source: SourceId, text: String, offset: Int) -> LexResult {
+    let text_len = string.len(text);
+    let mut end = offset + 2;
+    while end < text_len && !is_line_break(char_or_empty(text, end)) {
+        end = end + 1;
+    };
+    fixed_token(source, text, offset, end - offset, Comment())
+}
+
+fn scan_quoted_literal(source: SourceId, text: String, offset: Int, kind: TokenKind, prefix_width: Int, quote: String) -> LexResult {
+    let text_len = string.len(text);
+    let mut end = offset + prefix_width;
+    let mut escaped = false;
+    let mut closed = false;
+    while end < text_len && !closed {
+        let ch = char_or_empty(text, end);
+        if escaped {
+            escaped = false;
+            end = end + 1;
+        } else if ch == "\\" {
+            escaped = true;
+            end = end + 1;
+        } else if ch == quote {
+            closed = true;
+            end = end + 1;
+        } else {
+            end = end + 1;
+        }
+    };
+
+    if closed {
+        fixed_token(source, text, offset, end - offset, kind)
+    } else {
+        fixed_token(source, text, offset, text_len - offset, Invalid())
+    }
+}
+
+fn scan_punctuation(source: SourceId, text: String, offset: Int) -> LexResult {
+    let ch = char_or_empty(text, offset);
+    if ch == "(" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == ")" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "{" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "}" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "[" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "]" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "," {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == ";" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "#" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "_" {
+        fixed_token(source, text, offset, 1, Delimiter())
+    } else if ch == "." {
+        scan_dot(source, text, offset)
+    } else if ch == ":" {
+        scan_colon(source, text, offset)
+    } else if ch == "-" {
+        scan_minus(source, text, offset)
+    } else if ch == "=" {
+        scan_equals(source, text, offset)
+    } else if ch == "!" {
+        scan_bang(source, text, offset)
+    } else if ch == "<" {
+        scan_left_angle(source, text, offset)
+    } else if ch == ">" {
+        scan_right_angle(source, text, offset)
+    } else if ch == "&" {
+        scan_ampersand(source, text, offset)
+    } else if ch == "|" {
+        scan_pipe(source, text, offset)
+    } else if ch == "^" {
+        scan_caret(source, text, offset)
+    } else if ch == "+" || ch == "*" || ch == "/" || ch == "%" || ch == "~" || ch == "?" {
+        fixed_token(source, text, offset, 1, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Invalid())
+    }
+}
+
+fn scan_dot(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == "." {
+        fixed_token(source, text, offset, 2, Delimiter())
+    } else {
+        fixed_token(source, text, offset, 1, Delimiter())
+    }
+}
+
+fn scan_colon(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == ":" {
+        fixed_token(source, text, offset, 2, Delimiter())
+    } else {
+        fixed_token(source, text, offset, 1, Delimiter())
+    }
+}
+
+fn scan_minus(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == ">" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_equals(source: SourceId, text: String, offset: Int) -> LexResult {
+    let next = char_or_empty(text, offset + 1);
+    if next == "=" || next == ">" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_bang(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == "=" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_left_angle(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == "<" {
+        if char_or_empty(text, offset + 2) == "=" {
+            fixed_token(source, text, offset, 3, Operator())
+        } else {
+            fixed_token(source, text, offset, 2, Operator())
+        }
+    } else if char_or_empty(text, offset + 1) == "=" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_right_angle(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == ">" {
+        if char_or_empty(text, offset + 2) == ">" {
+            if char_or_empty(text, offset + 3) == "=" {
+                fixed_token(source, text, offset, 4, Operator())
+            } else {
+                fixed_token(source, text, offset, 3, Operator())
+            }
+        } else if char_or_empty(text, offset + 2) == "=" {
+            fixed_token(source, text, offset, 3, Operator())
+        } else {
+            fixed_token(source, text, offset, 2, Operator())
+        }
+    } else if char_or_empty(text, offset + 1) == "=" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_ampersand(source: SourceId, text: String, offset: Int) -> LexResult {
+    let next = char_or_empty(text, offset + 1);
+    if next == "&" || next == "=" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_pipe(source: SourceId, text: String, offset: Int) -> LexResult {
+    let next = char_or_empty(text, offset + 1);
+    if next == "|" || next == "=" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn scan_caret(source: SourceId, text: String, offset: Int) -> LexResult {
+    if char_or_empty(text, offset + 1) == "=" {
+        fixed_token(source, text, offset, 2, Operator())
+    } else {
+        fixed_token(source, text, offset, 1, Operator())
+    }
+}
+
+fn fixed_token(source: SourceId, text: String, offset: Int, width: Int, kind: TokenKind) -> LexResult {
+    let end = offset + width;
+    LexResult {
+        token: token(kind, span(source, offset, end), string.substring(text, offset, end)),
+        next_offset: end,
+    }
+}

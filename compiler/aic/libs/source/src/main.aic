@@ -1,0 +1,106 @@
+module compiler.source;
+
+pub struct SourceId {
+    pub value: Int,
+} invariant value >= 0
+
+pub struct SourceSpan {
+    pub source: SourceId,
+    pub start: Int,
+    pub end: Int,
+} invariant start >= 0 && end >= start
+
+pub struct LineColumn {
+    pub line: Int,
+    pub column: Int,
+} invariant line >= 1 && column >= 1
+
+pub struct SourceLocation {
+    pub source: SourceId,
+    pub position: Int,
+    pub display: LineColumn,
+} invariant position >= 0
+
+pub fn source_id(value: Int) -> SourceId requires value >= 0 ensures result.value == value {
+    SourceId { value: value }
+}
+
+pub fn line_column(line: Int, column: Int) -> LineColumn
+requires line >= 1 && column >= 1
+ensures result.line == line && result.column == column {
+    LineColumn { line: line, column: column }
+}
+
+pub fn location(source: SourceId, position: Int, display: LineColumn) -> SourceLocation
+requires position >= 0
+ensures result.position == position {
+    SourceLocation {
+        source: source,
+        position: position,
+        display: display,
+    }
+}
+
+pub fn span(source: SourceId, start: Int, end: Int) -> SourceSpan
+requires start >= 0 && end >= start
+ensures result.start == start && result.end == end {
+    SourceSpan {
+        source: source,
+        start: start,
+        end: end,
+    }
+}
+
+pub fn empty_span(source: SourceId, offset: Int) -> SourceSpan
+requires offset >= 0
+ensures result.start == offset && result.end == offset {
+    SourceSpan {
+        source: source,
+        start: offset,
+        end: offset,
+    }
+}
+
+pub fn is_empty(value: SourceSpan) -> Bool {
+    value.start == value.end
+}
+
+pub fn width(value: SourceSpan) -> Int ensures result >= 0 {
+    value.end - value.start
+}
+
+pub fn contains(value: SourceSpan, offset: Int) -> Bool {
+    offset >= value.start && offset < value.end
+}
+
+pub fn touches(value: SourceSpan, offset: Int) -> Bool {
+    offset >= value.start && offset <= value.end
+}
+
+pub fn same_source(left: SourceSpan, right: SourceSpan) -> Bool {
+    left.source.value == right.source.value
+}
+
+pub fn starts_before(left: SourceSpan, right: SourceSpan) -> Bool {
+    left.start < right.start || (left.start == right.start && left.end <= right.end)
+}
+
+pub fn merge(left: SourceSpan, right: SourceSpan) -> SourceSpan
+requires left.source.value == right.source.value
+ensures result.source.value == left.source.value && result.start <= left.start && result.start <= right.start && result.end >= left.end && result.end >= right.end {
+    let start = if left.start <= right.start { left.start } else { right.start };
+    let end = if left.end >= right.end { left.end } else { right.end };
+    SourceSpan {
+        source: source_id(left.source.value),
+        start: start,
+        end: end,
+    }
+}
+
+pub fn overlaps(left: SourceSpan, right: SourceSpan) -> Bool {
+    same_source(left, right) && left.start < right.end && right.start < left.end
+}
+
+pub fn contains_span(outer: SourceSpan, inner: SourceSpan) -> Bool {
+    same_source(outer, inner) && outer.start <= inner.start && outer.end >= inner.end
+}

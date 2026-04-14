@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "expected": "pass",
+      "name": "core_language_tour",
+      "path": "examples/core/core_language_tour.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "expected": "pass",
+      "name": "traits_and_dispatch_tour",
+      "path": "examples/core/traits_and_dispatch_tour.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "pass",
+      "name": "async_ping",
+      "path": "examples/core/async_ping.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "pass",
+      "name": "tuple_types",
+      "path": "examples/core/tuple_types.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "pass",
+      "name": "effects_capabilities_patterns_tour",
+      "path": "examples/core/effects_capabilities_patterns_tour.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "fail",
+      "name": "effects_reject",
+      "path": "examples/effects_reject.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "fail",
+      "name": "missing_effect",
+      "path": "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "run"
+      ],
+      "expected": "pass",
+      "name": "source_diagnostics_check",
+      "path": "compiler/aic/tools/source_diagnostics_check"
+    }
+  ],
+  "name": "selfhost-core-parity-smoke",
+  "schema_version": 1
+}

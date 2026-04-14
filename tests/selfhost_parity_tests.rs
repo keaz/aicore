@@ -1,0 +1,399 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde_json::Value;
+use tempfile::tempdir;
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn parity_script() -> PathBuf {
+    repo_root().join("scripts/selfhost/parity.py")
+}
+
+fn run_parity(args: &[String]) -> std::process::Output {
+    Command::new("python3")
+        .arg(parity_script())
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("run parity script")
+}
+
+fn write_fake_compiler(path: &Path, variant: &str) {
+    fs::write(
+        path,
+        format!(
+            r#"#!/usr/bin/env python3
+import json
+import os
+import sys
+
+variant = {variant:?}
+args = sys.argv[1:]
+action = args[0]
+source = args[1] if len(args) > 1 else ""
+name = os.path.basename(source)
+
+if action == "build":
+    out = args[args.index("-o") + 1]
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as handle:
+        handle.write("artifact:" + variant + ":" + name)
+
+payload = {{"action": action, "source": name, "variant": variant}}
+if action == "ir":
+    payload["emit"] = args[-1]
+print(json.dumps(payload, sort_keys=True))
+
+if "fail" in name:
+    sys.exit(1)
+sys.exit(0)
+"#
+        ),
+    )
+    .expect("write fake compiler");
+}
+
+fn write_manifest(path: &Path) {
+    fs::write(
+        path,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-parity",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["check", "ir-json", "build"]
+    },
+    {
+      "name": "fail_case",
+      "path": "fail.aic",
+      "expected": "fail",
+      "actions": ["check"]
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+}
+
+#[test]
+fn selfhost_parity_manifest_lists_cases() {
+    let output = run_parity(&[
+        "--manifest".into(),
+        "tests/selfhost/parity_manifest.json".into(),
+        "--list".into(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("core_language_tour pass check,ir-json"));
+    assert!(stdout.contains("effects_reject fail check"));
+    assert!(stdout.contains("source_diagnostics_check pass check,run"));
+}
+
+#[test]
+fn selfhost_compiler_support_packages_are_real_sources() {
+    let root = repo_root();
+    for path in [
+        "compiler/aic/aic.workspace.toml",
+        "compiler/aic/libs/source/aic.toml",
+        "compiler/aic/libs/source/src/main.aic",
+        "compiler/aic/libs/diagnostics/aic.toml",
+        "compiler/aic/libs/diagnostics/src/main.aic",
+        "compiler/aic/libs/syntax/aic.toml",
+        "compiler/aic/libs/syntax/src/main.aic",
+        "compiler/aic/libs/lexer/aic.toml",
+        "compiler/aic/libs/lexer/src/main.aic",
+        "compiler/aic/libs/parser/aic.toml",
+        "compiler/aic/libs/parser/src/main.aic",
+        "compiler/aic/libs/ast/aic.toml",
+        "compiler/aic/libs/ast/src/main.aic",
+        "compiler/aic/libs/ir/aic.toml",
+        "compiler/aic/libs/ir/src/main.aic",
+        "compiler/aic/tools/source_diagnostics_check/aic.toml",
+        "compiler/aic/tools/source_diagnostics_check/src/main.aic",
+    ] {
+        assert!(root.join(path).is_file(), "missing {path}");
+    }
+
+    let source = fs::read_to_string(root.join("compiler/aic/libs/source/src/main.aic"))
+        .expect("read source lib");
+    assert!(source.contains("pub fn merge"));
+    assert!(source.contains("pub fn contains_span"));
+
+    let diagnostics = fs::read_to_string(root.join("compiler/aic/libs/diagnostics/src/main.aic"))
+        .expect("read diagnostics lib");
+    assert!(diagnostics.contains("pub fn error"));
+    assert!(diagnostics.contains("pub fn machine_fix"));
+
+    let syntax = fs::read_to_string(root.join("compiler/aic/libs/syntax/src/main.aic"))
+        .expect("read syntax lib");
+    assert!(syntax.contains("pub enum TokenKind"));
+    assert!(syntax.contains("pub fn same_kind"));
+    assert!(syntax.contains("pub fn is_identifier_start"));
+    assert!(syntax.contains("pub fn is_keyword_lexeme"));
+    assert!(syntax.contains("lexeme == \"priv\""));
+
+    let lexer = fs::read_to_string(root.join("compiler/aic/libs/lexer/src/main.aic"))
+        .expect("read lexer lib");
+    assert!(lexer.contains("pub fn lex_all"));
+    assert!(lexer.contains("pub fn scan_token_at"));
+    assert!(lexer.contains("pub fn scan_significant_token_at"));
+    assert!(lexer.contains("fn scan_quoted_literal"));
+
+    let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
+        .expect("read parser lib");
+    assert!(parser.contains("pub struct ParserCursor"));
+    assert!(parser.contains("pub struct ParseModulePath"));
+    assert!(parser.contains("pub fn parser_cursor_from_source"));
+    assert!(parser.contains("pub fn expect_identifier"));
+    assert!(parser.contains("pub fn parse_module_path"));
+    assert!(parser.contains("pub fn parse_module_declaration"));
+    assert!(parser.contains("pub fn parse_import_declaration"));
+    assert!(parser.contains("pub fn parse_visibility"));
+    assert!(parser.contains("pub fn parse_item_kind"));
+    assert!(parser.contains("pub fn parse_item_header"));
+    assert!(parser.contains("pub fn parse_type_ref"));
+    assert!(parser.contains("pub fn parse_optional_where_clause"));
+    assert!(parser.contains("pub fn parse_param_list"));
+    assert!(parser.contains("pub fn parse_function_signature"));
+    assert!(parser.contains("pub fn parse_optional_generic_params"));
+    assert!(parser.contains("pub fn parse_struct_field"));
+    assert!(parser.contains("pub fn parse_struct_field_list"));
+    assert!(parser.contains("pub fn parse_struct_declaration"));
+    assert!(parser.contains("pub fn parse_enum_variant"));
+    assert!(parser.contains("pub fn parse_enum_variant_list"));
+    assert!(parser.contains("pub fn parse_enum_declaration"));
+    assert!(parser.contains("pub fn parse_type_alias_declaration"));
+    assert!(parser.contains("pub fn parse_const_declaration"));
+    assert!(parser.contains("pub fn parse_raw_text_until_semicolon"));
+    assert!(parser.contains("pub fn parse_trait_method_signature"));
+    assert!(parser.contains("pub fn parse_trait_method_list"));
+    assert!(parser.contains("pub fn parse_trait_declaration"));
+    assert!(parser.contains("pub fn parse_impl_declaration"));
+    assert!(parser.contains("pub fn parse_raw_text_until_block_close"));
+
+    let ast =
+        fs::read_to_string(root.join("compiler/aic/libs/ast/src/main.aic")).expect("read ast lib");
+    assert!(ast.contains("pub enum AstItemKind"));
+    assert!(ast.contains("pub enum AstTypeKind"));
+    assert!(ast.contains("pub struct AstType"));
+    assert!(ast.contains("pub struct AstTypeNode"));
+    assert!(ast.contains("pub struct AstGenericParam"));
+    assert!(ast.contains("pub struct AstGenericParamList"));
+    assert!(ast.contains("pub struct AstModuleDecl"));
+    assert!(ast.contains("pub struct AstImportDecl"));
+    assert!(ast.contains("pub struct AstParam"));
+    assert!(ast.contains("pub struct AstField"));
+    assert!(ast.contains("pub struct AstStructDecl"));
+    assert!(ast.contains("pub struct AstEnumVariant"));
+    assert!(ast.contains("pub struct AstEnumDecl"));
+    assert!(ast.contains("pub struct AstTypeAliasDecl"));
+    assert!(ast.contains("pub struct AstConstDecl"));
+    assert!(ast.contains("pub struct AstTraitDecl"));
+    assert!(ast.contains("pub struct AstImplDecl"));
+    assert!(ast.contains("pub fn ast_name_from_token"));
+    assert!(ast.contains("pub fn module_decl"));
+    assert!(ast.contains("pub fn import_decl"));
+    assert!(ast.contains("pub fn ast_param"));
+    assert!(ast.contains("pub fn ast_field"));
+    assert!(ast.contains("pub fn struct_decl"));
+    assert!(ast.contains("pub fn enum_variant"));
+    assert!(ast.contains("pub fn enum_decl"));
+    assert!(ast.contains("pub fn type_alias_decl"));
+    assert!(ast.contains("pub fn const_decl"));
+    assert!(ast.contains("pub fn trait_decl"));
+    assert!(ast.contains("pub fn impl_decl"));
+    assert!(ast.contains("pub fn named_type"));
+    assert!(ast.contains("pub fn dyn_trait_type"));
+    assert!(ast.contains("pub fn generic_params_text"));
+    assert!(ast.contains("pub fn param_count"));
+    assert!(ast.contains("pub fn type_text"));
+    assert!(ast.contains("pub fn field_count"));
+    assert!(ast.contains("pub fn variant_count"));
+    assert!(ast.contains("pub fn trait_method_count"));
+    assert!(ast.contains("pub fn literal_from_token"));
+
+    let ir =
+        fs::read_to_string(root.join("compiler/aic/libs/ir/src/main.aic")).expect("read ir lib");
+    assert!(ir.contains("pub struct IrSymbolId"));
+    assert!(ir.contains("pub fn next_symbol_id"));
+    assert!(ir.contains("pub fn is_concrete_type"));
+}
+
+#[test]
+fn selfhost_parity_fake_compilers_match_and_write_report() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    fs::write(
+        tmp.path().join("fail.aic"),
+        "fn main() -> Int { missing_symbol() }\n",
+    )
+    .expect("write fail");
+    let manifest = tmp.path().join("manifest.json");
+    write_manifest(&manifest);
+    let compiler = tmp.path().join("fake_compiler.py");
+    write_fake_compiler(&compiler, "same");
+    let report = tmp.path().join("report.json");
+    let artifact_dir = tmp.path().join("artifacts");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--reference".into(),
+        format!("python3 {}", compiler.to_string_lossy()),
+        "--candidate".into(),
+        format!("python3 {}", compiler.to_string_lossy()),
+        "--artifact-dir".into(),
+        artifact_dir.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "5".into(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
+    assert_eq!(report_json["format"], "aicore-selfhost-parity-v1");
+    assert_eq!(report_json["ok"], true);
+    assert_eq!(report_json["results"].as_array().expect("results").len(), 4);
+}
+
+#[test]
+fn selfhost_parity_reports_candidate_mismatch() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    let manifest = tmp.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-mismatch",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["check"]
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+    let reference = tmp.path().join("reference.py");
+    let candidate = tmp.path().join("candidate.py");
+    write_fake_compiler(&reference, "reference");
+    write_fake_compiler(&candidate, "candidate");
+    let report = tmp.path().join("mismatch-report.json");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--reference".into(),
+        format!("python3 {}", reference.to_string_lossy()),
+        "--candidate".into(),
+        format!("python3 {}", candidate.to_string_lossy()),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "5".into(),
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("fingerprint mismatch"), "stderr={stderr}");
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
+    assert_eq!(report_json["ok"], false);
+    assert_eq!(report_json["results"][0]["reason"], "fingerprint mismatch");
+}
+
+#[test]
+fn selfhost_parity_reports_timeout() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    let manifest = tmp.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-timeout",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["check"]
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+    let reference = tmp.path().join("sleeping.py");
+    fs::write(
+        &reference,
+        r#"#!/usr/bin/env python3
+import time
+time.sleep(20)
+"#,
+    )
+    .expect("write sleeping compiler");
+    let candidate = tmp.path().join("candidate.py");
+    write_fake_compiler(&candidate, "candidate");
+    let report = tmp.path().join("timeout-report.json");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--reference".into(),
+        format!("python3 {}", reference.to_string_lossy()),
+        "--candidate".into(),
+        format!("python3 {}", candidate.to_string_lossy()),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "0.2".into(),
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
+    assert_eq!(report_json["ok"], false);
+    assert_eq!(report_json["results"][0]["reason"], "timeout");
+}

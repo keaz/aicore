@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -25,6 +25,8 @@ help:
 	@echo "  make test-e8-concurrency-stress Run deterministic concurrency stress/replay gate"
 	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
 	@echo "  make test-e9       Run E9 release/security operations tests"
+	@echo "  make test-selfhost Run self-hosting parity harness tests"
+	@echo "  make selfhost-parity Run reference/candidate compiler parity comparisons"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -58,7 +60,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 test-selfhost intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -109,6 +111,12 @@ test-e8-nightly-fuzz:
 
 test-e9:
 	$(CARGO) test --locked --test e9_release_ops_tests
+
+test-selfhost:
+	$(CARGO) test --locked --test selfhost_parity_tests
+
+selfhost-parity:
+	python3 scripts/selfhost/parity.py --manifest tests/selfhost/parity_manifest.json
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
@@ -216,9 +224,11 @@ docs-check:
 	@test -f docs/security-ops/migration.md
 	@test -f docs/security-ops/incident-response.md
 	@test -f docs/security-threat-model.md
+	@test -f docs/selfhost/README.md
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/errors/secure-networking-error-contract.v1.json
 	@test -f docs/std-api-baseline.json
+	@python3 -m json.tool tests/selfhost/parity_manifest.json >/dev/null
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/parse-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null

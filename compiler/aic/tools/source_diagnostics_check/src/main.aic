@@ -1,0 +1,784 @@
+module compiler.tools.source_diagnostics_check;
+
+import compiler.source;
+import compiler.diagnostics;
+import compiler.syntax;
+import compiler.lexer;
+import compiler.parser;
+import compiler.ast;
+import compiler.ir;
+import std.io;
+import std.result;
+import std.vec;
+
+fn valid_ast_header(name: AstName) -> Bool {
+    let header = item_header(FunctionItem(), PublicVisibility(), name, span(source_id(1), 0, 10));
+    is_value_item(header.kind)
+}
+
+fn valid_name_result(value: Result[AstName, AstError]) -> Bool {
+    match value {
+        Ok(name) => valid_ast_header(name),
+        Err(_) => false,
+    }
+}
+
+fn valid_lexer_scan() -> Bool {
+    let source = source_id(2);
+    let word = scan_token(lexer_cursor(source, "fn main", 0));
+    let name = scan_significant_token_at(source, " \t// skip\nmain", 0);
+    let float_lit = scan_token_at(source, "123.45", 0);
+    let range_dot = scan_token_at(source, "..", 0);
+    let shift = scan_token_at(source, ">>>=", 0);
+    let char_lit = scan_token_at(source, "'x'", 0);
+    let underscore = scan_token_at(source, "_", 0);
+    let invalid_char = scan_token_at(source, "@", 0);
+    let stream = lex_all(source, "let x = 1");
+    is_keyword(word.token, "fn")
+        && word.next_offset == 2
+        && name.token.lexeme == "main"
+        && name.next_offset == 14
+        && same_kind(float_lit.token, token(FloatLiteral(), span(source, 0, 6), "123.45"))
+        && is_delimiter(range_dot.token, "..")
+        && is_operator(shift.token, ">>>=")
+        && same_kind(char_lit.token, token(CharLiteral(), span(source, 0, 3), "'x'"))
+        && is_delimiter(underscore.token, "_")
+        && is_terminal(invalid_char.token)
+        && vec.vec_len(stream) == 8
+}
+
+fn valid_parser_cursor() -> Bool {
+    let source = source_id(3);
+    let cursor = parser_cursor_from_source(source, "fn main");
+    let fn_result = expect_keyword(cursor, "fn", "E1000", "expected fn");
+    let name_result = expect_identifier(fn_result.cursor, "E1004", "expected identifier");
+    let fail_result = expect_operator(name_result.cursor, "->", "E1005", "expected return arrow");
+    !has_diagnostic(fn_result)
+        && token_text(fn_result) == "fn"
+        && !has_diagnostic(name_result)
+        && token_text(name_result) == "main"
+        && has_diagnostic(fail_result)
+        && remaining_token_count(name_result.cursor) == 1
+}
+
+fn valid_parser_declarations() -> Bool {
+    let source = source_id(4);
+    let cursor = parser_cursor_from_source(source, "module compiler.parser;\nimport std.vec;");
+    let module_result = parse_module_declaration(cursor);
+    let import_result = parse_import_declaration(module_result.cursor);
+    let bad_path = parse_import_declaration(parser_cursor_from_source(source, "import std.;"));
+    let missing_semicolon = parse_module_declaration(parser_cursor_from_source(source, "module compiler.parser"));
+    let module_ok = match module_result.module_item {
+        Some(value) => value.path.text == "compiler.parser"
+            && value.path.span.start == 7
+            && value.path.span.end == 22
+            && value.span.start == 0
+            && value.span.end == 23,
+        None => false,
+    };
+    let import_ok = match import_result.import_item {
+        Some(value) => value.path.text == "std.vec"
+            && value.path.span.start == 31
+            && value.path.span.end == 38
+            && value.span.start == 24
+            && value.span.end == 39,
+        None => false,
+    };
+    let bad_path_ok = match bad_path.diagnostic {
+        Some(diag) => diag.code.value == "E1012" && diag.span.start == 11,
+        None => false,
+    };
+    let missing_semicolon_ok = match missing_semicolon.diagnostic {
+        Some(diag) => diag.code.value == "E1021" && diag.span.start == 22,
+        None => false,
+    };
+    module_ok
+        && import_ok
+        && !has_module_decl_diagnostic(module_result)
+        && !has_import_decl_diagnostic(import_result)
+        && has_import_decl_diagnostic(bad_path)
+        && bad_path_ok
+        && has_module_decl_diagnostic(missing_semicolon)
+        && missing_semicolon_ok
+}
+
+fn is_public_crate(value: AstVisibility) -> Bool {
+    match value {
+        PublicCrateVisibility => true,
+        PublicVisibility => false,
+        PrivateVisibility => false,
+    }
+}
+
+fn is_private_visibility(value: AstVisibility) -> Bool {
+    match value {
+        PrivateVisibility => true,
+        PublicVisibility => false,
+        PublicCrateVisibility => false,
+    }
+}
+
+fn is_struct_item(value: AstItemKind) -> Bool {
+    match value {
+        StructItem => true,
+        FunctionItem => false,
+        EnumItem => false,
+        TraitItem => false,
+        ImplItem => false,
+        TypeAliasItem => false,
+        ConstItem => false,
+    }
+}
+
+fn is_impl_item(value: AstItemKind) -> Bool {
+    match value {
+        ImplItem => true,
+        FunctionItem => false,
+        StructItem => false,
+        EnumItem => false,
+        TraitItem => false,
+        TypeAliasItem => false,
+        ConstItem => false,
+    }
+}
+
+fn valid_parser_item_headers() -> Bool {
+    let source = source_id(5);
+    let crate_fn = parse_item_header(parser_cursor_from_source(source, "pub(crate) fn crate_value()"));
+    let extern_fn = parse_item_header(parser_cursor_from_source(source, "extern \"C\" fn host()"));
+    let struct_header = parse_item_header(parser_cursor_from_source(source, "struct User {"));
+    let impl_header = parse_item_header(parser_cursor_from_source(source, "pub impl Score[Int]"));
+    let bad_visibility = parse_item_header(parser_cursor_from_source(source, "pub(crate fn bad"));
+    let missing_name = parse_item_header(parser_cursor_from_source(source, "pub fn ("));
+    let crate_fn_ok = match crate_fn.header {
+        Some(header) => is_value_item(header.kind)
+            && is_public_crate(header.visibility)
+            && header.name.value == "crate_value"
+            && header.span.start == 0
+            && header.span.end == 25,
+        None => false,
+    };
+    let extern_fn_ok = match extern_fn.header {
+        Some(header) => is_value_item(header.kind)
+            && is_private_visibility(header.visibility)
+            && header.name.value == "host"
+            && header.span.start == 0
+            && header.span.end == 18,
+        None => false,
+    };
+    let struct_ok = match struct_header.header {
+        Some(header) => is_struct_item(header.kind)
+            && is_private_visibility(header.visibility)
+            && header.name.value == "User"
+            && header.span.start == 0
+            && header.span.end == 11,
+        None => false,
+    };
+    let impl_ok = match impl_header.header {
+        Some(header) => is_impl_item(header.kind)
+            && is_public_visibility(header.visibility)
+            && header.name.value == "Score"
+            && header.span.start == 0
+            && header.span.end == 14,
+        None => false,
+    };
+    let bad_visibility_ok = match bad_visibility.diagnostic {
+        Some(diag) => diag.code.value == "E1043" && diag.span.start == 10,
+        None => false,
+    };
+    let missing_name_ok = match missing_name.diagnostic {
+        Some(diag) => diag.code.value == "E1051" && diag.span.start == 7,
+        None => false,
+    };
+    crate_fn_ok
+        && extern_fn_ok
+        && struct_ok
+        && impl_ok
+        && !has_item_header_diagnostic(crate_fn)
+        && !has_item_header_diagnostic(extern_fn)
+        && !has_item_header_diagnostic(struct_header)
+        && !has_item_header_diagnostic(impl_header)
+        && has_item_header_diagnostic(bad_visibility)
+        && bad_visibility_ok
+        && has_item_header_diagnostic(missing_name)
+        && missing_name_ok
+}
+
+fn param_matches(value: AstParam, name: String, type_name: String) -> Bool {
+    value.name.value == name && type_text(value.type_ref) == type_name
+}
+
+fn first_param_matches(value: AstFunctionSignature, name: String, type_name: String) -> Bool {
+    match vec.get(value.params, 0) {
+        Some(param) => param_matches(param, name, type_name),
+        None => false,
+    }
+}
+
+fn second_param_matches(value: AstFunctionSignature, name: String, type_name: String) -> Bool {
+    match vec.get(value.params, 1) {
+        Some(param) => param_matches(param, name, type_name),
+        None => false,
+    }
+}
+
+fn diagnostic_matches(value: Option[Diagnostic], code: String, start: Int) -> Bool {
+    match value {
+        Some(diag) => diag.code.value == code && diag.span.start == start,
+        None => false,
+    }
+}
+
+fn valid_parser_function_signatures() -> Bool {
+    let source = source_id(6);
+    let rich = parse_function_signature(parser_cursor_from_source(source, "pub fn add(x: Int, values: Vec[String]) -> Result[Int, ParseError] effects { io, fs } capabilities { io }"));
+    let no_params = parse_function_signature(parser_cursor_from_source(source, "async fn main() -> Int effects { io } capabilities { io }"));
+    let param_list = parse_param_list(parser_cursor_from_source(source, "(first: Int, second: String)"));
+    let generic_type = parse_type_ref(parser_cursor_from_source(source, "Result[Int, ParseError]"), false);
+    let tuple_type = parse_type_ref(parser_cursor_from_source(source, "(Int, String)"), false);
+    let fn_type = parse_type_ref(parser_cursor_from_source(source, "Fn(Int, String) -> Result[Int, Error]"), false);
+    let dyn_type = parse_type_ref(parser_cursor_from_source(source, "dyn Reader"), false);
+    let hole_type_result = parse_type_ref(parser_cursor_from_source(source, "_"), false);
+    let unit_type_result = parse_type_ref(parser_cursor_from_source(source, "()"), false);
+    let bounded = parse_function_signature(parser_cursor_from_source(source, "fn pick[T: A](x: T) -> T where T: B effects { io }"));
+    let missing_colon = parse_function_signature(parser_cursor_from_source(source, "fn bad(x Int) -> Int"));
+    let missing_arrow = parse_function_signature(parser_cursor_from_source(source, "fn bad(x: Int) Int"));
+    let unclosed_type = parse_function_signature(parser_cursor_from_source(source, "fn bad(x: Vec[Int) -> Int"));
+    let empty_generic_args = parse_type_ref(parser_cursor_from_source(source, "Result[]"), false);
+    let missing_generic_close = parse_type_ref(parser_cursor_from_source(source, "Result[Int"), false);
+    let missing_paren_close = parse_type_ref(parser_cursor_from_source(source, "(Int"), false);
+    let invalid_type_token = parse_type_ref(parser_cursor_from_source(source, "+"), false);
+    let malformed_bound_list = parse_optional_generic_params(parser_cursor_from_source(source, "[T: ]"));
+    let malformed_where_clause = parse_function_signature(parser_cursor_from_source(source, "fn bad[T](x: T) -> T where T effects { io }"));
+    let rich_ok = match rich.signature {
+        Some(sig) => sig.name.value == "add"
+            && param_count(sig) == 2
+            && first_param_matches(sig, "x", "Int")
+            && second_param_matches(sig, "values", "Vec[String]")
+            && type_text(sig.return_type) == "Result[Int,ParseError]"
+            && generic_params_text(sig.generic_params) == ""
+            && sig.effect_names == "io,fs"
+            && sig.capability_names == "io",
+        None => false,
+    };
+    let no_params_ok = match no_params.signature {
+        Some(sig) => sig.name.value == "main"
+            && param_count(sig) == 0
+            && type_text(sig.return_type) == "Int"
+            && generic_params_text(sig.generic_params) == ""
+            && sig.effect_names == "io"
+            && sig.capability_names == "io",
+        None => false,
+    };
+    let param_list_ok = vec.vec_len(param_list.params) == 2
+        && match vec.get(param_list.params, 0) {
+            Some(param) => param_matches(param, "first", "Int"),
+            None => false,
+        }
+        && match vec.get(param_list.params, 1) {
+            Some(param) => param_matches(param, "second", "String"),
+            None => false,
+        };
+    let generic_type_ok = match generic_type.type_ref {
+        Some(type_ref) => type_text(type_ref) == "Result[Int,ParseError]" && type_arg_count(type_ref) == 2,
+        None => false,
+    };
+    let tuple_type_ok = match tuple_type.type_ref {
+        Some(type_ref) => type_text(type_ref) == "(Int,String)" && type_arg_count(type_ref) == 2,
+        None => false,
+    };
+    let fn_type_ok = match fn_type.type_ref {
+        Some(type_ref) => type_text(type_ref) == "Fn(Int,String)->Result[Int,Error]" && type_arg_count(type_ref) == 3,
+        None => false,
+    };
+    let dyn_type_ok = match dyn_type.type_ref {
+        Some(type_ref) => type_text(type_ref) == "dyn Reader",
+        None => false,
+    };
+    let hole_type_ok = match hole_type_result.type_ref {
+        Some(type_ref) => type_text(type_ref) == "_",
+        None => false,
+    };
+    let unit_type_ok = match unit_type_result.type_ref {
+        Some(type_ref) => type_text(type_ref) == "()",
+        None => false,
+    };
+    let bounded_ok = match bounded.signature {
+        Some(sig) => sig.name.value == "pick"
+            && generic_params_text(sig.generic_params) == "T:A+B"
+            && generic_param_count(sig.generic_params) == 1
+            && type_text(sig.return_type) == "T"
+            && sig.effect_names == "io",
+        None => false,
+    };
+    let missing_colon_ok = match missing_colon.diagnostic {
+        Some(diag) => diag.code.value == "E1071",
+        None => false,
+    };
+    let missing_arrow_ok = match missing_arrow.diagnostic {
+        Some(diag) => diag.code.value == "E1100",
+        None => false,
+    };
+    let unclosed_type_ok = match unclosed_type.diagnostic {
+        Some(diag) => diag.code.value == "E1067",
+        None => false,
+    };
+    let empty_generic_args_ok = diagnostic_matches(empty_generic_args.diagnostic, "E1063", 7);
+    let missing_generic_close_ok = diagnostic_matches(missing_generic_close.diagnostic, "E1067", 10);
+    let missing_paren_close_ok = diagnostic_matches(missing_paren_close.diagnostic, "E1065", 4);
+    let invalid_type_token_ok = diagnostic_matches(invalid_type_token.diagnostic, "E1060", 0);
+    let malformed_bound_list_ok = diagnostic_matches(malformed_bound_list.diagnostic, "E1115", 4);
+    let malformed_where_clause_ok = diagnostic_matches(malformed_where_clause.diagnostic, "E1023", 29);
+    rich_ok
+        && no_params_ok
+        && param_list_ok
+        && generic_type_ok
+        && tuple_type_ok
+        && fn_type_ok
+        && dyn_type_ok
+        && hole_type_ok
+        && unit_type_ok
+        && bounded_ok
+        && !has_function_signature_diagnostic(rich)
+        && !has_function_signature_diagnostic(no_params)
+        && !has_function_signature_diagnostic(bounded)
+        && !has_param_list_diagnostic(param_list)
+        && !has_type_ref_diagnostic(generic_type)
+        && !has_type_ref_diagnostic(tuple_type)
+        && !has_type_ref_diagnostic(fn_type)
+        && !has_type_ref_diagnostic(dyn_type)
+        && !has_type_ref_diagnostic(hole_type_result)
+        && !has_type_ref_diagnostic(unit_type_result)
+        && has_function_signature_diagnostic(missing_colon)
+        && missing_colon_ok
+        && has_function_signature_diagnostic(missing_arrow)
+        && missing_arrow_ok
+        && has_function_signature_diagnostic(unclosed_type)
+        && unclosed_type_ok
+        && has_type_ref_diagnostic(empty_generic_args)
+        && empty_generic_args_ok
+        && has_type_ref_diagnostic(missing_generic_close)
+        && missing_generic_close_ok
+        && has_type_ref_diagnostic(missing_paren_close)
+        && missing_paren_close_ok
+        && has_type_ref_diagnostic(invalid_type_token)
+        && invalid_type_token_ok
+        && has_generic_params_diagnostic(malformed_bound_list)
+        && malformed_bound_list_ok
+        && has_function_signature_diagnostic(malformed_where_clause)
+        && malformed_where_clause_ok
+}
+
+fn field_matches(value: AstField, name: String, type_name: String, default_text: String, public: Bool) -> Bool {
+    value.name.value == name
+        && type_text(value.type_ref) == type_name
+        && value.default_text == default_text
+        && is_public_visibility(value.visibility) == public
+}
+
+fn struct_field_matches(value: AstStructDecl, index: Int, name: String, type_name: String, default_text: String, public: Bool) -> Bool {
+    match vec.get(value.fields, index) {
+        Some(field) => field_matches(field, name, type_name, default_text, public),
+        None => false,
+    }
+}
+
+fn valid_parser_struct_declarations() -> Bool {
+    let source = source_id(7);
+    let rich = parse_struct_declaration(parser_cursor_from_source(source, "pub struct Task[T] { pub id: Int = 0, priv title: String, done: Bool, } invariant id >= 0"));
+    let empty = parse_struct_declaration(parser_cursor_from_source(source, "struct Empty {}"));
+    let generic_params = parse_optional_generic_params(parser_cursor_from_source(source, "[K, V] {"));
+    let bounded_generic_params = parse_optional_generic_params(parser_cursor_from_source(source, "[T: A + B] {"));
+    let missing_brace = parse_struct_declaration(parser_cursor_from_source(source, "struct Bad id: Int"));
+    let missing_colon = parse_struct_declaration(parser_cursor_from_source(source, "struct Bad { id Int }"));
+    let missing_comma = parse_struct_declaration(parser_cursor_from_source(source, "struct Bad { id: Int name: String }"));
+    let bad_generics = parse_struct_declaration(parser_cursor_from_source(source, "struct Bad[] {}"));
+    let rich_ok = match rich.struct_item {
+        Some(item) => item.name.value == "Task"
+            && is_public_visibility(item.visibility)
+            && generic_params_text(item.generic_params) == "T"
+            && field_count(item) == 3
+            && struct_field_matches(item, 0, "id", "Int", "0", true)
+            && struct_field_matches(item, 1, "title", "String", "", false)
+            && struct_field_matches(item, 2, "done", "Bool", "", false)
+            && item.invariant_text == "id>=0",
+        None => false,
+    };
+    let empty_ok = match empty.struct_item {
+        Some(item) => item.name.value == "Empty"
+            && !is_public_visibility(item.visibility)
+            && generic_params_text(item.generic_params) == ""
+            && field_count(item) == 0
+            && item.invariant_text == "",
+        None => false,
+    };
+    let generic_params_ok = generic_params_text(generic_params.params) == "K,V" && !has_generic_params_diagnostic(generic_params);
+    let bounded_generic_params_ok = generic_params_text(bounded_generic_params.params) == "T:A+B"
+        && generic_param_count(bounded_generic_params.params) == 1
+        && !has_generic_params_diagnostic(bounded_generic_params);
+    let missing_brace_ok = match missing_brace.diagnostic {
+        Some(diag) => diag.code.value == "E1130",
+        None => false,
+    };
+    let missing_colon_ok = match missing_colon.diagnostic {
+        Some(diag) => diag.code.value == "E1122",
+        None => false,
+    };
+    let missing_comma_ok = match missing_comma.diagnostic {
+        Some(diag) => diag.code.value == "E1131",
+        None => false,
+    };
+    let bad_generics_ok = match bad_generics.diagnostic {
+        Some(diag) => diag.code.value == "E1113",
+        None => false,
+    };
+    rich_ok
+        && empty_ok
+        && generic_params_ok
+        && bounded_generic_params_ok
+        && !has_struct_decl_diagnostic(rich)
+        && !has_struct_decl_diagnostic(empty)
+        && has_struct_decl_diagnostic(missing_brace)
+        && missing_brace_ok
+        && has_struct_decl_diagnostic(missing_colon)
+        && missing_colon_ok
+        && has_struct_decl_diagnostic(missing_comma)
+        && missing_comma_ok
+        && has_struct_decl_diagnostic(bad_generics)
+        && bad_generics_ok
+}
+
+fn enum_variant_payload_text(value: AstEnumVariant) -> String {
+    match value.payload_type {
+        Some(type_ref) => type_text(type_ref),
+        None => "",
+    }
+}
+
+fn variant_matches(value: AstEnumVariant, name: String, payload_type_name: String) -> Bool {
+    value.name.value == name && enum_variant_payload_text(value) == payload_type_name
+}
+
+fn enum_variant_matches(value: AstEnumDecl, index: Int, name: String, payload_type_name: String) -> Bool {
+    match vec.get(value.variants, index) {
+        Some(variant) => variant_matches(variant, name, payload_type_name),
+        None => false,
+    }
+}
+
+fn valid_parser_enum_declarations() -> Bool {
+    let source = source_id(8);
+    let rich = parse_enum_declaration(parser_cursor_from_source(source, "pub enum ResultBox[T] { Ok(T), Err(String), Pair((Int, String)), Empty, }"));
+    let empty = parse_enum_declaration(parser_cursor_from_source(source, "enum Empty {}"));
+    let missing_brace = parse_enum_declaration(parser_cursor_from_source(source, "enum Bad Red,"));
+    let missing_name = parse_enum_declaration(parser_cursor_from_source(source, "enum Bad { , }"));
+    let missing_payload = parse_enum_declaration(parser_cursor_from_source(source, "enum Bad { Some() }"));
+    let unclosed_payload = parse_enum_declaration(parser_cursor_from_source(source, "enum Bad { Some(Int }"));
+    let missing_comma = parse_enum_declaration(parser_cursor_from_source(source, "enum Bad { A B }"));
+    let bad_generics = parse_enum_declaration(parser_cursor_from_source(source, "enum Bad[] {}"));
+    let rich_ok = match rich.enum_item {
+        Some(item) => item.name.value == "ResultBox"
+            && is_public_visibility(item.visibility)
+            && generic_params_text(item.generic_params) == "T"
+            && variant_count(item) == 4
+            && enum_variant_matches(item, 0, "Ok", "T")
+            && enum_variant_matches(item, 1, "Err", "String")
+            && enum_variant_matches(item, 2, "Pair", "(Int,String)")
+            && enum_variant_matches(item, 3, "Empty", ""),
+        None => false,
+    };
+    let empty_ok = match empty.enum_item {
+        Some(item) => item.name.value == "Empty"
+            && !is_public_visibility(item.visibility)
+            && generic_params_text(item.generic_params) == ""
+            && variant_count(item) == 0,
+        None => false,
+    };
+    let missing_brace_ok = match missing_brace.diagnostic {
+        Some(diag) => diag.code.value == "E1160",
+        None => false,
+    };
+    let missing_name_ok = match missing_name.diagnostic {
+        Some(diag) => diag.code.value == "E1150",
+        None => false,
+    };
+    let missing_payload_ok = match missing_payload.diagnostic {
+        Some(diag) => diag.code.value == "E1063",
+        None => false,
+    };
+    let unclosed_payload_ok = match unclosed_payload.diagnostic {
+        Some(diag) => diag.code.value == "E1152",
+        None => false,
+    };
+    let missing_comma_ok = match missing_comma.diagnostic {
+        Some(diag) => diag.code.value == "E1161",
+        None => false,
+    };
+    let bad_generics_ok = match bad_generics.diagnostic {
+        Some(diag) => diag.code.value == "E1113",
+        None => false,
+    };
+    rich_ok
+        && empty_ok
+        && !has_enum_decl_diagnostic(rich)
+        && !has_enum_decl_diagnostic(empty)
+        && has_enum_decl_diagnostic(missing_brace)
+        && missing_brace_ok
+        && has_enum_decl_diagnostic(missing_name)
+        && missing_name_ok
+        && has_enum_decl_diagnostic(missing_payload)
+        && missing_payload_ok
+        && has_enum_decl_diagnostic(unclosed_payload)
+        && unclosed_payload_ok
+        && has_enum_decl_diagnostic(missing_comma)
+        && missing_comma_ok
+        && has_enum_decl_diagnostic(bad_generics)
+        && bad_generics_ok
+}
+
+fn type_alias_matches(value: AstTypeAliasDecl, name: String, generic_params: String, target_type_name: String) -> Bool {
+    value.name.value == name
+        && generic_params_text(value.generic_params) == generic_params
+        && type_text(value.target_type) == target_type_name
+}
+
+fn const_matches(value: AstConstDecl, name: String, type_name: String, initializer_text: String) -> Bool {
+    value.name.value == name
+        && type_text(value.type_ref) == type_name
+        && value.initializer_text == initializer_text
+}
+
+fn valid_parser_alias_and_const_declarations() -> Bool {
+    let source = source_id(9);
+    let alias = parse_type_alias_declaration(parser_cursor_from_source(source, "type Score[T] = Result[T, Int];"));
+    let simple_alias = parse_type_alias_declaration(parser_cursor_from_source(source, "type Count = Int;"));
+    let const_value = parse_const_declaration(parser_cursor_from_source(source, "const BONUS: Count = BASE + 2;"));
+    let const_block = parse_const_declaration(parser_cursor_from_source(source, "const SELECT: Int = if true { 1 } else { 2 };"));
+    let public_alias = parse_type_alias_declaration(parser_cursor_from_source(source, "pub type Count = Int;"));
+    let missing_alias_eq = parse_type_alias_declaration(parser_cursor_from_source(source, "type Count Int;"));
+    let missing_alias_target = parse_type_alias_declaration(parser_cursor_from_source(source, "type Count = ;"));
+    let missing_alias_semi = parse_type_alias_declaration(parser_cursor_from_source(source, "type Count = Int"));
+    let public_const = parse_const_declaration(parser_cursor_from_source(source, "pub const BASE: Int = 40;"));
+    let missing_const_colon = parse_const_declaration(parser_cursor_from_source(source, "const BASE Int = 40;"));
+    let missing_const_eq = parse_const_declaration(parser_cursor_from_source(source, "const BASE: Int 40;"));
+    let missing_const_initializer = parse_const_declaration(parser_cursor_from_source(source, "const BASE: Int = ;"));
+    let missing_const_semi = parse_const_declaration(parser_cursor_from_source(source, "const BASE: Int = 40"));
+    let alias_ok = match alias.alias_item {
+        Some(item) => type_alias_matches(item, "Score", "T", "Result[T,Int]"),
+        None => false,
+    };
+    let simple_alias_ok = match simple_alias.alias_item {
+        Some(item) => type_alias_matches(item, "Count", "", "Int"),
+        None => false,
+    };
+    let const_ok = match const_value.const_item {
+        Some(item) => const_matches(item, "BONUS", "Count", "BASE+2"),
+        None => false,
+    };
+    let const_block_ok = match const_block.const_item {
+        Some(item) => const_matches(item, "SELECT", "Int", "iftrue{1}else{2}"),
+        None => false,
+    };
+    let public_alias_ok = match public_alias.diagnostic {
+        Some(diag) => diag.code.value == "E1180",
+        None => false,
+    };
+    let missing_alias_eq_ok = match missing_alias_eq.diagnostic {
+        Some(diag) => diag.code.value == "E1181",
+        None => false,
+    };
+    let missing_alias_target_ok = match missing_alias_target.diagnostic {
+        Some(diag) => diag.code.value == "E1063",
+        None => false,
+    };
+    let missing_alias_semi_ok = match missing_alias_semi.diagnostic {
+        Some(diag) => diag.code.value == "E1182",
+        None => false,
+    };
+    let public_const_ok = match public_const.diagnostic {
+        Some(diag) => diag.code.value == "E1190",
+        None => false,
+    };
+    let missing_const_colon_ok = match missing_const_colon.diagnostic {
+        Some(diag) => diag.code.value == "E1191",
+        None => false,
+    };
+    let missing_const_eq_ok = match missing_const_eq.diagnostic {
+        Some(diag) => diag.code.value == "E1192",
+        None => false,
+    };
+    let missing_const_initializer_ok = match missing_const_initializer.diagnostic {
+        Some(diag) => diag.code.value == "E1193",
+        None => false,
+    };
+    let missing_const_semi_ok = match missing_const_semi.diagnostic {
+        Some(diag) => diag.code.value == "E1194",
+        None => false,
+    };
+    alias_ok
+        && simple_alias_ok
+        && const_ok
+        && const_block_ok
+        && !has_type_alias_decl_diagnostic(alias)
+        && !has_type_alias_decl_diagnostic(simple_alias)
+        && !has_const_decl_diagnostic(const_value)
+        && !has_const_decl_diagnostic(const_block)
+        && has_type_alias_decl_diagnostic(public_alias)
+        && public_alias_ok
+        && has_type_alias_decl_diagnostic(missing_alias_eq)
+        && missing_alias_eq_ok
+        && has_type_alias_decl_diagnostic(missing_alias_target)
+        && missing_alias_target_ok
+        && has_type_alias_decl_diagnostic(missing_alias_semi)
+        && missing_alias_semi_ok
+        && has_const_decl_diagnostic(public_const)
+        && public_const_ok
+        && has_const_decl_diagnostic(missing_const_colon)
+        && missing_const_colon_ok
+        && has_const_decl_diagnostic(missing_const_eq)
+        && missing_const_eq_ok
+        && has_const_decl_diagnostic(missing_const_initializer)
+        && missing_const_initializer_ok
+        && has_const_decl_diagnostic(missing_const_semi)
+        && missing_const_semi_ok
+}
+
+fn trait_method_matches(value: AstTraitDecl, index: Int, name: String, return_type_name: String, effect_names: String, capability_names: String) -> Bool {
+    match vec.get(value.methods, index) {
+        Some(method) => method.name.value == name
+            && type_text(method.return_type) == return_type_name
+            && method.effect_names == effect_names
+            && method.capability_names == capability_names,
+        None => false,
+    }
+}
+
+fn impl_matches(value: AstImplDecl, head_type_name: String, has_block: Bool, body_text: String) -> Bool {
+    type_text(value.head_type) == head_type_name
+        && value.has_block == has_block
+        && value.body_text == body_text
+}
+
+fn valid_parser_trait_and_impl_declarations() -> Bool {
+    let source = source_id(10);
+    let marker_trait = parse_trait_declaration(parser_cursor_from_source(source, "pub trait Order[T];"));
+    let method_trait = parse_trait_declaration(parser_cursor_from_source(source, "trait Score[T] { fn score(self: T) -> Int; async fn fetch(self: T) -> Result[Int, Error] effects { io } capabilities { io }; }"));
+    let empty_trait = parse_trait_declaration(parser_cursor_from_source(source, "trait Empty {}"));
+    let missing_trait_delimiter = parse_trait_declaration(parser_cursor_from_source(source, "trait Bad[T] fn nope"));
+    let missing_method_semicolon = parse_trait_declaration(parser_cursor_from_source(source, "trait Bad { fn score(self: Bad) -> Int }"));
+    let bad_method = parse_trait_declaration(parser_cursor_from_source(source, "trait Bad { let x }"));
+    let marker_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl Order[Int];"));
+    let block_impl = parse_impl_declaration(parser_cursor_from_source(source, "pub impl User { fn new(age: Int) -> User { User { age: age } } }"));
+    let empty_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl User {}"));
+    let missing_impl_head = parse_impl_declaration(parser_cursor_from_source(source, "impl ;"));
+    let missing_impl_tail = parse_impl_declaration(parser_cursor_from_source(source, "impl User fn bad"));
+    let unclosed_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl User { fn new() -> User { User {} }"));
+    let marker_trait_ok = match marker_trait.trait_item {
+        Some(item) => item.name.value == "Order"
+            && is_public_visibility(item.visibility)
+            && generic_params_text(item.generic_params) == "T"
+            && trait_method_count(item) == 0,
+        None => false,
+    };
+    let method_trait_ok = match method_trait.trait_item {
+        Some(item) => item.name.value == "Score"
+            && !is_public_visibility(item.visibility)
+            && generic_params_text(item.generic_params) == "T"
+            && trait_method_count(item) == 2
+            && trait_method_matches(item, 0, "score", "Int", "", "")
+            && trait_method_matches(item, 1, "fetch", "Result[Int,Error]", "io", "io"),
+        None => false,
+    };
+    let empty_trait_ok = match empty_trait.trait_item {
+        Some(item) => item.name.value == "Empty"
+            && trait_method_count(item) == 0,
+        None => false,
+    };
+    let missing_trait_delimiter_ok = match missing_trait_delimiter.diagnostic {
+        Some(diag) => diag.code.value == "E1210",
+        None => false,
+    };
+    let missing_method_semicolon_ok = match missing_method_semicolon.diagnostic {
+        Some(diag) => diag.code.value == "E1200",
+        None => false,
+    };
+    let bad_method_ok = match bad_method.diagnostic {
+        Some(diag) => diag.code.value == "E1050",
+        None => false,
+    };
+    let marker_impl_ok = match marker_impl.impl_item {
+        Some(item) => impl_matches(item, "Order[Int]", false, ""),
+        None => false,
+    };
+    let block_impl_ok = match block_impl.impl_item {
+        Some(item) => is_public_visibility(item.visibility)
+            && impl_matches(item, "User", true, "fnnew(age:Int)->User{User{age:age}}"),
+        None => false,
+    };
+    let empty_impl_ok = match empty_impl.impl_item {
+        Some(item) => impl_matches(item, "User", true, ""),
+        None => false,
+    };
+    let missing_impl_head_ok = match missing_impl_head.diagnostic {
+        Some(diag) => diag.code.value == "E1063",
+        None => false,
+    };
+    let missing_impl_tail_ok = match missing_impl_tail.diagnostic {
+        Some(diag) => diag.code.value == "E1235",
+        None => false,
+    };
+    let unclosed_impl_ok = match unclosed_impl.diagnostic {
+        Some(diag) => diag.code.value == "E1234",
+        None => false,
+    };
+    marker_trait_ok
+        && method_trait_ok
+        && empty_trait_ok
+        && !has_trait_decl_diagnostic(marker_trait)
+        && !has_trait_decl_diagnostic(method_trait)
+        && !has_trait_decl_diagnostic(empty_trait)
+        && has_trait_decl_diagnostic(missing_trait_delimiter)
+        && missing_trait_delimiter_ok
+        && has_trait_decl_diagnostic(missing_method_semicolon)
+        && missing_method_semicolon_ok
+        && has_trait_decl_diagnostic(bad_method)
+        && bad_method_ok
+        && marker_impl_ok
+        && block_impl_ok
+        && empty_impl_ok
+        && !has_impl_decl_diagnostic(marker_impl)
+        && !has_impl_decl_diagnostic(block_impl)
+        && !has_impl_decl_diagnostic(empty_impl)
+        && has_impl_decl_diagnostic(missing_impl_head)
+        && missing_impl_head_ok
+        && has_impl_decl_diagnostic(missing_impl_tail)
+        && missing_impl_tail_ok
+        && has_impl_decl_diagnostic(unclosed_impl)
+        && unclosed_impl_ok
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let left = span(source_id(1), 0, 4);
+    let right = span(source_id(1), 4, 10);
+    let merged = merge(left, right);
+    let code = diagnostic_code("E1001");
+    let diag = with_help(error(code, merged, "syntax error"), "check the token near this span");
+    let edit = text_edit(empty_span(source_id(1), 10), ";");
+    let fix = machine_fix("insert semicolon", edit);
+    let ident = token(Identifier(), span(source_id(1), 0, 5), "value");
+    let ident_again = token(Identifier(), span(source_id(1), 0, 5), "value");
+    let int_lit = token(IntegerLiteral(), span(source_id(1), 8, 10), "42");
+    let keyword = classify_word("fn", span(source_id(1), 11, 13));
+    let name_result = ast_name_from_token(token(Identifier(), span(source_id(1), 0, 5), "value"));
+    let main_symbol = symbol(symbol_id(1), "main", IrFunctionSymbol(), span(source_id(1), 0, 10));
+    let main_type = type_def(type_id(1), "Int", IrIntType(), span(source_id(1), 0, 10));
+    let stats = program_stats(1, 1, 1);
+
+    if is_error(diag) && width(diag.span) == 10 && fix.edit.replacement == ";" && same_kind(ident, ident_again) && is_literal(int_lit) && is_keyword(keyword, "fn") && is_identifier_continue("9") && valid_lexer_scan() && valid_parser_cursor() && valid_parser_declarations() && valid_parser_item_headers() && valid_parser_function_signatures() && valid_parser_struct_declarations() && valid_parser_enum_declarations() && valid_parser_alias_and_const_declarations() && valid_parser_trait_and_impl_declarations() && valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1 {
+        print_int(0);
+        0
+    } else {
+        print_int(1);
+        1
+    }
+}

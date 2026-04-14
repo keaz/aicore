@@ -1,0 +1,140 @@
+module compiler.diagnostics;
+
+import compiler.source;
+
+pub enum Severity {
+    Error,
+    Warning,
+    Note,
+}
+
+pub enum DiagnosticHelp {
+    NoHelp,
+    Help(String),
+}
+
+pub struct DiagnosticCode {
+    pub value: String,
+}
+
+pub struct Diagnostic {
+    pub code: DiagnosticCode,
+    pub severity: Severity,
+    pub span: SourceSpan,
+    pub message: String,
+    pub help: DiagnosticHelp,
+}
+
+pub struct TextEdit {
+    pub span: SourceSpan,
+    pub replacement: String,
+}
+
+pub enum FixApplicability {
+    MachineApplicable,
+    MaybeIncorrect,
+    Manual,
+}
+
+pub struct DiagnosticFix {
+    pub title: String,
+    pub edit: TextEdit,
+    pub applicability: FixApplicability,
+}
+
+pub fn diagnostic_code(value: String) -> DiagnosticCode {
+    DiagnosticCode { value: value }
+}
+
+pub fn text_edit(span: SourceSpan, replacement: String) -> TextEdit {
+    TextEdit {
+        span: span,
+        replacement: replacement,
+    }
+}
+
+pub fn diagnostic(
+    severity: Severity,
+    code: DiagnosticCode,
+    span: SourceSpan,
+    message: String,
+    help: DiagnosticHelp,
+) -> Diagnostic {
+    Diagnostic {
+        code: code,
+        severity: severity,
+        span: span,
+        message: message,
+        help: help,
+    }
+}
+
+pub fn error(code: DiagnosticCode, span: SourceSpan, message: String) -> Diagnostic {
+    diagnostic(Error(), code, span, message, NoHelp())
+}
+
+pub fn warning(code: DiagnosticCode, span: SourceSpan, message: String) -> Diagnostic {
+    diagnostic(Warning(), code, span, message, NoHelp())
+}
+
+pub fn note(code: DiagnosticCode, span: SourceSpan, message: String) -> Diagnostic {
+    diagnostic(Note(), code, span, message, NoHelp())
+}
+
+pub fn with_help(value: Diagnostic, help: String) -> Diagnostic {
+    Diagnostic {
+        code: value.code,
+        severity: value.severity,
+        span: value.span,
+        message: value.message,
+        help: Help(help),
+    }
+}
+
+pub fn is_error(value: Diagnostic) -> Bool {
+    match value.severity {
+        Error => true,
+        Warning => false,
+        Note => false,
+    }
+}
+
+pub fn is_warning(value: Diagnostic) -> Bool {
+    match value.severity {
+        Error => false,
+        Warning => true,
+        Note => false,
+    }
+}
+
+pub fn is_note(value: Diagnostic) -> Bool {
+    match value.severity {
+        Error => false,
+        Warning => false,
+        Note => true,
+    }
+}
+
+pub fn same_code(left: Diagnostic, right: Diagnostic) -> Bool {
+    left.code.value == right.code.value
+}
+
+pub fn primary_span(value: Diagnostic) -> SourceSpan {
+    value.span
+}
+
+pub fn machine_fix(title: String, edit: TextEdit) -> DiagnosticFix {
+    DiagnosticFix {
+        title: title,
+        edit: edit,
+        applicability: MachineApplicable(),
+    }
+}
+
+pub fn manual_fix(title: String, edit: TextEdit) -> DiagnosticFix {
+    DiagnosticFix {
+        title: title,
+        edit: edit,
+        applicability: Manual(),
+    }
+}

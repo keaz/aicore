@@ -1,0 +1,7 @@
+[package]
+name = "aic_compiler_ir"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../source" }

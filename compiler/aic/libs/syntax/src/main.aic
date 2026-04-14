@@ -1,0 +1,184 @@
+module compiler.syntax;
+
+import compiler.source;
+
+pub enum TokenKind {
+    Identifier,
+    Keyword,
+    IntegerLiteral,
+    FloatLiteral,
+    StringLiteral,
+    TemplateLiteral,
+    CharLiteral,
+    Operator,
+    Delimiter,
+    Comment,
+    Whitespace,
+    EndOfFile,
+    Invalid,
+}
+
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: SourceSpan,
+    pub lexeme: String,
+}
+
+pub fn token(kind: TokenKind, span: SourceSpan, lexeme: String) -> Token {
+    Token {
+        kind: kind,
+        span: span,
+        lexeme: lexeme,
+    }
+}
+
+pub fn eof(source: SourceId, offset: Int) -> Token
+requires offset >= 0
+ensures result.span.start == offset && result.span.end == offset {
+    Token {
+        kind: EndOfFile(),
+        span: empty_span(source, offset),
+        lexeme: "",
+    }
+}
+
+pub fn invalid(span: SourceSpan, lexeme: String) -> Token {
+    token(Invalid(), span, lexeme)
+}
+
+pub fn token_width(value: Token) -> Int ensures result >= 0 {
+    width(value.span)
+}
+
+pub fn is_literal(value: Token) -> Bool {
+    match value.kind {
+        IntegerLiteral => true,
+        FloatLiteral => true,
+        StringLiteral => true,
+        TemplateLiteral => true,
+        CharLiteral => true,
+        Identifier => false,
+        Keyword => false,
+        Operator => false,
+        Delimiter => false,
+        Comment => false,
+        Whitespace => false,
+        EndOfFile => false,
+        Invalid => false,
+    }
+}
+
+pub fn is_trivia(value: Token) -> Bool {
+    match value.kind {
+        Whitespace => true,
+        Comment => true,
+        Identifier => false,
+        Keyword => false,
+        IntegerLiteral => false,
+        FloatLiteral => false,
+        StringLiteral => false,
+        TemplateLiteral => false,
+        CharLiteral => false,
+        Operator => false,
+        Delimiter => false,
+        EndOfFile => false,
+        Invalid => false,
+    }
+}
+
+pub fn is_terminal(value: Token) -> Bool {
+    match value.kind {
+        EndOfFile => true,
+        Invalid => true,
+        Identifier => false,
+        Keyword => false,
+        IntegerLiteral => false,
+        FloatLiteral => false,
+        StringLiteral => false,
+        TemplateLiteral => false,
+        CharLiteral => false,
+        Operator => false,
+        Delimiter => false,
+        Comment => false,
+        Whitespace => false,
+    }
+}
+
+pub fn same_kind(left: Token, right: Token) -> Bool {
+    match left.kind {
+        Identifier => match right.kind { Identifier => true, _ => false },
+        Keyword => match right.kind { Keyword => true, _ => false },
+        IntegerLiteral => match right.kind { IntegerLiteral => true, _ => false },
+        FloatLiteral => match right.kind { FloatLiteral => true, _ => false },
+        StringLiteral => match right.kind { StringLiteral => true, _ => false },
+        TemplateLiteral => match right.kind { TemplateLiteral => true, _ => false },
+        CharLiteral => match right.kind { CharLiteral => true, _ => false },
+        Operator => match right.kind { Operator => true, _ => false },
+        Delimiter => match right.kind { Delimiter => true, _ => false },
+        Comment => match right.kind { Comment => true, _ => false },
+        Whitespace => match right.kind { Whitespace => true, _ => false },
+        EndOfFile => match right.kind { EndOfFile => true, _ => false },
+        Invalid => match right.kind { Invalid => true, _ => false },
+    }
+}
+
+pub fn same_lexeme(left: Token, right: Token) -> Bool {
+    left.lexeme == right.lexeme
+}
+
+pub fn is_keyword(value: Token, lexeme: String) -> Bool {
+    match value.kind {
+        Keyword => value.lexeme == lexeme,
+        _ => false,
+    }
+}
+
+pub fn is_operator(value: Token, lexeme: String) -> Bool {
+    match value.kind {
+        Operator => value.lexeme == lexeme,
+        _ => false,
+    }
+}
+
+pub fn is_delimiter(value: Token, lexeme: String) -> Bool {
+    match value.kind {
+        Delimiter => value.lexeme == lexeme,
+        _ => false,
+    }
+}
+
+pub fn is_ascii_digit(ch: String) -> Bool {
+    ch == "0" || ch == "1" || ch == "2" || ch == "3" || ch == "4" || ch == "5" || ch == "6" || ch == "7" || ch == "8" || ch == "9"
+}
+
+pub fn is_ascii_lower(ch: String) -> Bool {
+    ch == "a" || ch == "b" || ch == "c" || ch == "d" || ch == "e" || ch == "f" || ch == "g" || ch == "h" || ch == "i" || ch == "j" || ch == "k" || ch == "l" || ch == "m" || ch == "n" || ch == "o" || ch == "p" || ch == "q" || ch == "r" || ch == "s" || ch == "t" || ch == "u" || ch == "v" || ch == "w" || ch == "x" || ch == "y" || ch == "z"
+}
+
+pub fn is_ascii_upper(ch: String) -> Bool {
+    ch == "A" || ch == "B" || ch == "C" || ch == "D" || ch == "E" || ch == "F" || ch == "G" || ch == "H" || ch == "I" || ch == "J" || ch == "K" || ch == "L" || ch == "M" || ch == "N" || ch == "O" || ch == "P" || ch == "Q" || ch == "R" || ch == "S" || ch == "T" || ch == "U" || ch == "V" || ch == "W" || ch == "X" || ch == "Y" || ch == "Z"
+}
+
+pub fn is_ascii_alpha(ch: String) -> Bool {
+    is_ascii_lower(ch) || is_ascii_upper(ch)
+}
+
+pub fn is_identifier_start(ch: String) -> Bool {
+    is_ascii_alpha(ch) || ch == "_"
+}
+
+pub fn is_identifier_continue(ch: String) -> Bool {
+    is_identifier_start(ch) || is_ascii_digit(ch)
+}
+
+pub fn is_keyword_lexeme(lexeme: String) -> Bool {
+    lexeme == "module" || lexeme == "import" || lexeme == "pub" || lexeme == "priv" || lexeme == "fn" || lexeme == "async" || lexeme == "extern" || lexeme == "intrinsic" || lexeme == "unsafe" || lexeme == "struct" || lexeme == "enum" || lexeme == "trait" || lexeme == "impl" || lexeme == "type" || lexeme == "const" || lexeme == "let" || lexeme == "mut" || lexeme == "if" || lexeme == "else" || lexeme == "match" || lexeme == "while" || lexeme == "loop" || lexeme == "for" || lexeme == "in" || lexeme == "break" || lexeme == "continue" || lexeme == "return" || lexeme == "where" || lexeme == "requires" || lexeme == "ensures" || lexeme == "invariant" || lexeme == "effects" || lexeme == "capabilities" || lexeme == "true" || lexeme == "false" || lexeme == "await"
+}
+
+pub fn classify_word(lexeme: String, span: SourceSpan) -> Token {
+    if is_keyword_lexeme(lexeme) {
+        token(Keyword(), span, lexeme)
+    } else {
+        token(Identifier(), span, lexeme)
+    }
+}

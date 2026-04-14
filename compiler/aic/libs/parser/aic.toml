@@ -1,0 +1,11 @@
+[package]
+name = "aic_compiler_parser"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../source" }
+aic_compiler_diagnostics = { path = "../diagnostics" }
+aic_compiler_syntax = { path = "../syntax" }
+aic_compiler_lexer = { path = "../lexer" }
+aic_compiler_ast = { path = "../ast" }

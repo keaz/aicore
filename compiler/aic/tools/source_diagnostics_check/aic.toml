@@ -1,0 +1,13 @@
+[package]
+name = "source_diagnostics_check"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../../libs/source" }
+aic_compiler_diagnostics = { path = "../../libs/diagnostics" }
+aic_compiler_syntax = { path = "../../libs/syntax" }
+aic_compiler_lexer = { path = "../../libs/lexer" }
+aic_compiler_parser = { path = "../../libs/parser" }
+aic_compiler_ast = { path = "../../libs/ast" }
+aic_compiler_ir = { path = "../../libs/ir" }

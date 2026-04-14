@@ -1,0 +1,773 @@
+module compiler.ast;
+
+import compiler.source;
+import compiler.syntax;
+import std.option;
+import std.result;
+import std.string;
+import std.vec;
+
+pub enum AstError {
+    ExpectedIdentifier,
+    ExpectedKeyword,
+    EmptyName,
+}
+
+pub enum AstVisibility {
+    PrivateVisibility,
+    PublicVisibility,
+    PublicCrateVisibility,
+}
+
+pub enum AstItemKind {
+    FunctionItem,
+    StructItem,
+    EnumItem,
+    TraitItem,
+    ImplItem,
+    TypeAliasItem,
+    ConstItem,
+}
+
+pub enum AstTypeKind {
+    AstUnitType,
+    AstNamedType,
+    AstDynTraitType,
+    AstHoleType,
+}
+
+pub enum AstLiteralKind {
+    AstIntLiteral,
+    AstFloatLiteral,
+    AstBoolLiteral,
+    AstStringLiteral,
+    AstCharLiteral,
+    AstUnitLiteral,
+}
+
+pub struct AstName {
+    pub value: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstModulePath {
+    pub text: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstModuleDecl {
+    pub path: AstModulePath,
+    pub span: SourceSpan,
+}
+
+pub struct AstImportDecl {
+    pub path: AstModulePath,
+    pub span: SourceSpan,
+}
+
+pub struct AstItemHeader {
+    pub kind: AstItemKind,
+    pub visibility: AstVisibility,
+    pub name: AstName,
+    pub span: SourceSpan,
+}
+
+pub struct AstType {
+    pub kind: AstTypeKind,
+    pub name: String,
+    pub direct_arg_count: Int,
+    pub nodes: Vec[AstTypeNode],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstTypeNode {
+    pub kind: AstTypeKind,
+    pub name: String,
+    pub direct_arg_count: Int,
+    pub depth: Int,
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstGenericParam {
+    pub name: AstName,
+    pub bounds: Vec[AstName],
+    pub span: SourceSpan,
+}
+
+pub struct AstGenericParamList {
+    pub params: Vec[AstGenericParam],
+    pub span: SourceSpan,
+}
+
+pub struct AstParam {
+    pub name: AstName,
+    pub type_ref: AstType,
+    pub span: SourceSpan,
+}
+
+pub struct AstFunctionSignature {
+    pub name: AstName,
+    pub generic_params: AstGenericParamList,
+    pub params: Vec[AstParam],
+    pub return_type: AstType,
+    pub effect_names: String,
+    pub capability_names: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstField {
+    pub name: AstName,
+    pub visibility: AstVisibility,
+    pub type_ref: AstType,
+    pub default_text: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstStructDecl {
+    pub name: AstName,
+    pub visibility: AstVisibility,
+    pub generic_params: AstGenericParamList,
+    pub fields: Vec[AstField],
+    pub invariant_text: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstEnumVariant {
+    pub name: AstName,
+    pub payload_type: Option[AstType],
+    pub span: SourceSpan,
+}
+
+pub struct AstEnumDecl {
+    pub name: AstName,
+    pub visibility: AstVisibility,
+    pub generic_params: AstGenericParamList,
+    pub variants: Vec[AstEnumVariant],
+    pub span: SourceSpan,
+}
+
+pub struct AstTypeAliasDecl {
+    pub name: AstName,
+    pub generic_params: AstGenericParamList,
+    pub target_type: AstType,
+    pub span: SourceSpan,
+}
+
+pub struct AstConstDecl {
+    pub name: AstName,
+    pub type_ref: AstType,
+    pub initializer_text: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstTraitDecl {
+    pub name: AstName,
+    pub visibility: AstVisibility,
+    pub generic_params: AstGenericParamList,
+    pub methods: Vec[AstFunctionSignature],
+    pub span: SourceSpan,
+}
+
+pub struct AstImplDecl {
+    pub visibility: AstVisibility,
+    pub head_type: AstType,
+    pub body_text: String,
+    pub has_block: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct AstLiteral {
+    pub kind: AstLiteralKind,
+    pub token: Token,
+}
+
+pub fn ast_name(value: String, span: SourceSpan) -> AstName {
+    AstName {
+        value: value,
+        span: span,
+    }
+}
+
+pub fn module_path(text: String, span: SourceSpan) -> AstModulePath {
+    AstModulePath {
+        text: text,
+        span: span,
+    }
+}
+
+pub fn module_decl(path: AstModulePath, span: SourceSpan) -> AstModuleDecl {
+    AstModuleDecl {
+        path: path,
+        span: span,
+    }
+}
+
+pub fn import_decl(path: AstModulePath, span: SourceSpan) -> AstImportDecl {
+    AstImportDecl {
+        path: path,
+        span: span,
+    }
+}
+
+pub fn ast_name_from_token(value: Token) -> Result[AstName, AstError] {
+    match value.kind {
+        Identifier => Ok(AstName {
+            value: value.lexeme,
+            span: value.span,
+        }),
+        _ => Err(ExpectedIdentifier()),
+    }
+}
+
+pub fn keyword_name_from_token(value: Token) -> Result[AstName, AstError] {
+    match value.kind {
+        Keyword => Ok(AstName {
+            value: value.lexeme,
+            span: value.span,
+        }),
+        _ => Err(ExpectedKeyword()),
+    }
+}
+
+pub fn item_header(kind: AstItemKind, visibility: AstVisibility, name: AstName, span: SourceSpan) -> AstItemHeader {
+    AstItemHeader {
+        kind: kind,
+        visibility: visibility,
+        name: name,
+        span: span,
+    }
+}
+
+pub fn ast_type_node(kind: AstTypeKind, name: String, direct_arg_count: Int, depth: Int, span: SourceSpan, text: String) -> AstTypeNode {
+    AstTypeNode {
+        kind: kind,
+        name: name,
+        direct_arg_count: direct_arg_count,
+        depth: depth,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_type(kind: AstTypeKind, name: String, direct_arg_count: Int, nodes: Vec[AstTypeNode], span: SourceSpan, text: String) -> AstType {
+    AstType {
+        kind: kind,
+        name: name,
+        direct_arg_count: direct_arg_count,
+        nodes: nodes,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn unit_type(span: SourceSpan) -> AstType {
+    ast_type(AstUnitType(), "", 0, vec.new_vec(), span, "()")
+}
+
+fn type_node_from_type(value: AstType, depth: Int) -> AstTypeNode {
+    ast_type_node(value.kind, value.name, value.direct_arg_count, depth, value.span, value.text)
+}
+
+fn nested_type_node(value: AstTypeNode, depth_offset: Int) -> AstTypeNode {
+    ast_type_node(value.kind, value.name, value.direct_arg_count, value.depth + depth_offset, value.span, value.text)
+}
+
+fn flatten_type_args(args: Vec[AstType]) -> Vec[AstTypeNode] {
+    let mut nodes: Vec[AstTypeNode] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(args) {
+        match vec.get(args, index) {
+            Some(arg) => if true {
+                nodes = vec.push(nodes, type_node_from_type(arg, 1));
+                let mut nested_index = 0;
+                while nested_index < vec.vec_len(arg.nodes) {
+                    match vec.get(arg.nodes, nested_index) {
+                        Some(node) => if true {
+                            nodes = vec.push(nodes, nested_type_node(node, 1));
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    nested_index = nested_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    nodes
+}
+
+fn type_args_text(args: Vec[AstType], separator: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(args) {
+        match vec.get(args, index) {
+            Some(arg) => if true {
+                parts = vec.push(parts, type_text(arg));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, separator)
+}
+
+fn named_type_text_from_args(name: String, args: Vec[AstType]) -> String {
+    if name == "Tuple" {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, "(");
+        parts = vec.push(parts, type_args_text(args, ","));
+        parts = vec.push(parts, ")");
+        string.join(parts, "")
+    } else if name == "Fn" {
+        fn_type_text_from_args(args)
+    } else if vec.vec_len(args) == 0 {
+        name
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, name);
+        parts = vec.push(parts, "[");
+        parts = vec.push(parts, type_args_text(args, ","));
+        parts = vec.push(parts, "]");
+        string.join(parts, "")
+    }
+}
+
+fn fn_type_text_from_args(args: Vec[AstType]) -> String {
+    let arg_count = vec.vec_len(args);
+    if arg_count == 0 {
+        "Fn"
+    } else {
+        let mut param_parts: Vec[String] = vec.new_vec();
+        let mut index = 0;
+        while index + 1 < arg_count {
+            match vec.get(args, index) {
+                Some(arg) => if true {
+                    param_parts = vec.push(param_parts, type_text(arg));
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
+            index = index + 1;
+        };
+        let params_text = string.join(param_parts, ",");
+        let return_text = match vec.get(args, arg_count - 1) {
+            Some(arg) => type_text(arg),
+            None => "()",
+        };
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, "Fn(");
+        parts = vec.push(parts, params_text);
+        parts = vec.push(parts, ")->");
+        parts = vec.push(parts, return_text);
+        string.join(parts, "")
+    }
+}
+
+pub fn named_type(name: String, args: Vec[AstType], span: SourceSpan) -> AstType {
+    ast_type(AstNamedType(), name, vec.vec_len(args), flatten_type_args(args), span, named_type_text_from_args(name, args))
+}
+
+pub fn dyn_trait_type(name: String, span: SourceSpan) -> AstType {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "dyn ");
+    parts = vec.push(parts, name);
+    ast_type(AstDynTraitType(), name, 0, vec.new_vec(), span, string.join(parts, ""))
+}
+
+pub fn hole_type(span: SourceSpan) -> AstType {
+    ast_type(AstHoleType(), "", 0, vec.new_vec(), span, "_")
+}
+
+pub fn type_with_span(value: AstType, span: SourceSpan) -> AstType {
+    ast_type(value.kind, value.name, value.direct_arg_count, value.nodes, span, value.text)
+}
+
+pub fn ast_generic_param(name: AstName, bounds: Vec[AstName], span: SourceSpan) -> AstGenericParam {
+    AstGenericParam {
+        name: name,
+        bounds: bounds,
+        span: span,
+    }
+}
+
+pub fn ast_generic_params(params: Vec[AstGenericParam], span: SourceSpan) -> AstGenericParamList {
+    AstGenericParamList {
+        params: params,
+        span: span,
+    }
+}
+
+pub fn empty_generic_params(span: SourceSpan) -> AstGenericParamList {
+    ast_generic_params(vec.new_vec(), span)
+}
+
+pub fn ast_param(name: AstName, type_ref: AstType, span: SourceSpan) -> AstParam {
+    AstParam {
+        name: name,
+        type_ref: type_ref,
+        span: span,
+    }
+}
+
+pub fn function_signature(
+    name: AstName,
+    generic_params: AstGenericParamList,
+    params: Vec[AstParam],
+    return_type: AstType,
+    effect_names: String,
+    capability_names: String,
+    span: SourceSpan,
+) -> AstFunctionSignature {
+    AstFunctionSignature {
+        name: name,
+        generic_params: generic_params,
+        params: params,
+        return_type: return_type,
+        effect_names: effect_names,
+        capability_names: capability_names,
+        span: span,
+    }
+}
+
+pub fn ast_field(name: AstName, visibility: AstVisibility, type_ref: AstType, default_text: String, span: SourceSpan) -> AstField {
+    AstField {
+        name: name,
+        visibility: visibility,
+        type_ref: type_ref,
+        default_text: default_text,
+        span: span,
+    }
+}
+
+pub fn struct_decl(
+    name: AstName,
+    visibility: AstVisibility,
+    generic_params: AstGenericParamList,
+    fields: Vec[AstField],
+    invariant_text: String,
+    span: SourceSpan,
+) -> AstStructDecl {
+    AstStructDecl {
+        name: name,
+        visibility: visibility,
+        generic_params: generic_params,
+        fields: fields,
+        invariant_text: invariant_text,
+        span: span,
+    }
+}
+
+pub fn enum_variant(name: AstName, payload_type: Option[AstType], span: SourceSpan) -> AstEnumVariant {
+    AstEnumVariant {
+        name: name,
+        payload_type: payload_type,
+        span: span,
+    }
+}
+
+pub fn enum_decl(
+    name: AstName,
+    visibility: AstVisibility,
+    generic_params: AstGenericParamList,
+    variants: Vec[AstEnumVariant],
+    span: SourceSpan,
+) -> AstEnumDecl {
+    AstEnumDecl {
+        name: name,
+        visibility: visibility,
+        generic_params: generic_params,
+        variants: variants,
+        span: span,
+    }
+}
+
+pub fn type_alias_decl(name: AstName, generic_params: AstGenericParamList, target_type: AstType, span: SourceSpan) -> AstTypeAliasDecl {
+    AstTypeAliasDecl {
+        name: name,
+        generic_params: generic_params,
+        target_type: target_type,
+        span: span,
+    }
+}
+
+pub fn const_decl(name: AstName, type_ref: AstType, initializer_text: String, span: SourceSpan) -> AstConstDecl {
+    AstConstDecl {
+        name: name,
+        type_ref: type_ref,
+        initializer_text: initializer_text,
+        span: span,
+    }
+}
+
+pub fn trait_decl(
+    name: AstName,
+    visibility: AstVisibility,
+    generic_params: AstGenericParamList,
+    methods: Vec[AstFunctionSignature],
+    span: SourceSpan,
+) -> AstTraitDecl {
+    AstTraitDecl {
+        name: name,
+        visibility: visibility,
+        generic_params: generic_params,
+        methods: methods,
+        span: span,
+    }
+}
+
+pub fn impl_decl(visibility: AstVisibility, head_type: AstType, body_text: String, has_block: Bool, span: SourceSpan) -> AstImplDecl {
+    AstImplDecl {
+        visibility: visibility,
+        head_type: head_type,
+        body_text: body_text,
+        has_block: has_block,
+        span: span,
+    }
+}
+
+pub fn is_public_visibility(value: AstVisibility) -> Bool {
+    match value {
+        PublicVisibility => true,
+        PublicCrateVisibility => true,
+        PrivateVisibility => false,
+    }
+}
+
+pub fn is_value_item(value: AstItemKind) -> Bool {
+    match value {
+        FunctionItem => true,
+        ConstItem => true,
+        StructItem => false,
+        EnumItem => false,
+        TraitItem => false,
+        ImplItem => false,
+        TypeAliasItem => false,
+    }
+}
+
+pub fn is_type_item(value: AstItemKind) -> Bool {
+    match value {
+        StructItem => true,
+        EnumItem => true,
+        TraitItem => true,
+        TypeAliasItem => true,
+        FunctionItem => false,
+        ImplItem => false,
+        ConstItem => false,
+    }
+}
+
+pub fn same_name(left: AstName, right: AstName) -> Bool {
+    left.value == right.value
+}
+
+pub fn header_name(value: AstItemHeader) -> AstName {
+    value.name
+}
+
+pub fn header_span(value: AstItemHeader) -> SourceSpan {
+    value.span
+}
+
+pub fn param_count(value: AstFunctionSignature) -> Int {
+    vec.vec_len(value.params)
+}
+
+pub fn type_arg_count(value: AstType) -> Int {
+    value.direct_arg_count
+}
+
+pub fn type_text(value: AstType) -> String {
+    value.text
+}
+
+pub fn generic_param_count(value: AstGenericParamList) -> Int {
+    vec.vec_len(value.params)
+}
+
+pub fn generic_bound_count(value: AstGenericParam) -> Int {
+    vec.vec_len(value.bounds)
+}
+
+fn generic_bound_text(bounds: Vec[AstName]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(bounds) {
+        match vec.get(bounds, index) {
+            Some(bound) => if true {
+                parts = vec.push(parts, bound.value);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "+")
+}
+
+pub fn generic_param_text(value: AstGenericParam) -> String {
+    if vec.vec_len(value.bounds) == 0 {
+        value.name.value
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, value.name.value);
+        parts = vec.push(parts, ":");
+        parts = vec.push(parts, generic_bound_text(value.bounds));
+        string.join(parts, "")
+    }
+}
+
+pub fn generic_params_text(value: AstGenericParamList) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(value.params) {
+        match vec.get(value.params, index) {
+            Some(param) => if true {
+                parts = vec.push(parts, generic_param_text(param));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, ",")
+}
+
+fn generic_bound_exists(bounds: Vec[AstName], candidate: AstName) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(bounds) {
+        match vec.get(bounds, index) {
+            Some(bound) => if bound.value == candidate.value {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn generic_param_with_bounds(value: AstGenericParam, bounds: Vec[AstName]) -> AstGenericParam {
+    let mut next_bounds = value.bounds;
+    let mut index = 0;
+    while index < vec.vec_len(bounds) {
+        match vec.get(bounds, index) {
+            Some(bound) => if generic_bound_exists(next_bounds, bound) {
+                ()
+            } else {
+                next_bounds = vec.push(next_bounds, bound);
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    ast_generic_param(value.name, next_bounds, value.span)
+}
+
+pub fn generic_params_has_name(value: AstGenericParamList, name: AstName) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(value.params) {
+        match vec.get(value.params, index) {
+            Some(param) => if param.name.value == name.value {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn generic_params_with_bounds(value: AstGenericParamList, name: AstName, bounds: Vec[AstName], span: SourceSpan) -> AstGenericParamList {
+    let mut params: Vec[AstGenericParam] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(value.params) {
+        match vec.get(value.params, index) {
+            Some(param) => if param.name.value == name.value {
+                params = vec.push(params, generic_param_with_bounds(param, bounds));
+            } else {
+                params = vec.push(params, param);
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    ast_generic_params(params, span)
+}
+
+pub fn field_count(value: AstStructDecl) -> Int {
+    vec.vec_len(value.fields)
+}
+
+pub fn variant_count(value: AstEnumDecl) -> Int {
+    vec.vec_len(value.variants)
+}
+
+pub fn trait_method_count(value: AstTraitDecl) -> Int {
+    vec.vec_len(value.methods)
+}
+
+pub fn literal_from_token(value: Token) -> Result[AstLiteral, AstError] {
+    match value.kind {
+        IntegerLiteral => Ok(AstLiteral {
+            kind: AstIntLiteral(),
+            token: value,
+        }),
+        FloatLiteral => Ok(AstLiteral {
+            kind: AstFloatLiteral(),
+            token: value,
+        }),
+        StringLiteral => Ok(AstLiteral {
+            kind: AstStringLiteral(),
+            token: value,
+        }),
+        CharLiteral => Ok(AstLiteral {
+            kind: AstCharLiteral(),
+            token: value,
+        }),
+        Keyword => if value.lexeme == "true" || value.lexeme == "false" {
+            Ok(AstLiteral {
+                kind: AstBoolLiteral(),
+                token: value,
+            })
+        } else {
+            Err(ExpectedIdentifier())
+        },
+        _ => Err(ExpectedIdentifier()),
+    }
+}
+
+pub fn is_numeric_literal(value: AstLiteral) -> Bool {
+    match value.kind {
+        AstIntLiteral => true,
+        AstFloatLiteral => true,
+        AstBoolLiteral => false,
+        AstStringLiteral => false,
+        AstCharLiteral => false,
+        AstUnitLiteral => false,
+    }
+}
