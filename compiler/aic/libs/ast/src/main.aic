@@ -351,6 +351,7 @@ pub struct AstImplDecl {
 pub struct AstProgramItem {
     pub kind: AstItemKind,
     pub name: AstName,
+    pub visibility: AstVisibility,
     pub attrs: Vec[AstAttribute],
     pub function_item: Option[AstFunctionDecl],
     pub function_signature: Option[AstFunctionSignature],
@@ -467,6 +468,7 @@ pub fn ast_source_map_entry(kind: String, name: String, span: SourceSpan) -> Ast
 pub fn ast_program_item(
     kind: AstItemKind,
     name: AstName,
+    visibility: AstVisibility,
     attrs: Vec[AstAttribute],
     function_item: Option[AstFunctionDecl],
     function_signature: Option[AstFunctionSignature],
@@ -483,6 +485,7 @@ pub fn ast_program_item(
     AstProgramItem {
         kind: kind,
         name: name,
+        visibility: visibility,
         attrs: attrs,
         function_item: function_item,
         function_signature: function_signature,
@@ -1471,6 +1474,10 @@ pub fn program_item_attr_count(value: AstProgramItem) -> Int {
 
 pub fn program_item_name(value: AstProgramItem) -> String {
     value.name.value
+}
+
+pub fn program_item_visibility(value: AstProgramItem) -> AstVisibility {
+    value.visibility
 }
 
 pub fn param_attr_count(value: AstParam) -> Int {

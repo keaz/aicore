@@ -11,3 +11,4 @@ aic_compiler_lexer = { path = "../../libs/lexer" }
 aic_compiler_parser = { path = "../../libs/parser" }
 aic_compiler_ast = { path = "../../libs/ast" }
 aic_compiler_ir = { path = "../../libs/ir" }
+aic_compiler_frontend = { path = "../../libs/frontend" }

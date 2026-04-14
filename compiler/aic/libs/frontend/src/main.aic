@@ -1,0 +1,1332 @@
+module compiler.frontend;
+
+import compiler.source;
+import compiler.diagnostics;
+import compiler.ast;
+import std.option;
+import std.string;
+import std.vec;
+
+pub enum ResolverSymbolKind {
+    ResolverFunctionSymbol,
+    ResolverStructSymbol,
+    ResolverEnumSymbol,
+    ResolverVariantSymbol,
+    ResolverTraitSymbol,
+    ResolverImplSymbol,
+    ResolverConstSymbol,
+    ResolverTypeAliasSymbol,
+    ResolverFieldSymbol,
+    ResolverMethodSymbol,
+    ResolverModuleSymbol,
+}
+
+pub enum ResolverNamespace {
+    ResolverValueNamespace,
+    ResolverTypeNamespace,
+    ResolverMemberNamespace,
+    ResolverModuleNamespace,
+}
+
+pub enum ResolverReferenceKind {
+    ResolverCallReference,
+    ResolverTypeReference,
+    ResolverVariantReference,
+    ResolverFieldReference,
+    ResolverModuleReference,
+}
+
+pub struct ResolverSymbolId {
+    pub value: Int,
+} invariant value >= 0
+
+pub struct ResolveUnit {
+    pub module_path: String,
+    pub program: AstProgram,
+    pub span: SourceSpan,
+}
+
+pub struct ResolvedSymbol {
+    pub id: ResolverSymbolId,
+    pub module_path: String,
+    pub name: String,
+    pub qualified_name: String,
+    pub kind: ResolverSymbolKind,
+    pub namespace: ResolverNamespace,
+    pub visibility: AstVisibility,
+    pub span: SourceSpan,
+    pub owner_name: String,
+    pub type_name: String,
+}
+
+pub struct ResolvedImport {
+    pub module_path: String,
+    pub import_path: String,
+    pub alias: String,
+    pub span: SourceSpan,
+    pub resolved: Bool,
+    pub ambiguous: Bool,
+}
+
+pub struct ResolvedReference {
+    pub module_path: String,
+    pub name: String,
+    pub kind: ResolverReferenceKind,
+    pub target: Option[ResolverSymbolId],
+    pub span: SourceSpan,
+}
+
+pub struct ResolverOutput {
+    pub entry_module: String,
+    pub symbols: Vec[ResolvedSymbol],
+    pub imports: Vec[ResolvedImport],
+    pub references: Vec[ResolvedReference],
+    pub diagnostics: Vec[Diagnostic],
+}
+
+struct SymbolBuild {
+    symbols: Vec[ResolvedSymbol],
+    diagnostics: Vec[Diagnostic],
+    next_id: Int,
+}
+
+struct LocalBinding {
+    name: String,
+    type_name: String,
+    type_module: String,
+}
+
+pub fn resolver_symbol_id(value: Int) -> ResolverSymbolId requires value >= 0 ensures result.value == value {
+    ResolverSymbolId {
+        value: value,
+    }
+}
+
+pub fn resolve_unit(program: AstProgram) -> ResolveUnit {
+    let module_path = program_module_path(program);
+    ResolveUnit {
+        module_path: module_path,
+        program: program,
+        span: program.span,
+    }
+}
+
+pub fn resolved_symbol(
+    id: ResolverSymbolId,
+    module_path: String,
+    name: String,
+    kind: ResolverSymbolKind,
+    namespace: ResolverNamespace,
+    visibility: AstVisibility,
+    span: SourceSpan,
+    owner_name: String,
+    type_name: String,
+) -> ResolvedSymbol {
+    ResolvedSymbol {
+        id: id,
+        module_path: module_path,
+        name: name,
+        qualified_name: qualified_name(module_path, name),
+        kind: kind,
+        namespace: namespace,
+        visibility: visibility,
+        span: span,
+        owner_name: owner_name,
+        type_name: type_name,
+    }
+}
+
+pub fn resolved_import(module_path: String, import_path: String, alias: String, span: SourceSpan, resolved: Bool, ambiguous: Bool) -> ResolvedImport {
+    ResolvedImport {
+        module_path: module_path,
+        import_path: import_path,
+        alias: alias,
+        span: span,
+        resolved: resolved,
+        ambiguous: ambiguous,
+    }
+}
+
+pub fn resolved_reference(module_path: String, name: String, kind: ResolverReferenceKind, target: Option[ResolverSymbolId], span: SourceSpan) -> ResolvedReference {
+    ResolvedReference {
+        module_path: module_path,
+        name: name,
+        kind: kind,
+        target: target,
+        span: span,
+    }
+}
+
+pub fn resolver_output(entry_module: String, symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], references: Vec[ResolvedReference], diagnostics: Vec[Diagnostic]) -> ResolverOutput {
+    ResolverOutput {
+        entry_module: entry_module,
+        symbols: symbols,
+        imports: imports,
+        references: references,
+        diagnostics: diagnostics,
+    }
+}
+
+fn symbol_build(symbols: Vec[ResolvedSymbol], diagnostics: Vec[Diagnostic], next_id: Int) -> SymbolBuild {
+    SymbolBuild {
+        symbols: symbols,
+        diagnostics: diagnostics,
+        next_id: next_id,
+    }
+}
+
+fn local_binding(name: String, type_name: String, type_module: String) -> LocalBinding {
+    LocalBinding {
+        name: name,
+        type_name: type_name,
+        type_module: type_module,
+    }
+}
+
+fn program_module_path(program: AstProgram) -> String {
+    match program.module_item {
+        Some(module_item) => module_item.path.text,
+        None => "<root>",
+    }
+}
+
+fn qualified_name(module_path: String, name: String) -> String {
+    if module_path == "<root>" {
+        name
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, module_path);
+        parts = vec.push(parts, ".");
+        parts = vec.push(parts, name);
+        string.join(parts, "")
+    }
+}
+
+fn path_tail(path: String) -> String {
+    let parts = string.split(path, ".");
+    let count = vec.vec_len(parts);
+    if count == 0 {
+        path
+    } else {
+        match vec.get(parts, count - 1) {
+            Some(value) => value,
+            None => path,
+        }
+    }
+}
+
+fn path_prefix(path: String) -> String {
+    let parts = string.split(path, ".");
+    let count = vec.vec_len(parts);
+    if count <= 1 {
+        ""
+    } else {
+        let mut prefix: Vec[String] = vec.new_vec();
+        let mut index = 0;
+        while index + 1 < count {
+        match vec.get(parts, index) {
+            Some(value) => if true {
+                prefix = vec.push(prefix, value);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+            index = index + 1;
+        };
+        string.join(prefix, ".")
+    }
+}
+
+fn same_namespace(left: ResolverNamespace, right: ResolverNamespace) -> Bool {
+    match left {
+        ResolverValueNamespace => match right {
+            ResolverValueNamespace => true,
+            ResolverTypeNamespace => false,
+            ResolverMemberNamespace => false,
+            ResolverModuleNamespace => false,
+        },
+        ResolverTypeNamespace => match right {
+            ResolverValueNamespace => false,
+            ResolverTypeNamespace => true,
+            ResolverMemberNamespace => false,
+            ResolverModuleNamespace => false,
+        },
+        ResolverMemberNamespace => match right {
+            ResolverValueNamespace => false,
+            ResolverTypeNamespace => false,
+            ResolverMemberNamespace => true,
+            ResolverModuleNamespace => false,
+        },
+        ResolverModuleNamespace => match right {
+            ResolverValueNamespace => false,
+            ResolverTypeNamespace => false,
+            ResolverMemberNamespace => false,
+            ResolverModuleNamespace => true,
+        },
+    }
+}
+
+fn same_symbol_kind(left: ResolverSymbolKind, right: ResolverSymbolKind) -> Bool {
+    match left {
+        ResolverFunctionSymbol => match right { ResolverFunctionSymbol => true, _ => false },
+        ResolverStructSymbol => match right { ResolverStructSymbol => true, _ => false },
+        ResolverEnumSymbol => match right { ResolverEnumSymbol => true, _ => false },
+        ResolverVariantSymbol => match right { ResolverVariantSymbol => true, _ => false },
+        ResolverTraitSymbol => match right { ResolverTraitSymbol => true, _ => false },
+        ResolverImplSymbol => match right { ResolverImplSymbol => true, _ => false },
+        ResolverConstSymbol => match right { ResolverConstSymbol => true, _ => false },
+        ResolverTypeAliasSymbol => match right { ResolverTypeAliasSymbol => true, _ => false },
+        ResolverFieldSymbol => match right { ResolverFieldSymbol => true, _ => false },
+        ResolverMethodSymbol => match right { ResolverMethodSymbol => true, _ => false },
+        ResolverModuleSymbol => match right { ResolverModuleSymbol => true, _ => false },
+    }
+}
+
+fn same_reference_kind(left: ResolverReferenceKind, right: ResolverReferenceKind) -> Bool {
+    match left {
+        ResolverCallReference => match right { ResolverCallReference => true, _ => false },
+        ResolverTypeReference => match right { ResolverTypeReference => true, _ => false },
+        ResolverVariantReference => match right { ResolverVariantReference => true, _ => false },
+        ResolverFieldReference => match right { ResolverFieldReference => true, _ => false },
+        ResolverModuleReference => match right { ResolverModuleReference => true, _ => false },
+    }
+}
+
+fn symbol_kind_text(kind: ResolverSymbolKind) -> String {
+    match kind {
+        ResolverFunctionSymbol => "fn",
+        ResolverStructSymbol => "struct",
+        ResolverEnumSymbol => "enum",
+        ResolverVariantSymbol => "variant",
+        ResolverTraitSymbol => "trait",
+        ResolverImplSymbol => "impl",
+        ResolverConstSymbol => "const",
+        ResolverTypeAliasSymbol => "type",
+        ResolverFieldSymbol => "field",
+        ResolverMethodSymbol => "method",
+        ResolverModuleSymbol => "module",
+    }
+}
+
+fn duplicate_code(kind: ResolverSymbolKind) -> String {
+    match kind {
+        ResolverFieldSymbol => "E1101",
+        ResolverVariantSymbol => "E1102",
+        ResolverMethodSymbol => "E1107",
+        _ => "E1100",
+    }
+}
+
+fn duplicate_message(symbol: ResolvedSymbol) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    if symbol.owner_name == "" {
+        parts = vec.push(parts, "duplicate symbol '");
+        parts = vec.push(parts, symbol.name);
+        parts = vec.push(parts, "', kinds '");
+        parts = vec.push(parts, symbol_kind_text(symbol.kind));
+        parts = vec.push(parts, "'");
+    } else {
+        parts = vec.push(parts, "duplicate ");
+        parts = vec.push(parts, symbol_kind_text(symbol.kind));
+        parts = vec.push(parts, " '");
+        parts = vec.push(parts, symbol.owner_name);
+        parts = vec.push(parts, ".");
+        parts = vec.push(parts, symbol.name);
+        parts = vec.push(parts, "'");
+    };
+    string.join(parts, "")
+}
+
+fn append_diagnostic_if_room(diagnostics: Vec[Diagnostic], max_errors: Int, diagnostic_value: Diagnostic) -> Vec[Diagnostic] {
+    if vec.vec_len(diagnostics) < max_errors {
+        vec.push(diagnostics, diagnostic_value)
+    } else {
+        diagnostics
+    }
+}
+
+fn symbol_conflicts(left: ResolvedSymbol, right: ResolvedSymbol) -> Bool {
+    left.module_path == right.module_path
+        && left.name == right.name
+        && left.owner_name == right.owner_name
+        && same_namespace(left.namespace, right.namespace)
+}
+
+fn add_symbol(build: SymbolBuild, module_path: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace, visibility: AstVisibility, span_value: SourceSpan, owner_name: String, type_name: String, max_errors: Int) -> SymbolBuild {
+    let symbol = resolved_symbol(resolver_symbol_id(build.next_id), module_path, name, kind, namespace, visibility, span_value, owner_name, type_name);
+    let mut duplicate = false;
+    let mut index = 0;
+    while !duplicate && index < vec.vec_len(build.symbols) {
+        match vec.get(build.symbols, index) {
+            Some(existing) => if symbol_conflicts(existing, symbol) {
+                duplicate = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    if duplicate {
+        let diag = with_help(error(diagnostic_code(duplicate_code(symbol.kind)), symbol.span, duplicate_message(symbol)), "rename one declaration to keep symbol names unique in this namespace");
+        symbol_build(build.symbols, append_diagnostic_if_room(build.diagnostics, max_errors, diag), build.next_id)
+    } else {
+        symbol_build(vec.push(build.symbols, symbol), build.diagnostics, build.next_id + 1)
+    }
+}
+
+fn visibility_allows_import(visibility: AstVisibility) -> Bool {
+    match visibility {
+        PublicVisibility => true,
+        PublicCrateVisibility => true,
+        PrivateVisibility => false,
+    }
+}
+
+fn can_access_symbol(symbol: ResolvedSymbol, requester_module: String) -> Bool {
+    if symbol.module_path == requester_module {
+        true
+    } else {
+        match symbol.visibility {
+            PublicVisibility => true,
+            PublicCrateVisibility => true,
+            PrivateVisibility => false,
+        }
+    }
+}
+
+fn module_exists(units: Vec[ResolveUnit], module_path: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(units) {
+        match vec.get(units, index) {
+            Some(unit) => if unit.module_path == module_path {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn module_span(units: Vec[ResolveUnit], module_path: String, fallback: SourceSpan) -> SourceSpan {
+    let mut out = fallback;
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(units) {
+        match vec.get(units, index) {
+            Some(unit) => if unit.module_path == module_path {
+                out = unit.span;
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn import_exists(imports: Vec[ResolvedImport], module_path: String, import_path: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(imports) {
+        match vec.get(imports, index) {
+            Some(import_item) => if import_item.module_path == module_path && import_item.import_path == import_path && import_item.resolved {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn import_alias_is_ambiguous(imports: Vec[ResolvedImport], module_path: String, alias: String) -> Bool {
+    let mut count = 0;
+    let mut index = 0;
+    while index < vec.vec_len(imports) {
+        match vec.get(imports, index) {
+            Some(import_item) => if import_item.module_path == module_path && import_item.alias == alias && import_item.resolved {
+                count = count + 1;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    count > 1
+}
+
+fn resolve_import_alias(imports: Vec[ResolvedImport], module_path: String, alias: String) -> Option[String] {
+    let mut out: Option[String] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(imports) {
+        match vec.get(imports, index) {
+            Some(import_item) => if import_item.module_path == module_path && import_item.alias == alias && import_item.resolved && !import_item.ambiguous {
+                out = Some(import_item.import_path);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_imports_for_unit(units: Vec[ResolveUnit], imports: Vec[ResolvedImport], diagnostics: Vec[Diagnostic], unit: ResolveUnit, max_errors: Int) -> ResolverOutput {
+    let mut out_imports = imports;
+    let mut out_diagnostics = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(unit.program.imports) {
+        match vec.get(unit.program.imports, index) {
+            Some(import_item) => if true {
+                let import_path = import_item.path.text;
+                let alias = path_tail(import_path);
+                let exists = module_exists(units, import_path);
+                let ambiguous = import_alias_is_ambiguous(out_imports, unit.module_path, alias);
+                out_imports = vec.push(out_imports, resolved_import(unit.module_path, import_path, alias, import_item.span, exists, ambiguous));
+                if !exists {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "cannot resolve import '");
+                    parts = vec.push(parts, import_path);
+                    parts = vec.push(parts, "'");
+                    out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2100"), import_item.span, string.join(parts, "")), "add the missing module to the package or remove the import"));
+                } else if ambiguous {
+                    let mut amb_parts: Vec[String] = vec.new_vec();
+                    amb_parts = vec.push(amb_parts, "ambiguous import alias '");
+                    amb_parts = vec.push(amb_parts, alias);
+                    amb_parts = vec.push(amb_parts, "': multiple imports share this tail segment");
+                    out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), import_item.span, string.join(amb_parts, "")), "use fully-qualified module prefixes in call sites"));
+                } else {
+                    ()
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    resolver_output(unit.module_path, vec.new_vec(), out_imports, vec.new_vec(), out_diagnostics)
+}
+
+fn item_signature(item: AstProgramItem) -> Option[AstFunctionSignature] {
+    match item.function_item {
+        Some(function_item) => Some(function_item.signature),
+        None => item.function_signature,
+    }
+}
+
+fn item_visibility(item: AstProgramItem) -> AstVisibility {
+    program_item_visibility(item)
+}
+
+fn collect_symbols_for_item(build: SymbolBuild, module_path: String, item: AstProgramItem, max_errors: Int) -> SymbolBuild {
+    match item.kind {
+        FunctionItem => match item_signature(item) {
+            Some(signature) => add_symbol(build, module_path, signature.name.value, ResolverFunctionSymbol(), ResolverValueNamespace(), item_visibility(item), signature.span, "", type_text(signature.return_type), max_errors),
+            None => build,
+        },
+        ConstItem => match item.const_item {
+            Some(const_item) => add_symbol(build, module_path, const_item.name.value, ResolverConstSymbol(), ResolverValueNamespace(), item_visibility(item), const_item.span, "", type_text(const_item.type_ref), max_errors),
+            None => build,
+        },
+        TypeAliasItem => match item.type_alias_item {
+            Some(alias_item) => add_symbol(build, module_path, alias_item.name.value, ResolverTypeAliasSymbol(), ResolverTypeNamespace(), item_visibility(item), alias_item.span, "", type_text(alias_item.target_type), max_errors),
+            None => build,
+        },
+        StructItem => match item.struct_item {
+            Some(struct_item) => collect_struct_symbols(add_symbol(build, module_path, struct_item.name.value, ResolverStructSymbol(), ResolverTypeNamespace(), struct_item.visibility, struct_item.span, "", struct_item.name.value, max_errors), module_path, struct_item, max_errors),
+            None => build,
+        },
+        EnumItem => match item.enum_item {
+            Some(enum_item) => collect_enum_symbols(add_symbol(build, module_path, enum_item.name.value, ResolverEnumSymbol(), ResolverTypeNamespace(), enum_item.visibility, enum_item.span, "", enum_item.name.value, max_errors), module_path, enum_item, max_errors),
+            None => build,
+        },
+        TraitItem => match item.trait_item {
+            Some(trait_item) => collect_trait_symbols(add_symbol(build, module_path, trait_item.name.value, ResolverTraitSymbol(), ResolverTypeNamespace(), trait_item.visibility, trait_item.span, "", trait_item.name.value, max_errors), module_path, trait_item, max_errors),
+            None => build,
+        },
+        ImplItem => match item.impl_item {
+            Some(impl_item) => collect_impl_symbols(add_symbol(build, module_path, type_text(impl_item.head_type), ResolverImplSymbol(), ResolverMemberNamespace(), impl_item.visibility, impl_item.span, impl_item.head_type.name, type_text(impl_item.head_type), max_errors), module_path, impl_item, max_errors),
+            None => build,
+        },
+    }
+}
+
+fn collect_struct_symbols(build: SymbolBuild, module_path: String, item: AstStructDecl, max_errors: Int) -> SymbolBuild {
+    let mut out = build;
+    let mut index = 0;
+    while index < vec.vec_len(item.fields) {
+        match vec.get(item.fields, index) {
+            Some(field) => if true {
+                out = add_symbol(out, module_path, field.name.value, ResolverFieldSymbol(), ResolverMemberNamespace(), field.visibility, field.span, item.name.value, type_text(field.type_ref), max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_enum_symbols(build: SymbolBuild, module_path: String, item: AstEnumDecl, max_errors: Int) -> SymbolBuild {
+    let mut out = build;
+    let mut index = 0;
+    while index < vec.vec_len(item.variants) {
+        match vec.get(item.variants, index) {
+            Some(variant) => if true {
+                out = add_symbol(out, module_path, variant.name.value, ResolverVariantSymbol(), ResolverMemberNamespace(), item.visibility, variant.span, item.name.value, item.name.value, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_trait_symbols(build: SymbolBuild, module_path: String, item: AstTraitDecl, max_errors: Int) -> SymbolBuild {
+    let mut out = build;
+    let mut index = 0;
+    while index < vec.vec_len(item.methods) {
+        match vec.get(item.methods, index) {
+            Some(method) => if true {
+                out = add_symbol(out, module_path, method.name.value, ResolverMethodSymbol(), ResolverMemberNamespace(), item.visibility, method.span, item.name.value, type_text(method.return_type), max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_impl_symbols(build: SymbolBuild, module_path: String, item: AstImplDecl, max_errors: Int) -> SymbolBuild {
+    let mut out = build;
+    let mut index = 0;
+    while index < vec.vec_len(item.methods) {
+        match vec.get(item.methods, index) {
+            Some(method) => if true {
+                out = add_symbol(out, module_path, method.signature.name.value, ResolverMethodSymbol(), ResolverMemberNamespace(), item.visibility, method.span, type_text(item.head_type), type_text(method.signature.return_type), max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_symbols_for_unit(build: SymbolBuild, unit: ResolveUnit, max_errors: Int) -> SymbolBuild {
+    let mut out = build;
+    out = add_symbol(out, unit.module_path, unit.module_path, ResolverModuleSymbol(), ResolverModuleNamespace(), PublicVisibility(), unit.span, "", unit.module_path, max_errors);
+    let mut index = 0;
+    while index < vec.vec_len(unit.program.items) {
+        match vec.get(unit.program.items, index) {
+            Some(item) => if true {
+                out = collect_symbols_for_item(out, unit.module_path, item, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn find_symbol(symbols: Vec[ResolvedSymbol], module_path: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Option[ResolvedSymbol] {
+    let mut out: Option[ResolvedSymbol] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(symbols) {
+        match vec.get(symbols, index) {
+            Some(symbol) => if symbol.module_path == module_path && symbol.name == name && same_symbol_kind(symbol.kind, kind) && same_namespace(symbol.namespace, namespace) {
+                out = Some(symbol);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn find_member_symbol(symbols: Vec[ResolvedSymbol], owner_name: String, name: String, kind: ResolverSymbolKind) -> Option[ResolvedSymbol] {
+    let mut out: Option[ResolvedSymbol] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(symbols) {
+        match vec.get(symbols, index) {
+            Some(symbol) => if symbol.owner_name == owner_name && symbol.name == name && same_symbol_kind(symbol.kind, kind) {
+                out = Some(symbol);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn visible_symbol_matches(symbol: ResolvedSymbol, requester_module: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Bool {
+    symbol.name == name
+        && same_symbol_kind(symbol.kind, kind)
+        && same_namespace(symbol.namespace, namespace)
+        && can_access_symbol(symbol, requester_module)
+}
+
+fn lookup_unqualified_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], requester_module: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Option[ResolvedSymbol] {
+    let own = find_symbol(symbols, requester_module, name, kind, namespace);
+    match own {
+        Some(_) => own,
+        None => if true {
+            let mut out: Option[ResolvedSymbol] = None();
+            let mut found = false;
+            let mut index = 0;
+            while !found && index < vec.vec_len(imports) {
+                match vec.get(imports, index) {
+                    Some(import_item) => if import_item.module_path == requester_module && import_item.resolved && !import_item.ambiguous {
+                        match find_symbol(symbols, import_item.import_path, name, kind, namespace) {
+                            Some(symbol) => if can_access_symbol(symbol, requester_module) {
+                                out = Some(symbol);
+                                found = true;
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        };
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            out
+        } else {
+            None()
+        },
+    }
+}
+
+fn count_imported_matches(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], requester_module: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Int {
+    let mut count = 0;
+    let mut index = 0;
+    while index < vec.vec_len(imports) {
+        match vec.get(imports, index) {
+            Some(import_item) => if import_item.module_path == requester_module && import_item.resolved {
+                match find_symbol(symbols, import_item.import_path, name, kind, namespace) {
+                    Some(symbol) => if can_access_symbol(symbol, requester_module) {
+                        count = count + 1;
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    count
+}
+
+fn symbol_exists_in_transitive_imports(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], requester_module: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Bool {
+    let mut found = false;
+    let mut import_index = 0;
+    while !found && import_index < vec.vec_len(imports) {
+        match vec.get(imports, import_index) {
+            Some(first_import) => if first_import.module_path == requester_module && first_import.resolved {
+                let mut second_index = 0;
+                while !found && second_index < vec.vec_len(imports) {
+                    match vec.get(imports, second_index) {
+                        Some(second_import) => if second_import.module_path == first_import.import_path && second_import.resolved {
+                            match find_symbol(symbols, second_import.import_path, name, kind, namespace) {
+                                Some(symbol) => if can_access_symbol(symbol, first_import.import_path) {
+                                    found = true;
+                                } else {
+                                    ()
+                                },
+                                None => (),
+                            };
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    second_index = second_index + 1;
+                };
+            } else {
+                ()
+            },
+            None => (),
+        };
+        import_index = import_index + 1;
+    };
+    found
+}
+
+fn resolve_qualified_module(imports: Vec[ResolvedImport], units: Vec[ResolveUnit], requester_module: String, module_text: String) -> Option[String] {
+    if module_exists(units, module_text) {
+        Some(module_text)
+    } else if string.contains(module_text, ".") {
+        None()
+    } else {
+        resolve_import_alias(imports, requester_module, module_text)
+    }
+}
+
+fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], units: Vec[ResolveUnit], requester_module: String, callee_name: String, span_value: SourceSpan, diagnostics: Vec[Diagnostic], max_errors: Int) -> ResolverOutput {
+    let mut references: Vec[ResolvedReference] = vec.new_vec();
+    let mut out_diagnostics = diagnostics;
+    let module_text = path_prefix(callee_name);
+    let name = path_tail(callee_name);
+    if module_text == "" {
+        let imported_count = count_imported_matches(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace());
+        if imported_count > 1 {
+            let mut amb_parts: Vec[String] = vec.new_vec();
+            amb_parts = vec.push(amb_parts, "ambiguous callable '");
+            amb_parts = vec.push(amb_parts, name);
+            amb_parts = vec.push(amb_parts, "' from multiple modules");
+            out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), span_value, string.join(amb_parts, "")), "qualify the call with the intended module"));
+            resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+        } else {
+            match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+                Some(symbol) => resolver_output(requester_module, symbols, imports, vec.push(references, resolved_reference(requester_module, name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics),
+                None => match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
+                    Some(variant_symbol) => resolver_output(requester_module, symbols, imports, vec.push(references, resolved_reference(requester_module, name, ResolverVariantReference(), Some(variant_symbol.id), span_value)), out_diagnostics),
+                    None => if symbol_exists_in_transitive_imports(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "symbol '");
+                        parts = vec.push(parts, name);
+                        parts = vec.push(parts, "' is not imported by this module");
+                        out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(parts, "")), "import the module that declares the symbol or qualify through an existing import"));
+                        resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                    } else {
+                        let mut unknown_parts: Vec[String] = vec.new_vec();
+                        unknown_parts = vec.push(unknown_parts, "unknown symbol '");
+                        unknown_parts = vec.push(unknown_parts, name);
+                        unknown_parts = vec.push(unknown_parts, "'");
+                        out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E1208"), span_value, string.join(unknown_parts, "")));
+                        resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                    },
+                },
+            }
+        }
+    } else {
+        match resolve_qualified_module(imports, units, requester_module, module_text) {
+            Some(target_module) => match find_symbol(symbols, target_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+                Some(symbol) => if can_access_symbol(symbol, requester_module) {
+                    resolver_output(requester_module, symbols, imports, vec.push(references, resolved_reference(requester_module, callee_name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics)
+                } else {
+                    let mut private_parts: Vec[String] = vec.new_vec();
+                    private_parts = vec.push(private_parts, "symbol '");
+                    private_parts = vec.push(private_parts, qualified_name(symbol.module_path, symbol.name));
+                    private_parts = vec.push(private_parts, "' is private and not accessible from this module");
+                    out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(private_parts, "")), "make the declaration public or call it only inside its declaring module"));
+                    resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                },
+                None => if module_exists(units, target_module) {
+                    let mut unknown_parts: Vec[String] = vec.new_vec();
+                    unknown_parts = vec.push(unknown_parts, "unknown symbol '");
+                    unknown_parts = vec.push(unknown_parts, callee_name);
+                    unknown_parts = vec.push(unknown_parts, "'");
+                    out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E1208"), span_value, string.join(unknown_parts, "")));
+                    resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                } else {
+                    let mut missing_parts: Vec[String] = vec.new_vec();
+                    missing_parts = vec.push(missing_parts, "cannot resolve module '");
+                    missing_parts = vec.push(missing_parts, target_module);
+                    missing_parts = vec.push(missing_parts, "'");
+                    out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E2100"), span_value, string.join(missing_parts, "")));
+                    resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                },
+            },
+            None => if import_alias_is_ambiguous(imports, requester_module, module_text) {
+                let mut amb_parts: Vec[String] = vec.new_vec();
+                amb_parts = vec.push(amb_parts, "ambiguous import alias '");
+                amb_parts = vec.push(amb_parts, module_text);
+                amb_parts = vec.push(amb_parts, "'");
+                out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), span_value, string.join(amb_parts, "")), "use the full module path"));
+                resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+            } else {
+                let mut missing_parts: Vec[String] = vec.new_vec();
+                missing_parts = vec.push(missing_parts, "cannot resolve module '");
+                missing_parts = vec.push(missing_parts, module_text);
+                missing_parts = vec.push(missing_parts, "'");
+                out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E2100"), span_value, string.join(missing_parts, "")));
+                resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+            },
+        }
+    }
+}
+
+fn local_type_module(symbols: Vec[ResolvedSymbol], module_path: String, type_name_value: String) -> String {
+    match find_symbol(symbols, module_path, type_name_value, ResolverStructSymbol(), ResolverTypeNamespace()) {
+        Some(symbol) => symbol.module_path,
+        None => match lookup_unqualified_symbol(symbols, vec.new_vec(), module_path, type_name_value, ResolverStructSymbol(), ResolverTypeNamespace()) {
+            Some(symbol) => symbol.module_path,
+            None => module_path,
+        },
+    }
+}
+
+fn find_local(locals: Vec[LocalBinding], name: String) -> Option[LocalBinding] {
+    let mut out: Option[LocalBinding] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(locals) {
+        match vec.get(locals, index) {
+            Some(local) => if local.name == name {
+                out = Some(local);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn expr_base_name(expr: AstExpr) -> String {
+    match vec.get(expr.nodes, 0) {
+        Some(node) => node.name,
+        None => "",
+    }
+}
+
+fn infer_expr_type(expr: AstExpr, module_path: String, output: ResolverOutput) -> String {
+    match expr.kind {
+        AstStructLiteralExpr => expr.name,
+        AstCallExpr => if expr.name == "" {
+            ""
+        } else {
+            let lookup = lookup_call_symbol(output.symbols, output.imports, vec.new_vec(), module_path, expr.name, expr.span, vec.new_vec(), 1);
+            match vec.get(lookup.references, 0) {
+                Some(reference) => match reference.target {
+                    Some(id) => symbol_type_name_by_id(output.symbols, id),
+                    None => "",
+                },
+                None => "",
+            }
+        },
+        _ => "",
+    }
+}
+
+fn symbol_type_name_by_id(symbols: Vec[ResolvedSymbol], id: ResolverSymbolId) -> String {
+    let mut out = "";
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(symbols) {
+        match vec.get(symbols, index) {
+            Some(symbol) => if symbol.id.value == id.value {
+                out = symbol.type_name;
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn append_references(left: Vec[ResolvedReference], right: Vec[ResolvedReference]) -> Vec[ResolvedReference] {
+    let mut out = left;
+    let mut index = 0;
+    while index < vec.vec_len(right) {
+        match vec.get(right, index) {
+            Some(reference) => if true {
+                out = vec.push(out, reference);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+    let mut out = output;
+    match expr.kind {
+        AstCallExpr => if expr.name != "" {
+            let lookup = lookup_call_symbol(out.symbols, out.imports, units, module_path, expr.name, expr.span, out.diagnostics, max_errors);
+            out = resolver_output(out.entry_module, out.symbols, out.imports, append_references(out.references, lookup.references), lookup.diagnostics);
+        } else {
+            ()
+        },
+        AstFieldAccessExpr => if true {
+            let base_name = expr_base_name(expr);
+            match find_local(locals, base_name) {
+                Some(local) => match find_member_symbol(out.symbols, local.type_name, expr.name, ResolverFieldSymbol()) {
+                    Some(field_symbol) => if can_access_symbol(field_symbol, module_path) {
+                        out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, expr.name, ResolverFieldReference(), Some(field_symbol.id), expr.span)), out.diagnostics);
+                    } else {
+                        let mut private_parts: Vec[String] = vec.new_vec();
+                        private_parts = vec.push(private_parts, "field '");
+                        private_parts = vec.push(private_parts, local.type_name);
+                        private_parts = vec.push(private_parts, ".");
+                        private_parts = vec.push(private_parts, expr.name);
+                        private_parts = vec.push(private_parts, "' is private and not accessible from this module");
+                        out = resolver_output(out.entry_module, out.symbols, out.imports, out.references, append_diagnostic_if_room(out.diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), expr.span, string.join(private_parts, "")), "make the field public or access it only from its declaring module")));
+                    },
+                    None => (),
+                },
+                None => (),
+            };
+        } else {
+            ()
+        },
+        AstStructLiteralExpr => match lookup_unqualified_symbol(out.symbols, out.imports, module_path, expr.name, ResolverStructSymbol(), ResolverTypeNamespace()) {
+            Some(symbol) => if true {
+                out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, expr.name, ResolverTypeReference(), Some(symbol.id), expr.span)), out.diagnostics);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        },
+        _ => (),
+    };
+    let mut index = 0;
+    while index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if true {
+                out = resolve_expr(simple_expr(node.kind, node.op, node.name, node.span, node.text), module_path, locals, units, out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    let mut pat_index = 0;
+    while pat_index < vec.vec_len(expr.patterns) {
+        match vec.get(expr.patterns, pat_index) {
+            Some(pattern_node) => if pattern_node.name != "" {
+                match lookup_unqualified_symbol(out.symbols, out.imports, module_path, pattern_node.name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
+                    Some(symbol) => if true {
+                        out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, pattern_node.name, ResolverVariantReference(), Some(symbol.id), pattern_node.span)), out.diagnostics);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => if true {
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "unknown variant '");
+                        parts = vec.push(parts, pattern_node.name);
+                        parts = vec.push(parts, "'");
+                        out = resolver_output(out.entry_module, out.symbols, out.imports, out.references, append_diagnostic_if_room(out.diagnostics, max_errors, error(diagnostic_code("E1244"), pattern_node.span, string.join(parts, ""))));
+                    } else {
+                        ()
+                    },
+                };
+            } else {
+                ()
+            },
+            None => (),
+        };
+        pat_index = pat_index + 1;
+    };
+    out
+}
+
+fn add_param_locals(signature: AstFunctionSignature, module_path: String, symbols: Vec[ResolvedSymbol], locals: Vec[LocalBinding]) -> Vec[LocalBinding] {
+    let mut out = locals;
+    let mut index = 0;
+    while index < vec.vec_len(signature.params) {
+        match vec.get(signature.params, index) {
+            Some(param) => if true {
+                out = vec.push(out, local_binding(param.name.value, type_text(param.type_ref), local_type_module(symbols, module_path, type_text(param.type_ref))));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn resolve_block(block: AstBlock, signature: AstFunctionSignature, module_path: String, units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+    let mut out = output;
+    let mut locals: Vec[LocalBinding] = vec.new_vec();
+    locals = add_param_locals(signature, module_path, out.symbols, locals);
+    let mut index = 0;
+    while index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => if true {
+                match statement.expr {
+                    Some(expr) => if true {
+                        out = resolve_expr(expr, module_path, locals, units, out, max_errors);
+                        match statement.kind {
+                            AstLetStatement => if statement.name != "" {
+                                let inferred = infer_expr_type(expr, module_path, out);
+                                if inferred != "" {
+                                    locals = vec.push(locals, local_binding(statement.name, inferred, local_type_module(out.symbols, module_path, inferred)));
+                                } else {
+                                    ()
+                                }
+                            } else {
+                                ()
+                            },
+                            _ => (),
+                        };
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    match block.tail_expr {
+        Some(expr) => if true {
+            out = resolve_expr(expr, module_path, locals, units, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    out
+}
+
+fn validate_impl_trait(item: AstImplDecl, module_path: String, output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+    if type_arg_count(item.head_type) > 0 {
+        match lookup_unqualified_symbol(output.symbols, output.imports, module_path, item.head_type.name, ResolverTraitSymbol(), ResolverTypeNamespace()) {
+            Some(_) => output,
+            None => if true {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "unknown trait '");
+                parts = vec.push(parts, item.head_type.name);
+                parts = vec.push(parts, "' in impl");
+                resolver_output(output.entry_module, output.symbols, output.imports, output.references, append_diagnostic_if_room(output.diagnostics, max_errors, error(diagnostic_code("E1103"), item.span, string.join(parts, ""))))
+            } else {
+                output
+            },
+        }
+    } else {
+        output
+    }
+}
+
+fn resolve_item(item: AstProgramItem, module_path: String, units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+    match item.function_item {
+        Some(function_item) => resolve_block(function_item.body, function_item.signature, module_path, units, output, max_errors),
+        None => match item.impl_item {
+            Some(impl_item) => if true {
+                let mut out = validate_impl_trait(impl_item, module_path, output, max_errors);
+                let mut index = 0;
+                while index < vec.vec_len(impl_item.methods) {
+                    match vec.get(impl_item.methods, index) {
+                        Some(method) => if true {
+                            out = resolve_block(method.body, method.signature, module_path, units, out, max_errors);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                out
+            } else {
+                output
+            },
+            None => output,
+        },
+    }
+}
+
+fn resolve_references_for_unit(unit: ResolveUnit, units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+    let mut out = output;
+    let mut index = 0;
+    while index < vec.vec_len(unit.program.items) {
+        match vec.get(unit.program.items, index) {
+            Some(item) => if true {
+                out = resolve_item(item, unit.module_path, units, out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+pub fn resolve_program(program: AstProgram, max_errors: Int) -> ResolverOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, resolve_unit(program));
+    resolve_units(units, program_module_path(program), max_errors)
+}
+
+pub fn resolve_units(units: Vec[ResolveUnit], entry_module: String, max_errors: Int) -> ResolverOutput {
+    let mut build = symbol_build(vec.new_vec(), vec.new_vec(), 1);
+    let mut imports: Vec[ResolvedImport] = vec.new_vec();
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                build = collect_symbols_for_unit(build, unit, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    let mut import_index = 0;
+    let mut diagnostics = build.diagnostics;
+    while import_index < vec.vec_len(units) {
+        match vec.get(units, import_index) {
+            Some(unit) => if true {
+                let imported = collect_imports_for_unit(units, imports, diagnostics, unit, max_errors);
+                imports = imported.imports;
+                diagnostics = imported.diagnostics;
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        import_index = import_index + 1;
+    };
+    let mut out = resolver_output(entry_module, build.symbols, imports, vec.new_vec(), diagnostics);
+    let mut ref_index = 0;
+    while ref_index < vec.vec_len(units) {
+        match vec.get(units, ref_index) {
+            Some(unit) => if true {
+                out = resolve_references_for_unit(unit, units, out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        ref_index = ref_index + 1;
+    };
+    out
+}
+
+pub fn resolver_symbol_count(value: ResolverOutput) -> Int {
+    vec.vec_len(value.symbols)
+}
+
+pub fn resolver_import_count(value: ResolverOutput) -> Int {
+    vec.vec_len(value.imports)
+}
+
+pub fn resolver_reference_count(value: ResolverOutput) -> Int {
+    vec.vec_len(value.references)
+}
+
+pub fn resolver_diagnostic_count(value: ResolverOutput) -> Int {
+    vec.vec_len(value.diagnostics)
+}
+
+pub fn resolver_has_diagnostic_code(value: ResolverOutput, code: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.diagnostics) {
+        match vec.get(value.diagnostics, index) {
+            Some(diag) => if diag.code.value == code {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn resolver_has_symbol(value: ResolverOutput, module_path: String, name: String, kind: ResolverSymbolKind) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.symbols) {
+        match vec.get(value.symbols, index) {
+            Some(symbol) => if symbol.module_path == module_path && symbol.name == name && same_symbol_kind(symbol.kind, kind) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn resolver_has_member(value: ResolverOutput, owner_name: String, name: String, kind: ResolverSymbolKind) -> Bool {
+    match find_member_symbol(value.symbols, owner_name, name, kind) {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn resolver_has_reference(value: ResolverOutput, name: String, kind: ResolverReferenceKind) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.references) {
+        match vec.get(value.references, index) {
+            Some(reference) => if reference.name == name && same_reference_kind(reference.kind, kind) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}

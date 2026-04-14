@@ -7,6 +7,7 @@ import compiler.lexer;
 import compiler.parser;
 import compiler.ast;
 import compiler.ir;
+import compiler.frontend;
 import std.io;
 import std.result;
 import std.vec;
@@ -1128,6 +1129,96 @@ fn valid_parser_program_orchestration() -> Bool {
     valid_parser_program_tour() && valid_parser_program_recovery()
 }
 
+fn parsed_unit(source: SourceId, text: String) -> ResolveUnit {
+    let parsed = parse_source_program(source, text, 20);
+    match parsed.program {
+        Some(program) => resolve_unit(program),
+        None => resolve_unit(ast_program(source, None(), vec.new_vec(), vec.new_vec(), vec.new_vec(), empty_span(source, 0))),
+    }
+}
+
+fn resolver_units_for_positive_case() -> Vec[ResolveUnit] {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(20), "module app.main; import app.math; import app.model; import app.api; struct Token { x: Int, } fn Token(x: Int) -> Int { x } enum Choice { One, Two(Int), } trait Show[T] { fn show(self: T) -> Int; } impl Show[Token] { fn show(self: Token) -> Int { self.x } } fn local(value: Int) -> Int { value } fn own(t: Token) -> Int { t.x } fn main() -> Int { math.add(1, 2) + local(3) + Token(4) + One() + api.handle() }"));
+    units = vec.push(units, parsed_unit(source_id(21), "module app.math; pub fn add(x: Int, y: Int) -> Int { x + y }"));
+    units = vec.push(units, parsed_unit(source_id(22), "module app.model; pub struct Person { pub age: Int, secret: Int, } pub fn new_person(age: Int) -> Person { Person { age: age, secret: 7 } }"));
+    units = vec.push(units, parsed_unit(source_id(23), "module app.api; import app.util; pub fn handle() -> Int { util.answer() }"));
+    units = vec.push(units, parsed_unit(source_id(24), "module app.util; pub fn answer() -> Int { 42 }"));
+    units
+}
+
+fn valid_resolver_positive_cases() -> Bool {
+    let out = resolve_units(resolver_units_for_positive_case(), "app.main", 20);
+    resolver_diagnostic_count(out) == 0
+        && resolver_import_count(out) == 4
+        && resolver_symbol_count(out) >= 18
+        && resolver_reference_count(out) >= 7
+        && resolver_has_symbol(out, "app.main", "Token", ResolverStructSymbol())
+        && resolver_has_symbol(out, "app.main", "Token", ResolverFunctionSymbol())
+        && resolver_has_symbol(out, "app.math", "add", ResolverFunctionSymbol())
+        && resolver_has_symbol(out, "app.main", "Show", ResolverTraitSymbol())
+        && resolver_has_member(out, "Choice", "One", ResolverVariantSymbol())
+        && resolver_has_member(out, "Token", "x", ResolverFieldSymbol())
+        && resolver_has_member(out, "Show", "show", ResolverMethodSymbol())
+        && resolver_has_reference(out, "math.add", ResolverCallReference())
+        && resolver_has_reference(out, "local", ResolverCallReference())
+        && resolver_has_reference(out, "Token", ResolverCallReference())
+        && resolver_has_reference(out, "One", ResolverVariantReference())
+        && resolver_has_reference(out, "api.handle", ResolverCallReference())
+}
+
+fn resolver_single(text: String) -> ResolverOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(25), text));
+    resolve_units(units, "app.main", 20)
+}
+
+fn resolver_main_and_lib(main_text: String, lib_text: String) -> ResolverOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(26), main_text));
+    units = vec.push(units, parsed_unit(source_id(27), lib_text));
+    resolve_units(units, "app.main", 20)
+}
+
+fn resolver_main_with_two_imports(main_text: String, left_text: String, right_text: String) -> ResolverOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(28), main_text));
+    units = vec.push(units, parsed_unit(source_id(29), left_text));
+    units = vec.push(units, parsed_unit(source_id(30), right_text));
+    resolve_units(units, "app.main", 20)
+}
+
+fn valid_resolver_negative_cases() -> Bool {
+    let missing_module = resolver_single("module app.main; import app.missing; fn main() -> Int { 0 }");
+    let ambiguous_symbol = resolver_main_with_two_imports("module app.main; import app.left; import app.right; fn main() -> Int { add(1, 2) }", "module app.left; pub fn add(x: Int, y: Int) -> Int { x + y }", "module app.right; pub fn add(x: Int, y: Int) -> Int { x - y }");
+    let duplicate_symbol = resolver_single("module app.main; fn value() -> Int { 1 } fn value() -> Int { 2 }");
+    let duplicate_field = resolver_single("module app.main; struct Bad { id: Int, id: Int, }");
+    let unknown_symbol = resolver_single("module app.main; fn main() -> Int { missing() }");
+    let private_function = resolver_main_and_lib("module app.main; import app.lib; fn main() -> Int { lib.hidden() }", "module app.lib; fn hidden() -> Int { 1 }");
+    let private_field = resolver_main_and_lib("module app.main; import app.model; fn main() -> Int { let person = model.new_person(1); person.secret }", "module app.model; pub struct Person { pub age: Int, secret: Int, } pub fn new_person(age: Int) -> Person { Person { age: age, secret: 7 } }");
+    let unknown_trait = resolver_single("module app.main; struct Thing {} impl Missing[Thing];");
+    let unknown_variant = resolver_single("module app.main; enum Choice { Known, } fn bad(x: Choice) -> Int { match x { Missing => 0, } }");
+    let mut transitive_units: Vec[ResolveUnit] = vec.new_vec();
+    transitive_units = vec.push(transitive_units, parsed_unit(source_id(31), "module app.main; import app.api; fn main() -> Int { answer() }"));
+    transitive_units = vec.push(transitive_units, parsed_unit(source_id(32), "module app.api; import app.util; pub fn handle() -> Int { util.answer() }"));
+    transitive_units = vec.push(transitive_units, parsed_unit(source_id(33), "module app.util; pub fn answer() -> Int { 42 }"));
+    let transitive = resolve_units(transitive_units, "app.main", 20);
+    resolver_has_diagnostic_code(missing_module, "E2100")
+        && resolver_has_diagnostic_code(ambiguous_symbol, "E2104")
+        && resolver_has_diagnostic_code(duplicate_symbol, "E1100")
+        && resolver_has_diagnostic_code(duplicate_field, "E1101")
+        && resolver_has_diagnostic_code(unknown_symbol, "E1208")
+        && resolver_has_diagnostic_code(transitive, "E2102")
+        && resolver_has_diagnostic_code(private_function, "E2102")
+        && resolver_has_diagnostic_code(private_field, "E2102")
+        && resolver_has_diagnostic_code(unknown_trait, "E1103")
+        && resolver_has_diagnostic_code(unknown_variant, "E1244")
+}
+
+fn valid_resolver_frontend() -> Bool {
+    valid_resolver_positive_cases() && valid_resolver_negative_cases()
+}
+
 fn main() -> Int effects { io } capabilities { io } {
     let left = span(source_id(1), 0, 4);
     let right = span(source_id(1), 4, 10);
@@ -1158,9 +1249,10 @@ fn main() -> Int effects { io } capabilities { io } {
     let trait_impl_ok = valid_parser_trait_and_impl_declarations();
     let expression_block_ok = valid_parser_expression_and_block_declarations();
     let program_ok = valid_parser_program_orchestration();
+    let resolver_ok = valid_resolver_frontend();
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && ast_ir_ok {
         print_int(0);
         0
     } else {

@@ -122,6 +122,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/libs/ast/src/main.aic",
         "compiler/aic/libs/ir/aic.toml",
         "compiler/aic/libs/ir/src/main.aic",
+        "compiler/aic/libs/frontend/aic.toml",
+        "compiler/aic/libs/frontend/src/main.aic",
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
     ] {
@@ -284,6 +286,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub fn program_has_module"));
     assert!(ast.contains("pub fn program_item_attr_count"));
     assert!(ast.contains("pub fn program_item_name"));
+    assert!(ast.contains("pub fn program_item_visibility"));
     assert!(ast.contains("pub fn param_attr_count"));
     assert!(ast.contains("pub fn function_signature_attr_count"));
     assert!(ast.contains("pub fn field_attr_count"));
@@ -296,6 +299,28 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ir.contains("pub struct IrSymbolId"));
     assert!(ir.contains("pub fn next_symbol_id"));
     assert!(ir.contains("pub fn is_concrete_type"));
+
+    let frontend = fs::read_to_string(root.join("compiler/aic/libs/frontend/src/main.aic"))
+        .expect("read frontend lib");
+    assert!(frontend.contains("pub enum ResolverSymbolKind"));
+    assert!(frontend.contains("pub enum ResolverNamespace"));
+    assert!(frontend.contains("pub enum ResolverReferenceKind"));
+    assert!(frontend.contains("pub struct ResolveUnit"));
+    assert!(frontend.contains("pub struct ResolvedSymbol"));
+    assert!(frontend.contains("pub struct ResolvedImport"));
+    assert!(frontend.contains("pub struct ResolvedReference"));
+    assert!(frontend.contains("pub struct ResolverOutput"));
+    assert!(frontend.contains("pub fn resolve_unit"));
+    assert!(frontend.contains("pub fn resolve_program"));
+    assert!(frontend.contains("pub fn resolve_units"));
+    assert!(frontend.contains("pub fn resolver_symbol_count"));
+    assert!(frontend.contains("pub fn resolver_import_count"));
+    assert!(frontend.contains("pub fn resolver_reference_count"));
+    assert!(frontend.contains("pub fn resolver_diagnostic_count"));
+    assert!(frontend.contains("pub fn resolver_has_diagnostic_code"));
+    assert!(frontend.contains("pub fn resolver_has_symbol"));
+    assert!(frontend.contains("pub fn resolver_has_member"));
+    assert!(frontend.contains("pub fn resolver_has_reference"));
 }
 
 #[test]

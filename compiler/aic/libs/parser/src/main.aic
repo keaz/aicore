@@ -6501,7 +6501,7 @@ fn starts_with_signature_only_function(cursor: ParserCursor) -> Bool {
     at_keyword(active, "extern") || at_keyword(active, "intrinsic")
 }
 
-fn program_item_from_function_decl(cursor: ParserCursor, attrs: Vec[AstAttribute], modifiers: String, result: ParseFunctionDecl) -> ParseProgramItem {
+fn program_item_from_function_decl(cursor: ParserCursor, attrs: Vec[AstAttribute], visibility: AstVisibility, modifiers: String, result: ParseFunctionDecl) -> ParseProgramItem {
     if has_function_decl_diagnostic(result) {
         ParseProgramItem {
             cursor: result.cursor,
@@ -6512,7 +6512,7 @@ fn program_item_from_function_decl(cursor: ParserCursor, attrs: Vec[AstAttribute
         match result.function_item {
             Some(function_item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(FunctionItem(), function_item.signature.name, attrs, Some(function_item), None(), None(), None(), None(), None(), None(), None(), false, modifiers, function_item.span)),
+                item: Some(ast_program_item(FunctionItem(), function_item.signature.name, visibility, attrs, Some(function_item), None(), None(), None(), None(), None(), None(), None(), false, modifiers, function_item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6524,7 +6524,7 @@ fn program_item_from_function_decl(cursor: ParserCursor, attrs: Vec[AstAttribute
     }
 }
 
-fn parse_signature_only_program_function(cursor: ParserCursor, attrs: Vec[AstAttribute], modifiers: String) -> ParseProgramItem {
+fn parse_signature_only_program_function(cursor: ParserCursor, attrs: Vec[AstAttribute], visibility: AstVisibility, modifiers: String) -> ParseProgramItem {
     let signature = parse_function_signature(cursor);
     if has_function_signature_diagnostic(signature) {
         ParseProgramItem {
@@ -6544,7 +6544,7 @@ fn parse_signature_only_program_function(cursor: ParserCursor, attrs: Vec[AstAtt
             match signature.signature {
                 Some(sig) => ParseProgramItem {
                     cursor: semi.cursor,
-                    item: Some(ast_program_item(FunctionItem(), sig.name, attrs, None(), Some(sig), None(), None(), None(), None(), None(), None(), true, modifiers, merge(sig.span, semi.token.span))),
+                    item: Some(ast_program_item(FunctionItem(), sig.name, visibility, attrs, None(), Some(sig), None(), None(), None(), None(), None(), None(), true, modifiers, merge(sig.span, semi.token.span))),
                     diagnostic: None(),
                 },
                 None => ParseProgramItem {
@@ -6568,7 +6568,7 @@ fn program_item_from_struct(attrs: Vec[AstAttribute], result: ParseStructDecl) -
         match result.struct_item {
             Some(item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(StructItem(), item.name, attrs, None(), None(), Some(item), None(), None(), None(), None(), None(), false, "", item.span)),
+                item: Some(ast_program_item(StructItem(), item.name, item.visibility, attrs, None(), None(), Some(item), None(), None(), None(), None(), None(), false, "", item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6591,7 +6591,7 @@ fn program_item_from_enum(attrs: Vec[AstAttribute], result: ParseEnumDecl) -> Pa
         match result.enum_item {
             Some(item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(EnumItem(), item.name, attrs, None(), None(), None(), Some(item), None(), None(), None(), None(), false, "", item.span)),
+                item: Some(ast_program_item(EnumItem(), item.name, item.visibility, attrs, None(), None(), None(), Some(item), None(), None(), None(), None(), false, "", item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6614,7 +6614,7 @@ fn program_item_from_type_alias(attrs: Vec[AstAttribute], result: ParseTypeAlias
         match result.alias_item {
             Some(item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(TypeAliasItem(), item.name, attrs, None(), None(), None(), None(), Some(item), None(), None(), None(), false, "", item.span)),
+                item: Some(ast_program_item(TypeAliasItem(), item.name, PrivateVisibility(), attrs, None(), None(), None(), None(), Some(item), None(), None(), None(), false, "", item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6637,7 +6637,7 @@ fn program_item_from_const(attrs: Vec[AstAttribute], result: ParseConstDecl) -> 
         match result.const_item {
             Some(item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(ConstItem(), item.name, attrs, None(), None(), None(), None(), None(), Some(item), None(), None(), false, "", item.span)),
+                item: Some(ast_program_item(ConstItem(), item.name, PrivateVisibility(), attrs, None(), None(), None(), None(), None(), Some(item), None(), None(), false, "", item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6660,7 +6660,7 @@ fn program_item_from_trait(attrs: Vec[AstAttribute], result: ParseTraitDecl) -> 
         match result.trait_item {
             Some(item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(TraitItem(), item.name, attrs, None(), None(), None(), None(), None(), None(), Some(item), None(), false, "", item.span)),
+                item: Some(ast_program_item(TraitItem(), item.name, item.visibility, attrs, None(), None(), None(), None(), None(), None(), Some(item), None(), false, "", item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6683,7 +6683,7 @@ fn program_item_from_impl(attrs: Vec[AstAttribute], result: ParseImplDecl) -> Pa
         match result.impl_item {
             Some(item) => ParseProgramItem {
                 cursor: result.cursor,
-                item: Some(ast_program_item(ImplItem(), ast_name(item.head_type.name, item.head_type.span), attrs, None(), None(), None(), None(), None(), None(), None(), Some(item), false, "", item.span)),
+                item: Some(ast_program_item(ImplItem(), ast_name(item.head_type.name, item.head_type.span), item.visibility, attrs, None(), None(), None(), None(), None(), None(), None(), Some(item), false, "", item.span)),
                 diagnostic: None(),
             },
             None => ParseProgramItem {
@@ -6708,9 +6708,9 @@ pub fn parse_program_item(cursor: ParserCursor, attrs: Vec[AstAttribute]) -> Par
             Some(item_header_value) => if is_function_item_kind(item_header_value.kind) {
                 let modifiers = program_item_modifier_names(cursor);
                 if starts_with_signature_only_function(cursor) {
-                    parse_signature_only_program_function(cursor, attrs, modifiers)
+                    parse_signature_only_program_function(cursor, attrs, item_header_value.visibility, modifiers)
                 } else {
-                    program_item_from_function_decl(cursor, attrs, modifiers, parse_function_declaration(cursor))
+                    program_item_from_function_decl(cursor, attrs, item_header_value.visibility, modifiers, parse_function_declaration(cursor))
                 }
             } else if is_struct_item_kind(item_header_value.kind) {
                 program_item_from_struct(attrs, parse_struct_declaration(cursor))
