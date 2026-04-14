@@ -23,6 +23,7 @@ Suggested package boundaries:
 - `compiler/aic/libs/ir`
 - `compiler/aic/libs/frontend`
 - `compiler/aic/libs/semantics`
+- `compiler/aic/libs/typecheck`
 - `compiler/aic/libs/backend_llvm`
 - `compiler/aic/libs/driver`
 - `compiler/aic/tools/aic_selfhost`
@@ -39,7 +40,8 @@ Current implemented package slice:
 - `compiler/aic/libs/ir` models stable IR node, symbol, and type IDs plus IR symbol/type/function descriptors.
 - `compiler/aic/libs/frontend` models self-hosted resolver output for modules, imports, symbols, references, type/value/member namespaces, deterministic symbol IDs, duplicate diagnostics, missing import/module diagnostics, trait impl discovery, enum variant discovery, and same-module versus imported visibility checks.
 - `compiler/aic/libs/semantics` models self-hosted semantic output for generic parameter environments, trait-bound resolution, generic arity validation, trait and trait-method indexes, inherent and trait impl indexes, conflicting impl metadata, and deterministic semantic diagnostics over resolved AST units.
-- `compiler/aic/tools/source_diagnostics_check` imports the implemented libraries and validates the data model through a small executable tool.
+- `compiler/aic/libs/typecheck` consumes resolver and semantic outputs, checks signatures, constants, local bindings, assignments, expressions, function and variant calls, named arguments, struct literals and field access, match guards and exhaustiveness, loops, numeric width constraints, generic instantiations, and trait-bound dispatch, and produces typed function, binding, and instantiation metadata for later IR lowering.
+- `compiler/aic/tools/source_diagnostics_check` imports the implemented libraries and validates the data model through a small executable tool, including typecheck positive and negative cases for generics, structs, enums, traits, impl methods, tuple/closure/async signatures, aliases, constants, numeric widths, named arguments, match guards, exhaustiveness, and trait-bound failures.
 
 ## Parity Harness
 

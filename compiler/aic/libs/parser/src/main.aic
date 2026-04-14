@@ -2898,13 +2898,7 @@ fn parse_postfix_expr(cursor: ParserCursor) -> ParseExpr {
                         } else {
                             match args_result.expr {
                                 Some(call_expr) => if true {
-                                    let mut children: Vec[AstExpr] = vec.new_vec();
-                                    children = vec.push(children, expr);
-                                    let mut index = 0;
-                                    while index < vec.vec_len(call_expr.nodes) {
-                                        index = index + 1;
-                                    };
-                                    expr = expr_with_children(AstCallExpr(), "", expr.text, children, call_expr.patterns, merge(expr.span, call_expr.span), call_expr.text);
+                                    expr = ast_expr(call_expr.kind, call_expr.op, call_expr.name, call_expr.direct_child_count, call_expr.nodes, call_expr.patterns, call_expr.match_arms, merge(expr.span, call_expr.span), call_expr.text);
                                     out_cursor = args_result.cursor;
                                     ()
                                 } else {
@@ -2972,6 +2966,7 @@ fn parse_call_args(cursor: ParserCursor, open_span: SourceSpan, callee_text: Str
     let open_copy = span(source_id(open_source), open_start, open_end);
     let mut out_cursor = cursor;
     let mut args: Vec[AstExpr] = vec.new_vec();
+    let mut arg_roles: Vec[String] = vec.new_vec();
     let mut text_parts: Vec[String] = vec.new_vec();
     let mut saw_named = false;
     let mut diagnostic: Option[Diagnostic] = None();
@@ -3004,6 +2999,7 @@ fn parse_call_args(cursor: ParserCursor, open_span: SourceSpan, callee_text: Str
                         text_parts = vec.push(text_parts, expr.text);
                         end_span = expr.span;
                         args = vec.push(args, expr);
+                        arg_roles = vec.push(arg_roles, wrap_text("arg:", token.lexeme, ""));
                         out_cursor = value.cursor;
                         saw_named = true;
                         ()
@@ -3036,6 +3032,7 @@ fn parse_call_args(cursor: ParserCursor, open_span: SourceSpan, callee_text: Str
                             text_parts = vec.push(text_parts, expr.text);
                             end_span = expr.span;
                             args = vec.push(args, expr);
+                            arg_roles = vec.push(arg_roles, "arg");
                             out_cursor = value.cursor;
                         };
                         ()
@@ -3077,7 +3074,7 @@ fn parse_call_args(cursor: ParserCursor, open_span: SourceSpan, callee_text: Str
         } else {
             text_parts = vec.push(text_parts, ")");
             let text = string.join(text_parts, "");
-            expr_ok(close.cursor, expr_with_children(AstCallExpr(), "", callee_text, args, vec.new_vec(), merge(open_copy, close.token.span), text))
+            expr_ok(close.cursor, expr_with_child_roles(AstCallExpr(), "", callee_text, args, arg_roles, vec.new_vec(), merge(open_copy, close.token.span), text))
         }
     }
 }
@@ -3278,6 +3275,7 @@ fn parse_struct_literal_fields(cursor: ParserCursor, open_span: SourceSpan, name
     let open_copy = span(source_id(open_source), open_start, open_end);
     let mut out_cursor = cursor;
     let mut values: Vec[AstExpr] = vec.new_vec();
+    let mut roles: Vec[String] = vec.new_vec();
     let mut text_parts: Vec[String] = vec.new_vec();
     let mut end_span = span(source_id(open_source), open_start, open_end);
     let mut diagnostic: Option[Diagnostic] = None();
@@ -3318,6 +3316,7 @@ fn parse_struct_literal_fields(cursor: ParserCursor, open_span: SourceSpan, name
                             text_parts = vec.push(text_parts, expr.text);
                             end_span = expr.span;
                             values = vec.push(values, expr);
+                            roles = vec.push(roles, wrap_text("field:", field.token.lexeme, ""));
                             out_cursor = value.cursor;
                             ()
                         } else {
@@ -3358,7 +3357,7 @@ fn parse_struct_literal_fields(cursor: ParserCursor, open_span: SourceSpan, name
                 expr_error(close.cursor, close.token.span, "E1040", "expected '}' after struct literal")
             } else {
                 text_parts = vec.push(text_parts, "}");
-                expr_ok(close.cursor, expr_with_children(AstStructLiteralExpr(), "", name, values, vec.new_vec(), merge(open_copy, close.token.span), string.join(text_parts, "")))
+                expr_ok(close.cursor, expr_with_child_roles(AstStructLiteralExpr(), "", name, values, roles, vec.new_vec(), merge(open_copy, close.token.span), string.join(text_parts, "")))
             }
         } else {
             expr_error(out_cursor, open_copy, "E1325", "expected struct literal")

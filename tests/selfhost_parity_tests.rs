@@ -126,6 +126,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/libs/frontend/src/main.aic",
         "compiler/aic/libs/semantics/aic.toml",
         "compiler/aic/libs/semantics/src/main.aic",
+        "compiler/aic/libs/typecheck/aic.toml",
+        "compiler/aic/libs/typecheck/src/main.aic",
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
     ] {
@@ -249,6 +251,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub fn ast_field_with_attrs"));
     assert!(ast.contains("pub fn enum_variant_with_attrs"));
     assert!(ast.contains("pub fn ast_expr"));
+    assert!(ast.contains("pub fn expr_with_child_roles"));
     assert!(ast.contains("pub fn ast_pattern"));
     assert!(ast.contains("pub fn ast_statement"));
     assert!(ast.contains("pub fn ast_block"));
@@ -324,6 +327,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(frontend.contains("pub fn resolver_has_symbol"));
     assert!(frontend.contains("pub fn resolver_has_member"));
     assert!(frontend.contains("pub fn resolver_has_reference"));
+    assert!(frontend.contains("fn should_resolve_variant_pattern"));
 
     let semantics = fs::read_to_string(root.join("compiler/aic/libs/semantics/src/main.aic"))
         .expect("read semantics lib");
@@ -351,6 +355,29 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(semantics.contains("pub fn semantic_has_impl"));
     assert!(semantics.contains("pub fn semantic_has_conflicting_impl"));
     assert!(semantics.contains("pub fn semantic_has_trait_method"));
+
+    let typecheck = fs::read_to_string(root.join("compiler/aic/libs/typecheck/src/main.aic"))
+        .expect("read typecheck lib");
+    assert!(typecheck.contains("pub enum TypecheckTypeKind"));
+    assert!(typecheck.contains("pub enum TypecheckValueKind"));
+    assert!(typecheck.contains("pub struct TypecheckType"));
+    assert!(typecheck.contains("pub struct TypecheckBinding"));
+    assert!(typecheck.contains("pub struct TypecheckFunction"));
+    assert!(typecheck.contains("pub struct TypecheckInstantiation"));
+    assert!(typecheck.contains("pub struct TypecheckOutput"));
+    assert!(typecheck.contains("pub fn typecheck_program"));
+    assert!(typecheck.contains("pub fn typecheck_units"));
+    assert!(typecheck.contains("pub fn typecheck_resolved_units"));
+    assert!(typecheck.contains("pub fn typecheck_function_count"));
+    assert!(typecheck.contains("pub fn typecheck_binding_count"));
+    assert!(typecheck.contains("pub fn typecheck_instantiation_count"));
+    assert!(typecheck.contains("pub fn typecheck_diagnostic_count"));
+    assert!(typecheck.contains("pub fn typecheck_has_diagnostic_code"));
+    assert!(typecheck.contains("pub fn typecheck_has_function"));
+    assert!(typecheck.contains("pub fn typecheck_has_binding"));
+    assert!(typecheck.contains("pub fn typecheck_has_instantiation"));
+    assert!(typecheck.contains("fn direct_expr_at"));
+    assert!(typecheck.contains("fn check_generic_bounds"));
 }
 
 #[test]

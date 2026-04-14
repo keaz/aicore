@@ -294,6 +294,23 @@ fn same_reference_kind(left: ResolverReferenceKind, right: ResolverReferenceKind
     }
 }
 
+fn is_uppercase_identifier(name: String) -> Bool {
+    if string.len(name) == 0 {
+        false
+    } else {
+        let first = string.substring(name, 0, 1);
+        first == "A" || first == "B" || first == "C" || first == "D" || first == "E" || first == "F" || first == "G" || first == "H" || first == "I" || first == "J" || first == "K" || first == "L" || first == "M" || first == "N" || first == "O" || first == "P" || first == "Q" || first == "R" || first == "S" || first == "T" || first == "U" || first == "V" || first == "W" || first == "X" || first == "Y" || first == "Z"
+    }
+}
+
+fn should_resolve_variant_pattern(kind: AstPatternKind, name: String) -> Bool {
+    match kind {
+        AstVariantPattern => true,
+        AstVarPattern => is_uppercase_identifier(name),
+        _ => false,
+    }
+}
+
 fn symbol_kind_text(kind: ResolverSymbolKind) -> String {
     match kind {
         ResolverFunctionSymbol => "fn",
@@ -931,6 +948,13 @@ fn find_local(locals: Vec[LocalBinding], name: String) -> Option[LocalBinding] {
     out
 }
 
+fn local_exists(locals: Vec[LocalBinding], name: String) -> Bool {
+    match find_local(locals, name) {
+        Some(_) => true,
+        None => false,
+    }
+}
+
 fn expr_base_name(expr: AstExpr) -> String {
     match vec.get(expr.nodes, 0) {
         Some(node) => node.name,
@@ -998,8 +1022,13 @@ fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], u
     let mut out = output;
     match expr.kind {
         AstCallExpr => if expr.name != "" {
-            let lookup = lookup_call_symbol(out.symbols, out.imports, units, module_path, expr.name, expr.span, out.diagnostics, max_errors);
-            out = resolver_output(out.entry_module, out.symbols, out.imports, append_references(out.references, lookup.references), lookup.diagnostics);
+            let receiver_name = path_prefix(expr.name);
+            if receiver_name != "" && local_exists(locals, receiver_name) {
+                ()
+            } else {
+                let lookup = lookup_call_symbol(out.symbols, out.imports, units, module_path, expr.name, expr.span, out.diagnostics, max_errors);
+                out = resolver_output(out.entry_module, out.symbols, out.imports, append_references(out.references, lookup.references), lookup.diagnostics);
+            };
         } else {
             ()
         },
@@ -1052,7 +1081,7 @@ fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], u
     let mut pat_index = 0;
     while pat_index < vec.vec_len(expr.patterns) {
         match vec.get(expr.patterns, pat_index) {
-            Some(pattern_node) => if pattern_node.name != "" {
+            Some(pattern_node) => if pattern_node.name != "" && should_resolve_variant_pattern(pattern_node.kind, pattern_node.name) {
                 match lookup_unqualified_symbol(out.symbols, out.imports, module_path, pattern_node.name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
                     Some(symbol) => if true {
                         out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, pattern_node.name, ResolverVariantReference(), Some(symbol.id), pattern_node.span)), out.diagnostics);

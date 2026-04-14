@@ -821,6 +821,45 @@ fn flatten_expr_children(children: Vec[AstExpr], role: String) -> Vec[AstExprNod
     nodes
 }
 
+fn child_role_at(roles: Vec[String], index: Int, fallback: String) -> String {
+    match vec.get(roles, index) {
+        Some(role) => role,
+        None => fallback,
+    }
+}
+
+fn flatten_expr_children_with_roles(children: Vec[AstExpr], roles: Vec[String], fallback: String) -> Vec[AstExprNode] {
+    let mut nodes: Vec[AstExprNode] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(children) {
+        match vec.get(children, index) {
+            Some(child) => if true {
+                let role = child_role_at(roles, index, fallback);
+                nodes = vec.push(nodes, expr_node_from_expr(child, role, 1));
+                let mut nested_index = 0;
+                while nested_index < vec.vec_len(child.nodes) {
+                    match vec.get(child.nodes, nested_index) {
+                        Some(node) => if true {
+                            nodes = vec.push(nodes, nested_expr_node(node, 1));
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    nested_index = nested_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    nodes
+}
+
 fn flatten_pattern_children(children: Vec[AstPattern], role: String) -> Vec[AstPatternNode] {
     let mut nodes: Vec[AstPatternNode] = vec.new_vec();
     let mut index = 0;
@@ -858,6 +897,10 @@ pub fn simple_expr(kind: AstExprKind, op: String, name: String, span: SourceSpan
 
 pub fn expr_with_children(kind: AstExprKind, op: String, name: String, children: Vec[AstExpr], patterns: Vec[AstPatternNode], span: SourceSpan, text: String) -> AstExpr {
     ast_expr(kind, op, name, vec.vec_len(children), flatten_expr_children(children, "child"), patterns, vec.new_vec(), span, text)
+}
+
+pub fn expr_with_child_roles(kind: AstExprKind, op: String, name: String, children: Vec[AstExpr], roles: Vec[String], patterns: Vec[AstPatternNode], span: SourceSpan, text: String) -> AstExpr {
+    ast_expr(kind, op, name, vec.vec_len(children), flatten_expr_children_with_roles(children, roles, "child"), patterns, vec.new_vec(), span, text)
 }
 
 pub fn match_expr_with_arms(children: Vec[AstExpr], patterns: Vec[AstPatternNode], match_arms: Vec[AstMatchArmNode], span: SourceSpan, text: String) -> AstExpr {

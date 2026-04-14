@@ -1,2 +1,2 @@
 [workspace]
-members = ["libs/source", "libs/diagnostics", "libs/syntax", "libs/lexer", "libs/parser", "libs/ast", "libs/ir", "libs/frontend", "libs/semantics", "tools/source_diagnostics_check"]
+members = ["libs/source", "libs/diagnostics", "libs/syntax", "libs/lexer", "libs/parser", "libs/ast", "libs/ir", "libs/frontend", "libs/semantics", "libs/typecheck", "tools/source_diagnostics_check"]

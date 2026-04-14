@@ -1,0 +1,11 @@
+[package]
+name = "aic_compiler_typecheck"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../source" }
+aic_compiler_diagnostics = { path = "../diagnostics" }
+aic_compiler_ast = { path = "../ast" }
+aic_compiler_frontend = { path = "../frontend" }
+aic_compiler_semantics = { path = "../semantics" }

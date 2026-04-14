@@ -9,6 +9,7 @@ import compiler.ast;
 import compiler.ir;
 import compiler.frontend;
 import compiler.semantics;
+import compiler.typecheck;
 import std.io;
 import std.result;
 import std.vec;
@@ -1289,6 +1290,63 @@ fn valid_semantic_frontend() -> Bool {
     valid_semantic_positive_cases() && valid_semantic_negative_cases()
 }
 
+fn typecheck_positive_units() -> Vec[ResolveUnit] {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(36), "module app.main; trait Order[T]; impl Order[Int]; trait Score[T] { fn score(self: T) -> Int; } struct Meter { value: Int, } struct Pair { left: Int, right: Int, } enum Choice { One, Two(Int), } type Count = Int; const BASE: Count = 40; fn id[T: Order](value: T) -> T { value } fn add(x: Int, y: Int) -> Int { x + y } fn apply(f: Fn() -> Int) -> Int { 1 } async fn future() -> Int { 1 } impl Score[Meter] { fn score(self: Meter) -> Int { self.value } } fn main() -> Int { let count: Count = BASE + 2; let meter = Meter { value: count }; let scored = meter.score(); let pair = Pair { left: scored, right: id(1) }; let closure = || -> Int { 1 }; let tuple = (pair.left, true); let width: Int8 = 1; let ratio: Float32 = 1.5; let chosen = match true { true if true => pair.left, true => pair.right, false => 0, }; add(chosen, apply(closure)) }"));
+    units
+}
+
+fn valid_typecheck_positive_cases() -> Bool {
+    let out = typecheck_units(typecheck_positive_units(), "app.main", 80);
+    typecheck_diagnostic_count(out) == 0
+        && typecheck_function_count(out) >= 6
+        && typecheck_binding_count(out) >= 10
+        && typecheck_instantiation_count(out) >= 1
+        && typecheck_has_function(out, "app.main", "main", "Int")
+        && typecheck_has_function(out, "app.main", "future", "Int")
+        && typecheck_has_function(out, "app.main", "score", "Int")
+        && typecheck_has_binding(out, "main", "count", "Count")
+        && typecheck_has_binding(out, "main", "meter", "Meter")
+        && typecheck_has_binding(out, "main", "pair", "Pair")
+        && typecheck_has_binding(out, "main", "width", "Int8")
+        && typecheck_has_instantiation(out, "id", "function", "Int")
+}
+
+fn typecheck_single(text: String) -> TypecheckOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(37), text));
+    typecheck_units(units, "app.main", 80)
+}
+
+fn valid_typecheck_negative_cases() -> Bool {
+    let unknown_symbol = typecheck_single("module app.main; fn bad() -> Int { missing }");
+    let type_mismatch = typecheck_single("module app.main; fn bad() -> Int { true }");
+    let wrong_generic_arity = typecheck_single("module app.main; struct Box[T] { value: T, } fn bad(value: Box[Int, Int]) -> Int { 0 }");
+    let variant_payload = typecheck_single("module app.main; enum Response { Success(Int), } fn bad() -> Int { let r = Success(true); 0 }");
+    let variant_arity = typecheck_single("module app.main; enum Response { Success(Int), } fn bad() -> Int { let r = Success(); 0 }");
+    let non_exhaustive = typecheck_single("module app.main; fn bad(x: Bool) -> Int { match x { true => 1, } }");
+    let invalid_guard = typecheck_single("module app.main; fn bad(x: Bool) -> Int { match x { true if 1 => 1, false => 0, } }");
+    let named_arg = typecheck_single("module app.main; fn add(x: Int, y: Int) -> Int { x + y } fn bad() -> Int { add(z: 1, y: 2) }");
+    let implicit_int_float = typecheck_single("module app.main; fn bad() -> Float { 1 + 2.0 }");
+    let fixed_width_range = typecheck_single("module app.main; fn bad() -> Int { let x: Int8 = 9999; 0 }");
+    let trait_bound_failure = typecheck_single("module app.main; trait Order[T]; impl Order[Int]; fn id[T: Order](value: T) -> T { value } fn bad() -> Bool { id(true) }");
+    typecheck_has_diagnostic_code(unknown_symbol, "E1208")
+        && typecheck_has_diagnostic_code(type_mismatch, "E1204")
+        && typecheck_has_diagnostic_code(wrong_generic_arity, "E1250")
+        && typecheck_has_diagnostic_code(variant_payload, "E1216")
+        && typecheck_has_diagnostic_code(variant_arity, "E1215")
+        && typecheck_has_diagnostic_code(non_exhaustive, "E1246")
+        && typecheck_has_diagnostic_code(invalid_guard, "E1270")
+        && typecheck_has_diagnostic_code(named_arg, "E1213")
+        && typecheck_has_diagnostic_code(implicit_int_float, "E1230")
+        && typecheck_has_diagnostic_code(fixed_width_range, "E1204")
+        && typecheck_has_diagnostic_code(trait_bound_failure, "E1258")
+}
+
+fn valid_typecheck_frontend() -> Bool {
+    valid_typecheck_positive_cases() && valid_typecheck_negative_cases()
+}
+
 fn main() -> Int effects { io } capabilities { io } {
     let left = span(source_id(1), 0, 4);
     let right = span(source_id(1), 4, 10);
@@ -1321,9 +1379,10 @@ fn main() -> Int effects { io } capabilities { io } {
     let program_ok = valid_parser_program_orchestration();
     let resolver_ok = valid_resolver_frontend();
     let semantic_ok = valid_semantic_frontend();
+    let typecheck_ok = valid_typecheck_frontend();
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ast_ir_ok {
         print_int(0);
         0
     } else {
