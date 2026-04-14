@@ -738,6 +738,16 @@ fn lookup_unqualified_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[Resolved
     }
 }
 
+fn lookup_nominal_type_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], requester_module: String, name: String) -> Option[ResolvedSymbol] {
+    match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverStructSymbol(), ResolverTypeNamespace()) {
+        Some(symbol) => Some(symbol),
+        None => match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverEnumSymbol(), ResolverTypeNamespace()) {
+            Some(symbol) => Some(symbol),
+            None => lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverTypeAliasSymbol(), ResolverTypeNamespace()),
+        },
+    }
+}
+
 fn count_imported_matches(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], requester_module: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Int {
     let mut count = 0;
     let mut index = 0;
@@ -1141,14 +1151,17 @@ fn validate_impl_trait(item: AstImplDecl, module_path: String, output: ResolverO
     if type_arg_count(item.head_type) > 0 {
         match lookup_unqualified_symbol(output.symbols, output.imports, module_path, item.head_type.name, ResolverTraitSymbol(), ResolverTypeNamespace()) {
             Some(_) => output,
-            None => if true {
-                let mut parts: Vec[String] = vec.new_vec();
-                parts = vec.push(parts, "unknown trait '");
-                parts = vec.push(parts, item.head_type.name);
-                parts = vec.push(parts, "' in impl");
-                resolver_output(output.entry_module, output.symbols, output.imports, output.references, append_diagnostic_if_room(output.diagnostics, max_errors, error(diagnostic_code("E1103"), item.span, string.join(parts, ""))))
-            } else {
-                output
+            None => match lookup_nominal_type_symbol(output.symbols, output.imports, module_path, item.head_type.name) {
+                Some(_) => output,
+                None => if true {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "unknown trait '");
+                    parts = vec.push(parts, item.head_type.name);
+                    parts = vec.push(parts, "' in impl");
+                    resolver_output(output.entry_module, output.symbols, output.imports, output.references, append_diagnostic_if_room(output.diagnostics, max_errors, error(diagnostic_code("E1103"), item.span, string.join(parts, ""))))
+                } else {
+                    output
+                },
             },
         }
     } else {

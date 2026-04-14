@@ -1,0 +1,1194 @@
+module compiler.semantics;
+
+import compiler.source;
+import compiler.diagnostics;
+import compiler.ast;
+import compiler.frontend;
+import std.option;
+import std.string;
+import std.vec;
+
+pub enum SemanticOwnerKind {
+    SemanticFunctionOwner,
+    SemanticStructOwner,
+    SemanticEnumOwner,
+    SemanticTraitOwner,
+    SemanticImplOwner,
+    SemanticTypeAliasOwner,
+    SemanticMethodOwner,
+}
+
+pub enum SemanticImplKind {
+    SemanticInherentImpl,
+    SemanticTraitImpl,
+}
+
+pub struct SemanticGenericParam {
+    pub module_path: String,
+    pub owner_name: String,
+    pub owner_kind: SemanticOwnerKind,
+    pub name: String,
+    pub index: Int,
+    pub bound_count: Int,
+    pub span: SourceSpan,
+}
+
+pub struct SemanticTraitBound {
+    pub module_path: String,
+    pub owner_name: String,
+    pub owner_kind: SemanticOwnerKind,
+    pub generic_name: String,
+    pub trait_name: String,
+    pub target: Option[ResolverSymbolId],
+    pub span: SourceSpan,
+}
+
+pub struct SemanticTraitIndex {
+    pub module_path: String,
+    pub name: String,
+    pub arity: Int,
+    pub method_count: Int,
+    pub symbol: Option[ResolverSymbolId],
+    pub span: SourceSpan,
+}
+
+pub struct SemanticImplIndex {
+    pub module_path: String,
+    pub impl_kind: SemanticImplKind,
+    pub trait_name: String,
+    pub target_type: String,
+    pub head_type: String,
+    pub method_count: Int,
+    pub conflicting: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct SemanticTraitMethod {
+    pub module_path: String,
+    pub trait_name: String,
+    pub name: String,
+    pub signature_text: String,
+    pub param_count: Int,
+    pub return_type: String,
+    pub span: SourceSpan,
+}
+
+pub struct SemanticOutput {
+    pub entry_module: String,
+    pub generics: Vec[SemanticGenericParam],
+    pub bounds: Vec[SemanticTraitBound],
+    pub traits: Vec[SemanticTraitIndex],
+    pub impls: Vec[SemanticImplIndex],
+    pub trait_methods: Vec[SemanticTraitMethod],
+    pub diagnostics: Vec[Diagnostic],
+}
+
+pub fn semantic_generic_param(module_path: String, owner_name: String, owner_kind: SemanticOwnerKind, name: String, index: Int, bound_count: Int, span: SourceSpan) -> SemanticGenericParam {
+    SemanticGenericParam {
+        module_path: module_path,
+        owner_name: owner_name,
+        owner_kind: owner_kind,
+        name: name,
+        index: index,
+        bound_count: bound_count,
+        span: span,
+    }
+}
+
+pub fn semantic_trait_bound(module_path: String, owner_name: String, owner_kind: SemanticOwnerKind, generic_name: String, trait_name: String, target: Option[ResolverSymbolId], span: SourceSpan) -> SemanticTraitBound {
+    SemanticTraitBound {
+        module_path: module_path,
+        owner_name: owner_name,
+        owner_kind: owner_kind,
+        generic_name: generic_name,
+        trait_name: trait_name,
+        target: target,
+        span: span,
+    }
+}
+
+pub fn semantic_trait_index(module_path: String, name: String, arity: Int, method_count: Int, symbol: Option[ResolverSymbolId], span: SourceSpan) -> SemanticTraitIndex {
+    SemanticTraitIndex {
+        module_path: module_path,
+        name: name,
+        arity: arity,
+        method_count: method_count,
+        symbol: symbol,
+        span: span,
+    }
+}
+
+pub fn semantic_impl_index(module_path: String, impl_kind: SemanticImplKind, trait_name: String, target_type: String, head_type: String, method_count: Int, conflicting: Bool, span: SourceSpan) -> SemanticImplIndex {
+    SemanticImplIndex {
+        module_path: module_path,
+        impl_kind: impl_kind,
+        trait_name: trait_name,
+        target_type: target_type,
+        head_type: head_type,
+        method_count: method_count,
+        conflicting: conflicting,
+        span: span,
+    }
+}
+
+pub fn semantic_trait_method(module_path: String, trait_name: String, name: String, signature_text: String, param_count_value: Int, return_type: String, span: SourceSpan) -> SemanticTraitMethod {
+    SemanticTraitMethod {
+        module_path: module_path,
+        trait_name: trait_name,
+        name: name,
+        signature_text: signature_text,
+        param_count: param_count_value,
+        return_type: return_type,
+        span: span,
+    }
+}
+
+pub fn semantic_output(
+    entry_module: String,
+    generics: Vec[SemanticGenericParam],
+    bounds: Vec[SemanticTraitBound],
+    traits: Vec[SemanticTraitIndex],
+    impls: Vec[SemanticImplIndex],
+    trait_methods: Vec[SemanticTraitMethod],
+    diagnostics: Vec[Diagnostic],
+) -> SemanticOutput {
+    SemanticOutput {
+        entry_module: entry_module,
+        generics: generics,
+        bounds: bounds,
+        traits: traits,
+        impls: impls,
+        trait_methods: trait_methods,
+        diagnostics: diagnostics,
+    }
+}
+
+fn same_owner_kind(left: SemanticOwnerKind, right: SemanticOwnerKind) -> Bool {
+    match left {
+        SemanticFunctionOwner => match right { SemanticFunctionOwner => true, _ => false },
+        SemanticStructOwner => match right { SemanticStructOwner => true, _ => false },
+        SemanticEnumOwner => match right { SemanticEnumOwner => true, _ => false },
+        SemanticTraitOwner => match right { SemanticTraitOwner => true, _ => false },
+        SemanticImplOwner => match right { SemanticImplOwner => true, _ => false },
+        SemanticTypeAliasOwner => match right { SemanticTypeAliasOwner => true, _ => false },
+        SemanticMethodOwner => match right { SemanticMethodOwner => true, _ => false },
+    }
+}
+
+fn same_impl_kind(left: SemanticImplKind, right: SemanticImplKind) -> Bool {
+    match left {
+        SemanticInherentImpl => match right { SemanticInherentImpl => true, SemanticTraitImpl => false },
+        SemanticTraitImpl => match right { SemanticInherentImpl => false, SemanticTraitImpl => true },
+    }
+}
+
+fn same_resolver_symbol_kind(left: ResolverSymbolKind, right: ResolverSymbolKind) -> Bool {
+    match left {
+        ResolverFunctionSymbol => match right { ResolverFunctionSymbol => true, _ => false },
+        ResolverStructSymbol => match right { ResolverStructSymbol => true, _ => false },
+        ResolverEnumSymbol => match right { ResolverEnumSymbol => true, _ => false },
+        ResolverVariantSymbol => match right { ResolverVariantSymbol => true, _ => false },
+        ResolverTraitSymbol => match right { ResolverTraitSymbol => true, _ => false },
+        ResolverImplSymbol => match right { ResolverImplSymbol => true, _ => false },
+        ResolverConstSymbol => match right { ResolverConstSymbol => true, _ => false },
+        ResolverTypeAliasSymbol => match right { ResolverTypeAliasSymbol => true, _ => false },
+        ResolverFieldSymbol => match right { ResolverFieldSymbol => true, _ => false },
+        ResolverMethodSymbol => match right { ResolverMethodSymbol => true, _ => false },
+        ResolverModuleSymbol => match right { ResolverModuleSymbol => true, _ => false },
+    }
+}
+
+fn same_resolver_namespace(left: ResolverNamespace, right: ResolverNamespace) -> Bool {
+    match left {
+        ResolverValueNamespace => match right { ResolverValueNamespace => true, _ => false },
+        ResolverTypeNamespace => match right { ResolverTypeNamespace => true, _ => false },
+        ResolverMemberNamespace => match right { ResolverMemberNamespace => true, _ => false },
+        ResolverModuleNamespace => match right { ResolverModuleNamespace => true, _ => false },
+    }
+}
+
+fn append_diagnostic_if_room(diagnostics: Vec[Diagnostic], max_errors: Int, diagnostic_value: Diagnostic) -> Vec[Diagnostic] {
+    if vec.vec_len(diagnostics) < max_errors {
+        vec.push(diagnostics, diagnostic_value)
+    } else {
+        diagnostics
+    }
+}
+
+fn semantic_error(output: SemanticOutput, max_errors: Int, code: String, span_value: SourceSpan, message: String, help: String) -> SemanticOutput {
+    let diag = if help == "" {
+        error(diagnostic_code(code), span_value, message)
+    } else {
+        with_help(error(diagnostic_code(code), span_value, message), help)
+    };
+    semantic_output(output.entry_module, output.generics, output.bounds, output.traits, output.impls, output.trait_methods, append_diagnostic_if_room(output.diagnostics, max_errors, diag))
+}
+
+fn append_trait(output: SemanticOutput, item: SemanticTraitIndex) -> SemanticOutput {
+    semantic_output(output.entry_module, output.generics, output.bounds, vec.push(output.traits, item), output.impls, output.trait_methods, output.diagnostics)
+}
+
+fn append_trait_method(output: SemanticOutput, item: SemanticTraitMethod) -> SemanticOutput {
+    semantic_output(output.entry_module, output.generics, output.bounds, output.traits, output.impls, vec.push(output.trait_methods, item), output.diagnostics)
+}
+
+fn append_impl(output: SemanticOutput, item: SemanticImplIndex) -> SemanticOutput {
+    semantic_output(output.entry_module, output.generics, output.bounds, output.traits, vec.push(output.impls, item), output.trait_methods, output.diagnostics)
+}
+
+fn append_generic(output: SemanticOutput, item: SemanticGenericParam) -> SemanticOutput {
+    semantic_output(output.entry_module, vec.push(output.generics, item), output.bounds, output.traits, output.impls, output.trait_methods, output.diagnostics)
+}
+
+fn append_bound(output: SemanticOutput, item: SemanticTraitBound) -> SemanticOutput {
+    semantic_output(output.entry_module, output.generics, vec.push(output.bounds, item), output.traits, output.impls, output.trait_methods, output.diagnostics)
+}
+
+fn symbol_is_accessible(symbol: ResolvedSymbol, requester_module: String) -> Bool {
+    if symbol.module_path == requester_module {
+        true
+    } else {
+        match symbol.visibility {
+            PublicVisibility => true,
+            PublicCrateVisibility => true,
+            PrivateVisibility => false,
+        }
+    }
+}
+
+fn find_symbol(symbols: Vec[ResolvedSymbol], module_path: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Option[ResolvedSymbol] {
+    let mut out: Option[ResolvedSymbol] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(symbols) {
+        match vec.get(symbols, index) {
+            Some(symbol) => if symbol.module_path == module_path && symbol.name == name && same_resolver_symbol_kind(symbol.kind, kind) && same_resolver_namespace(symbol.namespace, namespace) {
+                out = Some(symbol);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn lookup_visible_symbol(resolver: ResolverOutput, requester_module: String, name: String, kind: ResolverSymbolKind, namespace: ResolverNamespace) -> Option[ResolvedSymbol] {
+    match find_symbol(resolver.symbols, requester_module, name, kind, namespace) {
+        Some(symbol) => Some(symbol),
+        None => if true {
+            let mut out: Option[ResolvedSymbol] = None();
+            let mut found = false;
+            let mut index = 0;
+            while !found && index < vec.vec_len(resolver.imports) {
+                match vec.get(resolver.imports, index) {
+                    Some(import_item) => if import_item.module_path == requester_module && import_item.resolved && !import_item.ambiguous {
+                        match find_symbol(resolver.symbols, import_item.import_path, name, kind, namespace) {
+                            Some(symbol) => if symbol_is_accessible(symbol, requester_module) {
+                                out = Some(symbol);
+                                found = true;
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        };
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            out
+        } else {
+            None()
+        },
+    }
+}
+
+fn lookup_visible_trait(resolver: ResolverOutput, requester_module: String, name: String) -> Option[ResolvedSymbol] {
+    lookup_visible_symbol(resolver, requester_module, name, ResolverTraitSymbol(), ResolverTypeNamespace())
+}
+
+fn lookup_visible_nominal_type(resolver: ResolverOutput, requester_module: String, name: String) -> Option[ResolvedSymbol] {
+    match lookup_visible_symbol(resolver, requester_module, name, ResolverStructSymbol(), ResolverTypeNamespace()) {
+        Some(symbol) => Some(symbol),
+        None => match lookup_visible_symbol(resolver, requester_module, name, ResolverEnumSymbol(), ResolverTypeNamespace()) {
+            Some(symbol) => Some(symbol),
+            None => lookup_visible_symbol(resolver, requester_module, name, ResolverTypeAliasSymbol(), ResolverTypeNamespace()),
+        },
+    }
+}
+
+fn generic_name_exists(names: Vec[String], name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(names) {
+        match vec.get(names, index) {
+            Some(value) => if value == name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn append_generic_names(names: Vec[String], params: AstGenericParamList) -> Vec[String] {
+    let mut out = names;
+    let mut index = 0;
+    while index < vec.vec_len(params.params) {
+        match vec.get(params.params, index) {
+            Some(param) => if generic_name_exists(out, param.name.value) {
+                ()
+            } else {
+                out = vec.push(out, param.name.value);
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn generic_exists_for_owner(generics: Vec[SemanticGenericParam], module_path: String, owner_name: String, owner_kind: SemanticOwnerKind, name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(generics) {
+        match vec.get(generics, index) {
+            Some(param) => if param.module_path == module_path && param.owner_name == owner_name && param.name == name && same_owner_kind(param.owner_kind, owner_kind) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn collect_generic_params(output: SemanticOutput, module_path: String, owner_name: String, owner_kind: SemanticOwnerKind, params: AstGenericParamList, max_errors: Int) -> SemanticOutput {
+    let mut out = output;
+    let mut index = 0;
+    while index < vec.vec_len(params.params) {
+        match vec.get(params.params, index) {
+            Some(param) => if generic_exists_for_owner(out.generics, module_path, owner_name, owner_kind, param.name.value) {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "duplicate generic parameter '");
+                parts = vec.push(parts, param.name.value);
+                parts = vec.push(parts, "' on '");
+                parts = vec.push(parts, owner_name);
+                parts = vec.push(parts, "'");
+                out = semantic_error(out, max_errors, "E1259", param.span, string.join(parts, ""), "rename one generic parameter in this declaration");
+            } else {
+                out = append_generic(out, semantic_generic_param(module_path, owner_name, owner_kind, param.name.value, index, generic_bound_count(param), param.span));
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn trait_arity(output: SemanticOutput, module_path: String, name: String) -> Option[Int] {
+    let mut out: Option[Int] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(output.traits) {
+        match vec.get(output.traits, index) {
+            Some(item) => if item.module_path == module_path && item.name == name {
+                out = Some(item.arity);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_generic_bounds(output: SemanticOutput, module_path: String, owner_name: String, owner_kind: SemanticOwnerKind, params: AstGenericParamList, resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = output;
+    let mut param_index = 0;
+    while param_index < vec.vec_len(params.params) {
+        match vec.get(params.params, param_index) {
+            Some(param) => if true {
+                let mut bound_index = 0;
+                while bound_index < vec.vec_len(param.bounds) {
+                    match vec.get(param.bounds, bound_index) {
+                        Some(bound) => match lookup_visible_trait(resolver, module_path, bound.value) {
+                            Some(trait_symbol) => match trait_arity(out, trait_symbol.module_path, trait_symbol.name) {
+                                Some(arity) => if arity == 1 {
+                                    out = append_bound(out, semantic_trait_bound(module_path, owner_name, owner_kind, param.name.value, bound.value, Some(trait_symbol.id), bound.span));
+                                    ()
+                                } else {
+                                    let mut parts: Vec[String] = vec.new_vec();
+                                    parts = vec.push(parts, "trait bound '");
+                                    parts = vec.push(parts, bound.value);
+                                    parts = vec.push(parts, "' on '");
+                                    parts = vec.push(parts, param.name.value);
+                                    parts = vec.push(parts, "' expects trait arity 1 for generic bound syntax");
+                                    out = semantic_error(out, max_errors, "E1259", bound.span, string.join(parts, ""), "declare the trait with one generic parameter or use a different bound");
+                                    ()
+                                },
+                                None => if true {
+                                    out = append_bound(out, semantic_trait_bound(module_path, owner_name, owner_kind, param.name.value, bound.value, Some(trait_symbol.id), bound.span));
+                                    ()
+                                } else {
+                                    ()
+                                },
+                            },
+                            None => if true {
+                                let mut parts: Vec[String] = vec.new_vec();
+                                parts = vec.push(parts, "unknown trait bound '");
+                                parts = vec.push(parts, bound.value);
+                                parts = vec.push(parts, "' on generic parameter '");
+                                parts = vec.push(parts, param.name.value);
+                                parts = vec.push(parts, "'");
+                                out = semantic_error(out, max_errors, "E1259", bound.span, string.join(parts, ""), "declare or import the trait before using it as a bound");
+                            } else {
+                                ()
+                            },
+                        },
+                        None => (),
+                    };
+                    bound_index = bound_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        param_index = param_index + 1;
+    };
+    out
+}
+
+fn builtin_type_arity(name: String) -> Option[Int] {
+    if name == "Option" {
+        Some(1)
+    } else if name == "Result" {
+        Some(2)
+    } else if name == "Async" {
+        Some(1)
+    } else if name == "Ref" {
+        Some(1)
+    } else if name == "RefMut" {
+        Some(1)
+    } else if name == "Int" || name == "Float" || name == "Bool" || name == "String" || name == "Char" {
+        Some(0)
+    } else {
+        None()
+    }
+}
+
+fn item_generic_arity(item: AstProgramItem) -> Option[Int] {
+    match item.kind {
+        StructItem => match item.struct_item {
+            Some(struct_item) => Some(generic_param_count(struct_item.generic_params)),
+            None => None(),
+        },
+        EnumItem => match item.enum_item {
+            Some(enum_item) => Some(generic_param_count(enum_item.generic_params)),
+            None => None(),
+        },
+        TypeAliasItem => match item.type_alias_item {
+            Some(alias_item) => Some(generic_param_count(alias_item.generic_params)),
+            None => None(),
+        },
+        _ => None(),
+    }
+}
+
+fn declared_type_arity(units: Vec[ResolveUnit], module_path: String, name: String) -> Option[Int] {
+    let mut out: Option[Int] = None();
+    let mut found = false;
+    let mut unit_index = 0;
+    while !found && unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if unit.module_path == module_path {
+                let mut item_index = 0;
+                while !found && item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => if item.name.value == name {
+                            match item_generic_arity(item) {
+                                Some(arity) => if true {
+                                    out = Some(arity);
+                                    found = true;
+                                    ()
+                                } else {
+                                    ()
+                                },
+                                None => (),
+                            }
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    out
+}
+
+fn visible_type_arity(units: Vec[ResolveUnit], resolver: ResolverOutput, module_path: String, generic_names: Vec[String], name: String) -> Option[Int] {
+    if name == "" {
+        Some(0)
+    } else if generic_name_exists(generic_names, name) {
+        Some(0)
+    } else {
+        match builtin_type_arity(name) {
+            Some(arity) => Some(arity),
+            None => match lookup_visible_nominal_type(resolver, module_path, name) {
+                Some(symbol) => declared_type_arity(units, symbol.module_path, symbol.name),
+                None => None(),
+            },
+        }
+    }
+}
+
+fn validate_named_type_arity(output: SemanticOutput, kind: AstTypeKind, name: String, provided: Int, span_value: SourceSpan, module_path: String, generic_names: Vec[String], units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    match kind {
+        AstNamedType => if name == "Fn" {
+            if provided == 0 {
+                semantic_error(output, max_errors, "E1250", span_value, "generic arity mismatch for 'Fn': expected at least 1 type argument", "use `Fn(...) -> Ret` with at least a return type")
+            } else {
+                output
+            }
+        } else if name == "Tuple" {
+            output
+        } else {
+            match visible_type_arity(units, resolver, module_path, generic_names, name) {
+                Some(expected) => if expected == provided {
+                    output
+                } else {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "generic arity mismatch for '");
+                    parts = vec.push(parts, name);
+                    parts = vec.push(parts, "': wrong number of type arguments");
+                    semantic_error(output, max_errors, "E1250", span_value, string.join(parts, ""), "adjust the number of generic type arguments")
+                },
+                None => output,
+            }
+        },
+        AstDynTraitType => match lookup_visible_trait(resolver, module_path, name) {
+            Some(symbol) => match trait_arity(output, symbol.module_path, symbol.name) {
+                Some(arity) => if arity == 0 {
+                    output
+                } else {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "trait '");
+                    parts = vec.push(parts, name);
+                    parts = vec.push(parts, "' used as dyn type expects zero generic parameters");
+                    semantic_error(output, max_errors, "E1259", span_value, string.join(parts, ""), "use a non-generic trait for dyn dispatch")
+                },
+                None => output,
+            },
+            None => if true {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "unknown trait '");
+                parts = vec.push(parts, name);
+                parts = vec.push(parts, "' in dyn type");
+                semantic_error(output, max_errors, "E1259", span_value, string.join(parts, ""), "declare or import the trait before using it as a dyn type")
+            } else {
+                output
+            },
+        },
+        AstUnitType => output,
+        AstHoleType => output,
+    }
+}
+
+fn validate_type_ref(output: SemanticOutput, value: AstType, module_path: String, generic_names: Vec[String], units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = validate_named_type_arity(output, value.kind, value.name, value.direct_arg_count, value.span, module_path, generic_names, units, resolver, max_errors);
+    let mut index = 0;
+    while index < vec.vec_len(value.nodes) {
+        match vec.get(value.nodes, index) {
+            Some(node) => if true {
+                out = validate_named_type_arity(out, node.kind, node.name, node.direct_arg_count, node.span, module_path, generic_names, units, resolver, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_signature_types(output: SemanticOutput, signature: AstFunctionSignature, module_path: String, generic_names: Vec[String], units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = output;
+    let mut index = 0;
+    while index < vec.vec_len(signature.params) {
+        match vec.get(signature.params, index) {
+            Some(param) => if true {
+                out = validate_type_ref(out, param.type_ref, module_path, generic_names, units, resolver, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    validate_type_ref(out, signature.return_type, module_path, generic_names, units, resolver, max_errors)
+}
+
+fn first_param_name(signature: AstFunctionSignature) -> String {
+    match vec.get(signature.params, 0) {
+        Some(param) => param.name.value,
+        None => "",
+    }
+}
+
+fn validate_top_level_function_context(output: SemanticOutput, item: AstProgramItem, signature: AstFunctionSignature, max_errors: Int) -> SemanticOutput {
+    if first_param_name(signature) == "self" {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, "method-style declaration '");
+        parts = vec.push(parts, signature.name.value);
+        parts = vec.push(parts, "' must appear inside a trait or impl block");
+        semantic_error(output, max_errors, "E1259", signature.span, string.join(parts, ""), "move this signature into a trait or impl block, or rename the first parameter")
+    } else {
+        output
+    }
+}
+
+fn trait_symbol_id(resolver: ResolverOutput, module_path: String, name: String) -> Option[ResolverSymbolId] {
+    match lookup_visible_symbol(resolver, module_path, name, ResolverTraitSymbol(), ResolverTypeNamespace()) {
+        Some(value) => Some(value.id),
+        None => None(),
+    }
+}
+
+fn collect_trait_index_for_decl(output: SemanticOutput, module_path: String, trait_item: AstTraitDecl, resolver: ResolverOutput) -> SemanticOutput {
+    let symbol: Option[ResolverSymbolId] = trait_symbol_id(resolver, module_path, trait_item.name.value);
+    let mut out = append_trait(output, semantic_trait_index(module_path, trait_item.name.value, generic_param_count(trait_item.generic_params), trait_method_count(trait_item), symbol, trait_item.span));
+    let mut index = 0;
+    while index < vec.vec_len(trait_item.methods) {
+        match vec.get(trait_item.methods, index) {
+            Some(method) => if true {
+                out = append_trait_method(out, semantic_trait_method(module_path, trait_item.name.value, method.name.value, function_signature_text(method), param_count(method), type_text(method.return_type), method.span));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_trait_indexes_for_item(output: SemanticOutput, module_path: String, item: AstProgramItem, resolver: ResolverOutput) -> SemanticOutput {
+    match item.trait_item {
+        Some(trait_item) => collect_trait_index_for_decl(output, module_path, trait_item, resolver),
+        None => output,
+    }
+}
+
+fn collect_trait_indexes_for_unit(output: SemanticOutput, unit: ResolveUnit, resolver: ResolverOutput) -> SemanticOutput {
+    let mut out = output;
+    let mut index = 0;
+    while index < vec.vec_len(unit.program.items) {
+        match vec.get(unit.program.items, index) {
+            Some(item) => if true {
+                out = collect_trait_indexes_for_item(out, unit.module_path, item, resolver);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_trait_indexes(output: SemanticOutput, units: Vec[ResolveUnit], resolver: ResolverOutput) -> SemanticOutput {
+    let mut out = output;
+    let mut index = 0;
+    while index < vec.vec_len(units) {
+        match vec.get(units, index) {
+            Some(unit) => if true {
+                out = collect_trait_indexes_for_unit(out, unit, resolver);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn method_owner_name(owner_name: String, method_name: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, owner_name);
+    parts = vec.push(parts, ".");
+    parts = vec.push(parts, method_name);
+    string.join(parts, "")
+}
+
+fn first_type_arg_text(value: AstType) -> String {
+    let mut out = type_text(value);
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.nodes) {
+        match vec.get(value.nodes, index) {
+            Some(node) => if node.depth == 1 {
+                out = node.text;
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn impl_conflicts(existing: SemanticImplIndex, impl_kind: SemanticImplKind, trait_name: String, head_type: String) -> Bool {
+    same_impl_kind(existing.impl_kind, impl_kind)
+        && existing.trait_name == trait_name
+        && existing.head_type == head_type
+}
+
+fn has_conflicting_trait_impl(impls: Vec[SemanticImplIndex], trait_name: String, head_type: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(impls) {
+        match vec.get(impls, index) {
+            Some(item) => if impl_conflicts(item, SemanticTraitImpl(), trait_name, head_type) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn is_blocked_builtin_impl_target(name: String) -> Bool {
+    name == "Fn" || name == "Tuple"
+}
+
+fn index_impl(output: SemanticOutput, module_path: String, item: AstImplDecl, resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    match lookup_visible_trait(resolver, module_path, item.head_type.name) {
+        Some(trait_symbol) => if true {
+            let expected = match trait_arity(output, trait_symbol.module_path, trait_symbol.name) {
+                Some(value) => value,
+                None => type_arg_count(item.head_type),
+            };
+            let provided = type_arg_count(item.head_type);
+            let arity_ok = provided == expected || (expected == 0 && provided == 1);
+            let mut out = output;
+            if !arity_ok {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "impl for trait '");
+                parts = vec.push(parts, item.head_type.name);
+                parts = vec.push(parts, "' has the wrong number of type arguments");
+                out = semantic_error(out, max_errors, "E1104", item.span, string.join(parts, ""), "adjust the trait impl type arguments");
+            } else {
+                ()
+            };
+            let target_type = first_type_arg_text(item.head_type);
+            let conflict = has_conflicting_trait_impl(out.impls, item.head_type.name, type_text(item.head_type));
+            if conflict {
+                let mut conflict_parts: Vec[String] = vec.new_vec();
+                conflict_parts = vec.push(conflict_parts, "conflicting impl for trait '");
+                conflict_parts = vec.push(conflict_parts, item.head_type.name);
+                conflict_parts = vec.push(conflict_parts, "' with type arguments '");
+                conflict_parts = vec.push(conflict_parts, type_text(item.head_type));
+                conflict_parts = vec.push(conflict_parts, "'");
+                out = semantic_error(out, max_errors, "E1105", item.span, string.join(conflict_parts, ""), "remove the duplicate impl or use a different concrete target");
+            } else {
+                ()
+            };
+            append_impl(out, semantic_impl_index(module_path, SemanticTraitImpl(), item.head_type.name, target_type, type_text(item.head_type), impl_method_count(item), conflict, item.span))
+        } else {
+            output
+        },
+        None => match lookup_visible_nominal_type(resolver, module_path, item.head_type.name) {
+            Some(_) => append_impl(output, semantic_impl_index(module_path, SemanticInherentImpl(), "", type_text(item.head_type), type_text(item.head_type), impl_method_count(item), false, item.span)),
+            None => if is_blocked_builtin_impl_target(item.head_type.name) || type_arg_count(item.head_type) > 0 {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "impl target '");
+                parts = vec.push(parts, type_text(item.head_type));
+                parts = vec.push(parts, "' must name a known type or trait");
+                semantic_error(output, max_errors, "E1103", item.span, string.join(parts, ""), "declare or import the impl target before the impl block")
+            } else {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "impl target '");
+                parts = vec.push(parts, type_text(item.head_type));
+                parts = vec.push(parts, "' must name a known type or trait");
+                semantic_error(output, max_errors, "E1103", item.span, string.join(parts, ""), "declare or import the impl target before the impl block")
+            },
+        },
+    }
+}
+
+fn analyze_function_item(output: SemanticOutput, module_path: String, signature: AstFunctionSignature, item: AstProgramItem, units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = collect_generic_params(output, module_path, signature.name.value, SemanticFunctionOwner(), signature.generic_params, max_errors);
+    out = validate_top_level_function_context(out, item, signature, max_errors);
+    out = validate_generic_bounds(out, module_path, signature.name.value, SemanticFunctionOwner(), signature.generic_params, resolver, max_errors);
+    validate_signature_types(out, signature, module_path, append_generic_names(vec.new_vec(), signature.generic_params), units, resolver, max_errors)
+}
+
+fn analyze_trait_methods(output: SemanticOutput, module_path: String, trait_item: AstTraitDecl, units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = output;
+    let trait_generics = append_generic_names(vec.new_vec(), trait_item.generic_params);
+    let mut index = 0;
+    while index < vec.vec_len(trait_item.methods) {
+        match vec.get(trait_item.methods, index) {
+            Some(method) => if true {
+                let owner = method_owner_name(trait_item.name.value, method.name.value);
+                out = collect_generic_params(out, module_path, owner, SemanticMethodOwner(), method.generic_params, max_errors);
+                out = validate_generic_bounds(out, module_path, owner, SemanticMethodOwner(), method.generic_params, resolver, max_errors);
+                let method_generics = append_generic_names(trait_generics, method.generic_params);
+                out = validate_signature_types(out, method, module_path, method_generics, units, resolver, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn analyze_impl_methods(output: SemanticOutput, module_path: String, impl_item: AstImplDecl, units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = output;
+    let impl_generics = append_generic_names(vec.new_vec(), impl_item.generic_params);
+    let mut index = 0;
+    while index < vec.vec_len(impl_item.methods) {
+        match vec.get(impl_item.methods, index) {
+            Some(method) => if true {
+                let owner = method_owner_name(type_text(impl_item.head_type), method.signature.name.value);
+                out = collect_generic_params(out, module_path, owner, SemanticMethodOwner(), method.signature.generic_params, max_errors);
+                out = validate_generic_bounds(out, module_path, owner, SemanticMethodOwner(), method.signature.generic_params, resolver, max_errors);
+                let method_generics = append_generic_names(impl_generics, method.signature.generic_params);
+                out = validate_signature_types(out, method.signature, module_path, method_generics, units, resolver, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn analyze_item(output: SemanticOutput, module_path: String, item: AstProgramItem, units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    match item.kind {
+        FunctionItem => match item.function_item {
+            Some(function_item) => analyze_function_item(output, module_path, function_item.signature, item, units, resolver, max_errors),
+            None => match item.function_signature {
+                Some(signature) => analyze_function_item(output, module_path, signature, item, units, resolver, max_errors),
+                None => output,
+            },
+        },
+        StructItem => match item.struct_item {
+            Some(struct_item) => if true {
+                let mut out = collect_generic_params(output, module_path, struct_item.name.value, SemanticStructOwner(), struct_item.generic_params, max_errors);
+                let generics = append_generic_names(vec.new_vec(), struct_item.generic_params);
+                out = validate_generic_bounds(out, module_path, struct_item.name.value, SemanticStructOwner(), struct_item.generic_params, resolver, max_errors);
+                let mut index = 0;
+                while index < vec.vec_len(struct_item.fields) {
+                    match vec.get(struct_item.fields, index) {
+                        Some(field) => if true {
+                            out = validate_type_ref(out, field.type_ref, module_path, generics, units, resolver, max_errors);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                out
+            } else {
+                output
+            },
+            None => output,
+        },
+        EnumItem => match item.enum_item {
+            Some(enum_item) => if true {
+                let mut out = collect_generic_params(output, module_path, enum_item.name.value, SemanticEnumOwner(), enum_item.generic_params, max_errors);
+                let generics = append_generic_names(vec.new_vec(), enum_item.generic_params);
+                out = validate_generic_bounds(out, module_path, enum_item.name.value, SemanticEnumOwner(), enum_item.generic_params, resolver, max_errors);
+                let mut index = 0;
+                while index < vec.vec_len(enum_item.variants) {
+                    match vec.get(enum_item.variants, index) {
+                        Some(variant) => match variant.payload_type {
+                            Some(payload) => if true {
+                                out = validate_type_ref(out, payload, module_path, generics, units, resolver, max_errors);
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                out
+            } else {
+                output
+            },
+            None => output,
+        },
+        TraitItem => match item.trait_item {
+            Some(trait_item) => if true {
+                let mut out = collect_generic_params(output, module_path, trait_item.name.value, SemanticTraitOwner(), trait_item.generic_params, max_errors);
+                out = validate_generic_bounds(out, module_path, trait_item.name.value, SemanticTraitOwner(), trait_item.generic_params, resolver, max_errors);
+                analyze_trait_methods(out, module_path, trait_item, units, resolver, max_errors)
+            } else {
+                output
+            },
+            None => output,
+        },
+        ImplItem => match item.impl_item {
+            Some(impl_item) => if true {
+                let mut out = collect_generic_params(output, module_path, type_text(impl_item.head_type), SemanticImplOwner(), impl_item.generic_params, max_errors);
+                let generics = append_generic_names(vec.new_vec(), impl_item.generic_params);
+                out = validate_generic_bounds(out, module_path, type_text(impl_item.head_type), SemanticImplOwner(), impl_item.generic_params, resolver, max_errors);
+                out = validate_type_ref(out, impl_item.head_type, module_path, generics, units, resolver, max_errors);
+                out = index_impl(out, module_path, impl_item, resolver, max_errors);
+                analyze_impl_methods(out, module_path, impl_item, units, resolver, max_errors)
+            } else {
+                output
+            },
+            None => output,
+        },
+        TypeAliasItem => match item.type_alias_item {
+            Some(alias_item) => if true {
+                let mut out = collect_generic_params(output, module_path, alias_item.name.value, SemanticTypeAliasOwner(), alias_item.generic_params, max_errors);
+                let generics = append_generic_names(vec.new_vec(), alias_item.generic_params);
+                out = validate_generic_bounds(out, module_path, alias_item.name.value, SemanticTypeAliasOwner(), alias_item.generic_params, resolver, max_errors);
+                validate_type_ref(out, alias_item.target_type, module_path, generics, units, resolver, max_errors)
+            } else {
+                output
+            },
+            None => output,
+        },
+        ConstItem => match item.const_item {
+            Some(const_item) => validate_type_ref(output, const_item.type_ref, module_path, vec.new_vec(), units, resolver, max_errors),
+            None => output,
+        },
+    }
+}
+
+fn analyze_unit(output: SemanticOutput, unit: ResolveUnit, units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = output;
+    let mut index = 0;
+    while index < vec.vec_len(unit.program.items) {
+        match vec.get(unit.program.items, index) {
+            Some(item) => if true {
+                out = analyze_item(out, unit.module_path, item, units, resolver, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+pub fn analyze_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> SemanticOutput {
+    let mut out = semantic_output(resolver.entry_module, vec.new_vec(), vec.new_vec(), vec.new_vec(), vec.new_vec(), vec.new_vec(), resolver.diagnostics);
+    out = collect_trait_indexes(out, units, resolver);
+    let mut index = 0;
+    while index < vec.vec_len(units) {
+        match vec.get(units, index) {
+            Some(unit) => if true {
+                out = analyze_unit(out, unit, units, resolver, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+pub fn analyze_units(units: Vec[ResolveUnit], entry_module: String, max_errors: Int) -> SemanticOutput {
+    analyze_resolved_units(units, resolve_units(units, entry_module, max_errors), max_errors)
+}
+
+pub fn analyze_program(program: AstProgram, max_errors: Int) -> SemanticOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    let unit = resolve_unit(program);
+    units = vec.push(units, unit);
+    analyze_units(units, unit.module_path, max_errors)
+}
+
+pub fn semantic_generic_count(value: SemanticOutput) -> Int {
+    vec.vec_len(value.generics)
+}
+
+pub fn semantic_trait_bound_count(value: SemanticOutput) -> Int {
+    vec.vec_len(value.bounds)
+}
+
+pub fn semantic_trait_count(value: SemanticOutput) -> Int {
+    vec.vec_len(value.traits)
+}
+
+pub fn semantic_impl_count(value: SemanticOutput) -> Int {
+    vec.vec_len(value.impls)
+}
+
+pub fn semantic_trait_method_count(value: SemanticOutput) -> Int {
+    vec.vec_len(value.trait_methods)
+}
+
+pub fn semantic_diagnostic_count(value: SemanticOutput) -> Int {
+    vec.vec_len(value.diagnostics)
+}
+
+pub fn semantic_has_diagnostic_code(value: SemanticOutput, code: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.diagnostics) {
+        match vec.get(value.diagnostics, index) {
+            Some(diag) => if diag.code.value == code {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn semantic_has_generic(value: SemanticOutput, module_path: String, owner_name: String, name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.generics) {
+        match vec.get(value.generics, index) {
+            Some(param) => if param.module_path == module_path && param.owner_name == owner_name && param.name == name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn semantic_has_trait_bound(value: SemanticOutput, owner_name: String, generic_name: String, trait_name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.bounds) {
+        match vec.get(value.bounds, index) {
+            Some(bound) => if bound.owner_name == owner_name && bound.generic_name == generic_name && bound.trait_name == trait_name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn semantic_has_trait(value: SemanticOutput, module_path: String, name: String, arity: Int) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.traits) {
+        match vec.get(value.traits, index) {
+            Some(item) => if item.module_path == module_path && item.name == name && item.arity == arity {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn semantic_has_impl(value: SemanticOutput, trait_name: String, target_type: String, impl_kind: SemanticImplKind) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.impls) {
+        match vec.get(value.impls, index) {
+            Some(item) => if item.trait_name == trait_name && item.target_type == target_type && same_impl_kind(item.impl_kind, impl_kind) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn semantic_has_conflicting_impl(value: SemanticOutput, trait_name: String, head_type: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.impls) {
+        match vec.get(value.impls, index) {
+            Some(item) => if item.trait_name == trait_name && item.head_type == head_type && item.conflicting {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn semantic_has_trait_method(value: SemanticOutput, trait_name: String, method_name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(value.trait_methods) {
+        match vec.get(value.trait_methods, index) {
+            Some(method) => if method.trait_name == trait_name && method.name == method_name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}

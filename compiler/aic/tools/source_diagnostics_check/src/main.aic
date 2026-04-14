@@ -8,6 +8,7 @@ import compiler.parser;
 import compiler.ast;
 import compiler.ir;
 import compiler.frontend;
+import compiler.semantics;
 import std.io;
 import std.result;
 import std.vec;
@@ -686,8 +687,9 @@ fn impl_method_matches(value: AstImplDecl, index: Int, name: String, return_type
     }
 }
 
-fn impl_matches(value: AstImplDecl, head_type_name: String, has_block: Bool, body_text: String, method_count: Int) -> Bool {
-    type_text(value.head_type) == head_type_name
+fn impl_matches(value: AstImplDecl, generic_params: String, head_type_name: String, has_block: Bool, body_text: String, method_count: Int) -> Bool {
+    generic_params_text(value.generic_params) == generic_params
+        && type_text(value.head_type) == head_type_name
         && value.has_block == has_block
         && value.body_text == body_text
         && impl_method_count(value) == method_count
@@ -703,6 +705,7 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
     let bad_method = parse_trait_declaration(parser_cursor_from_source(source, "trait Bad { let x }"));
     let marker_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl Order[Int];"));
     let block_impl = parse_impl_declaration(parser_cursor_from_source(source, "pub impl User { fn new(age: Int) -> User { User { age: age } } }"));
+    let generic_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl[T] Box[T] { fn get(self: Box[T]) -> T { self.value } }"));
     let empty_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl User {}"));
     let missing_impl_head = parse_impl_declaration(parser_cursor_from_source(source, "impl ;"));
     let missing_impl_tail = parse_impl_declaration(parser_cursor_from_source(source, "impl User fn bad"));
@@ -741,17 +744,22 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
         None => false,
     };
     let marker_impl_ok = match marker_impl.impl_item {
-        Some(item) => impl_matches(item, "Order[Int]", false, "", 0),
+        Some(item) => impl_matches(item, "", "Order[Int]", false, "", 0),
         None => false,
     };
     let block_impl_ok = match block_impl.impl_item {
         Some(item) => is_public_visibility(item.visibility)
-            && impl_matches(item, "User", true, "fnnew(age:Int)->User{User{age:age}}", 1)
+            && impl_matches(item, "", "User", true, "fnnew(age:Int)->User{User{age:age}}", 1)
             && impl_method_matches(item, 0, "new", "User", "{User{age:age}}"),
         None => false,
     };
+    let generic_impl_ok = match generic_impl.impl_item {
+        Some(item) => impl_matches(item, "T", "Box[T]", true, "fnget(self:Box[T])->T{self.value}", 1)
+            && impl_method_matches(item, 0, "get", "T", "{self.value}"),
+        None => false,
+    };
     let empty_impl_ok = match empty_impl.impl_item {
-        Some(item) => impl_matches(item, "User", true, "", 0),
+        Some(item) => impl_matches(item, "", "User", true, "", 0),
         None => false,
     };
     let missing_impl_head_ok = match missing_impl_head.diagnostic {
@@ -780,9 +788,11 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
         && bad_method_ok
         && marker_impl_ok
         && block_impl_ok
+        && generic_impl_ok
         && empty_impl_ok
         && !has_impl_decl_diagnostic(marker_impl)
         && !has_impl_decl_diagnostic(block_impl)
+        && !has_impl_decl_diagnostic(generic_impl)
         && !has_impl_decl_diagnostic(empty_impl)
         && has_impl_decl_diagnostic(missing_impl_head)
         && missing_impl_head_ok
@@ -1219,6 +1229,66 @@ fn valid_resolver_frontend() -> Bool {
     valid_resolver_positive_cases() && valid_resolver_negative_cases()
 }
 
+fn semantic_positive_units() -> Vec[ResolveUnit] {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(34), "module app.main; trait Show[T] { fn show(self: T) -> Int; } trait Size[T] { fn size(self: T) -> Int; } trait Clone[T]; trait Marker; struct Box[T] { value: T, } enum Maybe[T] { Some(T), None, } type BoxAlias[T] = Box[T]; fn id[T: Show + Size](value: T) -> T where T: Clone { value } impl[T] Box[T] { fn get(self: Box[T]) -> T { self.value } } impl Show[Box[Int]] { fn show(self: Box[Int]) -> Int { 1 } } fn main() -> Int { 0 }"));
+    units
+}
+
+fn valid_semantic_positive_cases() -> Bool {
+    let out = analyze_units(semantic_positive_units(), "app.main", 40);
+    semantic_diagnostic_count(out) == 0
+        && semantic_generic_count(out) >= 8
+        && semantic_trait_bound_count(out) == 3
+        && semantic_trait_count(out) == 4
+        && semantic_impl_count(out) == 2
+        && semantic_trait_method_count(out) == 2
+        && semantic_has_generic(out, "app.main", "id", "T")
+        && semantic_has_generic(out, "app.main", "Box", "T")
+        && semantic_has_generic(out, "app.main", "Maybe", "T")
+        && semantic_has_generic(out, "app.main", "BoxAlias", "T")
+        && semantic_has_generic(out, "app.main", "Box[T]", "T")
+        && semantic_has_trait_bound(out, "id", "T", "Show")
+        && semantic_has_trait_bound(out, "id", "T", "Size")
+        && semantic_has_trait_bound(out, "id", "T", "Clone")
+        && semantic_has_trait(out, "app.main", "Show", 1)
+        && semantic_has_trait(out, "app.main", "Marker", 0)
+        && semantic_has_impl(out, "", "Box[T]", SemanticInherentImpl())
+        && semantic_has_impl(out, "Show", "Box[Int]", SemanticTraitImpl())
+        && semantic_has_trait_method(out, "Show", "show")
+        && semantic_has_trait_method(out, "Size", "size")
+}
+
+fn semantic_single(text: String) -> SemanticOutput {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    units = vec.push(units, parsed_unit(source_id(35), text));
+    analyze_units(units, "app.main", 40)
+}
+
+fn valid_semantic_negative_cases() -> Bool {
+    let wrong_generic_arity = semantic_single("module app.main; struct Box[T] { value: T, } fn bad(value: Box) -> Int { 0 }");
+    let unknown_trait_bound = semantic_single("module app.main; fn bad[T: Missing](value: T) -> T { value }");
+    let trait_arity_mismatch = semantic_single("module app.main; trait Marker; fn bad[T: Marker](value: T) -> T { value }");
+    let duplicate_generic = semantic_single("module app.main; fn bad[T, T](value: T) -> T { value }");
+    let conflicting_impl = semantic_single("module app.main; trait Show[T]; struct Token {} impl Show[Token]; impl Show[Token];");
+    let impl_trait_arity = semantic_single("module app.main; trait Pair[A, B]; struct Token {} impl Pair[Token];");
+    let invalid_impl_target = semantic_single("module app.main; impl Fn(Int) -> Int;");
+    let method_outside_context = semantic_single("module app.main; struct Token {} fn bad(self: Token) -> Int { 0 }");
+    semantic_has_diagnostic_code(wrong_generic_arity, "E1250")
+        && semantic_has_diagnostic_code(unknown_trait_bound, "E1259")
+        && semantic_has_diagnostic_code(trait_arity_mismatch, "E1259")
+        && semantic_has_diagnostic_code(duplicate_generic, "E1259")
+        && semantic_has_diagnostic_code(conflicting_impl, "E1105")
+        && semantic_has_conflicting_impl(conflicting_impl, "Show", "Show[Token]")
+        && semantic_has_diagnostic_code(impl_trait_arity, "E1104")
+        && semantic_has_diagnostic_code(invalid_impl_target, "E1103")
+        && semantic_has_diagnostic_code(method_outside_context, "E1259")
+}
+
+fn valid_semantic_frontend() -> Bool {
+    valid_semantic_positive_cases() && valid_semantic_negative_cases()
+}
+
 fn main() -> Int effects { io } capabilities { io } {
     let left = span(source_id(1), 0, 4);
     let right = span(source_id(1), 4, 10);
@@ -1250,9 +1320,10 @@ fn main() -> Int effects { io } capabilities { io } {
     let expression_block_ok = valid_parser_expression_and_block_declarations();
     let program_ok = valid_parser_program_orchestration();
     let resolver_ok = valid_resolver_frontend();
+    let semantic_ok = valid_semantic_frontend();
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && ast_ir_ok {
         print_int(0);
         0
     } else {

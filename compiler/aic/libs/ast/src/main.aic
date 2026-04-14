@@ -341,6 +341,7 @@ pub struct AstImplMethod {
 
 pub struct AstImplDecl {
     pub visibility: AstVisibility,
+    pub generic_params: AstGenericParamList,
     pub head_type: AstType,
     pub methods: Vec[AstImplMethod],
     pub body_text: String,
@@ -1083,9 +1084,10 @@ pub fn impl_method(signature: AstFunctionSignature, body: AstBlock, span: Source
     }
 }
 
-pub fn impl_decl(visibility: AstVisibility, head_type: AstType, methods: Vec[AstImplMethod], body_text: String, has_block: Bool, span: SourceSpan) -> AstImplDecl {
+pub fn impl_decl(visibility: AstVisibility, generic_params: AstGenericParamList, head_type: AstType, methods: Vec[AstImplMethod], body_text: String, has_block: Bool, span: SourceSpan) -> AstImplDecl {
     AstImplDecl {
         visibility: visibility,
+        generic_params: generic_params,
         head_type: head_type,
         methods: methods,
         body_text: body_text,

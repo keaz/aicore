@@ -982,6 +982,26 @@ fn parse_item_header_after_visibility(cursor: ParserCursor, visibility: AstVisib
             header: None(),
             diagnostic: kind_result.diagnostic,
         }
+    } else if at_delimiter(kind_result.cursor, "[") {
+        match kind_result.kind {
+            Some(kind) => match kind {
+                ImplItem => ParseItemHeader {
+                    cursor: kind_result.cursor,
+                    header: Some(item_header(kind, visibility, ast_name("impl", kind_result.token.span), merge(start_span, kind_result.token.span))),
+                    diagnostic: None(),
+                },
+                _ => ParseItemHeader {
+                    cursor: kind_result.cursor,
+                    header: None(),
+                    diagnostic: Some(error(diagnostic_code("E1051"), current_token(skip_trivia(kind_result.cursor)).span, "expected item name")),
+                },
+            },
+            None => ParseItemHeader {
+                cursor: kind_result.cursor,
+                header: None(),
+                diagnostic: Some(error(diagnostic_code("E1052"), kind_result.token.span, "missing item kind")),
+            },
+        }
     } else {
         let name_result = expect_identifier(kind_result.cursor, "E1051", "expected item name");
         if has_diagnostic(name_result) {
@@ -5741,6 +5761,7 @@ pub fn parse_impl_method_list(cursor: ParserCursor) -> ParseImplMethodList {
 fn impl_decl_result(
     cursor: ParserCursor,
     visibility: AstVisibility,
+    generic_params: AstGenericParamList,
     start_span: SourceSpan,
     head_type: AstType,
     methods: Vec[AstImplMethod],
@@ -5750,7 +5771,7 @@ fn impl_decl_result(
 ) -> ParseImplDecl {
     ParseImplDecl {
         cursor: cursor,
-        impl_item: Some(impl_decl(visibility, head_type, methods, body_text, has_block, merge(start_span, end_span))),
+        impl_item: Some(impl_decl(visibility, generic_params, head_type, methods, body_text, has_block, merge(start_span, end_span))),
         diagnostic: None(),
     }
 }
@@ -5772,56 +5793,65 @@ pub fn parse_impl_declaration(cursor: ParserCursor) -> ParseImplDecl {
                 diagnostic: impl_keyword.diagnostic,
             }
         } else {
-            let head_result = parse_type_ref(impl_keyword.cursor, false);
-            if has_type_ref_diagnostic(head_result) {
+            let generic_result = parse_optional_generic_params(impl_keyword.cursor);
+            if has_generic_params_diagnostic(generic_result) {
                 ParseImplDecl {
-                    cursor: head_result.cursor,
+                    cursor: generic_result.cursor,
                     impl_item: None(),
-                    diagnostic: head_result.diagnostic,
+                    diagnostic: generic_result.diagnostic,
                 }
             } else {
-                match visibility_result.visibility {
-                    Some(visibility) => match head_result.type_ref {
-                        Some(head_type) => if at_delimiter(head_result.cursor, ";") {
-                            let semi_result = expect_delimiter(head_result.cursor, ";", "E1231", "expected semicolon after impl declaration");
-                            if has_diagnostic(semi_result) {
-                                ParseImplDecl {
-                                    cursor: semi_result.cursor,
-                                    impl_item: None(),
-                                    diagnostic: semi_result.diagnostic,
+                let head_result = parse_type_ref(generic_result.cursor, false);
+                if has_type_ref_diagnostic(head_result) {
+                    ParseImplDecl {
+                        cursor: head_result.cursor,
+                        impl_item: None(),
+                        diagnostic: head_result.diagnostic,
+                    }
+                } else {
+                    match visibility_result.visibility {
+                        Some(visibility) => match head_result.type_ref {
+                            Some(head_type) => if at_delimiter(head_result.cursor, ";") {
+                                let semi_result = expect_delimiter(head_result.cursor, ";", "E1231", "expected semicolon after impl declaration");
+                                if has_diagnostic(semi_result) {
+                                    ParseImplDecl {
+                                        cursor: semi_result.cursor,
+                                        impl_item: None(),
+                                        diagnostic: semi_result.diagnostic,
+                                    }
+                                } else {
+                                    impl_decl_result(semi_result.cursor, visibility, generic_result.params, merge(visibility_result.span, impl_keyword.token.span), head_type, vec.new_vec(), "", false, semi_result.token.span)
+                                }
+                            } else if at_delimiter(head_result.cursor, "{") {
+                                let methods_result = parse_impl_method_list(head_result.cursor);
+                                if has_impl_method_list_diagnostic(methods_result) {
+                                    ParseImplDecl {
+                                        cursor: methods_result.cursor,
+                                        impl_item: None(),
+                                        diagnostic: methods_result.diagnostic,
+                                    }
+                                } else {
+                                    impl_decl_result(methods_result.cursor, visibility, generic_result.params, merge(visibility_result.span, impl_keyword.token.span), head_type, methods_result.methods, methods_result.text, true, methods_result.span)
                                 }
                             } else {
-                                impl_decl_result(semi_result.cursor, visibility, merge(visibility_result.span, impl_keyword.token.span), head_type, vec.new_vec(), "", false, semi_result.token.span)
-                            }
-                        } else if at_delimiter(head_result.cursor, "{") {
-                            let methods_result = parse_impl_method_list(head_result.cursor);
-                            if has_impl_method_list_diagnostic(methods_result) {
                                 ParseImplDecl {
-                                    cursor: methods_result.cursor,
+                                    cursor: head_result.cursor,
                                     impl_item: None(),
-                                    diagnostic: methods_result.diagnostic,
+                                    diagnostic: Some(error(diagnostic_code("E1235"), current_token(skip_trivia(head_result.cursor)).span, "expected semicolon or block after impl head")),
                                 }
-                            } else {
-                                impl_decl_result(methods_result.cursor, visibility, merge(visibility_result.span, impl_keyword.token.span), head_type, methods_result.methods, methods_result.text, true, methods_result.span)
-                            }
-                        } else {
-                            ParseImplDecl {
+                            },
+                            None => ParseImplDecl {
                                 cursor: head_result.cursor,
                                 impl_item: None(),
-                                diagnostic: Some(error(diagnostic_code("E1235"), current_token(skip_trivia(head_result.cursor)).span, "expected semicolon or block after impl head")),
-                            }
+                                diagnostic: Some(error(diagnostic_code("E1236"), head_result.span, "missing impl head type")),
+                            },
                         },
                         None => ParseImplDecl {
-                            cursor: head_result.cursor,
+                            cursor: visibility_result.cursor,
                             impl_item: None(),
-                            diagnostic: Some(error(diagnostic_code("E1236"), head_result.span, "missing impl head type")),
+                            diagnostic: Some(error(diagnostic_code("E1237"), visibility_result.span, "missing impl visibility")),
                         },
-                    },
-                    None => ParseImplDecl {
-                        cursor: visibility_result.cursor,
-                        impl_item: None(),
-                        diagnostic: Some(error(diagnostic_code("E1237"), visibility_result.span, "missing impl visibility")),
-                    },
+                    }
                 }
             }
         }

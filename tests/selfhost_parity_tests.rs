@@ -124,6 +124,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/libs/ir/src/main.aic",
         "compiler/aic/libs/frontend/aic.toml",
         "compiler/aic/libs/frontend/src/main.aic",
+        "compiler/aic/libs/semantics/aic.toml",
+        "compiler/aic/libs/semantics/src/main.aic",
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
     ] {
@@ -262,6 +264,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub fn trait_decl"));
     assert!(ast.contains("pub fn impl_method"));
     assert!(ast.contains("pub fn impl_decl"));
+    assert!(ast.contains("pub generic_params: AstGenericParamList"));
     assert!(ast.contains("pub fn named_type"));
     assert!(ast.contains("pub fn dyn_trait_type"));
     assert!(ast.contains("pub fn generic_params_text"));
@@ -321,6 +324,33 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(frontend.contains("pub fn resolver_has_symbol"));
     assert!(frontend.contains("pub fn resolver_has_member"));
     assert!(frontend.contains("pub fn resolver_has_reference"));
+
+    let semantics = fs::read_to_string(root.join("compiler/aic/libs/semantics/src/main.aic"))
+        .expect("read semantics lib");
+    assert!(semantics.contains("pub enum SemanticOwnerKind"));
+    assert!(semantics.contains("pub enum SemanticImplKind"));
+    assert!(semantics.contains("pub struct SemanticGenericParam"));
+    assert!(semantics.contains("pub struct SemanticTraitBound"));
+    assert!(semantics.contains("pub struct SemanticTraitIndex"));
+    assert!(semantics.contains("pub struct SemanticImplIndex"));
+    assert!(semantics.contains("pub struct SemanticTraitMethod"));
+    assert!(semantics.contains("pub struct SemanticOutput"));
+    assert!(semantics.contains("pub fn analyze_program"));
+    assert!(semantics.contains("pub fn analyze_units"));
+    assert!(semantics.contains("pub fn analyze_resolved_units"));
+    assert!(semantics.contains("pub fn semantic_generic_count"));
+    assert!(semantics.contains("pub fn semantic_trait_bound_count"));
+    assert!(semantics.contains("pub fn semantic_trait_count"));
+    assert!(semantics.contains("pub fn semantic_impl_count"));
+    assert!(semantics.contains("pub fn semantic_trait_method_count"));
+    assert!(semantics.contains("pub fn semantic_diagnostic_count"));
+    assert!(semantics.contains("pub fn semantic_has_diagnostic_code"));
+    assert!(semantics.contains("pub fn semantic_has_generic"));
+    assert!(semantics.contains("pub fn semantic_has_trait_bound"));
+    assert!(semantics.contains("pub fn semantic_has_trait"));
+    assert!(semantics.contains("pub fn semantic_has_impl"));
+    assert!(semantics.contains("pub fn semantic_has_conflicting_impl"));
+    assert!(semantics.contains("pub fn semantic_has_trait_method"));
 }
 
 #[test]
