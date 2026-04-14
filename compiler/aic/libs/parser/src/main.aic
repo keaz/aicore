@@ -246,6 +246,45 @@ pub struct ParseImplDecl {
     pub diagnostic: Option[Diagnostic],
 }
 
+pub struct ParseAttributeValue {
+    pub cursor: ParserCursor,
+    pub value: String,
+    pub kind: AstAttributeValueKind,
+    pub span: SourceSpan,
+    pub text: String,
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseAttributeArg {
+    pub cursor: ParserCursor,
+    pub arg: Option[AstAttributeArg],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseAttribute {
+    pub cursor: ParserCursor,
+    pub attr: Option[AstAttribute],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseAttributeList {
+    pub cursor: ParserCursor,
+    pub attrs: Vec[AstAttribute],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseProgramItem {
+    pub cursor: ParserCursor,
+    pub item: Option[AstProgramItem],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseProgram {
+    pub cursor: ParserCursor,
+    pub program: Option[AstProgram],
+    pub diagnostics: Vec[Diagnostic],
+}
+
 pub fn parser_cursor(source: SourceId, tokens: Vec[Token]) -> ParserCursor {
     parser_cursor_at(source, tokens, 0)
 }
@@ -592,6 +631,45 @@ pub fn has_impl_decl_diagnostic(result: ParseImplDecl) -> Bool {
         Some(_) => true,
         None => false,
     }
+}
+
+pub fn has_attribute_value_diagnostic(result: ParseAttributeValue) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_attribute_arg_diagnostic(result: ParseAttributeArg) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_attribute_diagnostic(result: ParseAttribute) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_attribute_list_diagnostic(result: ParseAttributeList) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_program_item_diagnostic(result: ParseProgramItem) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_program_diagnostics(result: ParseProgram) -> Bool {
+    vec.vec_len(result.diagnostics) > 0
 }
 
 pub fn expect_keyword(cursor: ParserCursor, lexeme: String, code: String, message: String) -> ParseExpectation {
@@ -1021,6 +1099,18 @@ fn is_trait_item_kind(value: AstItemKind) -> Bool {
         StructItem => false,
         EnumItem => false,
         ImplItem => false,
+        TypeAliasItem => false,
+        ConstItem => false,
+    }
+}
+
+fn is_impl_item_kind(value: AstItemKind) -> Bool {
+    match value {
+        ImplItem => true,
+        FunctionItem => false,
+        StructItem => false,
+        EnumItem => false,
+        TraitItem => false,
         TypeAliasItem => false,
         ConstItem => false,
     }
@@ -1514,7 +1604,16 @@ pub fn parse_type_ref(cursor: ParserCursor, stop_at_comma: Bool) -> ParseTypeRef
 }
 
 pub fn parse_param(cursor: ParserCursor) -> ParseParam {
-    let name_result = expect_identifier(cursor, "E1070", "expected parameter name");
+    let start_token = current_token(skip_trivia(cursor));
+    let attrs_result = parse_attribute_list(cursor);
+    if has_attribute_list_diagnostic(attrs_result) {
+        ParseParam {
+            cursor: attrs_result.cursor,
+            param: None(),
+            diagnostic: attrs_result.diagnostic,
+        }
+    } else {
+    let name_result = expect_identifier(attrs_result.cursor, "E1070", "expected parameter name");
     if has_diagnostic(name_result) {
         ParseParam {
             cursor: name_result.cursor,
@@ -1541,7 +1640,7 @@ pub fn parse_param(cursor: ParserCursor) -> ParseParam {
                 match type_result.type_ref {
                     Some(type_ref) => ParseParam {
                         cursor: type_result.cursor,
-                        param: Some(ast_param(ast_name(name_result.token.lexeme, name_result.token.span), type_ref, merge(name_result.token.span, type_result.span))),
+                        param: Some(ast_param_with_attrs(attrs_result.attrs, ast_name(name_result.token.lexeme, name_result.token.span), type_ref, merge(start_token.span, type_result.span))),
                         diagnostic: None(),
                     },
                     None => ParseParam {
@@ -1552,6 +1651,7 @@ pub fn parse_param(cursor: ParserCursor) -> ParseParam {
                 }
             }
         }
+    }
     }
 }
 
@@ -4487,6 +4587,7 @@ fn parse_return_statement(cursor: ParserCursor) -> ParseStatement {
 
 fn struct_field_result(
     cursor: ParserCursor,
+    attrs: Vec[AstAttribute],
     name_token: Token,
     visibility: AstVisibility,
     type_ref: AstType,
@@ -4497,13 +4598,22 @@ fn struct_field_result(
 ) -> ParseStructField {
     ParseStructField {
         cursor: cursor,
-        field: Some(ast_field(ast_name(name_token.lexeme, name_token.span), visibility, type_ref, default_expr, default_text, merge(field_start, field_end))),
+        field: Some(ast_field_with_attrs(attrs, ast_name(name_token.lexeme, name_token.span), visibility, type_ref, default_expr, default_text, merge(field_start, field_end))),
         diagnostic: None(),
     }
 }
 
 pub fn parse_struct_field(cursor: ParserCursor) -> ParseStructField {
-    let visibility_result = parse_visibility(cursor);
+    let start_token = current_token(skip_trivia(cursor));
+    let attrs_result = parse_attribute_list(cursor);
+    if has_attribute_list_diagnostic(attrs_result) {
+        ParseStructField {
+            cursor: attrs_result.cursor,
+            field: None(),
+            diagnostic: attrs_result.diagnostic,
+        }
+    } else {
+    let visibility_result = parse_visibility(attrs_result.cursor);
     if has_visibility_diagnostic(visibility_result) {
         ParseStructField {
             cursor: visibility_result.cursor,
@@ -4568,7 +4678,7 @@ pub fn parse_struct_field(cursor: ParserCursor) -> ParseStructField {
                         },
 	                        None => match visibility_result.visibility {
 	                            Some(visibility) => match type_result.type_ref {
-	                                Some(type_ref) => struct_field_result(out_cursor, name_result.token, visibility, type_ref, default_expr, default_text, visibility_result.span, field_end),
+	                                Some(type_ref) => struct_field_result(out_cursor, attrs_result.attrs, name_result.token, visibility, type_ref, default_expr, default_text, start_token.span, field_end),
 	                                None => ParseStructField {
                                     cursor: type_result.cursor,
                                     field: None(),
@@ -4585,6 +4695,7 @@ pub fn parse_struct_field(cursor: ParserCursor) -> ParseStructField {
                 }
             }
         }
+    }
     }
 }
 
@@ -4771,19 +4882,30 @@ pub fn parse_struct_declaration(cursor: ParserCursor) -> ParseStructDecl {
 
 fn enum_variant_result(
     cursor: ParserCursor,
+    attrs: Vec[AstAttribute],
     name_token: Token,
     payload_type: Option[AstType],
+    variant_start: SourceSpan,
     variant_end: SourceSpan,
 ) -> ParseEnumVariant {
     ParseEnumVariant {
         cursor: cursor,
-        variant: Some(enum_variant(ast_name(name_token.lexeme, name_token.span), payload_type, merge(name_token.span, variant_end))),
+        variant: Some(enum_variant_with_attrs(attrs, ast_name(name_token.lexeme, name_token.span), payload_type, merge(variant_start, variant_end))),
         diagnostic: None(),
     }
 }
 
 pub fn parse_enum_variant(cursor: ParserCursor) -> ParseEnumVariant {
-    let name_result = expect_identifier(cursor, "E1150", "expected enum variant name");
+    let start_token = current_token(skip_trivia(cursor));
+    let attrs_result = parse_attribute_list(cursor);
+    if has_attribute_list_diagnostic(attrs_result) {
+        ParseEnumVariant {
+            cursor: attrs_result.cursor,
+            variant: None(),
+            diagnostic: attrs_result.diagnostic,
+        }
+    } else {
+    let name_result = expect_identifier(attrs_result.cursor, "E1150", "expected enum variant name");
     if has_diagnostic(name_result) {
         ParseEnumVariant {
             cursor: name_result.cursor,
@@ -4810,7 +4932,7 @@ pub fn parse_enum_variant(cursor: ParserCursor) -> ParseEnumVariant {
                     }
                 } else {
                     match payload_result.type_ref {
-                        Some(payload_type) => enum_variant_result(close_result.cursor, name_result.token, Some(payload_type), close_result.token.span),
+                        Some(payload_type) => enum_variant_result(close_result.cursor, attrs_result.attrs, name_result.token, Some(payload_type), start_token.span, close_result.token.span),
                         None => ParseEnumVariant {
                             cursor: payload_result.cursor,
                             variant: None(),
@@ -4820,8 +4942,9 @@ pub fn parse_enum_variant(cursor: ParserCursor) -> ParseEnumVariant {
                 }
             }
         } else {
-            enum_variant_result(name_result.cursor, name_result.token, None(), name_result.token.span)
+            enum_variant_result(name_result.cursor, attrs_result.attrs, name_result.token, None(), start_token.span, name_result.token.span)
         }
+    }
     }
 }
 
@@ -5298,7 +5421,15 @@ pub fn parse_function_declaration(cursor: ParserCursor) -> ParseFunctionDecl {
 }
 
 pub fn parse_trait_method_signature(cursor: ParserCursor) -> ParseTraitMethodSignature {
-    let signature_result = parse_function_signature(cursor);
+    let attrs_result = parse_attribute_list(cursor);
+    if has_attribute_list_diagnostic(attrs_result) {
+        ParseTraitMethodSignature {
+            cursor: attrs_result.cursor,
+            signature: None(),
+            diagnostic: attrs_result.diagnostic,
+        }
+    } else {
+    let signature_result = parse_function_signature(attrs_result.cursor);
     if has_function_signature_diagnostic(signature_result) {
         ParseTraitMethodSignature {
             cursor: signature_result.cursor,
@@ -5316,10 +5447,14 @@ pub fn parse_trait_method_signature(cursor: ParserCursor) -> ParseTraitMethodSig
         } else {
             ParseTraitMethodSignature {
                 cursor: semi_result.cursor,
-                signature: signature_result.signature,
+                signature: match signature_result.signature {
+                    Some(signature) => Some(function_signature_with_new_attrs(signature, attrs_result.attrs)),
+                    None => None(),
+                },
                 diagnostic: None(),
             }
         }
+    }
     }
 }
 
@@ -5459,7 +5594,15 @@ pub fn parse_trait_declaration(cursor: ParserCursor) -> ParseTraitDecl {
 }
 
 pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
-    let signature_result = parse_function_signature(cursor);
+    let attrs_result = parse_attribute_list(cursor);
+    if has_attribute_list_diagnostic(attrs_result) {
+        ParseImplMethod {
+            cursor: attrs_result.cursor,
+            method: None(),
+            diagnostic: attrs_result.diagnostic,
+        }
+    } else {
+    let signature_result = parse_function_signature(attrs_result.cursor);
     if has_function_signature_diagnostic(signature_result) {
         ParseImplMethod {
             cursor: signature_result.cursor,
@@ -5469,6 +5612,7 @@ pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
     } else {
         match signature_result.signature {
             Some(signature) => if true {
+                let attributed_signature = function_signature_with_new_attrs(signature, attrs_result.attrs);
                 let body_result = parse_block(signature_result.cursor);
                 if has_block_diagnostic(body_result) {
                     ParseImplMethod {
@@ -5478,7 +5622,7 @@ pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
                     }
                 } else {
                     match body_result.block {
-                        Some(block) => if type_text(signature.return_type) != "()" && !block_has_required_tail(block) {
+                        Some(block) => if type_text(attributed_signature.return_type) != "()" && !block_has_required_tail(block) {
                             ParseImplMethod {
                                 cursor: body_result.cursor,
                                 method: None(),
@@ -5487,7 +5631,7 @@ pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
                         } else {
                             ParseImplMethod {
                                 cursor: body_result.cursor,
-                                method: Some(impl_method(signature, block, merge(signature.span, block.span))),
+                                method: Some(impl_method(attributed_signature, block, merge(attributed_signature.span, block.span))),
                                 diagnostic: None(),
                             }
                         },
@@ -5511,6 +5655,7 @@ pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
                 diagnostic: Some(error(diagnostic_code("E1241"), current_token(skip_trivia(signature_result.cursor)).span, "missing impl method signature")),
             },
         }
+    }
     }
 }
 
@@ -5681,6 +5826,1070 @@ pub fn parse_impl_declaration(cursor: ParserCursor) -> ParseImplDecl {
             }
         }
     }
+}
+
+fn parse_attribute_value_error(cursor: ParserCursor, token: Token, code: String, message: String) -> ParseAttributeValue {
+    ParseAttributeValue {
+        cursor: cursor,
+        value: "",
+        kind: AstAttributeIdentValue(),
+        span: token.span,
+        text: "",
+        diagnostic: Some(error(diagnostic_code(code), token.span, message)),
+    }
+}
+
+fn parse_attribute_value_ok(cursor: ParserCursor, token: Token, kind: AstAttributeValueKind, value: String, text: String) -> ParseAttributeValue {
+    ParseAttributeValue {
+        cursor: cursor,
+        value: value,
+        kind: kind,
+        span: token.span,
+        text: text,
+        diagnostic: None(),
+    }
+}
+
+pub fn parse_attribute_value(cursor: ParserCursor) -> ParseAttributeValue {
+    let active = skip_trivia(cursor);
+    let token = current_token(active);
+    match token.kind {
+        StringLiteral => parse_attribute_value_ok(advance(active), token, AstAttributeStringValue(), token.lexeme, token.lexeme),
+        IntegerLiteral => parse_attribute_value_ok(advance(active), token, AstAttributeIntValue(), token.lexeme, token.lexeme),
+        Identifier => parse_attribute_value_ok(advance(active), token, AstAttributeIdentValue(), token.lexeme, token.lexeme),
+        Keyword => if token.lexeme == "true" || token.lexeme == "false" {
+            parse_attribute_value_ok(advance(active), token, AstAttributeBoolValue(), token.lexeme, token.lexeme)
+        } else {
+            parse_attribute_value_error(active, token, "E1095", "expected attribute argument value")
+        },
+        Operator => if token.lexeme == "-" {
+            let minus = expect_operator(active, "-", "E1095", "expected attribute argument value");
+            let number = current_token(skip_trivia(minus.cursor));
+            match number.kind {
+                IntegerLiteral => parse_attribute_value_ok(advance(skip_trivia(minus.cursor)), token, AstAttributeIntValue(), wrap_text("-", number.lexeme, ""), wrap_text("-", number.lexeme, "")),
+                _ => parse_attribute_value_error(minus.cursor, number, "E1095", "expected integer literal after '-' in attribute argument"),
+            }
+        } else {
+            parse_attribute_value_error(active, token, "E1095", "expected attribute argument value")
+        },
+        _ => parse_attribute_value_error(active, token, "E1095", "expected attribute argument value"),
+    }
+}
+
+fn recover_to_attribute_delimiter(cursor: ParserCursor) -> ParserCursor {
+    let mut out = cursor;
+    let mut done = false;
+    while !done && !is_at_end(out) {
+        if at_delimiter(out, ",") || at_delimiter(out, ")") || at_delimiter(out, "]") {
+            done = true;
+        } else {
+            let next = advance(skip_trivia(out));
+            if next.index == out.index {
+                done = true;
+            } else {
+                out = next;
+            };
+        };
+    };
+    out
+}
+
+fn recover_to_attribute_end(cursor: ParserCursor) -> ParserCursor {
+    let mut out = cursor;
+    let mut done = false;
+    while !done && !is_at_end(out) {
+        if at_delimiter(out, "]") {
+            out = advance(skip_trivia(out));
+            done = true;
+        } else {
+            let next = advance(skip_trivia(out));
+            if next.index == out.index {
+                done = true;
+            } else {
+                out = next;
+            };
+        };
+    };
+    out
+}
+
+fn parse_attribute_arg_result(cursor: ParserCursor, name: String, value: ParseAttributeValue, named: Bool, start_span: SourceSpan) -> ParseAttributeArg {
+    if has_attribute_value_diagnostic(value) {
+        ParseAttributeArg {
+            cursor: recover_to_attribute_delimiter(value.cursor),
+            arg: None(),
+            diagnostic: value.diagnostic,
+        }
+    } else {
+        ParseAttributeArg {
+            cursor: value.cursor,
+            arg: Some(ast_attribute_arg(name, value.value, value.kind, named, merge(start_span, value.span), if named { wrap_text(name, "=", value.text) } else { value.text })),
+            diagnostic: None(),
+        }
+    }
+}
+
+pub fn parse_attribute_arg(cursor: ParserCursor) -> ParseAttributeArg {
+    let active = skip_trivia(cursor);
+    let token = current_token(active);
+    let after_token = advance(active);
+    if at_identifier(active) && at_operator(after_token, "=") {
+        let name_result = expect_identifier(active, "E1095", "expected attribute argument name");
+        if has_diagnostic(name_result) {
+            ParseAttributeArg {
+                cursor: recover_to_attribute_delimiter(name_result.cursor),
+                arg: None(),
+                diagnostic: name_result.diagnostic,
+            }
+        } else {
+            let eq_result = expect_operator(name_result.cursor, "=", "E1095", "expected '=' after attribute argument name");
+            if has_diagnostic(eq_result) {
+                ParseAttributeArg {
+                    cursor: recover_to_attribute_delimiter(eq_result.cursor),
+                    arg: None(),
+                    diagnostic: eq_result.diagnostic,
+                }
+            } else {
+                parse_attribute_arg_result(eq_result.cursor, name_result.token.lexeme, parse_attribute_value(eq_result.cursor), true, name_result.token.span)
+            }
+        }
+    } else {
+        parse_attribute_arg_result(active, "", parse_attribute_value(active), false, token.span)
+    }
+}
+
+fn attribute_args_text(args: Vec[AstAttributeArg]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(args) {
+        match vec.get(args, index) {
+            Some(arg) => if true {
+                parts = vec.push(parts, arg.text);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, ",")
+}
+
+pub fn parse_attribute(cursor: ParserCursor) -> ParseAttribute {
+    let hash = expect_delimiter(cursor, "#", "E1094", "expected attribute marker");
+    if has_diagnostic(hash) {
+        ParseAttribute {
+            cursor: hash.cursor,
+            attr: None(),
+            diagnostic: hash.diagnostic,
+        }
+    } else {
+        let open = expect_delimiter(hash.cursor, "[", "E1094", "expected '[' after attribute marker");
+        if has_diagnostic(open) {
+            ParseAttribute {
+                cursor: open.cursor,
+                attr: None(),
+                diagnostic: open.diagnostic,
+            }
+        } else {
+            let name = expect_identifier(open.cursor, "E1094", "expected attribute name after '#['");
+            if has_diagnostic(name) {
+                ParseAttribute {
+                    cursor: recover_to_attribute_end(name.cursor),
+                    attr: None(),
+                    diagnostic: name.diagnostic,
+                }
+            } else {
+                let mut out_cursor = name.cursor;
+                let mut args: Vec[AstAttributeArg] = vec.new_vec();
+                let mut diagnostic: Option[Diagnostic] = None();
+                let mut done = false;
+                if at_delimiter(out_cursor, "(") {
+                    let open_args = expect_delimiter(out_cursor, "(", "E1095", "expected attribute argument list opener");
+                    out_cursor = open_args.cursor;
+                    if at_delimiter(out_cursor, ")") {
+                        let close_args = expect_delimiter(out_cursor, ")", "E1095", "expected ')' after attribute arguments");
+                        out_cursor = close_args.cursor;
+                        diagnostic = close_args.diagnostic;
+                    } else {
+                        while !done {
+                            let arg_result = parse_attribute_arg(out_cursor);
+                            if has_attribute_arg_diagnostic(arg_result) {
+                                diagnostic = arg_result.diagnostic;
+                                out_cursor = arg_result.cursor;
+                                done = true;
+                            } else {
+                                args = match arg_result.arg {
+                                    Some(arg) => vec.push(args, arg),
+                                    None => args,
+                                };
+                                out_cursor = arg_result.cursor;
+                                if at_delimiter(out_cursor, ",") {
+                                    let comma = expect_delimiter(out_cursor, ",", "E1095", "expected attribute argument separator");
+                                    out_cursor = comma.cursor;
+                                } else {
+                                    done = true;
+                                };
+                            };
+                        };
+                        if !has_optional_diagnostic(diagnostic) {
+                            let close_args = expect_delimiter(out_cursor, ")", "E1095", "expected ')' after attribute arguments");
+                            out_cursor = close_args.cursor;
+                            diagnostic = close_args.diagnostic;
+                        } else {
+                            out_cursor = recover_to_attribute_end(out_cursor);
+                        };
+                    };
+                } else {
+                    ()
+                };
+
+                match diagnostic {
+                    Some(diag) => ParseAttribute {
+                        cursor: out_cursor,
+                        attr: None(),
+                        diagnostic: Some(diag),
+                    },
+                    None => if true {
+                        let close = expect_delimiter(out_cursor, "]", "E1094", "expected ']' after attribute");
+                        if has_diagnostic(close) {
+                            ParseAttribute {
+                                cursor: recover_to_attribute_end(close.cursor),
+                                attr: None(),
+                                diagnostic: close.diagnostic,
+                            }
+                        } else {
+                            let arg_text = attribute_args_text(args);
+                            let text = if arg_text == "" {
+                                wrap_text("#[", name.token.lexeme, "]")
+                            } else {
+                                wrap_text("#[", name.token.lexeme, wrap_text("(", arg_text, ")]"))
+                            };
+                            ParseAttribute {
+                                cursor: close.cursor,
+                                attr: Some(ast_attribute(name.token.lexeme, args, merge(hash.token.span, close.token.span), text)),
+                                diagnostic: None(),
+                            }
+                        }
+                    } else {
+                        ParseAttribute {
+                            cursor: out_cursor,
+                            attr: None(),
+                            diagnostic: Some(error(diagnostic_code("E1094"), name.token.span, "expected attribute")),
+                        }
+                    },
+                }
+            }
+        }
+    }
+}
+
+fn at_attribute_start(cursor: ParserCursor) -> Bool {
+    let active = skip_trivia(cursor);
+    at_delimiter(active, "#") && at_delimiter(advance(active), "[")
+}
+
+pub fn parse_attribute_list(cursor: ParserCursor) -> ParseAttributeList {
+    let mut out_cursor = cursor;
+    let mut attrs: Vec[AstAttribute] = vec.new_vec();
+    let mut diagnostic: Option[Diagnostic] = None();
+    let mut done = false;
+    while !done && at_attribute_start(out_cursor) {
+        let attr_result = parse_attribute(out_cursor);
+        if has_attribute_diagnostic(attr_result) {
+            diagnostic = attr_result.diagnostic;
+            out_cursor = attr_result.cursor;
+            done = true;
+        } else {
+            attrs = match attr_result.attr {
+                Some(attr) => vec.push(attrs, attr),
+                None => attrs,
+            };
+            out_cursor = attr_result.cursor;
+        };
+    };
+    ParseAttributeList {
+        cursor: out_cursor,
+        attrs: attrs,
+        diagnostic: diagnostic,
+    }
+}
+
+fn attribute_value_is_string(value: AstAttributeArg) -> Bool {
+    match value.kind {
+        AstAttributeStringValue => true,
+        AstAttributeIntValue => false,
+        AstAttributeBoolValue => false,
+        AstAttributeIdentValue => false,
+    }
+}
+
+fn attribute_value_is_int(value: AstAttributeArg) -> Bool {
+    match value.kind {
+        AstAttributeIntValue => true,
+        AstAttributeStringValue => false,
+        AstAttributeBoolValue => false,
+        AstAttributeIdentValue => false,
+    }
+}
+
+fn is_known_framework_attribute(name: String) -> Bool {
+    name == "get"
+        || name == "post"
+        || name == "put"
+        || name == "patch"
+        || name == "delete"
+        || name == "filter"
+        || name == "body"
+        || name == "header"
+        || name == "path"
+        || name == "query"
+        || name == "validate"
+}
+
+fn is_singleton_framework_attribute(name: String) -> Bool {
+    is_known_framework_attribute(name)
+}
+
+fn attribute_target_label(target: String) -> String {
+    if target == "function" {
+        "a function"
+    } else if target == "struct" {
+        "a struct"
+    } else if target == "field" {
+        "a struct field"
+    } else if target == "enum" {
+        "an enum"
+    } else if target == "variant" {
+        "an enum variant"
+    } else if target == "trait" {
+        "a trait"
+    } else if target == "impl" {
+        "an impl block"
+    } else if target == "param" {
+        "a parameter"
+    } else if target == "type_alias" {
+        "a type alias"
+    } else if target == "const" {
+        "a const item"
+    } else {
+        "a declaration"
+    }
+}
+
+fn framework_attribute_allowed_on(name: String, target: String) -> Bool {
+    if name == "get" || name == "post" || name == "put" || name == "patch" || name == "delete" {
+        target == "function"
+    } else if name == "filter" {
+        target == "struct"
+    } else if name == "body" || name == "header" || name == "path" || name == "query" {
+        target == "param"
+    } else if name == "validate" {
+        target == "field" || target == "param"
+    } else {
+        true
+    }
+}
+
+fn attribute_has_one_positional_string(attr: AstAttribute) -> Bool {
+    if vec.vec_len(attr.args) != 1 {
+        false
+    } else {
+        match vec.get(attr.args, 0) {
+            Some(arg) => !arg.named && attribute_value_is_string(arg),
+            None => false,
+        }
+    }
+}
+
+fn attribute_has_named_int(attr: AstAttribute, expected_name: String) -> Bool {
+    if vec.vec_len(attr.args) != 1 {
+        false
+    } else {
+        match vec.get(attr.args, 0) {
+            Some(arg) => arg.named && arg.name == expected_name && attribute_value_is_int(arg),
+            None => false,
+        }
+    }
+}
+
+fn framework_attribute_shape_valid(attr: AstAttribute) -> Bool {
+    if attr.name == "get" || attr.name == "post" || attr.name == "put" || attr.name == "patch" || attr.name == "delete" {
+        attribute_has_one_positional_string(attr)
+    } else if attr.name == "filter" {
+        attribute_has_named_int(attr, "order")
+    } else if attr.name == "body" {
+        vec.vec_len(attr.args) == 0
+    } else if attr.name == "header" || attr.name == "path" || attr.name == "query" {
+        attribute_has_one_positional_string(attr)
+    } else if attr.name == "validate" {
+        vec.vec_len(attr.args) > 0
+    } else {
+        true
+    }
+}
+
+fn push_diagnostic_if_room(diagnostics: Vec[Diagnostic], max_errors: Int, diagnostic: Diagnostic) -> Vec[Diagnostic] {
+    if vec.vec_len(diagnostics) < max_errors {
+        vec.push(diagnostics, diagnostic)
+    } else {
+        diagnostics
+    }
+}
+
+fn validate_program_attributes(attrs: Vec[AstAttribute], target: String, diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(attrs) && vec.vec_len(out) < max_errors {
+        match vec.get(attrs, index) {
+            Some(attr) => if is_known_framework_attribute(attr.name) {
+                if !framework_attribute_allowed_on(attr.name, target) {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "framework attribute '#[");
+                    parts = vec.push(parts, attr.name);
+                    parts = vec.push(parts, "]' is not supported on ");
+                    parts = vec.push(parts, attribute_target_label(target));
+                    out = push_diagnostic_if_room(out, max_errors, error(diagnostic_code("E1096"), attr.span, string.join(parts, "")));
+                } else {
+                    ()
+                };
+                if vec.vec_len(out) < max_errors && !framework_attribute_shape_valid(attr) {
+                    let mut shape_parts: Vec[String] = vec.new_vec();
+                    shape_parts = vec.push(shape_parts, "invalid argument shape for framework attribute '#[");
+                    shape_parts = vec.push(shape_parts, attr.name);
+                    shape_parts = vec.push(shape_parts, "]'");
+                    out = push_diagnostic_if_room(out, max_errors, error(diagnostic_code("E1097"), attr.span, string.join(shape_parts, "")));
+                } else {
+                    ()
+                };
+                if vec.vec_len(out) < max_errors && is_singleton_framework_attribute(attr.name) {
+                    let mut earlier_index = 0;
+                    let mut duplicate = false;
+                    while !duplicate && earlier_index < index {
+                        match vec.get(attrs, earlier_index) {
+                            Some(earlier) => if earlier.name == attr.name {
+                                duplicate = true;
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        };
+                        earlier_index = earlier_index + 1;
+                    };
+                    if duplicate {
+                        let mut dup_parts: Vec[String] = vec.new_vec();
+                        dup_parts = vec.push(dup_parts, "duplicate framework attribute '#[");
+                        dup_parts = vec.push(dup_parts, attr.name);
+                        dup_parts = vec.push(dup_parts, "]'");
+                        out = push_diagnostic_if_room(out, max_errors, error(diagnostic_code("E1096"), attr.span, string.join(dup_parts, "")));
+                    } else {
+                        ()
+                    };
+                } else {
+                    ()
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_param_attributes(params: Vec[AstParam], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(params) && vec.vec_len(out) < max_errors {
+        match vec.get(params, index) {
+            Some(param) => if true {
+                out = validate_program_attributes(param.attrs, "param", out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_signature_attributes(signature: AstFunctionSignature, diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let out = validate_program_attributes(signature.attrs, "function", diagnostics, max_errors);
+    validate_param_attributes(signature.params, out, max_errors)
+}
+
+fn validate_field_attributes(fields: Vec[AstField], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(fields) && vec.vec_len(out) < max_errors {
+        match vec.get(fields, index) {
+            Some(field) => if true {
+                out = validate_program_attributes(field.attrs, "field", out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_variant_attributes(variants: Vec[AstEnumVariant], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(variants) && vec.vec_len(out) < max_errors {
+        match vec.get(variants, index) {
+            Some(variant) => if true {
+                out = validate_program_attributes(variant.attrs, "variant", out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_trait_method_attributes(methods: Vec[AstFunctionSignature], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(methods) && vec.vec_len(out) < max_errors {
+        match vec.get(methods, index) {
+            Some(method) => if true {
+                out = validate_signature_attributes(method, out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_impl_method_attributes(methods: Vec[AstImplMethod], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(methods) && vec.vec_len(out) < max_errors {
+        match vec.get(methods, index) {
+            Some(method) => if true {
+                out = validate_signature_attributes(method.signature, out, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn validate_program_item_nested_attributes(item: AstProgramItem, diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    match item.function_item {
+        Some(function_item) => if true {
+            out = validate_signature_attributes(function_item.signature, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match item.function_signature {
+        Some(signature) => if true {
+            out = validate_signature_attributes(signature, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match item.struct_item {
+        Some(struct_item) => if true {
+            out = validate_field_attributes(struct_item.fields, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match item.enum_item {
+        Some(enum_item) => if true {
+            out = validate_variant_attributes(enum_item.variants, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match item.trait_item {
+        Some(trait_item) => if true {
+            out = validate_trait_method_attributes(trait_item.methods, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match item.impl_item {
+        Some(impl_item) => if true {
+            out = validate_impl_method_attributes(impl_item.methods, out, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    out
+}
+
+fn program_item_kind_label(kind: AstItemKind) -> String {
+    match kind {
+        FunctionItem => "function",
+        StructItem => "struct",
+        EnumItem => "enum",
+        TraitItem => "trait",
+        ImplItem => "impl",
+        TypeAliasItem => "type_alias",
+        ConstItem => "const",
+    }
+}
+
+fn program_item_target(kind: AstItemKind) -> String {
+    program_item_kind_label(kind)
+}
+
+fn program_item_modifier_names(cursor: ParserCursor) -> String {
+    let visibility = parse_visibility(cursor);
+    let mut out_cursor = visibility.cursor;
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut done = false;
+    while !done {
+        if at_keyword(out_cursor, "async") {
+            parts = vec.push(parts, "async");
+            out_cursor = advance(skip_trivia(out_cursor));
+        } else if at_keyword(out_cursor, "intrinsic") {
+            parts = vec.push(parts, "intrinsic");
+            out_cursor = advance(skip_trivia(out_cursor));
+        } else if at_keyword(out_cursor, "unsafe") {
+            parts = vec.push(parts, "unsafe");
+            out_cursor = advance(skip_trivia(out_cursor));
+        } else if at_keyword(out_cursor, "extern") {
+            parts = vec.push(parts, "extern");
+            out_cursor = skip_optional_extern_abi(advance(skip_trivia(out_cursor)));
+        } else {
+            done = true;
+        };
+    };
+    string.join(parts, ",")
+}
+
+fn starts_with_signature_only_function(cursor: ParserCursor) -> Bool {
+    let visibility = parse_visibility(cursor);
+    let active = skip_trivia(visibility.cursor);
+    at_keyword(active, "extern") || at_keyword(active, "intrinsic")
+}
+
+fn program_item_from_function_decl(cursor: ParserCursor, attrs: Vec[AstAttribute], modifiers: String, result: ParseFunctionDecl) -> ParseProgramItem {
+    if has_function_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.function_item {
+            Some(function_item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(FunctionItem(), function_item.signature.name, attrs, Some(function_item), None(), None(), None(), None(), None(), None(), None(), false, modifiers, function_item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1382"), current_token(skip_trivia(cursor)).span, "missing function item")),
+            },
+        }
+    }
+}
+
+fn parse_signature_only_program_function(cursor: ParserCursor, attrs: Vec[AstAttribute], modifiers: String) -> ParseProgramItem {
+    let signature = parse_function_signature(cursor);
+    if has_function_signature_diagnostic(signature) {
+        ParseProgramItem {
+            cursor: signature.cursor,
+            item: None(),
+            diagnostic: signature.diagnostic,
+        }
+    } else {
+        let semi = expect_delimiter(signature.cursor, ";", "E1093", "expected semicolon after signature-only function declaration");
+        if has_diagnostic(semi) {
+            ParseProgramItem {
+                cursor: semi.cursor,
+                item: None(),
+                diagnostic: semi.diagnostic,
+            }
+        } else {
+            match signature.signature {
+                Some(sig) => ParseProgramItem {
+                    cursor: semi.cursor,
+                    item: Some(ast_program_item(FunctionItem(), sig.name, attrs, None(), Some(sig), None(), None(), None(), None(), None(), None(), true, modifiers, merge(sig.span, semi.token.span))),
+                    diagnostic: None(),
+                },
+                None => ParseProgramItem {
+                    cursor: signature.cursor,
+                    item: None(),
+                    diagnostic: Some(error(diagnostic_code("E1382"), current_token(skip_trivia(cursor)).span, "missing function signature")),
+                },
+            }
+        }
+    }
+}
+
+fn program_item_from_struct(attrs: Vec[AstAttribute], result: ParseStructDecl) -> ParseProgramItem {
+    if has_struct_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.struct_item {
+            Some(item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(StructItem(), item.name, attrs, None(), None(), Some(item), None(), None(), None(), None(), None(), false, "", item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1383"), current_token(skip_trivia(result.cursor)).span, "missing struct item")),
+            },
+        }
+    }
+}
+
+fn program_item_from_enum(attrs: Vec[AstAttribute], result: ParseEnumDecl) -> ParseProgramItem {
+    if has_enum_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.enum_item {
+            Some(item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(EnumItem(), item.name, attrs, None(), None(), None(), Some(item), None(), None(), None(), None(), false, "", item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1384"), current_token(skip_trivia(result.cursor)).span, "missing enum item")),
+            },
+        }
+    }
+}
+
+fn program_item_from_type_alias(attrs: Vec[AstAttribute], result: ParseTypeAliasDecl) -> ParseProgramItem {
+    if has_type_alias_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.alias_item {
+            Some(item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(TypeAliasItem(), item.name, attrs, None(), None(), None(), None(), Some(item), None(), None(), None(), false, "", item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1385"), current_token(skip_trivia(result.cursor)).span, "missing type alias item")),
+            },
+        }
+    }
+}
+
+fn program_item_from_const(attrs: Vec[AstAttribute], result: ParseConstDecl) -> ParseProgramItem {
+    if has_const_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.const_item {
+            Some(item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(ConstItem(), item.name, attrs, None(), None(), None(), None(), None(), Some(item), None(), None(), false, "", item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1386"), current_token(skip_trivia(result.cursor)).span, "missing const item")),
+            },
+        }
+    }
+}
+
+fn program_item_from_trait(attrs: Vec[AstAttribute], result: ParseTraitDecl) -> ParseProgramItem {
+    if has_trait_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.trait_item {
+            Some(item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(TraitItem(), item.name, attrs, None(), None(), None(), None(), None(), None(), Some(item), None(), false, "", item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1387"), current_token(skip_trivia(result.cursor)).span, "missing trait item")),
+            },
+        }
+    }
+}
+
+fn program_item_from_impl(attrs: Vec[AstAttribute], result: ParseImplDecl) -> ParseProgramItem {
+    if has_impl_decl_diagnostic(result) {
+        ParseProgramItem {
+            cursor: result.cursor,
+            item: None(),
+            diagnostic: result.diagnostic,
+        }
+    } else {
+        match result.impl_item {
+            Some(item) => ParseProgramItem {
+                cursor: result.cursor,
+                item: Some(ast_program_item(ImplItem(), ast_name(item.head_type.name, item.head_type.span), attrs, None(), None(), None(), None(), None(), None(), None(), Some(item), false, "", item.span)),
+                diagnostic: None(),
+            },
+            None => ParseProgramItem {
+                cursor: result.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1388"), current_token(skip_trivia(result.cursor)).span, "missing impl item")),
+            },
+        }
+    }
+}
+
+pub fn parse_program_item(cursor: ParserCursor, attrs: Vec[AstAttribute]) -> ParseProgramItem {
+    let header = parse_item_header(cursor);
+    if has_item_header_diagnostic(header) {
+        ParseProgramItem {
+            cursor: header.cursor,
+            item: None(),
+            diagnostic: header.diagnostic,
+        }
+    } else {
+        match header.header {
+            Some(item_header_value) => if is_function_item_kind(item_header_value.kind) {
+                let modifiers = program_item_modifier_names(cursor);
+                if starts_with_signature_only_function(cursor) {
+                    parse_signature_only_program_function(cursor, attrs, modifiers)
+                } else {
+                    program_item_from_function_decl(cursor, attrs, modifiers, parse_function_declaration(cursor))
+                }
+            } else if is_struct_item_kind(item_header_value.kind) {
+                program_item_from_struct(attrs, parse_struct_declaration(cursor))
+            } else if is_enum_item_kind(item_header_value.kind) {
+                program_item_from_enum(attrs, parse_enum_declaration(cursor))
+            } else if is_type_alias_item_kind(item_header_value.kind) {
+                program_item_from_type_alias(attrs, parse_type_alias_declaration(cursor))
+            } else if is_const_item_kind(item_header_value.kind) {
+                program_item_from_const(attrs, parse_const_declaration(cursor))
+            } else if is_trait_item_kind(item_header_value.kind) {
+                program_item_from_trait(attrs, parse_trait_declaration(cursor))
+            } else if is_impl_item_kind(item_header_value.kind) {
+                program_item_from_impl(attrs, parse_impl_declaration(cursor))
+            } else {
+                ParseProgramItem {
+                    cursor: header.cursor,
+                    item: None(),
+                    diagnostic: Some(error(diagnostic_code("E1389"), item_header_value.span, "unsupported program item")),
+                }
+            },
+            None => ParseProgramItem {
+                cursor: header.cursor,
+                item: None(),
+                diagnostic: Some(error(diagnostic_code("E1389"), current_token(skip_trivia(header.cursor)).span, "missing program item")),
+            },
+        }
+    }
+}
+
+fn recover_program_item(cursor: ParserCursor, force_advance: Bool) -> ParserCursor {
+    let mut out = if force_advance { advance(skip_trivia(cursor)) } else { cursor };
+    let mut done = false;
+    while !done && !is_at_end(out) {
+        if at_attribute_start(out)
+            || at_keyword(out, "module")
+            || at_keyword(out, "import")
+            || at_keyword(out, "async")
+            || at_keyword(out, "fn")
+            || at_keyword(out, "type")
+            || at_keyword(out, "const")
+            || at_keyword(out, "extern")
+            || at_keyword(out, "intrinsic")
+            || at_keyword(out, "unsafe")
+            || at_keyword(out, "struct")
+            || at_keyword(out, "enum")
+            || at_keyword(out, "trait")
+            || at_keyword(out, "impl") {
+            done = true;
+        } else if at_delimiter(out, ";") {
+            out = advance(skip_trivia(out));
+            done = true;
+        } else {
+            let next = advance(skip_trivia(out));
+            if next.index == out.index {
+                done = true;
+            } else {
+                out = next;
+            };
+        };
+    };
+    out
+}
+
+fn push_item_source_entry(entries: Vec[AstSourceMapEntry], item: AstProgramItem) -> Vec[AstSourceMapEntry] {
+    vec.push(entries, ast_source_map_entry(program_item_kind_label(item.kind), item.name.value, item.span))
+}
+
+fn parse_program_span(start: SourceSpan, cursor: ParserCursor) -> SourceSpan {
+    let end_token = current_token(skip_trivia(cursor));
+    merge(start, end_token.span)
+}
+
+pub fn parse_program(cursor: ParserCursor, max_errors: Int) -> ParseProgram
+requires max_errors > 0 {
+    let start_cursor = skip_trivia(cursor);
+    let start_token = current_token(start_cursor);
+    let mut out_cursor = start_cursor;
+    let mut module_item: Option[AstModuleDecl] = None();
+    let mut imports: Vec[AstImportDecl] = vec.new_vec();
+    let mut items: Vec[AstProgramItem] = vec.new_vec();
+    let mut source_map: Vec[AstSourceMapEntry] = vec.new_vec();
+    let mut diagnostics: Vec[Diagnostic] = vec.new_vec();
+    let mut seen_items = false;
+
+    if at_keyword(out_cursor, "module") {
+        let module_result = parse_module_declaration(out_cursor);
+        if has_module_decl_diagnostic(module_result) {
+            diagnostics = push_diagnostic_if_room(diagnostics, max_errors, match module_result.diagnostic { Some(diag) => diag, None => error(diagnostic_code("E1390"), current_token(skip_trivia(out_cursor)).span, "invalid module declaration") });
+            out_cursor = recover_program_item(module_result.cursor, module_result.cursor.index == out_cursor.index);
+        } else {
+            match module_result.module_item {
+                Some(value) => if true {
+                    source_map = vec.push(source_map, ast_source_map_entry("module", value.path.text, value.span));
+                    module_item = Some(value);
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
+            out_cursor = module_result.cursor;
+        };
+    } else {
+        ()
+    };
+
+    while vec.vec_len(diagnostics) < max_errors && at_keyword(out_cursor, "import") {
+        let import_result = parse_import_declaration(out_cursor);
+        if has_import_decl_diagnostic(import_result) {
+            diagnostics = push_diagnostic_if_room(diagnostics, max_errors, match import_result.diagnostic { Some(diag) => diag, None => error(diagnostic_code("E1391"), current_token(skip_trivia(out_cursor)).span, "invalid import declaration") });
+            out_cursor = recover_program_item(import_result.cursor, import_result.cursor.index == out_cursor.index);
+        } else {
+            match import_result.import_item {
+                Some(value) => if true {
+                    source_map = vec.push(source_map, ast_source_map_entry("import", value.path.text, value.span));
+                    imports = vec.push(imports, value);
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
+            out_cursor = import_result.cursor;
+        };
+    };
+
+    while vec.vec_len(diagnostics) < max_errors && !is_at_end(out_cursor) {
+        if at_keyword(out_cursor, "module") {
+            let token = current_token(skip_trivia(out_cursor));
+            diagnostics = push_diagnostic_if_room(diagnostics, max_errors, error(diagnostic_code("E1392"), token.span, "module declaration must appear before imports and items"));
+            out_cursor = recover_program_item(out_cursor, true);
+        } else if at_keyword(out_cursor, "import") {
+            let token = current_token(skip_trivia(out_cursor));
+            diagnostics = push_diagnostic_if_room(diagnostics, max_errors, error(diagnostic_code("E1393"), token.span, "import declaration must appear before items"));
+            let import_result = parse_import_declaration(out_cursor);
+            out_cursor = recover_program_item(import_result.cursor, import_result.cursor.index == out_cursor.index);
+        } else {
+            let attrs_result = parse_attribute_list(out_cursor);
+            out_cursor = attrs_result.cursor;
+            if has_attribute_list_diagnostic(attrs_result) {
+                diagnostics = push_diagnostic_if_room(diagnostics, max_errors, match attrs_result.diagnostic { Some(diag) => diag, None => error(diagnostic_code("E1094"), current_token(skip_trivia(out_cursor)).span, "invalid attribute") });
+            } else {
+                ()
+            };
+            let item_start = out_cursor;
+            let item_result = parse_program_item(out_cursor, attrs_result.attrs);
+            if has_program_item_diagnostic(item_result) {
+                diagnostics = push_diagnostic_if_room(diagnostics, max_errors, match item_result.diagnostic { Some(diag) => diag, None => error(diagnostic_code("E1389"), current_token(skip_trivia(item_start)).span, "invalid program item") });
+                out_cursor = recover_program_item(item_result.cursor, item_result.cursor.index == item_start.index);
+            } else {
+                match item_result.item {
+                    Some(item) => if true {
+                        diagnostics = validate_program_attributes(item.attrs, program_item_target(item.kind), diagnostics, max_errors);
+                        diagnostics = validate_program_item_nested_attributes(item, diagnostics, max_errors);
+                        source_map = push_item_source_entry(source_map, item);
+                        items = vec.push(items, item);
+                        seen_items = true;
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                out_cursor = item_result.cursor;
+            };
+        };
+    };
+
+    let program_span = parse_program_span(start_token.span, out_cursor);
+    ParseProgram {
+        cursor: out_cursor,
+        program: Some(ast_program(out_cursor.source, module_item, imports, items, source_map, program_span)),
+        diagnostics: diagnostics,
+    }
+}
+
+pub fn parse_source_program(source: SourceId, text: String, max_errors: Int) -> ParseProgram
+requires max_errors > 0 {
+    parse_program(parser_cursor_from_source(source, text), max_errors)
 }
 
 pub fn remaining_token_count(cursor: ParserCursor) -> Int {

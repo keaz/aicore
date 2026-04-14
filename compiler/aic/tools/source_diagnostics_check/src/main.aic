@@ -919,6 +919,215 @@ fn valid_parser_expression_and_block_declarations() -> Bool {
         && invalid_struct_literal_ok
 }
 
+fn program_diagnostic_count(value: ParseProgram) -> Int {
+    vec.vec_len(value.diagnostics)
+}
+
+fn program_diagnostic_code_matches(value: ParseProgram, index: Int, code: String) -> Bool {
+    match vec.get(value.diagnostics, index) {
+        Some(diag) => diag.code.value == code,
+        None => false,
+    }
+}
+
+fn program_item_kind_text(kind: AstItemKind) -> String {
+    match kind {
+        FunctionItem => "function",
+        StructItem => "struct",
+        EnumItem => "enum",
+        TraitItem => "trait",
+        ImplItem => "impl",
+        TypeAliasItem => "type_alias",
+        ConstItem => "const",
+    }
+}
+
+fn program_item_matches(value: AstProgram, index: Int, kind: String, name: String, attr_count: Int, signature_only: Bool) -> Bool {
+    match vec.get(value.items, index) {
+        Some(item) => program_item_kind_text(item.kind) == kind
+            && program_item_name(item) == name
+            && program_item_attr_count(item) == attr_count
+            && item.is_signature_only == signature_only,
+        None => false,
+    }
+}
+
+fn program_function_param_attr_count(value: AstProgram, item_index: Int, param_index: Int) -> Int {
+    match vec.get(value.items, item_index) {
+        Some(item) => match item.function_item {
+            Some(function_item) => match vec.get(function_item.signature.params, param_index) {
+                Some(param) => param_attr_count(param),
+                None => -1,
+            },
+            None => match item.function_signature {
+                Some(signature) => match vec.get(signature.params, param_index) {
+                    Some(param) => param_attr_count(param),
+                    None => -1,
+                },
+                None => -1,
+            },
+        },
+        None => -1,
+    }
+}
+
+fn program_struct_field_attr_count(value: AstProgram, item_index: Int, field_index: Int) -> Int {
+    match vec.get(value.items, item_index) {
+        Some(item) => match item.struct_item {
+            Some(struct_item) => match vec.get(struct_item.fields, field_index) {
+                Some(field) => field_attr_count(field),
+                None => -1,
+            },
+            None => -1,
+        },
+        None => -1,
+    }
+}
+
+fn program_enum_variant_attr_count(value: AstProgram, item_index: Int, variant_index: Int) -> Int {
+    match vec.get(value.items, item_index) {
+        Some(item) => match item.enum_item {
+            Some(enum_item) => match vec.get(enum_item.variants, variant_index) {
+                Some(variant) => enum_variant_attr_count(variant),
+                None => -1,
+            },
+            None => -1,
+        },
+        None => -1,
+    }
+}
+
+fn program_trait_method_attr_count(value: AstProgram, item_index: Int, method_index: Int) -> Int {
+    match vec.get(value.items, item_index) {
+        Some(item) => match item.trait_item {
+            Some(trait_item) => match vec.get(trait_item.methods, method_index) {
+                Some(method) => function_signature_attr_count(method),
+                None => -1,
+            },
+            None => -1,
+        },
+        None => -1,
+    }
+}
+
+fn program_impl_method_attr_count(value: AstProgram, item_index: Int, method_index: Int) -> Int {
+    match vec.get(value.items, item_index) {
+        Some(item) => match item.impl_item {
+            Some(impl_item) => match vec.get(impl_item.methods, method_index) {
+                Some(method) => impl_method_attr_count(method),
+                None => -1,
+            },
+            None => -1,
+        },
+        None => -1,
+    }
+}
+
+fn valid_parser_program_tour() -> Bool {
+    let source = source_id(12);
+    let tour = parse_source_program(source, "module app.main; import std.vec; import std.option; #[get(\"/health\")] fn health(#[path(\"req\")] req: Int) -> Int { req + 1 } #[filter(order = 10)] struct Audit { #[validate(nonzero)] id: Int = 1, done: Bool, } enum Choice { #[status(200)] One, Two(Int), } type Score = Int; const LIMIT: Int = 42; trait Fetch[T] { #[get(\"/fetch\")] fn get(self: T) -> Int; } impl Fetch[Audit] { #[get(\"/impl_fetch\")] fn get(self: Audit) -> Int { self.id } } intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs }; extern \"C\" fn zlibCompileFlags() -> Int;", 20);
+    match tour.program {
+        Some(program) => program_diagnostic_count(tour) == 0
+            && program_has_module(program)
+            && program_import_count(program) == 2
+            && program_item_count(program) == 9
+            && program_source_map_count(program) == 12
+            && program_item_matches(program, 0, "function", "health", 1, false)
+            && program_item_matches(program, 1, "struct", "Audit", 1, false)
+            && program_item_matches(program, 2, "enum", "Choice", 0, false)
+            && program_item_matches(program, 3, "type_alias", "Score", 0, false)
+            && program_item_matches(program, 4, "const", "LIMIT", 0, false)
+            && program_item_matches(program, 5, "trait", "Fetch", 0, false)
+            && program_item_matches(program, 6, "impl", "Fetch", 0, false)
+            && program_item_matches(program, 7, "function", "aic_fs_exists_intrinsic", 0, true)
+            && program_item_matches(program, 8, "function", "zlibCompileFlags", 0, true)
+            && program_function_param_attr_count(program, 0, 0) == 1
+            && program_struct_field_attr_count(program, 1, 0) == 1
+            && program_enum_variant_attr_count(program, 2, 0) == 1
+            && program_trait_method_attr_count(program, 5, 0) == 1
+            && program_impl_method_attr_count(program, 6, 0) == 1,
+        None => false,
+    }
+}
+
+fn valid_parser_program_recovery() -> Bool {
+    let source = source_id(13);
+    let bad_module = parse_source_program(source, "module bad.; fn recovered() -> Int { 1 }", 10);
+    let malformed_attr = parse_source_program(source, "#[get(] fn recovered_attr() -> Int { 2 }", 10);
+    let bad_attr_shape = parse_source_program(source, "#[get(42)] fn bad_attr_shape() -> Int { 3 }", 10);
+    let bad_attr_target = parse_source_program(source, "#[get(\"/bad\")] struct BadTarget {}", 10);
+    let malformed_item = parse_source_program(source, "fn broken( -> Int { 1 } fn recovered_item() -> Int { 4 }", 10);
+    let missing_delimiter = parse_source_program(source, "struct MissingDelimiter { id: Int fn recovered_after_delimiter() -> Int { 5 }", 10);
+    let bad_nested_attrs = parse_source_program(source, "fn bad_param(#[get(\"/bad\")] value: Int) -> Int { value } struct BadField { #[validate] name: String, } enum BadVariant { #[get(\"/bad\")] One, }", 10);
+    let maxed = parse_source_program(source, "#[get(42)] fn one() -> Int { 1 } #[get(42)] fn two() -> Int { 2 } #[get(42)] fn three() -> Int { 3 }", 2);
+    let bad_module_ok = match bad_module.program {
+        Some(program) => program_diagnostic_count(bad_module) == 1
+            && program_diagnostic_code_matches(bad_module, 0, "E1012")
+            && program_item_count(program) == 1
+            && program_item_matches(program, 0, "function", "recovered", 0, false),
+        None => false,
+    };
+    let malformed_attr_ok = match malformed_attr.program {
+        Some(program) => program_diagnostic_count(malformed_attr) == 1
+            && program_diagnostic_code_matches(malformed_attr, 0, "E1095")
+            && program_item_count(program) == 1
+            && program_item_matches(program, 0, "function", "recovered_attr", 0, false),
+        None => false,
+    };
+    let bad_attr_shape_ok = match bad_attr_shape.program {
+        Some(program) => program_diagnostic_count(bad_attr_shape) == 1
+            && program_diagnostic_code_matches(bad_attr_shape, 0, "E1097")
+            && program_item_count(program) == 1
+            && program_item_matches(program, 0, "function", "bad_attr_shape", 1, false),
+        None => false,
+    };
+    let bad_attr_target_ok = match bad_attr_target.program {
+        Some(program) => program_diagnostic_count(bad_attr_target) == 1
+            && program_diagnostic_code_matches(bad_attr_target, 0, "E1096")
+            && program_item_count(program) == 1
+            && program_item_matches(program, 0, "struct", "BadTarget", 1, false),
+        None => false,
+    };
+    let malformed_item_ok = match malformed_item.program {
+        Some(program) => program_diagnostic_count(malformed_item) == 1
+            && program_item_count(program) == 1
+            && program_item_matches(program, 0, "function", "recovered_item", 0, false),
+        None => false,
+    };
+    let missing_delimiter_ok = match missing_delimiter.program {
+        Some(program) => program_diagnostic_count(missing_delimiter) == 1
+            && program_diagnostic_code_matches(missing_delimiter, 0, "E1131")
+            && program_item_count(program) == 1
+            && program_item_matches(program, 0, "function", "recovered_after_delimiter", 0, false),
+        None => false,
+    };
+    let bad_nested_attrs_ok = match bad_nested_attrs.program {
+        Some(program) => program_diagnostic_count(bad_nested_attrs) == 3
+            && program_diagnostic_code_matches(bad_nested_attrs, 0, "E1096")
+            && program_diagnostic_code_matches(bad_nested_attrs, 1, "E1097")
+            && program_diagnostic_code_matches(bad_nested_attrs, 2, "E1096")
+            && program_item_count(program) == 3
+            && program_item_matches(program, 0, "function", "bad_param", 0, false)
+            && program_item_matches(program, 1, "struct", "BadField", 0, false)
+            && program_item_matches(program, 2, "enum", "BadVariant", 0, false),
+        None => false,
+    };
+    bad_module_ok
+        && malformed_attr_ok
+        && bad_attr_shape_ok
+        && bad_attr_target_ok
+        && malformed_item_ok
+        && missing_delimiter_ok
+        && bad_nested_attrs_ok
+        && program_diagnostic_count(maxed) == 2
+        && program_diagnostic_code_matches(maxed, 0, "E1097")
+        && program_diagnostic_code_matches(maxed, 1, "E1097")
+}
+
+fn valid_parser_program_orchestration() -> Bool {
+    valid_parser_program_tour() && valid_parser_program_recovery()
+}
+
 fn main() -> Int effects { io } capabilities { io } {
     let left = span(source_id(1), 0, 4);
     let right = span(source_id(1), 4, 10);
@@ -948,9 +1157,10 @@ fn main() -> Int effects { io } capabilities { io } {
     let alias_const_ok = valid_parser_alias_and_const_declarations();
     let trait_impl_ok = valid_parser_trait_and_impl_declarations();
     let expression_block_ok = valid_parser_expression_and_block_declarations();
+    let program_ok = valid_parser_program_orchestration();
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && ast_ir_ok {
         print_int(0);
         0
     } else {

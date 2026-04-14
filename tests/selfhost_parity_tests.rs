@@ -190,6 +190,12 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(parser.contains("pub fn parse_impl_method"));
     assert!(parser.contains("pub fn parse_impl_method_list"));
     assert!(parser.contains("pub fn parse_impl_declaration"));
+    assert!(parser.contains("pub struct ParseAttribute"));
+    assert!(parser.contains("pub struct ParseProgram"));
+    assert!(parser.contains("pub fn parse_attribute"));
+    assert!(parser.contains("pub fn parse_attribute_list"));
+    assert!(parser.contains("pub fn parse_program"));
+    assert!(parser.contains("pub fn parse_source_program"));
 
     let ast =
         fs::read_to_string(root.join("compiler/aic/libs/ast/src/main.aic")).expect("read ast lib");
@@ -198,6 +204,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub enum AstExprKind"));
     assert!(ast.contains("pub enum AstPatternKind"));
     assert!(ast.contains("pub enum AstStatementKind"));
+    assert!(ast.contains("pub enum AstAttributeValueKind"));
     assert!(ast.contains("pub struct AstType"));
     assert!(ast.contains("pub struct AstTypeNode"));
     assert!(ast.contains("pub struct AstExpr"));
@@ -221,9 +228,22 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub struct AstTraitDecl"));
     assert!(ast.contains("pub struct AstImplMethod"));
     assert!(ast.contains("pub struct AstImplDecl"));
+    assert!(ast.contains("pub struct AstAttribute"));
+    assert!(ast.contains("pub struct AstAttributeArg"));
+    assert!(ast.contains("pub struct AstProgramItem"));
+    assert!(ast.contains("pub struct AstProgram"));
+    assert!(ast.contains("pub struct AstSourceMapEntry"));
     assert!(ast.contains("pub fn ast_name_from_token"));
     assert!(ast.contains("pub fn module_decl"));
     assert!(ast.contains("pub fn import_decl"));
+    assert!(ast.contains("pub fn ast_attribute"));
+    assert!(ast.contains("pub fn ast_attribute_arg"));
+    assert!(ast.contains("pub fn ast_program_item"));
+    assert!(ast.contains("pub fn ast_program"));
+    assert!(ast.contains("pub fn ast_param_with_attrs"));
+    assert!(ast.contains("pub fn function_signature_with_attrs"));
+    assert!(ast.contains("pub fn ast_field_with_attrs"));
+    assert!(ast.contains("pub fn enum_variant_with_attrs"));
     assert!(ast.contains("pub fn ast_expr"));
     assert!(ast.contains("pub fn ast_pattern"));
     assert!(ast.contains("pub fn ast_statement"));
@@ -257,6 +277,18 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub fn variant_count"));
     assert!(ast.contains("pub fn trait_method_count"));
     assert!(ast.contains("pub fn impl_method_count"));
+    assert!(ast.contains("pub fn attribute_arg_count"));
+    assert!(ast.contains("pub fn program_import_count"));
+    assert!(ast.contains("pub fn program_item_count"));
+    assert!(ast.contains("pub fn program_source_map_count"));
+    assert!(ast.contains("pub fn program_has_module"));
+    assert!(ast.contains("pub fn program_item_attr_count"));
+    assert!(ast.contains("pub fn program_item_name"));
+    assert!(ast.contains("pub fn param_attr_count"));
+    assert!(ast.contains("pub fn function_signature_attr_count"));
+    assert!(ast.contains("pub fn field_attr_count"));
+    assert!(ast.contains("pub fn enum_variant_attr_count"));
+    assert!(ast.contains("pub fn impl_method_attr_count"));
     assert!(ast.contains("pub fn literal_from_token"));
 
     let ir =

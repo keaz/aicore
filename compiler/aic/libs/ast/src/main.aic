@@ -95,6 +95,13 @@ pub enum AstStatementKind {
     AstReturnStatement,
 }
 
+pub enum AstAttributeValueKind {
+    AstAttributeStringValue,
+    AstAttributeIntValue,
+    AstAttributeBoolValue,
+    AstAttributeIdentValue,
+}
+
 pub struct AstName {
     pub value: String,
     pub span: SourceSpan,
@@ -102,6 +109,28 @@ pub struct AstName {
 
 pub struct AstModulePath {
     pub text: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstAttributeArg {
+    pub name: String,
+    pub value: String,
+    pub kind: AstAttributeValueKind,
+    pub named: Bool,
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstAttribute {
+    pub name: String,
+    pub args: Vec[AstAttributeArg],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstSourceMapEntry {
+    pub kind: String,
+    pub name: String,
     pub span: SourceSpan,
 }
 
@@ -221,12 +250,14 @@ pub struct AstBlock {
 }
 
 pub struct AstParam {
+    pub attrs: Vec[AstAttribute],
     pub name: AstName,
     pub type_ref: AstType,
     pub span: SourceSpan,
 }
 
 pub struct AstFunctionSignature {
+    pub attrs: Vec[AstAttribute],
     pub name: AstName,
     pub generic_params: AstGenericParamList,
     pub params: Vec[AstParam],
@@ -245,6 +276,7 @@ pub struct AstFunctionDecl {
 }
 
 pub struct AstField {
+    pub attrs: Vec[AstAttribute],
     pub name: AstName,
     pub visibility: AstVisibility,
     pub type_ref: AstType,
@@ -264,6 +296,7 @@ pub struct AstStructDecl {
 }
 
 pub struct AstEnumVariant {
+    pub attrs: Vec[AstAttribute],
     pub name: AstName,
     pub payload_type: Option[AstType],
     pub span: SourceSpan,
@@ -312,6 +345,32 @@ pub struct AstImplDecl {
     pub methods: Vec[AstImplMethod],
     pub body_text: String,
     pub has_block: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct AstProgramItem {
+    pub kind: AstItemKind,
+    pub name: AstName,
+    pub attrs: Vec[AstAttribute],
+    pub function_item: Option[AstFunctionDecl],
+    pub function_signature: Option[AstFunctionSignature],
+    pub struct_item: Option[AstStructDecl],
+    pub enum_item: Option[AstEnumDecl],
+    pub type_alias_item: Option[AstTypeAliasDecl],
+    pub const_item: Option[AstConstDecl],
+    pub trait_item: Option[AstTraitDecl],
+    pub impl_item: Option[AstImplDecl],
+    pub is_signature_only: Bool,
+    pub modifier_names: String,
+    pub span: SourceSpan,
+}
+
+pub struct AstProgram {
+    pub source: SourceId,
+    pub module_item: Option[AstModuleDecl],
+    pub imports: Vec[AstImportDecl],
+    pub items: Vec[AstProgramItem],
+    pub source_map: Vec[AstSourceMapEntry],
     pub span: SourceSpan,
 }
 
@@ -373,6 +432,86 @@ pub fn item_header(kind: AstItemKind, visibility: AstVisibility, name: AstName, 
         kind: kind,
         visibility: visibility,
         name: name,
+        span: span,
+    }
+}
+
+pub fn ast_attribute_arg(name: String, value: String, kind: AstAttributeValueKind, named: Bool, span: SourceSpan, text: String) -> AstAttributeArg {
+    AstAttributeArg {
+        name: name,
+        value: value,
+        kind: kind,
+        named: named,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_attribute(name: String, args: Vec[AstAttributeArg], span: SourceSpan, text: String) -> AstAttribute {
+    AstAttribute {
+        name: name,
+        args: args,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_source_map_entry(kind: String, name: String, span: SourceSpan) -> AstSourceMapEntry {
+    AstSourceMapEntry {
+        kind: kind,
+        name: name,
+        span: span,
+    }
+}
+
+pub fn ast_program_item(
+    kind: AstItemKind,
+    name: AstName,
+    attrs: Vec[AstAttribute],
+    function_item: Option[AstFunctionDecl],
+    function_signature: Option[AstFunctionSignature],
+    struct_item: Option[AstStructDecl],
+    enum_item: Option[AstEnumDecl],
+    type_alias_item: Option[AstTypeAliasDecl],
+    const_item: Option[AstConstDecl],
+    trait_item: Option[AstTraitDecl],
+    impl_item: Option[AstImplDecl],
+    is_signature_only: Bool,
+    modifier_names: String,
+    span: SourceSpan,
+) -> AstProgramItem {
+    AstProgramItem {
+        kind: kind,
+        name: name,
+        attrs: attrs,
+        function_item: function_item,
+        function_signature: function_signature,
+        struct_item: struct_item,
+        enum_item: enum_item,
+        type_alias_item: type_alias_item,
+        const_item: const_item,
+        trait_item: trait_item,
+        impl_item: impl_item,
+        is_signature_only: is_signature_only,
+        modifier_names: modifier_names,
+        span: span,
+    }
+}
+
+pub fn ast_program(
+    source: SourceId,
+    module_item: Option[AstModuleDecl],
+    imports: Vec[AstImportDecl],
+    items: Vec[AstProgramItem],
+    source_map: Vec[AstSourceMapEntry],
+    span: SourceSpan,
+) -> AstProgram {
+    AstProgram {
+        source: source,
+        module_item: module_item,
+        imports: imports,
+        items: items,
+        source_map: source_map,
         span: span,
     }
 }
@@ -763,7 +902,12 @@ pub fn ast_block(statements: Vec[AstStatement], tail_expr: Option[AstExpr], span
 }
 
 pub fn ast_param(name: AstName, type_ref: AstType, span: SourceSpan) -> AstParam {
+    ast_param_with_attrs(vec.new_vec(), name, type_ref, span)
+}
+
+pub fn ast_param_with_attrs(attrs: Vec[AstAttribute], name: AstName, type_ref: AstType, span: SourceSpan) -> AstParam {
     AstParam {
+        attrs: attrs,
         name: name,
         type_ref: type_ref,
         span: span,
@@ -779,7 +923,21 @@ pub fn function_signature(
     capability_names: String,
     span: SourceSpan,
 ) -> AstFunctionSignature {
+    function_signature_with_attrs(vec.new_vec(), name, generic_params, params, return_type, effect_names, capability_names, span)
+}
+
+pub fn function_signature_with_attrs(
+    attrs: Vec[AstAttribute],
+    name: AstName,
+    generic_params: AstGenericParamList,
+    params: Vec[AstParam],
+    return_type: AstType,
+    effect_names: String,
+    capability_names: String,
+    span: SourceSpan,
+) -> AstFunctionSignature {
     AstFunctionSignature {
+        attrs: attrs,
         name: name,
         generic_params: generic_params,
         params: params,
@@ -788,6 +946,14 @@ pub fn function_signature(
         capability_names: capability_names,
         span: span,
     }
+}
+
+pub fn function_signature_with_new_attrs(value: AstFunctionSignature, attrs: Vec[AstAttribute]) -> AstFunctionSignature {
+    let signature_span = match vec.get(attrs, 0) {
+        Some(attr) => merge(attr.span, value.span),
+        None => value.span,
+    };
+    function_signature_with_attrs(attrs, value.name, value.generic_params, value.params, value.return_type, value.effect_names, value.capability_names, signature_span)
 }
 
 pub fn function_decl(
@@ -807,7 +973,12 @@ pub fn function_decl(
 }
 
 pub fn ast_field(name: AstName, visibility: AstVisibility, type_ref: AstType, default_expr: Option[AstExpr], default_text: String, span: SourceSpan) -> AstField {
+    ast_field_with_attrs(vec.new_vec(), name, visibility, type_ref, default_expr, default_text, span)
+}
+
+pub fn ast_field_with_attrs(attrs: Vec[AstAttribute], name: AstName, visibility: AstVisibility, type_ref: AstType, default_expr: Option[AstExpr], default_text: String, span: SourceSpan) -> AstField {
     AstField {
+        attrs: attrs,
         name: name,
         visibility: visibility,
         type_ref: type_ref,
@@ -838,7 +1009,12 @@ pub fn struct_decl(
 }
 
 pub fn enum_variant(name: AstName, payload_type: Option[AstType], span: SourceSpan) -> AstEnumVariant {
+    enum_variant_with_attrs(vec.new_vec(), name, payload_type, span)
+}
+
+pub fn enum_variant_with_attrs(attrs: Vec[AstAttribute], name: AstName, payload_type: Option[AstType], span: SourceSpan) -> AstEnumVariant {
     AstEnumVariant {
+        attrs: attrs,
         name: name,
         payload_type: payload_type,
         span: span,
@@ -1264,6 +1440,57 @@ pub fn trait_method_count(value: AstTraitDecl) -> Int {
 
 pub fn impl_method_count(value: AstImplDecl) -> Int {
     vec.vec_len(value.methods)
+}
+
+pub fn attribute_arg_count(value: AstAttribute) -> Int {
+    vec.vec_len(value.args)
+}
+
+pub fn program_import_count(value: AstProgram) -> Int {
+    vec.vec_len(value.imports)
+}
+
+pub fn program_item_count(value: AstProgram) -> Int {
+    vec.vec_len(value.items)
+}
+
+pub fn program_source_map_count(value: AstProgram) -> Int {
+    vec.vec_len(value.source_map)
+}
+
+pub fn program_has_module(value: AstProgram) -> Bool {
+    match value.module_item {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn program_item_attr_count(value: AstProgramItem) -> Int {
+    vec.vec_len(value.attrs)
+}
+
+pub fn program_item_name(value: AstProgramItem) -> String {
+    value.name.value
+}
+
+pub fn param_attr_count(value: AstParam) -> Int {
+    vec.vec_len(value.attrs)
+}
+
+pub fn function_signature_attr_count(value: AstFunctionSignature) -> Int {
+    vec.vec_len(value.attrs)
+}
+
+pub fn field_attr_count(value: AstField) -> Int {
+    vec.vec_len(value.attrs)
+}
+
+pub fn enum_variant_attr_count(value: AstEnumVariant) -> Int {
+    vec.vec_len(value.attrs)
+}
+
+pub fn impl_method_attr_count(value: AstImplMethod) -> Int {
+    function_signature_attr_count(value.signature)
 }
 
 pub fn literal_from_token(value: Token) -> Result[AstLiteral, AstError] {
