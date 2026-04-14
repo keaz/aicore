@@ -125,6 +125,52 @@ pub struct ParseRawText {
     pub diagnostic: Option[Diagnostic],
 }
 
+pub struct ParseExpr {
+    pub cursor: ParserCursor,
+    pub expr: Option[AstExpr],
+    pub span: SourceSpan,
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParsePattern {
+    pub cursor: ParserCursor,
+    pub pattern: Option[AstPattern],
+    pub span: SourceSpan,
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseStatement {
+    pub cursor: ParserCursor,
+    pub statement: Option[AstStatement],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseBlock {
+    pub cursor: ParserCursor,
+    pub block: Option[AstBlock],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseFunctionDecl {
+    pub cursor: ParserCursor,
+    pub function_item: Option[AstFunctionDecl],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseImplMethod {
+    pub cursor: ParserCursor,
+    pub method: Option[AstImplMethod],
+    pub diagnostic: Option[Diagnostic],
+}
+
+pub struct ParseImplMethodList {
+    pub cursor: ParserCursor,
+    pub methods: Vec[AstImplMethod],
+    pub span: SourceSpan,
+    pub text: String,
+    pub diagnostic: Option[Diagnostic],
+}
+
 pub struct ParseStructField {
     pub cursor: ParserCursor,
     pub field: Option[AstField],
@@ -221,6 +267,13 @@ pub fn current_token(cursor: ParserCursor) -> Token {
     match vec.get(cursor.tokens, cursor.index) {
         Some(tok) => tok,
         None => eof(cursor.source, cursor.index),
+    }
+}
+
+pub fn peek_token(cursor: ParserCursor, offset: Int) -> Token {
+    match vec.get(cursor.tokens, cursor.index + offset) {
+        Some(tok) => tok,
+        None => eof(cursor.source, cursor.index + offset),
     }
 }
 
@@ -402,6 +455,55 @@ pub fn has_generic_bounds_diagnostic(result: ParseGenericBounds) -> Bool {
 }
 
 pub fn has_raw_text_diagnostic(result: ParseRawText) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_expr_diagnostic(result: ParseExpr) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_pattern_diagnostic(result: ParsePattern) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_statement_diagnostic(result: ParseStatement) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_block_diagnostic(result: ParseBlock) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_function_decl_diagnostic(result: ParseFunctionDecl) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_impl_method_diagnostic(result: ParseImplMethod) -> Bool {
+    match result.diagnostic {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn has_impl_method_list_diagnostic(result: ParseImplMethodList) -> Bool {
     match result.diagnostic {
         Some(_) => true,
         None => false,
@@ -2354,18 +2456,2048 @@ pub fn parse_raw_text_until_end(cursor: ParserCursor, code: String, message: Str
     }
 }
 
+fn expr_ok(cursor: ParserCursor, expr: AstExpr) -> ParseExpr {
+    ParseExpr {
+        cursor: cursor,
+        expr: Some(expr),
+        span: expr.span,
+        diagnostic: None(),
+    }
+}
+
+fn expr_error(cursor: ParserCursor, span: SourceSpan, code: String, message: String) -> ParseExpr {
+    ParseExpr {
+        cursor: cursor,
+        expr: None(),
+        span: span,
+        diagnostic: Some(error(diagnostic_code(code), span, message)),
+    }
+}
+
+fn pattern_ok(cursor: ParserCursor, pattern: AstPattern) -> ParsePattern {
+    ParsePattern {
+        cursor: cursor,
+        pattern: Some(pattern),
+        span: pattern.span,
+        diagnostic: None(),
+    }
+}
+
+fn pattern_error(cursor: ParserCursor, span: SourceSpan, code: String, message: String) -> ParsePattern {
+    ParsePattern {
+        cursor: cursor,
+        pattern: None(),
+        span: span,
+        diagnostic: Some(error(diagnostic_code(code), span, message)),
+    }
+}
+
+fn expr_stop_token(token: Token) -> Bool {
+    match token.kind {
+        EndOfFile => true,
+        Invalid => true,
+        Delimiter => token.lexeme == "," || token.lexeme == ";" || token.lexeme == ")" || token.lexeme == "]" || token.lexeme == "}",
+        Operator => token.lexeme == "=>",
+        Keyword => token.lexeme == "else" || token.lexeme == "effects" || token.lexeme == "capabilities" || token.lexeme == "requires" || token.lexeme == "ensures" || token.lexeme == "invariant" || token.lexeme == "where",
+        _ => false,
+    }
+}
+
+fn has_optional_diagnostic(value: Option[Diagnostic]) -> Bool {
+    match value {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+fn is_identifier_token(value: Token) -> Bool {
+    match value.kind {
+        Identifier => true,
+        _ => false,
+    }
+}
+
+fn looks_like_struct_literal(cursor: ParserCursor) -> Bool {
+    let open_cursor = skip_trivia(cursor);
+    if !at_delimiter(open_cursor, "{") {
+        false
+    } else {
+        let first_field_cursor = skip_trivia(advance(open_cursor));
+        let first_field = current_token(first_field_cursor);
+        if is_delimiter(first_field, "}") {
+            true
+        } else if is_identifier_token(first_field) {
+            at_delimiter(advance(first_field_cursor), ":")
+        } else {
+            false
+        }
+    }
+}
+
+fn binary_precedence(token: Token) -> Int {
+    if is_operator(token, "||") {
+        1
+    } else if is_operator(token, "&&") {
+        2
+    } else if is_operator(token, "|") {
+        3
+    } else if is_operator(token, "^") {
+        4
+    } else if is_operator(token, "&") {
+        5
+    } else if is_operator(token, "==") || is_operator(token, "!=") {
+        6
+    } else if is_operator(token, "<") || is_operator(token, "<=") || is_operator(token, ">") || is_operator(token, ">=") {
+        7
+    } else if is_operator(token, "<<") || is_operator(token, ">>") || is_operator(token, ">>>") {
+        8
+    } else if is_operator(token, "+") || is_operator(token, "-") {
+        9
+    } else if is_operator(token, "*") || is_operator(token, "/") || is_operator(token, "%") {
+        10
+    } else if is_delimiter(token, "..") {
+        7
+    } else {
+        0
+    }
+}
+
+fn merge_expr_text(left: String, op: String, right: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, left);
+    parts = vec.push(parts, op);
+    parts = vec.push(parts, right);
+    string.join(parts, "")
+}
+
+fn wrap_text(open: String, inner: String, close: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, open);
+    parts = vec.push(parts, inner);
+    parts = vec.push(parts, close);
+    string.join(parts, "")
+}
+
+fn join_expr_text(values: Vec[AstExpr], separator: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(expr) => if true {
+                parts = vec.push(parts, expr.text);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, separator)
+}
+
+fn join_pattern_text(values: Vec[AstPattern], separator: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(pattern) => if true {
+                parts = vec.push(parts, pattern.text);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, separator)
+}
+
+fn parse_binary_expr(cursor: ParserCursor, min_precedence: Int) -> ParseExpr {
+    let first = parse_unary_expr(cursor);
+    if has_expr_diagnostic(first) {
+        first
+    } else {
+        match first.expr {
+            Some(first_expr) => if true {
+                let mut out_cursor = first.cursor;
+                let mut expr = first_expr;
+                let mut diagnostic: Option[Diagnostic] = None();
+                let mut done = false;
+                while !done {
+                    let active = skip_trivia(out_cursor);
+                    let token = current_token(active);
+                    let precedence = binary_precedence(token);
+                    if precedence < min_precedence || precedence == 0 {
+                        done = true;
+                    } else {
+                        out_cursor = advance(active);
+                        let rhs_result = parse_binary_expr(out_cursor, precedence + 1);
+                        if has_expr_diagnostic(rhs_result) {
+                            out_cursor = rhs_result.cursor;
+                            diagnostic = rhs_result.diagnostic;
+                            done = true;
+                        } else {
+                            match rhs_result.expr {
+                                Some(rhs) => if true {
+                                    let lhs_text = expr.text;
+                                    let lhs_span = expr.span;
+                                    let rhs_text = rhs.text;
+                                    let rhs_span = rhs.span;
+                                    let mut children: Vec[AstExpr] = vec.new_vec();
+                                    children = vec.push(children, expr);
+                                    children = vec.push(children, rhs);
+                                    expr = expr_with_children(AstBinaryExpr(), token.lexeme, "", children, vec.new_vec(), merge(lhs_span, rhs_span), merge_expr_text(lhs_text, token.lexeme, rhs_text));
+                                    out_cursor = rhs_result.cursor;
+                                    ()
+                                } else {
+                                    ()
+                                },
+                                None => if true {
+                                    diagnostic = Some(error(diagnostic_code("E1301"), rhs_result.span, "expected right-hand expression"));
+                                    done = true;
+                                    ()
+                                } else {
+                                    ()
+                                },
+                            }
+                        }
+                    };
+                };
+                match diagnostic {
+                    Some(diag) => ParseExpr {
+                        cursor: out_cursor,
+                        expr: None(),
+                        span: expr.span,
+                        diagnostic: Some(diag),
+                    },
+                    None => expr_ok(out_cursor, expr),
+                }
+            } else {
+                first
+            },
+            None => expr_error(first.cursor, first.span, "E1300", "expected expression"),
+        }
+    }
+}
+
+pub fn parse_expr(cursor: ParserCursor) -> ParseExpr {
+    parse_binary_expr(cursor, 1)
+}
+
+pub fn parse_expression(cursor: ParserCursor) -> ParseExpr {
+    parse_expr(cursor)
+}
+
+fn parse_unary_expr(cursor: ParserCursor) -> ParseExpr {
+    let active = skip_trivia(cursor);
+    let token = current_token(active);
+    if is_operator(token, "|") || is_operator(token, "||") {
+        parse_closure_expr(active)
+    } else if is_operator(token, "&") {
+        let after_amp = advance(active);
+        let mutable = at_keyword(after_amp, "mut");
+        let value_cursor = if mutable { advance(skip_trivia(after_amp)) } else { after_amp };
+        let inner = parse_unary_expr(value_cursor);
+        if has_expr_diagnostic(inner) {
+            inner
+        } else {
+            match inner.expr {
+                Some(expr) => if true {
+                    let name = if mutable { "mut" } else { "" };
+                    let text = if mutable { wrap_text("&mut ", expr.text, "") } else { wrap_text("&", expr.text, "") };
+                    let end_span = expr.span;
+                    let mut children: Vec[AstExpr] = vec.new_vec();
+                    children = vec.push(children, expr);
+                    expr_ok(inner.cursor, expr_with_children(AstBorrowExpr(), "&", name, children, vec.new_vec(), merge(token.span, end_span), text))
+                } else {
+                    inner
+                },
+                None => expr_error(inner.cursor, inner.span, "E1300", "expected borrowed expression"),
+            }
+        }
+    } else if at_keyword(active, "await") {
+        let inner = parse_unary_expr(advance(active));
+        if has_expr_diagnostic(inner) {
+            inner
+        } else {
+            match inner.expr {
+                Some(expr) => if true {
+                    let end_span = expr.span;
+                    let mut children: Vec[AstExpr] = vec.new_vec();
+                    children = vec.push(children, expr);
+                    expr_ok(inner.cursor, expr_with_children(AstAwaitExpr(), "await", "", children, vec.new_vec(), merge(token.span, end_span), wrap_text("await ", expr.text, "")))
+                } else {
+                    inner
+                },
+                None => expr_error(inner.cursor, inner.span, "E1300", "expected awaited expression"),
+            }
+        }
+    } else if is_operator(token, "-") || is_operator(token, "!") || is_operator(token, "~") {
+        let inner = parse_unary_expr(advance(active));
+        if has_expr_diagnostic(inner) {
+            inner
+        } else {
+            match inner.expr {
+                Some(expr) => if true {
+                    let end_span = expr.span;
+                    let mut children: Vec[AstExpr] = vec.new_vec();
+                    children = vec.push(children, expr);
+                    expr_ok(inner.cursor, expr_with_children(AstUnaryExpr(), token.lexeme, "", children, vec.new_vec(), merge(token.span, end_span), wrap_text(token.lexeme, expr.text, "")))
+                } else {
+                    inner
+                },
+                None => expr_error(inner.cursor, inner.span, "E1300", "expected unary expression"),
+            }
+        }
+    } else {
+        parse_postfix_expr(active)
+    }
+}
+
+fn parse_postfix_expr(cursor: ParserCursor) -> ParseExpr {
+    let first = parse_primary_expr(cursor);
+    if has_expr_diagnostic(first) {
+        first
+    } else {
+        match first.expr {
+            Some(first_expr) => if true {
+                let mut out_cursor = first.cursor;
+                let mut expr = first_expr;
+                let mut diagnostic: Option[Diagnostic] = None();
+                let mut done = false;
+                while !done {
+                    if at_delimiter(out_cursor, "(") {
+                        let open = expect_delimiter(out_cursor, "(", "E1310", "expected function argument list opener");
+                        let args_result = parse_call_args(open.cursor, open.token.span, expr.text);
+                        if has_expr_diagnostic(args_result) {
+                            out_cursor = args_result.cursor;
+                            diagnostic = args_result.diagnostic;
+                            done = true;
+                        } else {
+                            match args_result.expr {
+                                Some(call_expr) => if true {
+                                    let mut children: Vec[AstExpr] = vec.new_vec();
+                                    children = vec.push(children, expr);
+                                    let mut index = 0;
+                                    while index < vec.vec_len(call_expr.nodes) {
+                                        index = index + 1;
+                                    };
+                                    expr = expr_with_children(AstCallExpr(), "", expr.text, children, call_expr.patterns, merge(expr.span, call_expr.span), call_expr.text);
+                                    out_cursor = args_result.cursor;
+                                    ()
+                                } else {
+                                    ()
+                                },
+                                None => if true {
+                                    diagnostic = args_result.diagnostic;
+                                    done = true;
+                                    ()
+                                } else {
+                                    ()
+                                },
+                            }
+                        }
+                    } else if at_delimiter(out_cursor, ".") {
+                        let dot = expect_delimiter(out_cursor, ".", "E1311", "expected field access separator");
+                        let field_token = current_token(skip_trivia(dot.cursor));
+                        if at_identifier(dot.cursor) || match field_token.kind { IntegerLiteral => true, _ => false } {
+                            let field_cursor = advance(skip_trivia(dot.cursor));
+                            let field_name = field_token.lexeme;
+                            let lhs_span = expr.span;
+                            let lhs_text = expr.text;
+                            let mut children: Vec[AstExpr] = vec.new_vec();
+                            children = vec.push(children, expr);
+                            expr = expr_with_children(AstFieldAccessExpr(), ".", field_name, children, vec.new_vec(), merge(lhs_span, field_token.span), merge_expr_text(lhs_text, ".", field_token.lexeme));
+                            out_cursor = field_cursor;
+                        } else {
+                            out_cursor = dot.cursor;
+                            diagnostic = Some(error(diagnostic_code("E1312"), field_token.span, "expected field name or tuple index after '.'"));
+                            done = true;
+                        }
+                    } else if at_operator(out_cursor, "?") {
+                        let question = expect_operator(out_cursor, "?", "E1313", "expected result propagation operator");
+                        let expr_span = expr.span;
+                        let expr_text_value = expr.text;
+                        let mut children: Vec[AstExpr] = vec.new_vec();
+                        children = vec.push(children, expr);
+                        expr = expr_with_children(AstTryExpr(), "?", "", children, vec.new_vec(), merge(expr_span, question.token.span), wrap_text(expr_text_value, "?", ""));
+                        out_cursor = question.cursor;
+                    } else {
+                        done = true;
+                    }
+                };
+                match diagnostic {
+                    Some(diag) => ParseExpr {
+                        cursor: out_cursor,
+                        expr: None(),
+                        span: expr.span,
+                        diagnostic: Some(diag),
+                    },
+                    None => expr_ok(out_cursor, expr),
+                }
+            } else {
+                first
+            },
+            None => expr_error(first.cursor, first.span, "E1300", "expected expression"),
+        }
+    }
+}
+
+fn parse_call_args(cursor: ParserCursor, open_span: SourceSpan, callee_text: String) -> ParseExpr {
+    let open_source = open_span.source.value;
+    let open_start = open_span.start;
+    let open_end = open_span.end;
+    let open_copy = span(source_id(open_source), open_start, open_end);
+    let mut out_cursor = cursor;
+    let mut args: Vec[AstExpr] = vec.new_vec();
+    let mut text_parts: Vec[String] = vec.new_vec();
+    let mut saw_named = false;
+    let mut diagnostic: Option[Diagnostic] = None();
+    let mut end_span = span(source_id(open_source), open_start, open_end);
+    let mut done = false;
+    text_parts = vec.push(text_parts, callee_text);
+    text_parts = vec.push(text_parts, "(");
+    while !done && !at_delimiter(out_cursor, ")") {
+        if vec.vec_len(args) > 0 {
+            text_parts = vec.push(text_parts, ",");
+        } else {
+            ()
+        };
+        let active = skip_trivia(out_cursor);
+        let token = current_token(active);
+        let after_name = advance(active);
+        if at_identifier(active) && at_delimiter(after_name, ":") {
+            let colon = expect_delimiter(after_name, ":", "E1314", "expected ':' after named argument");
+            let value = parse_expr(colon.cursor);
+            if has_expr_diagnostic(value) {
+                diagnostic = value.diagnostic;
+                out_cursor = value.cursor;
+                end_span = value.span;
+                done = true;
+            } else {
+                match value.expr {
+                    Some(expr) => if true {
+                        text_parts = vec.push(text_parts, token.lexeme);
+                        text_parts = vec.push(text_parts, ":");
+                        text_parts = vec.push(text_parts, expr.text);
+                        end_span = expr.span;
+                        args = vec.push(args, expr);
+                        out_cursor = value.cursor;
+                        saw_named = true;
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => if true {
+                        diagnostic = Some(error(diagnostic_code("E1315"), value.span, "expected named argument value"));
+                        done = true;
+                        ()
+                    } else {
+                        ()
+                    },
+                }
+            }
+        } else {
+            let value = parse_expr(out_cursor);
+            if has_expr_diagnostic(value) {
+                diagnostic = value.diagnostic;
+                out_cursor = value.cursor;
+                end_span = value.span;
+                done = true;
+            } else {
+                match value.expr {
+                    Some(expr) => if true {
+                        if saw_named {
+                            diagnostic = Some(error(diagnostic_code("E1092"), expr.span, "positional arguments cannot follow named arguments"));
+                            done = true;
+                        } else {
+                            text_parts = vec.push(text_parts, expr.text);
+                            end_span = expr.span;
+                            args = vec.push(args, expr);
+                            out_cursor = value.cursor;
+                        };
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => if true {
+                        diagnostic = Some(error(diagnostic_code("E1316"), value.span, "expected function argument"));
+                        done = true;
+                        ()
+                    } else {
+                        ()
+                    },
+                }
+            }
+        };
+        if !done {
+            if at_delimiter(out_cursor, ",") {
+                let comma = expect_delimiter(out_cursor, ",", "E1317", "expected argument separator");
+                out_cursor = comma.cursor;
+            } else {
+                done = true;
+            }
+        } else {
+            ()
+        };
+    };
+    if has_optional_diagnostic(diagnostic) {
+        ParseExpr {
+            cursor: out_cursor,
+            expr: None(),
+            span: merge(open_copy, end_span),
+            diagnostic: diagnostic,
+        }
+    } else {
+        let close = expect_delimiter(out_cursor, ")", "E1035", "expected ')' after function arguments");
+        if has_diagnostic(close) {
+            expr_error(close.cursor, close.token.span, "E1035", "expected ')' after function arguments")
+        } else {
+            text_parts = vec.push(text_parts, ")");
+            let text = string.join(text_parts, "");
+            expr_ok(close.cursor, expr_with_children(AstCallExpr(), "", callee_text, args, vec.new_vec(), merge(open_copy, close.token.span), text))
+        }
+    }
+}
+
+fn parse_primary_expr(cursor: ParserCursor) -> ParseExpr {
+    let active = skip_trivia(cursor);
+    let token = current_token(active);
+    if expr_stop_token(token) {
+        expr_error(active, token.span, "E1300", "expected expression")
+    } else {
+        match token.kind {
+            IntegerLiteral => expr_ok(advance(active), simple_expr(AstIntExpr(), "", token.lexeme, token.span, token.lexeme)),
+            FloatLiteral => expr_ok(advance(active), simple_expr(AstFloatExpr(), "", token.lexeme, token.span, token.lexeme)),
+            StringLiteral => expr_ok(advance(active), simple_expr(AstStringExpr(), "", token.lexeme, token.span, token.lexeme)),
+            TemplateLiteral => expr_ok(advance(active), simple_expr(AstTemplateExpr(), "", token.lexeme, token.span, token.lexeme)),
+            CharLiteral => expr_ok(advance(active), simple_expr(AstCharExpr(), "", token.lexeme, token.span, token.lexeme)),
+            Keyword => if token.lexeme == "true" || token.lexeme == "false" {
+                expr_ok(advance(active), simple_expr(AstBoolExpr(), "", token.lexeme, token.span, token.lexeme))
+            } else if token.lexeme == "if" {
+                parse_if_expr(active)
+            } else if token.lexeme == "match" {
+                parse_match_expr(active)
+            } else if token.lexeme == "while" {
+                parse_while_expr(active)
+            } else if token.lexeme == "loop" {
+                parse_loop_expr(active)
+            } else if token.lexeme == "for" {
+                parse_for_expr(active)
+            } else if token.lexeme == "break" {
+                parse_break_expr(active)
+            } else if token.lexeme == "continue" {
+                expr_ok(advance(active), simple_expr(AstContinueExpr(), "", "", token.span, "continue"))
+            } else if token.lexeme == "unsafe" {
+                parse_unsafe_block_expr(active)
+            } else {
+                expr_error(active, token.span, "E1300", "expected expression")
+            },
+            Identifier => parse_name_or_struct_expr(active),
+            Delimiter => if token.lexeme == "(" {
+                parse_tuple_or_parenthesized_expr(active)
+            } else if token.lexeme == "{" {
+                let block = parse_block(active);
+                if has_block_diagnostic(block) {
+                    ParseExpr {
+                        cursor: block.cursor,
+                        expr: None(),
+                        span: token.span,
+                        diagnostic: block.diagnostic,
+                    }
+                } else {
+                    match block.block {
+                        Some(value) => if true {
+                            expr_ok(block.cursor, simple_expr(AstBlockExpr(), "", "", value.span, value.text))
+                        } else {
+                            expr_error(block.cursor, token.span, "E1300", "expected block")
+                        },
+                        None => expr_error(block.cursor, token.span, "E1300", "expected block"),
+                    }
+                }
+            } else {
+                expr_error(active, token.span, "E1300", "expected expression")
+            },
+            _ => expr_error(active, token.span, "E1300", "expected expression"),
+        }
+    }
+}
+
+fn parse_tuple_or_parenthesized_expr(cursor: ParserCursor) -> ParseExpr {
+    let open = expect_delimiter(cursor, "(", "E1320", "expected expression tuple opener");
+    if has_diagnostic(open) {
+        expr_error(open.cursor, open.token.span, "E1320", "expected expression tuple opener")
+    } else if at_delimiter(open.cursor, ")") {
+        let close = expect_delimiter(open.cursor, ")", "E1037", "expected ')' after unit expression");
+        if has_diagnostic(close) {
+            expr_error(close.cursor, close.token.span, "E1037", "expected ')' after unit expression")
+        } else {
+            expr_ok(close.cursor, simple_expr(AstUnitExpr(), "", "", merge(open.token.span, close.token.span), "()"))
+        }
+    } else {
+        let first = parse_expr(open.cursor);
+        if has_expr_diagnostic(first) {
+            first
+        } else {
+            match first.expr {
+                Some(first_expr) => if at_delimiter(first.cursor, ",") {
+                    let mut out_cursor = first.cursor;
+                    let mut values: Vec[AstExpr] = vec.new_vec();
+                    let mut end_span = first_expr.span;
+                    let mut diagnostic: Option[Diagnostic] = None();
+                    let mut done = false;
+                    values = vec.push(values, first_expr);
+                    while !done {
+                        let comma = expect_delimiter(out_cursor, ",", "E1321", "expected tuple expression separator");
+                        out_cursor = comma.cursor;
+                        if at_delimiter(out_cursor, ")") {
+                            done = true;
+                        } else {
+                            let item = parse_expr(out_cursor);
+                            if has_expr_diagnostic(item) {
+                                out_cursor = item.cursor;
+                                diagnostic = item.diagnostic;
+                                end_span = item.span;
+                                done = true;
+                            } else {
+                                match item.expr {
+                                    Some(expr) => if true {
+                                        end_span = expr.span;
+                                        values = vec.push(values, expr);
+                                        out_cursor = item.cursor;
+                                        ()
+                                    } else {
+                                        ()
+                                    },
+                                    None => if true {
+                                        diagnostic = Some(error(diagnostic_code("E1322"), item.span, "expected tuple expression item"));
+                                        done = true;
+                                        ()
+                                    } else {
+                                        ()
+                                    },
+                                };
+                                if !done && !at_delimiter(out_cursor, ",") {
+                                    done = true;
+                                } else {
+                                    ()
+                                }
+                            }
+                        }
+                    };
+                    match diagnostic {
+                        Some(diag) => ParseExpr {
+                            cursor: out_cursor,
+                            expr: None(),
+                            span: merge(open.token.span, end_span),
+                            diagnostic: Some(diag),
+                        },
+                        None => if true {
+                            let close = expect_delimiter(out_cursor, ")", "E1037", "expected ')' after tuple expression");
+                            if has_diagnostic(close) {
+                                expr_error(close.cursor, close.token.span, "E1037", "expected ')' after tuple expression")
+                            } else {
+                                let text = wrap_text("(", join_expr_text(values, ","), ")");
+                                expr_ok(close.cursor, expr_with_children(AstTupleExpr(), "", "", values, vec.new_vec(), merge(open.token.span, close.token.span), text))
+                            }
+                        } else {
+                            expr_error(out_cursor, end_span, "E1322", "expected tuple expression item")
+                        },
+                    }
+                } else {
+                    let close = expect_delimiter(first.cursor, ")", "E1037", "expected ')' after expression");
+                    if has_diagnostic(close) {
+                        expr_error(close.cursor, close.token.span, "E1037", "expected ')' after expression")
+                    } else {
+                        expr_ok(close.cursor, simple_expr(first_expr.kind, first_expr.op, first_expr.name, merge(open.token.span, close.token.span), first_expr.text))
+                    }
+                },
+                None => expr_error(first.cursor, first.span, "E1300", "expected expression"),
+            }
+        }
+    }
+}
+
+fn parse_name_path(cursor: ParserCursor, code: String, message: String) -> ParseTypeName {
+    parse_type_name_path(cursor, code, message)
+}
+
+fn parse_name_or_struct_expr(cursor: ParserCursor) -> ParseExpr {
+    let name_result = parse_name_path(cursor, "E1323", "expected name expression");
+    if has_type_name_diagnostic(name_result) {
+        ParseExpr {
+            cursor: name_result.cursor,
+            expr: None(),
+            span: current_token(skip_trivia(cursor)).span,
+            diagnostic: name_result.diagnostic,
+        }
+    } else {
+        match name_result.name {
+            Some(name) => if looks_like_struct_literal(name_result.cursor) {
+                let open = expect_delimiter(name_result.cursor, "{", "E1324", "expected struct literal opener");
+                let fields = parse_struct_literal_fields(open.cursor, open.token.span, name.value);
+                if has_expr_diagnostic(fields) {
+                    fields
+                } else {
+                    fields
+                }
+            } else {
+                expr_ok(name_result.cursor, simple_expr(AstNameExpr(), "", name.value, name.span, name.value))
+            },
+            None => expr_error(name_result.cursor, current_token(skip_trivia(cursor)).span, "E1323", "expected name expression"),
+        }
+    }
+}
+
+fn parse_struct_literal_fields(cursor: ParserCursor, open_span: SourceSpan, name: String) -> ParseExpr {
+    let open_source = open_span.source.value;
+    let open_start = open_span.start;
+    let open_end = open_span.end;
+    let open_copy = span(source_id(open_source), open_start, open_end);
+    let mut out_cursor = cursor;
+    let mut values: Vec[AstExpr] = vec.new_vec();
+    let mut text_parts: Vec[String] = vec.new_vec();
+    let mut end_span = span(source_id(open_source), open_start, open_end);
+    let mut diagnostic: Option[Diagnostic] = None();
+    let mut done = false;
+    text_parts = vec.push(text_parts, name);
+    text_parts = vec.push(text_parts, "{");
+    while !done && !at_delimiter(out_cursor, "}") {
+        if vec.vec_len(values) > 0 {
+            text_parts = vec.push(text_parts, ",");
+        } else {
+            ()
+        };
+        let field = expect_identifier(out_cursor, "E1038", "expected struct field name");
+        if has_diagnostic(field) {
+            diagnostic = field.diagnostic;
+            out_cursor = field.cursor;
+            end_span = field.token.span;
+            done = true;
+        } else {
+            let colon = expect_delimiter(field.cursor, ":", "E1039", "expected ':' after field name");
+            if has_diagnostic(colon) {
+                diagnostic = colon.diagnostic;
+                out_cursor = colon.cursor;
+                end_span = colon.token.span;
+                done = true;
+            } else {
+                let value = parse_expr(colon.cursor);
+                if has_expr_diagnostic(value) {
+                    diagnostic = value.diagnostic;
+                    out_cursor = value.cursor;
+                    end_span = value.span;
+                    done = true;
+                } else {
+                    match value.expr {
+                        Some(expr) => if true {
+                            text_parts = vec.push(text_parts, field.token.lexeme);
+                            text_parts = vec.push(text_parts, ":");
+                            text_parts = vec.push(text_parts, expr.text);
+                            end_span = expr.span;
+                            values = vec.push(values, expr);
+                            out_cursor = value.cursor;
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => if true {
+                            diagnostic = Some(error(diagnostic_code("E1325"), value.span, "expected struct field value"));
+                            done = true;
+                            ()
+                        } else {
+                            ()
+                        },
+                    };
+                    if !done {
+                        if at_delimiter(out_cursor, ",") {
+                            let comma = expect_delimiter(out_cursor, ",", "E1326", "expected struct literal field separator");
+                            out_cursor = comma.cursor;
+                        } else {
+                            done = true;
+                        }
+                    } else {
+                        ()
+                    }
+                }
+            }
+        }
+    };
+    match diagnostic {
+        Some(diag) => ParseExpr {
+            cursor: out_cursor,
+            expr: None(),
+            span: merge(open_copy, end_span),
+            diagnostic: Some(diag),
+        },
+        None => if true {
+            let close = expect_delimiter(out_cursor, "}", "E1040", "expected '}' after struct literal");
+            if has_diagnostic(close) {
+                expr_error(close.cursor, close.token.span, "E1040", "expected '}' after struct literal")
+            } else {
+                text_parts = vec.push(text_parts, "}");
+                expr_ok(close.cursor, expr_with_children(AstStructLiteralExpr(), "", name, values, vec.new_vec(), merge(open_copy, close.token.span), string.join(text_parts, "")))
+            }
+        } else {
+            expr_error(out_cursor, open_copy, "E1325", "expected struct literal")
+        },
+    }
+}
+
+fn parse_if_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "if", "E1330", "expected if expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1330", "expected if expression")
+    } else {
+        let cond = parse_expr(keyword.cursor);
+        if has_expr_diagnostic(cond) {
+            cond
+        } else {
+            match cond.expr {
+                Some(cond_expr) => if true {
+                    let then_block = parse_block(cond.cursor);
+                    if has_block_diagnostic(then_block) {
+                        ParseExpr {
+                            cursor: then_block.cursor,
+                            expr: None(),
+                            span: merge(keyword.token.span, cond_expr.span),
+                            diagnostic: then_block.diagnostic,
+                        }
+                    } else {
+                        let else_keyword = expect_keyword(then_block.cursor, "else", "E1042", "expected else branch for if expression");
+                        if has_diagnostic(else_keyword) {
+                            expr_error(else_keyword.cursor, else_keyword.token.span, "E1042", "expected else branch for if expression")
+                        } else {
+                            let else_expr = if at_keyword(else_keyword.cursor, "if") {
+                                parse_if_expr(else_keyword.cursor)
+                            } else {
+                                let else_block = parse_block(else_keyword.cursor);
+                                if has_block_diagnostic(else_block) {
+                                    ParseExpr {
+                                        cursor: else_block.cursor,
+                                        expr: None(),
+                                        span: else_keyword.token.span,
+                                        diagnostic: else_block.diagnostic,
+                                    }
+                                } else {
+                                    match else_block.block {
+                                        Some(block) => expr_ok(else_block.cursor, simple_expr(AstBlockExpr(), "", "", block.span, block.text)),
+                                        None => expr_error(else_block.cursor, else_keyword.token.span, "E1331", "expected else block"),
+                                    }
+                                }
+                            };
+                            if has_expr_diagnostic(else_expr) {
+                                else_expr
+                            } else {
+                                match else_expr.expr {
+                                    Some(else_value) => if true {
+                                        let then_text = match then_block.block {
+                                            Some(block) => block.text,
+                                            None => "",
+                                        };
+                                        let text = wrap_text("if ", cond_expr.text, wrap_text(then_text, "else", else_value.text));
+                                        let mut children: Vec[AstExpr] = vec.new_vec();
+                                        children = vec.push(children, cond_expr);
+                                        children = vec.push(children, else_value);
+                                        expr_ok(else_expr.cursor, expr_with_children(AstIfExpr(), "", "", children, vec.new_vec(), merge(keyword.token.span, else_value.span), text))
+                                    } else {
+                                        else_expr
+                                    },
+                                    None => expr_error(else_expr.cursor, else_expr.span, "E1331", "expected else expression"),
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    cond
+                },
+                None => expr_error(cond.cursor, cond.span, "E1332", "expected if condition"),
+            }
+        }
+    }
+}
+
+fn parse_while_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "while", "E1333", "expected while expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1333", "expected while expression")
+    } else {
+        let cond = parse_expr(keyword.cursor);
+        if has_expr_diagnostic(cond) {
+            cond
+        } else {
+            match cond.expr {
+                Some(cond_expr) => if true {
+                    let body = parse_block(cond.cursor);
+                    if has_block_diagnostic(body) {
+                        ParseExpr {
+                            cursor: body.cursor,
+                            expr: None(),
+                            span: cond_expr.span,
+                            diagnostic: body.diagnostic,
+                        }
+                    } else {
+                        match body.block {
+                            Some(block) => if true {
+                                let mut children: Vec[AstExpr] = vec.new_vec();
+                                children = vec.push(children, cond_expr);
+                                expr_ok(body.cursor, expr_with_children(AstWhileExpr(), "", "", children, vec.new_vec(), merge(keyword.token.span, block.span), wrap_text("while ", cond_expr.text, block.text)))
+                            } else {
+                                expr_error(body.cursor, cond_expr.span, "E1334", "expected while body")
+                            },
+                            None => expr_error(body.cursor, cond_expr.span, "E1334", "expected while body"),
+                        }
+                    }
+                } else {
+                    cond
+                },
+                None => expr_error(cond.cursor, cond.span, "E1335", "expected while condition"),
+            }
+        }
+    }
+}
+
+fn parse_loop_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "loop", "E1336", "expected loop expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1336", "expected loop expression")
+    } else {
+        let body = parse_block(keyword.cursor);
+        if has_block_diagnostic(body) {
+            ParseExpr {
+                cursor: body.cursor,
+                expr: None(),
+                span: keyword.token.span,
+                diagnostic: body.diagnostic,
+            }
+        } else {
+            match body.block {
+                Some(block) => expr_ok(body.cursor, simple_expr(AstLoopExpr(), "", "", merge(keyword.token.span, block.span), wrap_text("loop", block.text, ""))),
+                None => expr_error(body.cursor, keyword.token.span, "E1337", "expected loop body"),
+            }
+        }
+    }
+}
+
+fn parse_for_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "for", "E1338", "expected for expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1338", "expected for expression")
+    } else {
+        let binding = expect_identifier(keyword.cursor, "E1031", "expected loop binding name after for");
+        if has_diagnostic(binding) {
+            expr_error(binding.cursor, binding.token.span, "E1031", "expected loop binding name after for")
+        } else {
+            let in_keyword = expect_keyword(binding.cursor, "in", "E1041", "expected in after loop binding");
+            if has_diagnostic(in_keyword) {
+                expr_error(in_keyword.cursor, in_keyword.token.span, "E1041", "expected in after loop binding")
+            } else {
+                let iterable = parse_expr(in_keyword.cursor);
+                if has_expr_diagnostic(iterable) {
+                    iterable
+                } else {
+                    match iterable.expr {
+                        Some(value) => if true {
+                            let body = parse_block(iterable.cursor);
+                            if has_block_diagnostic(body) {
+                                ParseExpr {
+                                    cursor: body.cursor,
+                                    expr: None(),
+                                    span: value.span,
+                                    diagnostic: body.diagnostic,
+                                }
+                            } else {
+                                match body.block {
+                                    Some(block) => if true {
+                                        let mut children: Vec[AstExpr] = vec.new_vec();
+                                        children = vec.push(children, value);
+                                        expr_ok(body.cursor, expr_with_children(AstForExpr(), "in", binding.token.lexeme, children, vec.new_vec(), merge(keyword.token.span, block.span), wrap_text("for ", binding.token.lexeme, wrap_text(" in ", value.text, block.text))))
+                                    } else {
+                                        expr_error(body.cursor, value.span, "E1339", "expected for body")
+                                    },
+                                    None => expr_error(body.cursor, value.span, "E1339", "expected for body"),
+                                }
+                            }
+                        } else {
+                            iterable
+                        },
+                        None => expr_error(iterable.cursor, iterable.span, "E1340", "expected for iterable expression"),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn parse_break_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "break", "E1341", "expected break expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1341", "expected break expression")
+    } else if expr_stop_token(current_token(skip_trivia(keyword.cursor))) {
+        expr_ok(keyword.cursor, simple_expr(AstBreakExpr(), "", "", keyword.token.span, "break"))
+    } else {
+        let value = parse_expr(keyword.cursor);
+        if has_expr_diagnostic(value) {
+            value
+        } else {
+            match value.expr {
+                Some(expr) => if true {
+                    let mut children: Vec[AstExpr] = vec.new_vec();
+                    children = vec.push(children, expr);
+                    expr_ok(value.cursor, expr_with_children(AstBreakExpr(), "", "", children, vec.new_vec(), merge(keyword.token.span, expr.span), wrap_text("break ", expr.text, "")))
+                } else {
+                    value
+                },
+                None => expr_ok(keyword.cursor, simple_expr(AstBreakExpr(), "", "", keyword.token.span, "break")),
+            }
+        }
+    }
+}
+
+fn parse_unsafe_block_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "unsafe", "E1342", "expected unsafe expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1342", "expected unsafe expression")
+    } else {
+        let body = parse_block(keyword.cursor);
+        if has_block_diagnostic(body) {
+            ParseExpr {
+                cursor: body.cursor,
+                expr: None(),
+                span: keyword.token.span,
+                diagnostic: body.diagnostic,
+            }
+        } else {
+            match body.block {
+                Some(block) => expr_ok(body.cursor, simple_expr(AstBlockExpr(), "unsafe", "", merge(keyword.token.span, block.span), wrap_text("unsafe", block.text, ""))),
+                None => expr_error(body.cursor, keyword.token.span, "E1343", "expected unsafe block"),
+            }
+        }
+    }
+}
+
+fn parse_closure_expr(cursor: ParserCursor) -> ParseExpr {
+    let active = skip_trivia(cursor);
+    let token = current_token(active);
+    let mut out_cursor = active;
+    let mut param_texts: Vec[String] = vec.new_vec();
+    let mut diagnostic: Option[Diagnostic] = None();
+    if is_operator(token, "||") {
+        out_cursor = advance(active);
+    } else {
+        let open = expect_operator(active, "|", "E1071", "expected '|' to start closure expression");
+        if has_diagnostic(open) {
+            out_cursor = open.cursor;
+            diagnostic = open.diagnostic;
+        } else {
+            out_cursor = open.cursor;
+        };
+        let mut done = false;
+        while !done && !at_operator(out_cursor, "|") && !has_optional_diagnostic(diagnostic) {
+            let param = expect_identifier(out_cursor, "E1072", "expected closure parameter name");
+            if has_diagnostic(param) {
+                out_cursor = param.cursor;
+                diagnostic = param.diagnostic;
+                done = true;
+            } else {
+                let mut param_text = param.token.lexeme;
+                out_cursor = param.cursor;
+                if at_delimiter(out_cursor, ":") {
+                    let colon = expect_delimiter(out_cursor, ":", "E1072", "expected closure parameter type separator");
+                    let ty = parse_type_ref(colon.cursor, true);
+                    if has_type_ref_diagnostic(ty) {
+                        out_cursor = ty.cursor;
+                        diagnostic = ty.diagnostic;
+                        done = true;
+                    } else {
+                        match ty.type_ref {
+                            Some(type_ref) => if true {
+                                param_text = merge_expr_text(param_text, ":", type_text(type_ref));
+                                out_cursor = ty.cursor;
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                out_cursor = ty.cursor;
+                                diagnostic = Some(error(diagnostic_code("E1072"), ty.span, "expected closure parameter type"));
+                                done = true;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                } else {
+                    ()
+                };
+                if has_optional_diagnostic(diagnostic) {
+                    ()
+                } else {
+                    param_texts = vec.push(param_texts, param_text);
+                    if at_delimiter(out_cursor, ",") {
+                        let comma = expect_delimiter(out_cursor, ",", "E1072", "expected closure parameter separator");
+                        out_cursor = comma.cursor;
+                    } else {
+                        done = true;
+                    }
+                };
+            }
+        };
+        if has_optional_diagnostic(diagnostic) {
+            ()
+        } else {
+            let close = expect_operator(out_cursor, "|", "E1073", "expected '|' to end closure parameters");
+            if has_diagnostic(close) {
+                out_cursor = close.cursor;
+                diagnostic = close.diagnostic;
+            } else {
+                out_cursor = close.cursor;
+            }
+        }
+    };
+    match diagnostic {
+        Some(diag) => ParseExpr {
+            cursor: out_cursor,
+            expr: None(),
+            span: token.span,
+            diagnostic: Some(diag),
+        },
+        None => if true {
+            let arrow = expect_operator(out_cursor, "->", "E1074", "expected '->' after closure parameters");
+            if has_diagnostic(arrow) {
+                expr_error(arrow.cursor, arrow.token.span, "E1074", "expected '->' after closure parameters")
+            } else {
+                let ret = parse_type_ref(arrow.cursor, false);
+                if has_type_ref_diagnostic(ret) {
+                    ParseExpr {
+                        cursor: ret.cursor,
+                        expr: None(),
+                        span: ret.span,
+                        diagnostic: ret.diagnostic,
+                    }
+                } else {
+                    let body = parse_block(ret.cursor);
+                    if has_block_diagnostic(body) {
+                        ParseExpr {
+                            cursor: body.cursor,
+                            expr: None(),
+                            span: ret.span,
+                            diagnostic: body.diagnostic,
+                        }
+                    } else {
+                        match body.block {
+                            Some(block) => if true {
+                                let ret_text = match ret.type_ref {
+                                    Some(type_ref) => type_text(type_ref),
+                                    None => "()",
+                                };
+                                let text = wrap_text("|", string.join(param_texts, ","), wrap_text("|->", ret_text, block.text));
+                                expr_ok(body.cursor, simple_expr(AstClosureExpr(), "->", "", merge(token.span, block.span), text))
+                            } else {
+                                expr_error(body.cursor, ret.span, "E1344", "expected closure body")
+                            },
+                            None => expr_error(body.cursor, ret.span, "E1344", "expected closure body"),
+                        }
+                    }
+                }
+            }
+        } else {
+            expr_error(out_cursor, token.span, "E1344", "expected closure expression")
+        },
+    }
+}
+
+fn parse_match_expr(cursor: ParserCursor) -> ParseExpr {
+    let keyword = expect_keyword(cursor, "match", "E1345", "expected match expression");
+    if has_diagnostic(keyword) {
+        expr_error(keyword.cursor, keyword.token.span, "E1345", "expected match expression")
+    } else {
+        let matched = parse_expr(keyword.cursor);
+        if has_expr_diagnostic(matched) {
+            matched
+        } else {
+            match matched.expr {
+                Some(match_value) => if true {
+                    let open = expect_delimiter(matched.cursor, "{", "E1043", "expected '{' for match arms");
+                    if has_diagnostic(open) {
+                        expr_error(open.cursor, open.token.span, "E1043", "expected '{' for match arms")
+                    } else {
+                        let mut out_cursor = open.cursor;
+                        let mut children: Vec[AstExpr] = vec.new_vec();
+                        let mut pattern_nodes: Vec[AstPatternNode] = vec.new_vec();
+                        let mut match_arms: Vec[AstMatchArmNode] = vec.new_vec();
+                        let mut text_parts: Vec[String] = vec.new_vec();
+                        let mut diagnostic: Option[Diagnostic] = None();
+                        let mut end_span = open.token.span;
+                        let mut done = false;
+                        children = vec.push(children, match_value);
+                        text_parts = vec.push(text_parts, "match");
+                        text_parts = vec.push(text_parts, match_value.text);
+                        text_parts = vec.push(text_parts, "{");
+                        while !done && !at_delimiter(out_cursor, "}") {
+                            let pattern = parse_pattern(out_cursor);
+                            if has_pattern_diagnostic(pattern) {
+                                diagnostic = pattern.diagnostic;
+                                out_cursor = pattern.cursor;
+                                end_span = pattern.span;
+                                done = true;
+                            } else {
+                                match pattern.pattern {
+                                    Some(pat) => if true {
+                                        let pat_text = pat.text;
+                                        let pat_span = pat.span;
+                                        let mut guard_text = "";
+                                        pattern_nodes = vec.push(pattern_nodes, pattern_node_from_pattern(pat, "arm", 1));
+                                        let mut pat_nested = 0;
+                                        while pat_nested < vec.vec_len(pat.nodes) {
+                                            match vec.get(pat.nodes, pat_nested) {
+                                                Some(node) => if true {
+                                                    pattern_nodes = vec.push(pattern_nodes, nested_pattern_node(node, 1));
+                                                    ()
+                                                } else {
+                                                    ()
+                                                },
+                                                None => (),
+                                            };
+                                            pat_nested = pat_nested + 1;
+                                        };
+                                        text_parts = vec.push(text_parts, pat_text);
+                                        out_cursor = pattern.cursor;
+                                        if at_keyword(out_cursor, "if") {
+                                            let guard_keyword = expect_keyword(out_cursor, "if", "E1346", "expected match guard");
+                                            let guard = parse_expr(guard_keyword.cursor);
+                                            if has_expr_diagnostic(guard) {
+                                                diagnostic = guard.diagnostic;
+                                                out_cursor = guard.cursor;
+                                                end_span = guard.span;
+                                                done = true;
+                                            } else {
+                                                match guard.expr {
+                                                    Some(guard_expr) => if true {
+                                                        text_parts = vec.push(text_parts, "if");
+                                                        text_parts = vec.push(text_parts, guard_expr.text);
+                                                        guard_text = guard_expr.text;
+                                                        children = vec.push(children, guard_expr);
+                                                        out_cursor = guard.cursor;
+                                                        ()
+                                                    } else {
+                                                        ()
+                                                    },
+                                                    None => if true {
+                                                        diagnostic = Some(error(diagnostic_code("E1346"), guard.span, "expected match guard expression"));
+                                                        done = true;
+                                                        ()
+                                                    } else {
+                                                        ()
+                                                    },
+                                                }
+                                            }
+                                        } else {
+                                            ()
+                                        };
+                                        if !done {
+                                            let arrow = expect_operator(out_cursor, "=>", "E1044", "expected '=>' in match arm");
+                                            if has_diagnostic(arrow) {
+                                                diagnostic = arrow.diagnostic;
+                                                out_cursor = arrow.cursor;
+                                                end_span = arrow.token.span;
+                                                done = true;
+                                            } else {
+                                                let body = parse_expr(arrow.cursor);
+                                                if has_expr_diagnostic(body) {
+                                                    diagnostic = body.diagnostic;
+                                                    out_cursor = body.cursor;
+                                                    end_span = body.span;
+                                                    done = true;
+                                                } else {
+                                                match body.expr {
+                                                    Some(body_expr) => if true {
+                                                        let body_text_value = body_expr.text;
+                                                        let body_span_value = body_expr.span;
+                                                        let arm_text = if guard_text == "" {
+                                                            wrap_text(pat_text, "=>", body_text_value)
+                                                        } else {
+                                                            wrap_text(pat_text, wrap_text("if", guard_text, "=>"), body_text_value)
+                                                        };
+                                                        text_parts = vec.push(text_parts, "=>");
+                                                        text_parts = vec.push(text_parts, body_text_value);
+                                                        match_arms = vec.push(match_arms, ast_match_arm(pat_text, guard_text, body_text_value, merge(pat_span, body_span_value), arm_text));
+                                                        children = vec.push(children, body_expr);
+                                                        out_cursor = body.cursor;
+                                                        end_span = body_span_value;
+                                                        if at_delimiter(out_cursor, ",") {
+                                                            let comma = expect_delimiter(out_cursor, ",", "E1347", "expected match arm separator");
+                                                                text_parts = vec.push(text_parts, ",");
+                                                                out_cursor = comma.cursor;
+                                                            } else {
+                                                                done = true;
+                                                            };
+                                                            ()
+                                                        } else {
+                                                            ()
+                                                        },
+                                                        None => if true {
+                                                            diagnostic = Some(error(diagnostic_code("E1348"), body.span, "expected match arm body"));
+                                                            done = true;
+                                                            ()
+                                                        } else {
+                                                            ()
+                                                        },
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            ()
+                                        };
+                                        ()
+                                    } else {
+                                        ()
+                                    },
+                                    None => if true {
+                                        diagnostic = Some(error(diagnostic_code("E1048"), pattern.span, "expected match pattern"));
+                                        done = true;
+                                        ()
+                                    } else {
+                                        ()
+                                    },
+                                }
+                            }
+                        };
+                        match diagnostic {
+                            Some(diag) => ParseExpr {
+                                cursor: out_cursor,
+                                expr: None(),
+                                span: merge(keyword.token.span, end_span),
+                                diagnostic: Some(diag),
+                            },
+                            None => if true {
+                                let close = expect_delimiter(out_cursor, "}", "E1045", "expected '}' after match arms");
+                                if has_diagnostic(close) {
+                                    expr_error(close.cursor, close.token.span, "E1045", "expected '}' after match arms")
+                                } else {
+                                    text_parts = vec.push(text_parts, "}");
+                                    expr_ok(close.cursor, match_expr_with_arms(children, pattern_nodes, match_arms, merge(keyword.token.span, close.token.span), string.join(text_parts, "")))
+                                }
+                            } else {
+                                expr_error(out_cursor, end_span, "E1348", "expected match expression")
+                            },
+                        }
+                    }
+                } else {
+                    matched
+                },
+                None => expr_error(matched.cursor, matched.span, "E1349", "expected match scrutinee"),
+            }
+        }
+    }
+}
+
+pub fn parse_pattern(cursor: ParserCursor) -> ParsePattern {
+    let first = parse_pattern_atom(cursor);
+    if has_pattern_diagnostic(first) {
+        first
+    } else {
+        match first.pattern {
+            Some(first_pattern) => if at_operator(first.cursor, "|") {
+                let mut out_cursor = first.cursor;
+                let mut patterns: Vec[AstPattern] = vec.new_vec();
+                let mut end_span = first_pattern.span;
+                let mut diagnostic: Option[Diagnostic] = None();
+                let mut done = false;
+                patterns = vec.push(patterns, first_pattern);
+                while !done && at_operator(out_cursor, "|") {
+                    let pipe = expect_operator(out_cursor, "|", "E1350", "expected pattern separator");
+                    let next = parse_pattern_atom(pipe.cursor);
+                    if has_pattern_diagnostic(next) {
+                        diagnostic = next.diagnostic;
+                        out_cursor = next.cursor;
+                        end_span = next.span;
+                        done = true;
+                    } else {
+                        match next.pattern {
+                            Some(pattern) => if true {
+                                end_span = pattern.span;
+                                patterns = vec.push(patterns, pattern);
+                                out_cursor = next.cursor;
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                diagnostic = Some(error(diagnostic_code("E1048"), next.span, "expected match pattern"));
+                                done = true;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                };
+                match diagnostic {
+                    Some(diag) => ParsePattern {
+                        cursor: out_cursor,
+                        pattern: None(),
+                        span: merge(first.span, end_span),
+                        diagnostic: Some(diag),
+                    },
+                    None => pattern_ok(out_cursor, pattern_with_children(AstOrPattern(), "", patterns, merge(first.span, end_span), join_pattern_text(patterns, "|"))),
+                }
+            } else {
+                pattern_ok(first.cursor, first_pattern)
+            },
+            None => pattern_error(first.cursor, first.span, "E1048", "expected match pattern"),
+        }
+    }
+}
+
+fn parse_pattern_atom(cursor: ParserCursor) -> ParsePattern {
+    let active = skip_trivia(cursor);
+    let token = current_token(active);
+    match token.kind {
+        IntegerLiteral => pattern_ok(advance(active), simple_pattern(AstIntPattern(), token.lexeme, token.span, token.lexeme)),
+        StringLiteral => pattern_ok(advance(active), simple_pattern(AstStringPattern(), token.lexeme, token.span, token.lexeme)),
+        CharLiteral => pattern_ok(advance(active), simple_pattern(AstCharPattern(), token.lexeme, token.span, token.lexeme)),
+        Keyword => if token.lexeme == "true" || token.lexeme == "false" {
+            pattern_ok(advance(active), simple_pattern(AstBoolPattern(), token.lexeme, token.span, token.lexeme))
+        } else {
+            pattern_error(active, token.span, "E1048", "expected match pattern")
+        },
+        Delimiter => if token.lexeme == "_" {
+            pattern_ok(advance(active), simple_pattern(AstWildcardPattern(), "", token.span, "_"))
+        } else if token.lexeme == "(" {
+            parse_tuple_or_parenthesized_pattern(active)
+        } else {
+            pattern_error(active, token.span, "E1048", "expected match pattern")
+        },
+        Identifier => parse_named_pattern(active),
+        _ => pattern_error(active, token.span, "E1048", "expected match pattern"),
+    }
+}
+
+fn parse_tuple_or_parenthesized_pattern(cursor: ParserCursor) -> ParsePattern {
+    let open = expect_delimiter(cursor, "(", "E1351", "expected pattern tuple opener");
+    if has_diagnostic(open) {
+        pattern_error(open.cursor, open.token.span, "E1351", "expected pattern tuple opener")
+    } else if at_delimiter(open.cursor, ")") {
+        let close = expect_delimiter(open.cursor, ")", "E1046", "expected ')' after unit pattern");
+        if has_diagnostic(close) {
+            pattern_error(close.cursor, close.token.span, "E1046", "expected ')' after unit pattern")
+        } else {
+            pattern_ok(close.cursor, simple_pattern(AstUnitPattern(), "", merge(open.token.span, close.token.span), "()"))
+        }
+    } else {
+        let first = parse_pattern(open.cursor);
+        if has_pattern_diagnostic(first) {
+            first
+        } else {
+            match first.pattern {
+                Some(first_pattern) => if at_delimiter(first.cursor, ",") {
+                    let mut out_cursor = first.cursor;
+                    let mut patterns: Vec[AstPattern] = vec.new_vec();
+                    let mut end_span = first_pattern.span;
+                    let mut diagnostic: Option[Diagnostic] = None();
+                    let mut done = false;
+                    patterns = vec.push(patterns, first_pattern);
+                    while !done {
+                        let comma = expect_delimiter(out_cursor, ",", "E1352", "expected tuple pattern separator");
+                        out_cursor = comma.cursor;
+                        if at_delimiter(out_cursor, ")") {
+                            done = true;
+                        } else {
+                            let item = parse_pattern(out_cursor);
+                            if has_pattern_diagnostic(item) {
+                                diagnostic = item.diagnostic;
+                                out_cursor = item.cursor;
+                                end_span = item.span;
+                                done = true;
+                            } else {
+                                match item.pattern {
+                                    Some(pattern) => if true {
+                                        end_span = pattern.span;
+                                        patterns = vec.push(patterns, pattern);
+                                        out_cursor = item.cursor;
+                                        ()
+                                    } else {
+                                        ()
+                                    },
+                                    None => if true {
+                                        diagnostic = Some(error(diagnostic_code("E1048"), item.span, "expected tuple pattern"));
+                                        done = true;
+                                        ()
+                                    } else {
+                                        ()
+                                    },
+                                };
+                                if !done && !at_delimiter(out_cursor, ",") {
+                                    done = true;
+                                } else {
+                                    ()
+                                }
+                            }
+                        }
+                    };
+                    match diagnostic {
+                        Some(diag) => ParsePattern {
+                            cursor: out_cursor,
+                            pattern: None(),
+                            span: merge(open.token.span, end_span),
+                            diagnostic: Some(diag),
+                        },
+                        None => if true {
+                            let close = expect_delimiter(out_cursor, ")", "E1046", "expected ')' after tuple pattern");
+                            if has_diagnostic(close) {
+                                pattern_error(close.cursor, close.token.span, "E1046", "expected ')' after tuple pattern")
+                            } else {
+                                pattern_ok(close.cursor, pattern_with_children(AstTuplePattern(), "", patterns, merge(open.token.span, close.token.span), wrap_text("(", join_pattern_text(patterns, ","), ")")))
+                            }
+                        } else {
+                            pattern_error(out_cursor, end_span, "E1048", "expected tuple pattern")
+                        },
+                    }
+                } else {
+                    let close = expect_delimiter(first.cursor, ")", "E1046", "expected ')' after parenthesized pattern");
+                    if has_diagnostic(close) {
+                        pattern_error(close.cursor, close.token.span, "E1046", "expected ')' after parenthesized pattern")
+                    } else {
+                        pattern_ok(close.cursor, simple_pattern(first_pattern.kind, first_pattern.name, merge(open.token.span, close.token.span), first_pattern.text))
+                    }
+                },
+                None => pattern_error(first.cursor, first.span, "E1048", "expected match pattern"),
+            }
+        }
+    }
+}
+
+fn parse_named_pattern(cursor: ParserCursor) -> ParsePattern {
+    let name = expect_identifier(cursor, "E1048", "expected match pattern");
+    if has_diagnostic(name) {
+        pattern_error(name.cursor, name.token.span, "E1048", "expected match pattern")
+    } else if at_delimiter(name.cursor, "(") {
+        let open = expect_delimiter(name.cursor, "(", "E1353", "expected variant pattern opener");
+        let mut out_cursor = open.cursor;
+        let mut args: Vec[AstPattern] = vec.new_vec();
+        let mut end_span = open.token.span;
+        let mut diagnostic: Option[Diagnostic] = None();
+        let mut done = false;
+        while !done && !at_delimiter(out_cursor, ")") {
+            let arg = parse_pattern(out_cursor);
+            if has_pattern_diagnostic(arg) {
+                diagnostic = arg.diagnostic;
+                out_cursor = arg.cursor;
+                end_span = arg.span;
+                done = true;
+            } else {
+                match arg.pattern {
+                    Some(pattern) => if true {
+                        end_span = pattern.span;
+                        args = vec.push(args, pattern);
+                        out_cursor = arg.cursor;
+                        if at_delimiter(out_cursor, ",") {
+                            let comma = expect_delimiter(out_cursor, ",", "E1354", "expected variant pattern separator");
+                            out_cursor = comma.cursor;
+                        } else {
+                            done = true;
+                        };
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => if true {
+                        diagnostic = Some(error(diagnostic_code("E1048"), arg.span, "expected variant pattern argument"));
+                        done = true;
+                        ()
+                    } else {
+                        ()
+                    },
+                }
+            }
+        };
+        match diagnostic {
+            Some(diag) => ParsePattern {
+                cursor: out_cursor,
+                pattern: None(),
+                span: merge(name.token.span, end_span),
+                diagnostic: Some(diag),
+            },
+            None => if true {
+                let close = expect_delimiter(out_cursor, ")", "E1047", "expected ')' after variant pattern");
+                if has_diagnostic(close) {
+                    pattern_error(close.cursor, close.token.span, "E1047", "expected ')' after variant pattern")
+                } else {
+                    pattern_ok(close.cursor, pattern_with_children(AstVariantPattern(), name.token.lexeme, args, merge(name.token.span, close.token.span), wrap_text(name.token.lexeme, wrap_text("(", join_pattern_text(args, ","), ")"), "")))
+                }
+            } else {
+                pattern_error(out_cursor, end_span, "E1048", "expected variant pattern")
+            },
+        }
+    } else if at_delimiter(name.cursor, "{") {
+        parse_struct_pattern(name.cursor, name.token)
+    } else {
+        pattern_ok(name.cursor, simple_pattern(AstVarPattern(), name.token.lexeme, name.token.span, name.token.lexeme))
+    }
+}
+
+fn parse_struct_pattern(cursor: ParserCursor, name_token: Token) -> ParsePattern {
+    let open = expect_delimiter(cursor, "{", "E1355", "expected struct pattern opener");
+    if has_diagnostic(open) {
+        pattern_error(open.cursor, open.token.span, "E1355", "expected struct pattern opener")
+    } else {
+        let mut out_cursor = open.cursor;
+        let mut fields: Vec[AstPattern] = vec.new_vec();
+        let mut text_parts: Vec[String] = vec.new_vec();
+        let mut end_span = open.token.span;
+        let mut diagnostic: Option[Diagnostic] = None();
+        let mut done = false;
+        text_parts = vec.push(text_parts, name_token.lexeme);
+        text_parts = vec.push(text_parts, "{");
+        while !done && !at_delimiter(out_cursor, "}") {
+            if at_delimiter(out_cursor, "..") {
+                let rest = expect_delimiter(out_cursor, "..", "E1356", "expected struct pattern rest");
+                text_parts = vec.push(text_parts, "..");
+                out_cursor = rest.cursor;
+                end_span = rest.token.span;
+                done = true;
+            } else {
+                if vec.vec_len(fields) > 0 {
+                    text_parts = vec.push(text_parts, ",");
+                } else {
+                    ()
+                };
+                let field = expect_identifier(out_cursor, "E1049", "expected struct pattern field");
+                if has_diagnostic(field) {
+                    diagnostic = field.diagnostic;
+                    out_cursor = field.cursor;
+                    end_span = field.token.span;
+                    done = true;
+                } else {
+                    let pat = if at_delimiter(field.cursor, ":") {
+                        let colon = expect_delimiter(field.cursor, ":", "E1357", "expected ':' in struct pattern field");
+                        parse_pattern(colon.cursor)
+                    } else {
+                        pattern_ok(field.cursor, simple_pattern(AstVarPattern(), field.token.lexeme, field.token.span, field.token.lexeme))
+                    };
+                    if has_pattern_diagnostic(pat) {
+                        diagnostic = pat.diagnostic;
+                        out_cursor = pat.cursor;
+                        end_span = pat.span;
+                        done = true;
+                    } else {
+                        match pat.pattern {
+                            Some(pattern) => if true {
+                                text_parts = vec.push(text_parts, field.token.lexeme);
+                                if field.token.lexeme != pattern.text {
+                                    text_parts = vec.push(text_parts, ":");
+                                    text_parts = vec.push(text_parts, pattern.text);
+                                } else {
+                                    ()
+                                };
+                                end_span = pattern.span;
+                                fields = vec.push(fields, pattern);
+                                out_cursor = pat.cursor;
+                                if at_delimiter(out_cursor, ",") {
+                                    let comma = expect_delimiter(out_cursor, ",", "E1358", "expected struct pattern separator");
+                                    out_cursor = comma.cursor;
+                                } else {
+                                    done = true;
+                                };
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                diagnostic = Some(error(diagnostic_code("E1048"), pat.span, "expected struct field pattern"));
+                                done = true;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                }
+            }
+        };
+        match diagnostic {
+            Some(diag) => ParsePattern {
+                cursor: out_cursor,
+                pattern: None(),
+                span: merge(name_token.span, end_span),
+                diagnostic: Some(diag),
+            },
+            None => if true {
+                let close = expect_delimiter(out_cursor, "}", "E1047", "expected '}' after struct pattern");
+                if has_diagnostic(close) {
+                    pattern_error(close.cursor, close.token.span, "E1047", "expected '}' after struct pattern")
+                } else {
+                    text_parts = vec.push(text_parts, "}");
+                    pattern_ok(close.cursor, pattern_with_children(AstStructPattern(), name_token.lexeme, fields, merge(name_token.span, close.token.span), string.join(text_parts, "")))
+                }
+            } else {
+                pattern_error(out_cursor, end_span, "E1048", "expected struct pattern")
+            },
+        }
+    }
+}
+
+fn statement_ok(cursor: ParserCursor, statement: AstStatement) -> ParseStatement {
+    ParseStatement {
+        cursor: cursor,
+        statement: Some(statement),
+        diagnostic: None(),
+    }
+}
+
+fn statement_error(cursor: ParserCursor, span: SourceSpan, code: String, message: String) -> ParseStatement {
+    ParseStatement {
+        cursor: cursor,
+        statement: None(),
+        diagnostic: Some(error(diagnostic_code(code), span, message)),
+    }
+}
+
+fn is_assignment_operator_token(token: Token) -> Bool {
+    is_operator(token, "=") || is_operator(token, "&=") || is_operator(token, "|=") || is_operator(token, "^=") || is_operator(token, "<<=") || is_operator(token, ">>=") || is_operator(token, ">>>=")
+}
+
+fn is_assignment_statement_start(cursor: ParserCursor) -> Bool {
+    let active = skip_trivia(cursor);
+    let first = current_token(active);
+    if is_identifier_token(first) {
+        is_assignment_operator_token(current_token(skip_trivia(advance(active))))
+    } else {
+        false
+    }
+}
+
+pub fn parse_block(cursor: ParserCursor) -> ParseBlock {
+    let open = expect_delimiter(cursor, "{", "E1029", "expected '{' to start block");
+    if has_diagnostic(open) {
+        ParseBlock {
+            cursor: open.cursor,
+            block: None(),
+            diagnostic: open.diagnostic,
+        }
+    } else {
+        let mut out_cursor = open.cursor;
+        let mut statements: Vec[AstStatement] = vec.new_vec();
+        let mut tail_expr: Option[AstExpr] = None();
+        let mut text_parts: Vec[String] = vec.new_vec();
+        let mut diagnostic: Option[Diagnostic] = None();
+        let mut done = false;
+        text_parts = vec.push(text_parts, "{");
+        while !done && !at_delimiter(out_cursor, "}") && !is_at_end(out_cursor) {
+            if at_keyword(out_cursor, "let") {
+                let stmt = parse_let_statement(out_cursor);
+                if has_statement_diagnostic(stmt) {
+                    diagnostic = stmt.diagnostic;
+                    out_cursor = stmt.cursor;
+                    done = true;
+                } else {
+                    match stmt.statement {
+                        Some(statement) => if true {
+                            text_parts = vec.push(text_parts, statement.text);
+                            statements = vec.push(statements, statement);
+                            out_cursor = stmt.cursor;
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => if true {
+                            diagnostic = Some(error(diagnostic_code("E1360"), current_token(skip_trivia(stmt.cursor)).span, "expected let statement"));
+                            done = true;
+                            ()
+                        } else {
+                            ()
+                        },
+                    }
+                }
+            } else if at_keyword(out_cursor, "return") {
+                let stmt = parse_return_statement(out_cursor);
+                if has_statement_diagnostic(stmt) {
+                    diagnostic = stmt.diagnostic;
+                    out_cursor = stmt.cursor;
+                    done = true;
+                } else {
+                    match stmt.statement {
+                        Some(statement) => if true {
+                            text_parts = vec.push(text_parts, statement.text);
+                            statements = vec.push(statements, statement);
+                            out_cursor = stmt.cursor;
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => if true {
+                            diagnostic = Some(error(diagnostic_code("E1361"), current_token(skip_trivia(stmt.cursor)).span, "expected return statement"));
+                            done = true;
+                            ()
+                        } else {
+                            ()
+                        },
+                    }
+                }
+            } else if is_assignment_statement_start(out_cursor) {
+                let stmt = parse_assignment_statement(out_cursor);
+                if has_statement_diagnostic(stmt) {
+                    diagnostic = stmt.diagnostic;
+                    out_cursor = stmt.cursor;
+                    done = true;
+                } else {
+                    match stmt.statement {
+                        Some(statement) => if true {
+                            text_parts = vec.push(text_parts, statement.text);
+                            statements = vec.push(statements, statement);
+                            out_cursor = stmt.cursor;
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => if true {
+                            diagnostic = Some(error(diagnostic_code("E1362"), current_token(skip_trivia(stmt.cursor)).span, "expected assignment statement"));
+                            done = true;
+                            ()
+                        } else {
+                            ()
+                        },
+                    }
+                }
+            } else {
+                let expr = parse_expr(out_cursor);
+                if has_expr_diagnostic(expr) {
+                    diagnostic = expr.diagnostic;
+                    out_cursor = expr.cursor;
+                    done = true;
+                } else {
+                    match expr.expr {
+                        Some(value) => if at_delimiter(expr.cursor, ";") {
+                            let semi = expect_delimiter(expr.cursor, ";", "E1363", "expected expression statement semicolon");
+                            let text = wrap_text(value.text, ";", "");
+                            let statement = ast_statement(AstExprStatement(), "", "", false, None(), None(), Some(value), merge(value.span, semi.token.span), text);
+                            text_parts = vec.push(text_parts, statement.text);
+                            statements = vec.push(statements, statement);
+                            out_cursor = semi.cursor;
+                        } else {
+                            text_parts = vec.push(text_parts, value.text);
+                            tail_expr = Some(value);
+                            out_cursor = expr.cursor;
+                            done = true;
+                        },
+                        None => if true {
+                            diagnostic = Some(error(diagnostic_code("E1300"), expr.span, "expected expression"));
+                            done = true;
+                            ()
+                        } else {
+                            ()
+                        },
+                    }
+                }
+            }
+        };
+        match diagnostic {
+            Some(diag) => ParseBlock {
+                cursor: out_cursor,
+                block: None(),
+                diagnostic: Some(diag),
+            },
+            None => if true {
+                let close = expect_delimiter(out_cursor, "}", "E1030", "expected '}' to close block");
+                if has_diagnostic(close) {
+                    ParseBlock {
+                        cursor: close.cursor,
+                        block: None(),
+                        diagnostic: close.diagnostic,
+                    }
+                } else {
+                    text_parts = vec.push(text_parts, "}");
+                    ParseBlock {
+                        cursor: close.cursor,
+                        block: Some(ast_block(statements, tail_expr, merge(open.token.span, close.token.span), string.join(text_parts, ""))),
+                        diagnostic: None(),
+                    }
+                }
+            } else {
+                ParseBlock {
+                    cursor: out_cursor,
+                    block: None(),
+                    diagnostic: Some(error(diagnostic_code("E1030"), open.token.span, "expected block")),
+                }
+            },
+        }
+    }
+}
+
+fn parse_let_statement(cursor: ParserCursor) -> ParseStatement {
+    let keyword = expect_keyword(cursor, "let", "E1364", "expected let statement");
+    if has_diagnostic(keyword) {
+        statement_error(keyword.cursor, keyword.token.span, "E1364", "expected let statement")
+    } else {
+        let mutable = at_keyword(keyword.cursor, "mut");
+        let after_mut = if mutable { advance(skip_trivia(keyword.cursor)) } else { keyword.cursor };
+        let pattern = parse_pattern(after_mut);
+        if has_pattern_diagnostic(pattern) {
+            ParseStatement {
+                cursor: pattern.cursor,
+                statement: None(),
+                diagnostic: pattern.diagnostic,
+            }
+        } else {
+            match pattern.pattern {
+                Some(pat) => if true {
+                    let type_result = if at_delimiter(pattern.cursor, ":") {
+                        let colon = expect_delimiter(pattern.cursor, ":", "E1365", "expected let type separator");
+                        parse_type_ref(colon.cursor, false)
+                    } else {
+                        ParseTypeRef {
+                            cursor: pattern.cursor,
+                            type_ref: None(),
+                            span: empty_span(pattern.cursor.source, current_token(skip_trivia(pattern.cursor)).span.start),
+                            diagnostic: None(),
+                        }
+                    };
+                    if has_type_ref_diagnostic(type_result) {
+                        ParseStatement {
+                            cursor: type_result.cursor,
+                            statement: None(),
+                            diagnostic: type_result.diagnostic,
+                        }
+                    } else {
+                        let eq = expect_operator(type_result.cursor, "=", "E1032", "expected '=' in let binding");
+                        if has_diagnostic(eq) {
+                            statement_error(eq.cursor, eq.token.span, "E1032", "expected '=' in let binding")
+                        } else {
+                            let expr = parse_expr(eq.cursor);
+                            if has_expr_diagnostic(expr) {
+                                ParseStatement {
+                                    cursor: expr.cursor,
+                                    statement: None(),
+                                    diagnostic: expr.diagnostic,
+                                }
+                            } else {
+                                match expr.expr {
+                                    Some(value) => if true {
+                                        let semi = expect_delimiter(expr.cursor, ";", "E1033", "expected ';' after let binding");
+                                        if has_diagnostic(semi) {
+                                            statement_error(semi.cursor, semi.token.span, "E1033", "expected ';' after let binding")
+                                        } else {
+                                            let type_text_value = match type_result.type_ref {
+                                                Some(type_ref) => wrap_text(":", type_text(type_ref), ""),
+                                                None => "",
+                                            };
+                                            let mut parts: Vec[String] = vec.new_vec();
+                                            parts = vec.push(parts, "let ");
+                                            if mutable {
+                                                parts = vec.push(parts, "mut ");
+                                            } else {
+                                                ()
+                                            };
+                                            parts = vec.push(parts, pat.text);
+                                            parts = vec.push(parts, type_text_value);
+                                            parts = vec.push(parts, "=");
+                                            parts = vec.push(parts, value.text);
+                                            parts = vec.push(parts, ";");
+                                            statement_ok(semi.cursor, ast_statement(AstLetStatement(), pat.text, "", mutable, type_result.type_ref, Some(pat), Some(value), merge(keyword.token.span, semi.token.span), string.join(parts, "")))
+                                        }
+                                    } else {
+                                        statement_error(expr.cursor, expr.span, "E1366", "expected let initializer")
+                                    },
+                                    None => statement_error(expr.cursor, expr.span, "E1366", "expected let initializer"),
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    statement_error(pattern.cursor, pattern.span, "E1367", "expected let pattern")
+                },
+                None => statement_error(pattern.cursor, pattern.span, "E1367", "expected let pattern"),
+            }
+        }
+    }
+}
+
+fn parse_assignment_statement(cursor: ParserCursor) -> ParseStatement {
+    let target = expect_identifier(cursor, "E1060", "expected assignment target");
+    if has_diagnostic(target) {
+        statement_error(target.cursor, target.token.span, "E1060", "expected assignment target")
+    } else {
+        let op_token = current_token(skip_trivia(target.cursor));
+        if !is_assignment_operator_token(op_token) {
+            statement_error(target.cursor, op_token.span, "E1061", "expected assignment operator")
+        } else {
+            let value = parse_expr(advance(skip_trivia(target.cursor)));
+            if has_expr_diagnostic(value) {
+                ParseStatement {
+                    cursor: value.cursor,
+                    statement: None(),
+                    diagnostic: value.diagnostic,
+                }
+            } else {
+                match value.expr {
+                    Some(expr) => if true {
+                        let semi = expect_delimiter(value.cursor, ";", "E1062", "expected ';' after assignment");
+                        if has_diagnostic(semi) {
+                            statement_error(semi.cursor, semi.token.span, "E1062", "expected ';' after assignment")
+                        } else {
+                            let text = wrap_text(target.token.lexeme, op_token.lexeme, wrap_text(expr.text, ";", ""));
+                            statement_ok(semi.cursor, ast_statement(AstAssignStatement(), "", target.token.lexeme, false, None(), None(), Some(expr), merge(target.token.span, semi.token.span), text))
+                        }
+                    } else {
+                        statement_error(value.cursor, value.span, "E1368", "expected assignment value")
+                    },
+                    None => statement_error(value.cursor, value.span, "E1368", "expected assignment value"),
+                }
+            }
+        }
+    }
+}
+
+fn parse_return_statement(cursor: ParserCursor) -> ParseStatement {
+    let keyword = expect_keyword(cursor, "return", "E1369", "expected return statement");
+    if has_diagnostic(keyword) {
+        statement_error(keyword.cursor, keyword.token.span, "E1369", "expected return statement")
+    } else if at_delimiter(keyword.cursor, ";") {
+        let semi = expect_delimiter(keyword.cursor, ";", "E1034", "expected ';' after return");
+        statement_ok(semi.cursor, ast_statement(AstReturnStatement(), "", "", false, None(), None(), None(), merge(keyword.token.span, semi.token.span), "return;"))
+    } else {
+        let value = parse_expr(keyword.cursor);
+        if has_expr_diagnostic(value) {
+            ParseStatement {
+                cursor: value.cursor,
+                statement: None(),
+                diagnostic: value.diagnostic,
+            }
+        } else {
+            match value.expr {
+                Some(expr) => if true {
+                    let semi = expect_delimiter(value.cursor, ";", "E1034", "expected ';' after return");
+                    if has_diagnostic(semi) {
+                        statement_error(semi.cursor, semi.token.span, "E1034", "expected ';' after return")
+                    } else {
+                        statement_ok(semi.cursor, ast_statement(AstReturnStatement(), "", "", false, None(), None(), Some(expr), merge(keyword.token.span, semi.token.span), wrap_text("return ", expr.text, ";")))
+                    }
+                } else {
+                    statement_error(value.cursor, value.span, "E1370", "expected return expression")
+                },
+                None => statement_error(value.cursor, value.span, "E1370", "expected return expression"),
+            }
+        }
+    }
+}
+
 fn struct_field_result(
     cursor: ParserCursor,
     name_token: Token,
     visibility: AstVisibility,
     type_ref: AstType,
+    default_expr: Option[AstExpr],
     default_text: String,
     field_start: SourceSpan,
     field_end: SourceSpan,
 ) -> ParseStructField {
     ParseStructField {
         cursor: cursor,
-        field: Some(ast_field(ast_name(name_token.lexeme, name_token.span), visibility, type_ref, default_text, merge(field_start, field_end))),
+        field: Some(ast_field(ast_name(name_token.lexeme, name_token.span), visibility, type_ref, default_expr, default_text, merge(field_start, field_end))),
         diagnostic: None(),
     }
 }
@@ -2404,16 +4536,26 @@ pub fn parse_struct_field(cursor: ParserCursor) -> ParseStructField {
                     }
                 } else {
                     let mut out_cursor = type_result.cursor;
+                    let mut default_expr: Option[AstExpr] = None();
                     let mut default_text = "";
                     let mut field_end = type_result.span;
                     let mut default_diagnostic: Option[Diagnostic] = None();
                     if at_operator(out_cursor, "=") {
                         let eq_result = expect_operator(out_cursor, "=", "E1123", "expected struct field default assignment");
-                        let default_result = parse_raw_text_until_field_boundary(eq_result.cursor, "E1124", "expected struct field default expression");
+                        let default_result = parse_expr(eq_result.cursor);
                         out_cursor = default_result.cursor;
-                        default_text = default_result.text;
                         field_end = default_result.span;
                         default_diagnostic = default_result.diagnostic;
+                        match default_result.expr {
+                            Some(expr) => if true {
+                                default_text = expr.text;
+                                default_expr = Some(expr);
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        };
                     } else {
                         ()
                     };
@@ -2424,10 +4566,10 @@ pub fn parse_struct_field(cursor: ParserCursor) -> ParseStructField {
                             field: None(),
                             diagnostic: Some(diag),
                         },
-                        None => match visibility_result.visibility {
-                            Some(visibility) => match type_result.type_ref {
-                                Some(type_ref) => struct_field_result(out_cursor, name_result.token, visibility, type_ref, default_text, visibility_result.span, field_end),
-                                None => ParseStructField {
+	                        None => match visibility_result.visibility {
+	                            Some(visibility) => match type_result.type_ref {
+	                                Some(type_ref) => struct_field_result(out_cursor, name_result.token, visibility, type_ref, default_expr, default_text, visibility_result.span, field_end),
+	                                None => ParseStructField {
                                     cursor: type_result.cursor,
                                     field: None(),
                                     diagnostic: Some(error(diagnostic_code("E1125"), type_result.span, "missing struct field type")),
@@ -2525,6 +4667,7 @@ fn struct_decl_result(
     generic_params: AstGenericParamList,
     fields: Vec[AstField],
     field_span: SourceSpan,
+    invariant_expr: Option[AstExpr],
     invariant_text: String,
     invariant_span: SourceSpan,
 ) -> ParseStructDecl {
@@ -2536,7 +4679,7 @@ fn struct_decl_result(
     };
     ParseStructDecl {
         cursor: cursor,
-        struct_item: Some(struct_decl(header.name, header.visibility, generic_params, fields, invariant_text, item_span)),
+        struct_item: Some(struct_decl(header.name, header.visibility, generic_params, fields, invariant_expr, invariant_text, item_span)),
         diagnostic: None(),
     }
 }
@@ -2567,37 +4710,46 @@ pub fn parse_struct_declaration(cursor: ParserCursor) -> ParseStructDecl {
                             struct_item: None(),
                             diagnostic: fields_result.diagnostic,
                         }
-                    } else {
-                        if at_keyword(fields_result.cursor, "invariant") {
-                            let invariant_keyword = expect_keyword(fields_result.cursor, "invariant", "E1140", "expected struct invariant keyword");
-                            let invariant_result = parse_raw_text_until_end(invariant_keyword.cursor, "E1141", "expected struct invariant expression");
-                            if has_raw_text_diagnostic(invariant_result) {
-                                ParseStructDecl {
-                                    cursor: invariant_result.cursor,
-                                    struct_item: None(),
-                                    diagnostic: invariant_result.diagnostic,
-                                }
-                            } else {
-                                struct_decl_result(
-                                    invariant_result.cursor,
-                                    header,
-                                    generic_result.params,
-                                    fields_result.fields,
-                                    fields_result.span,
-                                    invariant_result.text,
-                                    merge(invariant_keyword.token.span, invariant_result.span),
-                                )
-                            }
-                        } else {
-                            struct_decl_result(
-                                fields_result.cursor,
-                                header,
-                                generic_result.params,
-                                fields_result.fields,
-                                fields_result.span,
-                                "",
-                                empty_span(fields_result.cursor.source, current_token(skip_trivia(fields_result.cursor)).span.start),
-                            )
+	                    } else {
+	                        if at_keyword(fields_result.cursor, "invariant") {
+	                            let invariant_keyword = expect_keyword(fields_result.cursor, "invariant", "E1140", "expected struct invariant keyword");
+	                            let invariant_result = parse_expr(invariant_keyword.cursor);
+	                            if has_expr_diagnostic(invariant_result) {
+	                                ParseStructDecl {
+	                                    cursor: invariant_result.cursor,
+	                                    struct_item: None(),
+	                                    diagnostic: invariant_result.diagnostic,
+	                                }
+	                            } else {
+                                    match invariant_result.expr {
+                                        Some(invariant_expr) => struct_decl_result(
+                                            invariant_result.cursor,
+                                            header,
+                                            generic_result.params,
+                                            fields_result.fields,
+                                            fields_result.span,
+                                            Some(invariant_expr),
+                                            invariant_expr.text,
+                                            merge(invariant_keyword.token.span, invariant_result.span),
+                                        ),
+                                        None => ParseStructDecl {
+                                            cursor: invariant_result.cursor,
+                                            struct_item: None(),
+                                            diagnostic: Some(error(diagnostic_code("E1141"), invariant_result.span, "expected struct invariant expression")),
+                                        },
+                                    }
+	                            }
+	                        } else {
+	                            struct_decl_result(
+	                                fields_result.cursor,
+	                                header,
+	                                generic_result.params,
+	                                fields_result.fields,
+	                                fields_result.span,
+	                                None(),
+	                                "",
+	                                empty_span(fields_result.cursor.source, current_token(skip_trivia(fields_result.cursor)).span.start),
+	                            )
                         }
                     }
                 }
@@ -2903,12 +5055,13 @@ fn const_decl_result(
     cursor: ParserCursor,
     header: AstItemHeader,
     type_ref: AstType,
+    initializer_expr: AstExpr,
     initializer_text: String,
     end_span: SourceSpan,
 ) -> ParseConstDecl {
     ParseConstDecl {
         cursor: cursor,
-        const_item: Some(const_decl(header.name, type_ref, initializer_text, merge(header.span, end_span))),
+        const_item: Some(const_decl(header.name, type_ref, Some(initializer_expr), initializer_text, merge(header.span, end_span))),
         diagnostic: None(),
     }
 }
@@ -2955,32 +5108,39 @@ pub fn parse_const_declaration(cursor: ParserCursor) -> ParseConstDecl {
                                     diagnostic: eq_result.diagnostic,
                                 }
                             } else {
-                                let initializer_result = parse_raw_text_until_semicolon(eq_result.cursor, "E1193", "expected const initializer expression");
-                                if has_raw_text_diagnostic(initializer_result) {
-                                    ParseConstDecl {
-                                        cursor: initializer_result.cursor,
-                                        const_item: None(),
-                                        diagnostic: initializer_result.diagnostic,
-                                    }
-                                } else {
-                                    let semi_result = expect_delimiter(initializer_result.cursor, ";", "E1194", "expected semicolon after const declaration");
+	                                let initializer_result = parse_expr(eq_result.cursor);
+	                                if has_expr_diagnostic(initializer_result) {
+	                                    ParseConstDecl {
+	                                        cursor: initializer_result.cursor,
+	                                        const_item: None(),
+	                                        diagnostic: initializer_result.diagnostic,
+	                                    }
+	                                } else {
+	                                    let semi_result = expect_delimiter(initializer_result.cursor, ";", "E1194", "expected semicolon after const declaration");
                                     if has_diagnostic(semi_result) {
                                         ParseConstDecl {
                                             cursor: semi_result.cursor,
                                             const_item: None(),
                                             diagnostic: semi_result.diagnostic,
                                         }
-                                    } else {
-                                        match type_result.type_ref {
-                                            Some(type_ref) => const_decl_result(semi_result.cursor, header, type_ref, initializer_result.text, semi_result.token.span),
-                                            None => ParseConstDecl {
-                                                cursor: type_result.cursor,
-                                                const_item: None(),
-                                                diagnostic: Some(error(diagnostic_code("E1195"), type_result.span, "missing const type")),
-                                            },
-                                        }
-                                    }
-                                }
+	                                    } else {
+                                            match initializer_result.expr {
+                                                Some(initializer_expr) => match type_result.type_ref {
+                                                    Some(type_ref) => const_decl_result(semi_result.cursor, header, type_ref, initializer_expr, initializer_expr.text, semi_result.token.span),
+                                                    None => ParseConstDecl {
+                                                        cursor: type_result.cursor,
+                                                        const_item: None(),
+                                                        diagnostic: Some(error(diagnostic_code("E1195"), type_result.span, "missing const type")),
+                                                    },
+                                                },
+                                                None => ParseConstDecl {
+                                                    cursor: initializer_result.cursor,
+                                                    const_item: None(),
+                                                    diagnostic: Some(error(diagnostic_code("E1193"), initializer_result.span, "expected const initializer expression")),
+                                                },
+                                            }
+	                                    }
+	                                }
                             }
                         }
                     }
@@ -2996,6 +5156,142 @@ pub fn parse_const_declaration(cursor: ParserCursor) -> ParseConstDecl {
                 cursor: header_result.cursor,
                 const_item: None(),
                 diagnostic: Some(error(diagnostic_code("E1197"), current_token(skip_trivia(header_result.cursor)).span, "missing const header")),
+            },
+        }
+    }
+}
+
+pub fn parse_function_declaration(cursor: ParserCursor) -> ParseFunctionDecl {
+    let signature_result = parse_function_signature(cursor);
+    if has_function_signature_diagnostic(signature_result) {
+        ParseFunctionDecl {
+            cursor: signature_result.cursor,
+            function_item: None(),
+            diagnostic: signature_result.diagnostic,
+        }
+    } else {
+        match signature_result.signature {
+            Some(signature) => if true {
+                let mut out_cursor = signature_result.cursor;
+                let mut requires_expr: Option[AstExpr] = None();
+                let mut ensures_expr: Option[AstExpr] = None();
+                let mut diagnostic: Option[Diagnostic] = None();
+                let mut contract_span = signature.span;
+                if at_keyword(out_cursor, "requires") {
+                    let keyword = expect_keyword(out_cursor, "requires", "E1371", "expected requires clause");
+                    let expr = parse_expr(keyword.cursor);
+                    if has_expr_diagnostic(expr) {
+                        diagnostic = expr.diagnostic;
+                        out_cursor = expr.cursor;
+                        contract_span = expr.span;
+                    } else {
+                        match expr.expr {
+                            Some(value) => if true {
+                                contract_span = value.span;
+                                requires_expr = Some(value);
+                                out_cursor = expr.cursor;
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                diagnostic = Some(error(diagnostic_code("E1372"), expr.span, "expected requires expression"));
+                                out_cursor = expr.cursor;
+                                contract_span = expr.span;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                } else {
+                    ()
+                };
+                if !has_optional_diagnostic(diagnostic) && at_keyword(out_cursor, "ensures") {
+                    let keyword = expect_keyword(out_cursor, "ensures", "E1373", "expected ensures clause");
+                    let expr = parse_expr(keyword.cursor);
+                    if has_expr_diagnostic(expr) {
+                        diagnostic = expr.diagnostic;
+                        out_cursor = expr.cursor;
+                        contract_span = expr.span;
+                    } else {
+                        match expr.expr {
+                            Some(value) => if true {
+                                contract_span = value.span;
+                                ensures_expr = Some(value);
+                                out_cursor = expr.cursor;
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                diagnostic = Some(error(diagnostic_code("E1374"), expr.span, "expected ensures expression"));
+                                out_cursor = expr.cursor;
+                                contract_span = expr.span;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                } else {
+                    ()
+                };
+                match diagnostic {
+                    Some(diag) => ParseFunctionDecl {
+                        cursor: out_cursor,
+                        function_item: None(),
+                        diagnostic: Some(diag),
+                    },
+                    None => if true {
+                        let body = parse_block(out_cursor);
+                        if has_block_diagnostic(body) {
+                            ParseFunctionDecl {
+                                cursor: body.cursor,
+                                function_item: None(),
+                                diagnostic: body.diagnostic,
+                            }
+                        } else {
+                            match body.block {
+                                Some(block) => if type_text(signature.return_type) != "()" && !block_has_required_tail(block) {
+                                    ParseFunctionDecl {
+                                        cursor: body.cursor,
+                                        function_item: None(),
+                                        diagnostic: Some(error(diagnostic_code("E1377"), block.span, "expected tail expression or return statement in non-unit function body")),
+                                    }
+                                } else {
+                                    ParseFunctionDecl {
+                                        cursor: body.cursor,
+                                        function_item: Some(function_decl(signature, requires_expr, ensures_expr, block, merge(signature.span, block.span))),
+                                        diagnostic: None(),
+                                    }
+                                },
+                                None => ParseFunctionDecl {
+                                    cursor: body.cursor,
+                                    function_item: None(),
+                                    diagnostic: Some(error(diagnostic_code("E1375"), contract_span, "expected function body")),
+                                },
+                            }
+                        }
+                    } else {
+                        ParseFunctionDecl {
+                            cursor: out_cursor,
+                            function_item: None(),
+                            diagnostic: Some(error(diagnostic_code("E1375"), contract_span, "expected function body")),
+                        }
+                    },
+                }
+            } else {
+                ParseFunctionDecl {
+                    cursor: signature_result.cursor,
+                    function_item: None(),
+                    diagnostic: Some(error(diagnostic_code("E1376"), current_token(skip_trivia(signature_result.cursor)).span, "missing function signature")),
+                }
+            },
+            None => ParseFunctionDecl {
+                cursor: signature_result.cursor,
+                function_item: None(),
+                diagnostic: Some(error(diagnostic_code("E1376"), current_token(skip_trivia(signature_result.cursor)).span, "missing function signature")),
             },
         }
     }
@@ -3162,18 +5458,154 @@ pub fn parse_trait_declaration(cursor: ParserCursor) -> ParseTraitDecl {
     }
 }
 
+pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
+    let signature_result = parse_function_signature(cursor);
+    if has_function_signature_diagnostic(signature_result) {
+        ParseImplMethod {
+            cursor: signature_result.cursor,
+            method: None(),
+            diagnostic: signature_result.diagnostic,
+        }
+    } else {
+        match signature_result.signature {
+            Some(signature) => if true {
+                let body_result = parse_block(signature_result.cursor);
+                if has_block_diagnostic(body_result) {
+                    ParseImplMethod {
+                        cursor: body_result.cursor,
+                        method: None(),
+                        diagnostic: body_result.diagnostic,
+                    }
+                } else {
+                    match body_result.block {
+                        Some(block) => if type_text(signature.return_type) != "()" && !block_has_required_tail(block) {
+                            ParseImplMethod {
+                                cursor: body_result.cursor,
+                                method: None(),
+                                diagnostic: Some(error(diagnostic_code("E1377"), block.span, "expected tail expression or return statement in non-unit method body")),
+                            }
+                        } else {
+                            ParseImplMethod {
+                                cursor: body_result.cursor,
+                                method: Some(impl_method(signature, block, merge(signature.span, block.span))),
+                                diagnostic: None(),
+                            }
+                        },
+                        None => ParseImplMethod {
+                            cursor: body_result.cursor,
+                            method: None(),
+                            diagnostic: Some(error(diagnostic_code("E1240"), current_token(skip_trivia(body_result.cursor)).span, "missing impl method body")),
+                        },
+                    }
+                }
+            } else {
+                ParseImplMethod {
+                    cursor: signature_result.cursor,
+                    method: None(),
+                    diagnostic: Some(error(diagnostic_code("E1241"), current_token(skip_trivia(signature_result.cursor)).span, "missing impl method signature")),
+                }
+            },
+            None => ParseImplMethod {
+                cursor: signature_result.cursor,
+                method: None(),
+                diagnostic: Some(error(diagnostic_code("E1241"), current_token(skip_trivia(signature_result.cursor)).span, "missing impl method signature")),
+            },
+        }
+    }
+}
+
+pub fn parse_impl_method_list(cursor: ParserCursor) -> ParseImplMethodList {
+    let open_result = expect_delimiter(cursor, "{", "E1232", "expected impl block opener");
+    if has_diagnostic(open_result) {
+        ParseImplMethodList {
+            cursor: open_result.cursor,
+            methods: vec.new_vec(),
+            span: open_result.token.span,
+            text: "",
+            diagnostic: open_result.diagnostic,
+        }
+    } else {
+        let mut out_cursor = open_result.cursor;
+        let mut methods: Vec[AstImplMethod] = vec.new_vec();
+        let mut text_parts: Vec[String] = vec.new_vec();
+        let mut end_span = open_result.token.span;
+        let mut diagnostic: Option[Diagnostic] = None();
+        let mut done = false;
+        if at_delimiter(out_cursor, "}") {
+            let close_result = expect_delimiter(out_cursor, "}", "E1234", "expected impl block closer");
+            out_cursor = close_result.cursor;
+            end_span = close_result.token.span;
+            diagnostic = close_result.diagnostic;
+            done = true;
+        } else {
+            ()
+        };
+
+        while !done {
+            if is_at_end(out_cursor) {
+                diagnostic = Some(error(diagnostic_code("E1234"), current_token(skip_trivia(out_cursor)).span, "expected impl block closer"));
+                done = true;
+            } else {
+                let method_result = parse_impl_method(out_cursor);
+                if has_impl_method_diagnostic(method_result) {
+                    out_cursor = method_result.cursor;
+                    diagnostic = method_result.diagnostic;
+                    done = true;
+                } else {
+                    let method_count_before = vec.vec_len(methods);
+                    methods = match method_result.method {
+                        Some(method) => if true {
+                            text_parts = vec.push(text_parts, impl_method_text(method));
+                            end_span = method.span;
+                            vec.push(methods, method)
+                        } else {
+                            methods
+                        },
+                        None => methods,
+                    };
+                    out_cursor = method_result.cursor;
+                    if vec.vec_len(methods) == method_count_before {
+                        diagnostic = Some(error(diagnostic_code("E1241"), current_token(skip_trivia(method_result.cursor)).span, "missing impl method signature"));
+                        done = true;
+                    } else if at_delimiter(out_cursor, "}") {
+                        let close_result = expect_delimiter(out_cursor, "}", "E1234", "expected impl block closer");
+                        out_cursor = close_result.cursor;
+                        end_span = close_result.token.span;
+                        diagnostic = close_result.diagnostic;
+                        done = true;
+                    } else if is_at_end(out_cursor) {
+                        diagnostic = Some(error(diagnostic_code("E1234"), current_token(skip_trivia(out_cursor)).span, "expected impl block closer"));
+                        done = true;
+                    } else {
+                        ()
+                    };
+                }
+            }
+        };
+
+        ParseImplMethodList {
+            cursor: out_cursor,
+            methods: methods,
+            span: merge(open_result.token.span, end_span),
+            text: string.join(text_parts, ""),
+            diagnostic: diagnostic,
+        }
+    }
+}
+
 fn impl_decl_result(
     cursor: ParserCursor,
     visibility: AstVisibility,
     start_span: SourceSpan,
     head_type: AstType,
+    methods: Vec[AstImplMethod],
     body_text: String,
     has_block: Bool,
     end_span: SourceSpan,
 ) -> ParseImplDecl {
     ParseImplDecl {
         cursor: cursor,
-        impl_item: Some(impl_decl(visibility, head_type, body_text, has_block, merge(start_span, end_span))),
+        impl_item: Some(impl_decl(visibility, head_type, methods, body_text, has_block, merge(start_span, end_span))),
         diagnostic: None(),
     }
 }
@@ -3214,28 +5646,18 @@ pub fn parse_impl_declaration(cursor: ParserCursor) -> ParseImplDecl {
                                     diagnostic: semi_result.diagnostic,
                                 }
                             } else {
-                                impl_decl_result(semi_result.cursor, visibility, merge(visibility_result.span, impl_keyword.token.span), head_type, "", false, semi_result.token.span)
+                                impl_decl_result(semi_result.cursor, visibility, merge(visibility_result.span, impl_keyword.token.span), head_type, vec.new_vec(), "", false, semi_result.token.span)
                             }
                         } else if at_delimiter(head_result.cursor, "{") {
-                            let open_result = expect_delimiter(head_result.cursor, "{", "E1232", "expected impl block opener");
-                            let body_result = parse_raw_text_until_block_close(open_result.cursor, "E1233", "expected impl block body");
-                            if has_raw_text_diagnostic(body_result) {
+                            let methods_result = parse_impl_method_list(head_result.cursor);
+                            if has_impl_method_list_diagnostic(methods_result) {
                                 ParseImplDecl {
-                                    cursor: body_result.cursor,
+                                    cursor: methods_result.cursor,
                                     impl_item: None(),
-                                    diagnostic: body_result.diagnostic,
+                                    diagnostic: methods_result.diagnostic,
                                 }
                             } else {
-                                let close_result = expect_delimiter(body_result.cursor, "}", "E1234", "expected impl block closer");
-                                if has_diagnostic(close_result) {
-                                    ParseImplDecl {
-                                        cursor: close_result.cursor,
-                                        impl_item: None(),
-                                        diagnostic: close_result.diagnostic,
-                                    }
-                                } else {
-                                    impl_decl_result(close_result.cursor, visibility, merge(visibility_result.span, impl_keyword.token.span), head_type, body_result.text, true, close_result.token.span)
-                                }
+                                impl_decl_result(methods_result.cursor, visibility, merge(visibility_result.span, impl_keyword.token.span), head_type, methods_result.methods, methods_result.text, true, methods_result.span)
                             }
                         } else {
                             ParseImplDecl {

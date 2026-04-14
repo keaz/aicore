@@ -45,6 +45,56 @@ pub enum AstLiteralKind {
     AstUnitLiteral,
 }
 
+pub enum AstExprKind {
+    AstIntExpr,
+    AstFloatExpr,
+    AstBoolExpr,
+    AstStringExpr,
+    AstCharExpr,
+    AstTemplateExpr,
+    AstUnitExpr,
+    AstNameExpr,
+    AstCallExpr,
+    AstClosureExpr,
+    AstIfExpr,
+    AstWhileExpr,
+    AstForExpr,
+    AstLoopExpr,
+    AstBreakExpr,
+    AstContinueExpr,
+    AstMatchExpr,
+    AstBinaryExpr,
+    AstUnaryExpr,
+    AstBorrowExpr,
+    AstAwaitExpr,
+    AstTryExpr,
+    AstStructLiteralExpr,
+    AstTupleExpr,
+    AstFieldAccessExpr,
+    AstBlockExpr,
+}
+
+pub enum AstPatternKind {
+    AstWildcardPattern,
+    AstVarPattern,
+    AstIntPattern,
+    AstBoolPattern,
+    AstCharPattern,
+    AstStringPattern,
+    AstUnitPattern,
+    AstOrPattern,
+    AstVariantPattern,
+    AstTuplePattern,
+    AstStructPattern,
+}
+
+pub enum AstStatementKind {
+    AstLetStatement,
+    AstAssignStatement,
+    AstExprStatement,
+    AstReturnStatement,
+}
+
 pub struct AstName {
     pub value: String,
     pub span: SourceSpan,
@@ -101,6 +151,75 @@ pub struct AstGenericParamList {
     pub span: SourceSpan,
 }
 
+pub struct AstExprNode {
+    pub kind: AstExprKind,
+    pub role: String,
+    pub op: String,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub depth: Int,
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstPatternNode {
+    pub kind: AstPatternKind,
+    pub role: String,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub depth: Int,
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstMatchArmNode {
+    pub pattern_text: String,
+    pub guard_text: String,
+    pub body_text: String,
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstPattern {
+    pub kind: AstPatternKind,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub nodes: Vec[AstPatternNode],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstExpr {
+    pub kind: AstExprKind,
+    pub op: String,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub nodes: Vec[AstExprNode],
+    pub patterns: Vec[AstPatternNode],
+    pub match_arms: Vec[AstMatchArmNode],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstStatement {
+    pub kind: AstStatementKind,
+    pub name: String,
+    pub target: String,
+    pub mutable: Bool,
+    pub type_ref: Option[AstType],
+    pub pattern: Option[AstPattern],
+    pub expr: Option[AstExpr],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct AstBlock {
+    pub statements: Vec[AstStatement],
+    pub tail_expr: Option[AstExpr],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
 pub struct AstParam {
     pub name: AstName,
     pub type_ref: AstType,
@@ -117,10 +236,19 @@ pub struct AstFunctionSignature {
     pub span: SourceSpan,
 }
 
+pub struct AstFunctionDecl {
+    pub signature: AstFunctionSignature,
+    pub requires_expr: Option[AstExpr],
+    pub ensures_expr: Option[AstExpr],
+    pub body: AstBlock,
+    pub span: SourceSpan,
+}
+
 pub struct AstField {
     pub name: AstName,
     pub visibility: AstVisibility,
     pub type_ref: AstType,
+    pub default_expr: Option[AstExpr],
     pub default_text: String,
     pub span: SourceSpan,
 }
@@ -130,6 +258,7 @@ pub struct AstStructDecl {
     pub visibility: AstVisibility,
     pub generic_params: AstGenericParamList,
     pub fields: Vec[AstField],
+    pub invariant_expr: Option[AstExpr],
     pub invariant_text: String,
     pub span: SourceSpan,
 }
@@ -158,6 +287,7 @@ pub struct AstTypeAliasDecl {
 pub struct AstConstDecl {
     pub name: AstName,
     pub type_ref: AstType,
+    pub initializer_expr: Option[AstExpr],
     pub initializer_text: String,
     pub span: SourceSpan,
 }
@@ -170,9 +300,16 @@ pub struct AstTraitDecl {
     pub span: SourceSpan,
 }
 
+pub struct AstImplMethod {
+    pub signature: AstFunctionSignature,
+    pub body: AstBlock,
+    pub span: SourceSpan,
+}
+
 pub struct AstImplDecl {
     pub visibility: AstVisibility,
     pub head_type: AstType,
+    pub methods: Vec[AstImplMethod],
     pub body_text: String,
     pub has_block: Bool,
     pub span: SourceSpan,
@@ -415,6 +552,216 @@ pub fn empty_generic_params(span: SourceSpan) -> AstGenericParamList {
     ast_generic_params(vec.new_vec(), span)
 }
 
+pub fn ast_expr_node(
+    kind: AstExprKind,
+    role: String,
+    op: String,
+    name: String,
+    direct_child_count: Int,
+    depth: Int,
+    span: SourceSpan,
+    text: String,
+) -> AstExprNode {
+    AstExprNode {
+        kind: kind,
+        role: role,
+        op: op,
+        name: name,
+        direct_child_count: direct_child_count,
+        depth: depth,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_pattern_node(kind: AstPatternKind, role: String, name: String, direct_child_count: Int, depth: Int, span: SourceSpan, text: String) -> AstPatternNode {
+    AstPatternNode {
+        kind: kind,
+        role: role,
+        name: name,
+        direct_child_count: direct_child_count,
+        depth: depth,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_match_arm(pattern_text: String, guard_text: String, body_text: String, span: SourceSpan, text: String) -> AstMatchArmNode {
+    AstMatchArmNode {
+        pattern_text: pattern_text,
+        guard_text: guard_text,
+        body_text: body_text,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_pattern(kind: AstPatternKind, name: String, direct_child_count: Int, nodes: Vec[AstPatternNode], span: SourceSpan, text: String) -> AstPattern {
+    AstPattern {
+        kind: kind,
+        name: name,
+        direct_child_count: direct_child_count,
+        nodes: nodes,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_expr(
+    kind: AstExprKind,
+    op: String,
+    name: String,
+    direct_child_count: Int,
+    nodes: Vec[AstExprNode],
+    patterns: Vec[AstPatternNode],
+    match_arms: Vec[AstMatchArmNode],
+    span: SourceSpan,
+    text: String,
+) -> AstExpr {
+    AstExpr {
+        kind: kind,
+        op: op,
+        name: name,
+        direct_child_count: direct_child_count,
+        nodes: nodes,
+        patterns: patterns,
+        match_arms: match_arms,
+        span: span,
+        text: text,
+    }
+}
+
+fn expr_node_from_expr(value: AstExpr, role: String, depth: Int) -> AstExprNode {
+    ast_expr_node(value.kind, role, value.op, value.name, value.direct_child_count, depth, value.span, value.text)
+}
+
+fn nested_expr_node(value: AstExprNode, depth_offset: Int) -> AstExprNode {
+    ast_expr_node(value.kind, value.role, value.op, value.name, value.direct_child_count, value.depth + depth_offset, value.span, value.text)
+}
+
+pub fn pattern_node_from_pattern(value: AstPattern, role: String, depth: Int) -> AstPatternNode {
+    ast_pattern_node(value.kind, role, value.name, value.direct_child_count, depth, value.span, value.text)
+}
+
+pub fn nested_pattern_node(value: AstPatternNode, depth_offset: Int) -> AstPatternNode {
+    ast_pattern_node(value.kind, value.role, value.name, value.direct_child_count, value.depth + depth_offset, value.span, value.text)
+}
+
+fn flatten_expr_children(children: Vec[AstExpr], role: String) -> Vec[AstExprNode] {
+    let mut nodes: Vec[AstExprNode] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(children) {
+        match vec.get(children, index) {
+            Some(child) => if true {
+                nodes = vec.push(nodes, expr_node_from_expr(child, role, 1));
+                let mut nested_index = 0;
+                while nested_index < vec.vec_len(child.nodes) {
+                    match vec.get(child.nodes, nested_index) {
+                        Some(node) => if true {
+                            nodes = vec.push(nodes, nested_expr_node(node, 1));
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    nested_index = nested_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    nodes
+}
+
+fn flatten_pattern_children(children: Vec[AstPattern], role: String) -> Vec[AstPatternNode] {
+    let mut nodes: Vec[AstPatternNode] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(children) {
+        match vec.get(children, index) {
+            Some(child) => if true {
+                nodes = vec.push(nodes, pattern_node_from_pattern(child, role, 1));
+                let mut nested_index = 0;
+                while nested_index < vec.vec_len(child.nodes) {
+                    match vec.get(child.nodes, nested_index) {
+                        Some(node) => if true {
+                            nodes = vec.push(nodes, nested_pattern_node(node, 1));
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    nested_index = nested_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    nodes
+}
+
+pub fn simple_expr(kind: AstExprKind, op: String, name: String, span: SourceSpan, text: String) -> AstExpr {
+    ast_expr(kind, op, name, 0, vec.new_vec(), vec.new_vec(), vec.new_vec(), span, text)
+}
+
+pub fn expr_with_children(kind: AstExprKind, op: String, name: String, children: Vec[AstExpr], patterns: Vec[AstPatternNode], span: SourceSpan, text: String) -> AstExpr {
+    ast_expr(kind, op, name, vec.vec_len(children), flatten_expr_children(children, "child"), patterns, vec.new_vec(), span, text)
+}
+
+pub fn match_expr_with_arms(children: Vec[AstExpr], patterns: Vec[AstPatternNode], match_arms: Vec[AstMatchArmNode], span: SourceSpan, text: String) -> AstExpr {
+    ast_expr(AstMatchExpr(), "", "", vec.vec_len(children), flatten_expr_children(children, "child"), patterns, match_arms, span, text)
+}
+
+pub fn simple_pattern(kind: AstPatternKind, name: String, span: SourceSpan, text: String) -> AstPattern {
+    ast_pattern(kind, name, 0, vec.new_vec(), span, text)
+}
+
+pub fn pattern_with_children(kind: AstPatternKind, name: String, children: Vec[AstPattern], span: SourceSpan, text: String) -> AstPattern {
+    ast_pattern(kind, name, vec.vec_len(children), flatten_pattern_children(children, "child"), span, text)
+}
+
+pub fn ast_statement(
+    kind: AstStatementKind,
+    name: String,
+    target: String,
+    mutable: Bool,
+    type_ref: Option[AstType],
+    pattern: Option[AstPattern],
+    expr: Option[AstExpr],
+    span: SourceSpan,
+    text: String,
+) -> AstStatement {
+    AstStatement {
+        kind: kind,
+        name: name,
+        target: target,
+        mutable: mutable,
+        type_ref: type_ref,
+        pattern: pattern,
+        expr: expr,
+        span: span,
+        text: text,
+    }
+}
+
+pub fn ast_block(statements: Vec[AstStatement], tail_expr: Option[AstExpr], span: SourceSpan, text: String) -> AstBlock {
+    AstBlock {
+        statements: statements,
+        tail_expr: tail_expr,
+        span: span,
+        text: text,
+    }
+}
+
 pub fn ast_param(name: AstName, type_ref: AstType, span: SourceSpan) -> AstParam {
     AstParam {
         name: name,
@@ -443,11 +790,28 @@ pub fn function_signature(
     }
 }
 
-pub fn ast_field(name: AstName, visibility: AstVisibility, type_ref: AstType, default_text: String, span: SourceSpan) -> AstField {
+pub fn function_decl(
+    signature: AstFunctionSignature,
+    requires_expr: Option[AstExpr],
+    ensures_expr: Option[AstExpr],
+    body: AstBlock,
+    span: SourceSpan,
+) -> AstFunctionDecl {
+    AstFunctionDecl {
+        signature: signature,
+        requires_expr: requires_expr,
+        ensures_expr: ensures_expr,
+        body: body,
+        span: span,
+    }
+}
+
+pub fn ast_field(name: AstName, visibility: AstVisibility, type_ref: AstType, default_expr: Option[AstExpr], default_text: String, span: SourceSpan) -> AstField {
     AstField {
         name: name,
         visibility: visibility,
         type_ref: type_ref,
+        default_expr: default_expr,
         default_text: default_text,
         span: span,
     }
@@ -458,6 +822,7 @@ pub fn struct_decl(
     visibility: AstVisibility,
     generic_params: AstGenericParamList,
     fields: Vec[AstField],
+    invariant_expr: Option[AstExpr],
     invariant_text: String,
     span: SourceSpan,
 ) -> AstStructDecl {
@@ -466,6 +831,7 @@ pub fn struct_decl(
         visibility: visibility,
         generic_params: generic_params,
         fields: fields,
+        invariant_expr: invariant_expr,
         invariant_text: invariant_text,
         span: span,
     }
@@ -504,10 +870,11 @@ pub fn type_alias_decl(name: AstName, generic_params: AstGenericParamList, targe
     }
 }
 
-pub fn const_decl(name: AstName, type_ref: AstType, initializer_text: String, span: SourceSpan) -> AstConstDecl {
+pub fn const_decl(name: AstName, type_ref: AstType, initializer_expr: Option[AstExpr], initializer_text: String, span: SourceSpan) -> AstConstDecl {
     AstConstDecl {
         name: name,
         type_ref: type_ref,
+        initializer_expr: initializer_expr,
         initializer_text: initializer_text,
         span: span,
     }
@@ -529,10 +896,19 @@ pub fn trait_decl(
     }
 }
 
-pub fn impl_decl(visibility: AstVisibility, head_type: AstType, body_text: String, has_block: Bool, span: SourceSpan) -> AstImplDecl {
+pub fn impl_method(signature: AstFunctionSignature, body: AstBlock, span: SourceSpan) -> AstImplMethod {
+    AstImplMethod {
+        signature: signature,
+        body: body,
+        span: span,
+    }
+}
+
+pub fn impl_decl(visibility: AstVisibility, head_type: AstType, methods: Vec[AstImplMethod], body_text: String, has_block: Bool, span: SourceSpan) -> AstImplDecl {
     AstImplDecl {
         visibility: visibility,
         head_type: head_type,
+        methods: methods,
         body_text: body_text,
         has_block: has_block,
         span: span,
@@ -719,6 +1095,161 @@ pub fn generic_params_with_bounds(value: AstGenericParamList, name: AstName, bou
     ast_generic_params(params, span)
 }
 
+pub fn expr_text(value: AstExpr) -> String {
+    value.text
+}
+
+pub fn expr_child_count(value: AstExpr) -> Int {
+    value.direct_child_count
+}
+
+pub fn expr_node_count(value: AstExpr) -> Int {
+    vec.vec_len(value.nodes)
+}
+
+pub fn expr_pattern_node_count(value: AstExpr) -> Int {
+    vec.vec_len(value.patterns)
+}
+
+pub fn expr_match_arm_count(value: AstExpr) -> Int {
+    vec.vec_len(value.match_arms)
+}
+
+pub fn pattern_text(value: AstPattern) -> String {
+    value.text
+}
+
+pub fn pattern_child_count(value: AstPattern) -> Int {
+    value.direct_child_count
+}
+
+pub fn pattern_node_count(value: AstPattern) -> Int {
+    vec.vec_len(value.nodes)
+}
+
+pub fn statement_text(value: AstStatement) -> String {
+    value.text
+}
+
+pub fn statement_count(value: AstBlock) -> Int {
+    vec.vec_len(value.statements)
+}
+
+pub fn block_text(value: AstBlock) -> String {
+    value.text
+}
+
+pub fn block_has_tail(value: AstBlock) -> Bool {
+    match value.tail_expr {
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub fn block_has_required_tail(value: AstBlock) -> Bool {
+    if block_has_tail(value) {
+        true
+    } else {
+        let count = vec.vec_len(value.statements);
+        if count == 0 {
+            false
+        } else {
+            match vec.get(value.statements, count - 1) {
+                Some(statement) => match statement.kind {
+                    AstReturnStatement => true,
+                    AstLetStatement => false,
+                    AstAssignStatement => false,
+                    AstExprStatement => false,
+                },
+                None => false,
+            }
+        }
+    }
+}
+
+pub fn param_text(value: AstParam) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, value.name.value);
+    parts = vec.push(parts, ":");
+    parts = vec.push(parts, type_text(value.type_ref));
+    string.join(parts, "")
+}
+
+pub fn param_list_text(values: Vec[AstParam]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(param) => if true {
+                parts = vec.push(parts, param_text(param));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, ",")
+}
+
+pub fn function_signature_text(value: AstFunctionSignature) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "fn");
+    parts = vec.push(parts, value.name.value);
+    if generic_params_text(value.generic_params) != "" {
+        parts = vec.push(parts, "[");
+        parts = vec.push(parts, generic_params_text(value.generic_params));
+        parts = vec.push(parts, "]");
+    } else {
+        ()
+    };
+    parts = vec.push(parts, "(");
+    parts = vec.push(parts, param_list_text(value.params));
+    parts = vec.push(parts, ")->");
+    parts = vec.push(parts, type_text(value.return_type));
+    if value.effect_names != "" {
+        parts = vec.push(parts, "effects{");
+        parts = vec.push(parts, value.effect_names);
+        parts = vec.push(parts, "}");
+    } else {
+        ()
+    };
+    if value.capability_names != "" {
+        parts = vec.push(parts, "capabilities{");
+        parts = vec.push(parts, value.capability_names);
+        parts = vec.push(parts, "}");
+    } else {
+        ()
+    };
+    string.join(parts, "")
+}
+
+pub fn impl_method_text(value: AstImplMethod) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, function_signature_text(value.signature));
+    parts = vec.push(parts, block_text(value.body));
+    string.join(parts, "")
+}
+
+pub fn impl_methods_text(values: Vec[AstImplMethod]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(method) => if true {
+                parts = vec.push(parts, impl_method_text(method));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
 pub fn field_count(value: AstStructDecl) -> Int {
     vec.vec_len(value.fields)
 }
@@ -728,6 +1259,10 @@ pub fn variant_count(value: AstEnumDecl) -> Int {
 }
 
 pub fn trait_method_count(value: AstTraitDecl) -> Int {
+    vec.vec_len(value.methods)
+}
+
+pub fn impl_method_count(value: AstImplDecl) -> Int {
     vec.vec_len(value.methods)
 }
 

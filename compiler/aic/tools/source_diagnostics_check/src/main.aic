@@ -229,6 +229,13 @@ fn diagnostic_matches(value: Option[Diagnostic], code: String, start: Int) -> Bo
     }
 }
 
+fn diagnostic_code_matches(value: Option[Diagnostic], code: String) -> Bool {
+    match value {
+        Some(diag) => diag.code.value == code,
+        None => false,
+    }
+}
+
 fn valid_parser_function_signatures() -> Bool {
     let source = source_id(6);
     let rich = parse_function_signature(parser_cursor_from_source(source, "pub fn add(x: Int, values: Vec[String]) -> Result[Int, ParseError] effects { io, fs } capabilities { io }"));
@@ -369,10 +376,18 @@ fn valid_parser_function_signatures() -> Bool {
         && malformed_where_clause_ok
 }
 
+fn field_default_expr_text(value: AstField) -> String {
+    match value.default_expr {
+        Some(expr) => expr_text(expr),
+        None => "",
+    }
+}
+
 fn field_matches(value: AstField, name: String, type_name: String, default_text: String, public: Bool) -> Bool {
     value.name.value == name
         && type_text(value.type_ref) == type_name
         && value.default_text == default_text
+        && field_default_expr_text(value) == default_text
         && is_public_visibility(value.visibility) == public
 }
 
@@ -401,7 +416,11 @@ fn valid_parser_struct_declarations() -> Bool {
             && struct_field_matches(item, 0, "id", "Int", "0", true)
             && struct_field_matches(item, 1, "title", "String", "", false)
             && struct_field_matches(item, 2, "done", "Bool", "", false)
-            && item.invariant_text == "id>=0",
+            && item.invariant_text == "id>=0"
+            && match item.invariant_expr {
+                Some(expr) => expr_text(expr) == "id>=0",
+                None => false,
+            },
         None => false,
     };
     let empty_ok = match empty.struct_item {
@@ -546,6 +565,10 @@ fn const_matches(value: AstConstDecl, name: String, type_name: String, initializ
     value.name.value == name
         && type_text(value.type_ref) == type_name
         && value.initializer_text == initializer_text
+        && match value.initializer_expr {
+            Some(expr) => expr_text(expr) == initializer_text,
+            None => false,
+        }
 }
 
 fn valid_parser_alias_and_const_declarations() -> Bool {
@@ -576,7 +599,7 @@ fn valid_parser_alias_and_const_declarations() -> Bool {
         None => false,
     };
     let const_block_ok = match const_block.const_item {
-        Some(item) => const_matches(item, "SELECT", "Int", "iftrue{1}else{2}"),
+        Some(item) => const_matches(item, "SELECT", "Int", "if true{1}else{2}"),
         None => false,
     };
     let public_alias_ok = match public_alias.diagnostic {
@@ -608,7 +631,7 @@ fn valid_parser_alias_and_const_declarations() -> Bool {
         None => false,
     };
     let missing_const_initializer_ok = match missing_const_initializer.diagnostic {
-        Some(diag) => diag.code.value == "E1193",
+        Some(diag) => diag.code.value == "E1300",
         None => false,
     };
     let missing_const_semi_ok = match missing_const_semi.diagnostic {
@@ -653,10 +676,20 @@ fn trait_method_matches(value: AstTraitDecl, index: Int, name: String, return_ty
     }
 }
 
-fn impl_matches(value: AstImplDecl, head_type_name: String, has_block: Bool, body_text: String) -> Bool {
+fn impl_method_matches(value: AstImplDecl, index: Int, name: String, return_type_name: String, body_text_value: String) -> Bool {
+    match vec.get(value.methods, index) {
+        Some(method) => method.signature.name.value == name
+            && type_text(method.signature.return_type) == return_type_name
+            && block_text(method.body) == body_text_value,
+        None => false,
+    }
+}
+
+fn impl_matches(value: AstImplDecl, head_type_name: String, has_block: Bool, body_text: String, method_count: Int) -> Bool {
     type_text(value.head_type) == head_type_name
         && value.has_block == has_block
         && value.body_text == body_text
+        && impl_method_count(value) == method_count
 }
 
 fn valid_parser_trait_and_impl_declarations() -> Bool {
@@ -707,16 +740,17 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
         None => false,
     };
     let marker_impl_ok = match marker_impl.impl_item {
-        Some(item) => impl_matches(item, "Order[Int]", false, ""),
+        Some(item) => impl_matches(item, "Order[Int]", false, "", 0),
         None => false,
     };
     let block_impl_ok = match block_impl.impl_item {
         Some(item) => is_public_visibility(item.visibility)
-            && impl_matches(item, "User", true, "fnnew(age:Int)->User{User{age:age}}"),
+            && impl_matches(item, "User", true, "fnnew(age:Int)->User{User{age:age}}", 1)
+            && impl_method_matches(item, 0, "new", "User", "{User{age:age}}"),
         None => false,
     };
     let empty_impl_ok = match empty_impl.impl_item {
-        Some(item) => impl_matches(item, "User", true, ""),
+        Some(item) => impl_matches(item, "User", true, "", 0),
         None => false,
     };
     let missing_impl_head_ok = match missing_impl_head.diagnostic {
@@ -757,6 +791,134 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
         && unclosed_impl_ok
 }
 
+fn expr_parse_matches(text: String, expected_text: String, child_count_value: Int) -> Bool {
+    let result = parse_expr(parser_cursor_from_source(source_id(11), text));
+    match result.expr {
+        Some(expr) => !has_expr_diagnostic(result)
+            && remaining_token_count(result.cursor) == 1
+            && expr_text(expr) == expected_text
+            && expr_child_count(expr) == child_count_value,
+        None => false,
+    }
+}
+
+fn expr_parse_match_arm_count(text: String, expected_arms: Int) -> Bool {
+    let result = parse_expr(parser_cursor_from_source(source_id(11), text));
+    match result.expr {
+        Some(expr) => !has_expr_diagnostic(result)
+            && remaining_token_count(result.cursor) == 1
+            && expr_match_arm_count(expr) == expected_arms,
+        None => false,
+    }
+}
+
+fn expr_parse_rejects(text: String, code: String) -> Bool {
+    let result = parse_expr(parser_cursor_from_source(source_id(11), text));
+    has_expr_diagnostic(result) && diagnostic_code_matches(result.diagnostic, code)
+}
+
+fn pattern_parse_rejects(text: String, code: String) -> Bool {
+    let result = parse_pattern(parser_cursor_from_source(source_id(11), text));
+    has_pattern_diagnostic(result) && diagnostic_code_matches(result.diagnostic, code)
+}
+
+fn block_parse_rejects(text: String, code: String) -> Bool {
+    let result = parse_block(parser_cursor_from_source(source_id(11), text));
+    has_block_diagnostic(result) && diagnostic_code_matches(result.diagnostic, code)
+}
+
+fn function_parse_rejects(text: String, code: String) -> Bool {
+    let result = parse_function_declaration(parser_cursor_from_source(source_id(11), text));
+    has_function_decl_diagnostic(result) && diagnostic_code_matches(result.diagnostic, code)
+}
+
+fn function_body_matches(result: ParseFunctionDecl, name: String, statements: Int, has_tail: Bool, body_text_value: String) -> Bool {
+    match result.function_item {
+        Some(item) => !has_function_decl_diagnostic(result)
+            && item.signature.name.value == name
+            && statement_count(item.body) == statements
+            && block_has_tail(item.body) == has_tail
+            && block_text(item.body) == body_text_value,
+        None => false,
+    }
+}
+
+fn function_contracts_match(result: ParseFunctionDecl, requires_text: String, ensures_text: String) -> Bool {
+    match result.function_item {
+        Some(item) => match item.requires_expr {
+            Some(requires_expr) => match item.ensures_expr {
+                Some(ensures_expr) => expr_text(requires_expr) == requires_text && expr_text(ensures_expr) == ensures_text,
+                None => false,
+            },
+            None => false,
+        },
+        None => false,
+    }
+}
+
+fn valid_parser_expression_and_block_declarations() -> Bool {
+    let source = source_id(11);
+    let simple_fn = parse_function_declaration(parser_cursor_from_source(source, "fn add(x: Int, y: Int) -> Int { x + y }"));
+    let if_fn = parse_function_declaration(parser_cursor_from_source(source, "fn clamp(x: Int) -> Int { if x > 0 { x } else { -x } }"));
+    let contract_fn = parse_function_declaration(parser_cursor_from_source(source, "fn abs(x: Int) -> Int requires true ensures result >= 0 { if x >= 0 { x } else { -x } }"));
+    let async_fn = parse_function_declaration(parser_cursor_from_source(source, "async fn main() -> Int { await ping() + 1 }"));
+    let try_fn = parse_function_declaration(parser_cursor_from_source(source, "fn parse(x: String) -> Int { let value = parse_num(x)?; value }"));
+    let borrow_fn = parse_function_declaration(parser_cursor_from_source(source, "fn bump() -> Int { let mut value = 1; value = value + 1; value }"));
+    let tuple_pattern_fn = parse_function_declaration(parser_cursor_from_source(source, "fn tuple_sum(pair: Pair) -> Int { let (x, y) = pair; x + y }"));
+    let return_fn = parse_function_declaration(parser_cursor_from_source(source, "fn explicit(x: Int) -> Int { return x; }"));
+    let loop_fn = parse_function_declaration(parser_cursor_from_source(source, "fn loop_value() -> Int { loop { break 1 } }"));
+    let match_fn = parse_function_declaration(parser_cursor_from_source(source, "fn choose(input: Option[Int], ready: Bool) -> Int { match input { Some(v) if ready => v, None | Failed => 0, } }"));
+    let expression_precedence_ok = expr_parse_matches("1 + 2 * 3", "1+2*3", 2);
+    let call_field_try_ok = expr_parse_matches("call(1, name: value).field?", "call(1,name:value).field?", 1);
+    let tuple_expr_ok = expr_parse_matches("(x, y, 3)", "(x,y,3)", 3);
+    let match_arm_ok = expr_parse_match_arm_count("match input { Some(v) if ready => v, None | Failed => 0, }", 2);
+    let simple_ok = function_body_matches(simple_fn, "add", 0, true, "{x+y}");
+    let if_ok = function_body_matches(if_fn, "clamp", 0, true, "{if x>0{x}else{-x}}");
+    let contract_ok = function_body_matches(contract_fn, "abs", 0, true, "{if x>=0{x}else{-x}}")
+        && function_contracts_match(contract_fn, "true", "result>=0");
+    let async_ok = function_body_matches(async_fn, "main", 0, true, "{await ping()+1}");
+    let try_ok = function_body_matches(try_fn, "parse", 1, true, "{let value=parse_num(x)?;value}");
+    let borrow_ok = function_body_matches(borrow_fn, "bump", 2, true, "{let mut value=1;value=value+1;value}");
+    let tuple_pattern_ok = function_body_matches(tuple_pattern_fn, "tuple_sum", 1, true, "{let (x,y)=pair;x+y}");
+    let return_ok = function_body_matches(return_fn, "explicit", 1, false, "{return x;}");
+    let loop_ok = function_body_matches(loop_fn, "loop_value", 0, true, "{loop{break 1}}");
+    let match_ok = function_body_matches(match_fn, "choose", 0, true, "{matchinput{Some(v)ifready=>v,None|Failed=>0,}}");
+    let malformed_precedence_ok = expr_parse_rejects("1 + * 2", "E1300");
+    let unclosed_block_ok = block_parse_rejects("{ let x = 1;", "E1030");
+    let missing_match_separator_ok = expr_parse_rejects("match x { A => 1 B => 2 }", "E1045");
+    let invalid_pattern_ok = pattern_parse_rejects("+", "E1048");
+    let missing_tail_ok = function_parse_rejects("fn bad() -> Int { let x = 1; }", "E1377");
+    let malformed_named_arg_ok = expr_parse_rejects("call(x: 1, 2)", "E1092");
+    let invalid_await_ok = expr_parse_rejects("await", "E1300");
+    let invalid_try_ok = expr_parse_rejects("?", "E1300");
+    let malformed_loop_ok = expr_parse_rejects("for in values {}", "E1031");
+    let invalid_struct_literal_ok = expr_parse_rejects("User { age: }", "E1300");
+    expression_precedence_ok
+        && call_field_try_ok
+        && tuple_expr_ok
+        && match_arm_ok
+        && simple_ok
+        && if_ok
+        && contract_ok
+        && async_ok
+        && try_ok
+        && borrow_ok
+        && tuple_pattern_ok
+        && return_ok
+        && loop_ok
+        && match_ok
+        && malformed_precedence_ok
+        && unclosed_block_ok
+        && missing_match_separator_ok
+        && invalid_pattern_ok
+        && missing_tail_ok
+        && malformed_named_arg_ok
+        && invalid_await_ok
+        && invalid_try_ok
+        && malformed_loop_ok
+        && invalid_struct_literal_ok
+}
+
 fn main() -> Int effects { io } capabilities { io } {
     let left = span(source_id(1), 0, 4);
     let right = span(source_id(1), 4, 10);
@@ -774,7 +936,21 @@ fn main() -> Int effects { io } capabilities { io } {
     let main_type = type_def(type_id(1), "Int", IrIntType(), span(source_id(1), 0, 10));
     let stats = program_stats(1, 1, 1);
 
-    if is_error(diag) && width(diag.span) == 10 && fix.edit.replacement == ";" && same_kind(ident, ident_again) && is_literal(int_lit) && is_keyword(keyword, "fn") && is_identifier_continue("9") && valid_lexer_scan() && valid_parser_cursor() && valid_parser_declarations() && valid_parser_item_headers() && valid_parser_function_signatures() && valid_parser_struct_declarations() && valid_parser_enum_declarations() && valid_parser_alias_and_const_declarations() && valid_parser_trait_and_impl_declarations() && valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1 {
+    let diag_ok = is_error(diag) && width(diag.span) == 10 && fix.edit.replacement == ";";
+    let token_ok = same_kind(ident, ident_again) && is_literal(int_lit) && is_keyword(keyword, "fn") && is_identifier_continue("9");
+    let lexer_ok = valid_lexer_scan();
+    let cursor_ok = valid_parser_cursor();
+    let decl_ok = valid_parser_declarations();
+    let item_ok = valid_parser_item_headers();
+    let signature_ok = valid_parser_function_signatures();
+    let struct_ok = valid_parser_struct_declarations();
+    let enum_ok = valid_parser_enum_declarations();
+    let alias_const_ok = valid_parser_alias_and_const_declarations();
+    let trait_impl_ok = valid_parser_trait_and_impl_declarations();
+    let expression_block_ok = valid_parser_expression_and_block_declarations();
+    let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
+
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && ast_ir_ok {
         print_int(0);
         0
     } else {
