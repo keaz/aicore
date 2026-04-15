@@ -20,7 +20,8 @@
     },
     {
       "actions": [
-        "check"
+        "check",
+        "ir-json"
       ],
       "expected": "pass",
       "name": "async_ping",
@@ -28,7 +29,8 @@
     },
     {
       "actions": [
-        "check"
+        "check",
+        "ir-json"
       ],
       "expected": "pass",
       "name": "tuple_types",

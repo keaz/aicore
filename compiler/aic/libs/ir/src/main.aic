@@ -384,6 +384,15 @@ pub struct IrLoweringResult {
     pub diagnostics: Vec[Diagnostic],
 }
 
+pub struct IrSerializationReport {
+    pub format: String,
+    pub schema_version: Int,
+    pub digest: String,
+    pub json: String,
+    pub debug_text: String,
+    pub diagnostics: Vec[Diagnostic],
+}
+
 struct IrLoweringBuilder {
     next_symbol: Int,
     next_type: Int,
@@ -1984,5 +1993,1414 @@ pub fn ir_program_digest(value: IrProgram) -> String {
     parts = vec.push(parts, string.int_to_string(vec.vec_len(value.generic_instantiations)));
     parts = vec.push(parts, ";runtime_functions=");
     parts = vec.push(parts, string.int_to_string(ir_runtime_function_count(value)));
+    string.join(parts, "")
+}
+
+fn push_json_field(parts: Vec[String], name: String, value: String, first: Bool) -> Vec[String] {
+    let mut out = parts;
+    if first {
+        ()
+    } else {
+        out = vec.push(out, ",");
+    };
+    out = vec.push(out, json_quote(name));
+    out = vec.push(out, ":");
+    out = vec.push(out, value);
+    out
+}
+
+fn json_quote(value: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "\"");
+    let mut index = 0;
+    while index < string.len(value) {
+        let ch = match string.char_at(value, index) {
+            Some(found) => found,
+            None => "",
+        };
+        if ch == "\"" {
+            parts = vec.push(parts, "\\\"");
+        } else if ch == "\\" {
+            parts = vec.push(parts, "\\\\");
+        } else if ch == "\n" {
+            parts = vec.push(parts, "\\n");
+        } else if ch == "\r" {
+            parts = vec.push(parts, "\\r");
+        } else if ch == "\t" {
+            parts = vec.push(parts, "\\t");
+        } else {
+            parts = vec.push(parts, ch);
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "\"");
+    string.join(parts, "")
+}
+
+fn json_bool(value: Bool) -> String {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn json_int(value: Int) -> String {
+    string.int_to_string(value)
+}
+
+fn json_string_array(values: Vec[String]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, json_quote(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn json_module_path(value: String) -> String {
+    if value == "" {
+        "null"
+    } else {
+        json_string_array(string.split(value, "."))
+    }
+}
+
+fn json_imports(values: Vec[String]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, json_module_path(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn json_span(value: SourceSpan) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "start", json_int(value.start), true);
+    parts = push_json_field(parts, "end", json_int(value.end), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn json_source_span(value: SourceSpan) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "source", json_int(value.source.value), true);
+    parts = push_json_field(parts, "start", json_int(value.start), false);
+    parts = push_json_field(parts, "end", json_int(value.end), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ast_visibility_json(value: AstVisibility) -> String {
+    match value {
+        PrivateVisibility => json_quote("Private"),
+        PublicVisibility => json_quote("Public"),
+        PublicCrateVisibility => json_quote("Crate"),
+    }
+}
+
+fn ast_attribute_value_kind_json(value: AstAttributeValueKind) -> String {
+    match value {
+        AstAttributeStringValue => json_quote("string"),
+        AstAttributeIntValue => json_quote("int"),
+        AstAttributeBoolValue => json_quote("bool"),
+        AstAttributeIdentValue => json_quote("ident"),
+    }
+}
+
+fn ast_attribute_arg_json(value: AstAttributeArg) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "name", json_quote(value.name), true);
+    parts = push_json_field(parts, "value", json_quote(value.value), false);
+    parts = push_json_field(parts, "kind", ast_attribute_value_kind_json(value.kind), false);
+    parts = push_json_field(parts, "named", json_bool(value.named), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ast_attribute_args_json(values: Vec[AstAttributeArg]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ast_attribute_arg_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ast_attribute_json(value: AstAttribute) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "name", json_quote(value.name), true);
+    parts = push_json_field(parts, "args", ast_attribute_args_json(value.args), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ast_attributes_json(values: Vec[AstAttribute]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ast_attribute_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_symbol_kind_name(value: IrSymbolKind) -> String {
+    match value {
+        IrFunctionSymbol => "function",
+        IrStructSymbol => "struct",
+        IrEnumSymbol => "enum",
+        IrTraitSymbol => "trait",
+        IrImplSymbol => "impl",
+        IrVariantSymbol => "variant",
+        IrFieldSymbol => "field",
+        IrParameterSymbol => "parameter",
+        IrLocalSymbol => "local",
+        IrConstSymbol => "const",
+        IrTypeAliasSymbol => "type_alias",
+        IrModuleSymbol => "module",
+    }
+}
+
+fn ir_type_kind_name(value: IrTypeKind) -> String {
+    match value {
+        IrUnitType => "unit",
+        IrBoolType => "bool",
+        IrIntType => "int",
+        IrUIntType => "uint",
+        IrFloatType => "float",
+        IrStringType => "string",
+        IrCharType => "char",
+        IrNamedType(_) => "named",
+        IrTupleType(_) => "tuple",
+        IrFunctionType(_) => "function",
+        IrDynTraitType(_) => "dyn_trait",
+        IrUnknownType => "unknown",
+    }
+}
+
+fn ir_expr_kind_name(value: IrExprKind) -> String {
+    match value {
+        IrIntExpr => "int",
+        IrFloatExpr => "float",
+        IrBoolExpr => "bool",
+        IrStringExpr => "string",
+        IrCharExpr => "char",
+        IrTemplateExpr => "template",
+        IrUnitExpr => "unit",
+        IrNameExpr => "name",
+        IrCallExpr => "call",
+        IrClosureExpr => "closure",
+        IrIfExpr => "if",
+        IrWhileExpr => "while",
+        IrForExpr => "for",
+        IrLoopExpr => "loop",
+        IrBreakExpr => "break",
+        IrContinueExpr => "continue",
+        IrMatchExpr => "match",
+        IrBinaryExpr => "binary",
+        IrUnaryExpr => "unary",
+        IrBorrowExpr => "borrow",
+        IrAwaitExpr => "await",
+        IrTryExpr => "try",
+        IrStructLiteralExpr => "struct_literal",
+        IrTupleExpr => "tuple",
+        IrFieldAccessExpr => "field_access",
+        IrBlockExpr => "block",
+        IrUnsafeBlockExpr => "unsafe_block",
+    }
+}
+
+fn ir_pattern_kind_name(value: IrPatternKind) -> String {
+    match value {
+        IrWildcardPattern => "wildcard",
+        IrVarPattern => "var",
+        IrIntPattern => "int",
+        IrBoolPattern => "bool",
+        IrCharPattern => "char",
+        IrStringPattern => "string",
+        IrUnitPattern => "unit",
+        IrOrPattern => "or",
+        IrVariantPattern => "variant",
+        IrTuplePattern => "tuple",
+        IrStructPattern => "struct",
+    }
+}
+
+fn ir_statement_kind_name(value: IrStatementKind) -> String {
+    match value {
+        IrLetStatement => "let",
+        IrAssignStatement => "assign",
+        IrExprStatement => "expr",
+        IrReturnStatement => "return",
+        IrAssertStatement => "assert",
+    }
+}
+
+fn ir_generic_instantiation_kind_name(value: IrGenericInstantiationKind) -> String {
+    match value {
+        IrFunctionInstantiation => "function",
+        IrStructInstantiation => "struct",
+        IrEnumInstantiation => "enum",
+        IrUnknownInstantiation => "unknown",
+    }
+}
+
+fn ir_symbol_id_json(value: IrSymbolId) -> String {
+    json_int(value.value)
+}
+
+fn ir_type_id_json(value: IrTypeId) -> String {
+    json_int(value.value)
+}
+
+fn ir_node_id_json(value: IrNodeId) -> String {
+    json_int(value.value)
+}
+
+fn optional_symbol_id_json(value: Option[IrSymbolId]) -> String {
+    match value {
+        Some(found) => ir_symbol_id_json(found),
+        None => "null",
+    }
+}
+
+fn optional_type_id_json(value: Option[IrTypeId]) -> String {
+    match value {
+        Some(found) => ir_type_id_json(found),
+        None => "null",
+    }
+}
+
+fn ir_symbol_json(value: IrSymbol) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "id", ir_symbol_id_json(value.id), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "kind", json_quote(ir_symbol_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_symbols_json(values: Vec[IrSymbol]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_symbol_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_type_def_json(value: IrTypeDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "id", ir_type_id_json(value.id), true);
+    parts = push_json_field(parts, "repr", json_quote(value.name), false);
+    parts = push_json_field(parts, "kind", json_quote(ir_type_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_types_json(values: Vec[IrTypeDef]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_type_def_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_generic_param_json(value: IrGenericParam) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "name", json_quote(value.name), true);
+    parts = push_json_field(parts, "bounds", json_string_array(value.bounds), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_generic_params_json(values: Vec[IrGenericParam]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_generic_param_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_param_json(value: IrParam) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "ty", ir_type_id_json(value.type_id), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_params_json(values: Vec[IrParam]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_param_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_expr_node_json(value: IrExprNode) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "node", ir_node_id_json(value.node), true);
+    parts = push_json_field(parts, "kind", json_quote(ir_expr_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "role", json_quote(value.role), false);
+    parts = push_json_field(parts, "op", json_quote(value.op), false);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "direct_child_count", json_int(value.direct_child_count), false);
+    parts = push_json_field(parts, "depth", json_int(value.depth), false);
+    parts = push_json_field(parts, "type_id", optional_type_id_json(value.type_id), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_expr_nodes_json(values: Vec[IrExprNode]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_expr_node_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_pattern_node_json(value: IrPatternNode) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "node", ir_node_id_json(value.node), true);
+    parts = push_json_field(parts, "kind", json_quote(ir_pattern_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "role", json_quote(value.role), false);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "direct_child_count", json_int(value.direct_child_count), false);
+    parts = push_json_field(parts, "depth", json_int(value.depth), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_pattern_nodes_json(values: Vec[IrPatternNode]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_pattern_node_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_match_arm_json(value: IrMatchArm) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "pattern_text", json_quote(value.pattern_text), true);
+    parts = push_json_field(parts, "guard_text", json_quote(value.guard_text), false);
+    parts = push_json_field(parts, "body_text", json_quote(value.body_text), false);
+    parts = push_json_field(parts, "pattern_nodes", ir_pattern_nodes_json(value.pattern_nodes), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_match_arms_json(values: Vec[IrMatchArm]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_match_arm_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_pattern_json(value: IrPattern) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "node", ir_node_id_json(value.node), true);
+    parts = push_json_field(parts, "kind", json_quote(ir_pattern_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "direct_child_count", json_int(value.direct_child_count), false);
+    parts = push_json_field(parts, "nodes", ir_pattern_nodes_json(value.nodes), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn optional_pattern_json(value: Option[IrPattern]) -> String {
+    match value {
+        Some(found) => ir_pattern_json(found),
+        None => "null",
+    }
+}
+
+fn ir_expr_json(value: IrExpr) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "node", ir_node_id_json(value.node), true);
+    parts = push_json_field(parts, "kind", json_quote(ir_expr_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "op", json_quote(value.op), false);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "direct_child_count", json_int(value.direct_child_count), false);
+    parts = push_json_field(parts, "nodes", ir_expr_nodes_json(value.nodes), false);
+    parts = push_json_field(parts, "patterns", ir_pattern_nodes_json(value.patterns), false);
+    parts = push_json_field(parts, "match_arms", ir_match_arms_json(value.match_arms), false);
+    parts = push_json_field(parts, "type_id", optional_type_id_json(value.type_id), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn optional_expr_json(value: Option[IrExpr]) -> String {
+    match value {
+        Some(found) => ir_expr_json(found),
+        None => "null",
+    }
+}
+
+fn ir_statement_json(value: IrStatement) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "kind", json_quote(ir_statement_kind_name(value.kind)), true);
+    parts = push_json_field(parts, "symbol", optional_symbol_id_json(value.symbol), false);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "target", json_quote(value.target), false);
+    parts = push_json_field(parts, "mutable", json_bool(value.mutable), false);
+    parts = push_json_field(parts, "ty", optional_type_id_json(value.type_id), false);
+    parts = push_json_field(parts, "pattern", optional_pattern_json(value.pattern), false);
+    parts = push_json_field(parts, "expr", optional_expr_json(value.expr), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_statements_json(values: Vec[IrStatement]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_statement_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_block_json(value: IrBlock) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "node", ir_node_id_json(value.node), true);
+    parts = push_json_field(parts, "stmts", ir_statements_json(value.statements), false);
+    parts = push_json_field(parts, "tail", optional_expr_json(value.tail_expr), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = push_json_field(parts, "text", json_quote(value.text), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_function_json(value: IrFunctionDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "visibility", ast_visibility_json(value.visibility), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "is_async", json_bool(value.is_async), false);
+    parts = push_json_field(parts, "is_unsafe", json_bool(value.is_unsafe), false);
+    parts = push_json_field(parts, "is_extern", json_bool(value.is_extern), false);
+    parts = push_json_field(parts, "extern_abi", if value.extern_abi == "" { "null" } else { json_quote(value.extern_abi) }, false);
+    parts = push_json_field(parts, "is_intrinsic", json_bool(value.is_intrinsic), false);
+    parts = push_json_field(parts, "intrinsic_abi", if value.intrinsic_abi == "" { "null" } else { json_quote(value.intrinsic_abi) }, false);
+    parts = push_json_field(parts, "generics", ir_generic_params_json(value.generics), false);
+    parts = push_json_field(parts, "params", ir_params_json(value.params), false);
+    parts = push_json_field(parts, "ret_type", ir_type_id_json(value.return_type), false);
+    parts = push_json_field(parts, "effects", json_string_array(value.effect_names), false);
+    parts = push_json_field(parts, "capabilities", json_string_array(value.capability_names), false);
+    parts = push_json_field(parts, "requires", optional_expr_json(value.requires_expr), false);
+    parts = push_json_field(parts, "ensures", optional_expr_json(value.ensures_expr), false);
+    parts = push_json_field(parts, "body", ir_block_json(value.body), false);
+    parts = push_json_field(parts, "runtime_visible", json_bool(value.runtime_visible), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_field_json(value: IrField) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "visibility", ast_visibility_json(value.visibility), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "ty", ir_type_id_json(value.type_id), false);
+    parts = push_json_field(parts, "default_value", optional_expr_json(value.default_value), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_fields_json(values: Vec[IrField]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_field_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_variant_json(value: IrVariant) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "payload", optional_type_id_json(value.payload_type), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_variants_json(values: Vec[IrVariant]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_variant_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_struct_json(value: IrStructDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "visibility", ast_visibility_json(value.visibility), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "generics", ir_generic_params_json(value.generics), false);
+    parts = push_json_field(parts, "fields", ir_fields_json(value.fields), false);
+    parts = push_json_field(parts, "invariant", optional_expr_json(value.invariant_expr), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_enum_json(value: IrEnumDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "visibility", ast_visibility_json(value.visibility), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "generics", ir_generic_params_json(value.generics), false);
+    parts = push_json_field(parts, "variants", ir_variants_json(value.variants), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_functions_json(values: Vec[IrFunctionDef]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_function_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_trait_json(value: IrTraitDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "visibility", ast_visibility_json(value.visibility), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "generics", ir_generic_params_json(value.generics), false);
+    parts = push_json_field(parts, "methods", ir_functions_json(value.methods), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_impl_json(value: IrImplDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "trait_name", json_quote(if value.is_inherent { "" } else { value.head_text }), false);
+    parts = push_json_field(parts, "visibility", ast_visibility_json(value.visibility), false);
+    parts = push_json_field(parts, "attrs", ast_attributes_json(value.attrs), false);
+    parts = push_json_field(parts, "generics", ir_generic_params_json(value.generics), false);
+    parts = push_json_field(parts, "target", ir_type_id_json(value.head_type), false);
+    parts = push_json_field(parts, "head_text", json_quote(value.head_text), false);
+    parts = push_json_field(parts, "methods", ir_functions_json(value.methods), false);
+    parts = push_json_field(parts, "is_inherent", json_bool(value.is_inherent), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_type_alias_json(value: IrTypeAliasDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "generics", ir_generic_params_json(value.generics), false);
+    parts = push_json_field(parts, "target_type", ir_type_id_json(value.target_type), false);
+    parts = push_json_field(parts, "runtime_visible", json_bool(value.runtime_visible), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_const_json(value: IrConstDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "symbol", ir_symbol_id_json(value.symbol), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "ty", ir_type_id_json(value.type_id), false);
+    parts = push_json_field(parts, "initializer", optional_expr_json(value.initializer), false);
+    parts = push_json_field(parts, "runtime_visible", json_bool(value.runtime_visible), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_item_json(value: IrItem) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    match value {
+        IrFunctionItemValue(item) => if true {
+            parts = push_json_field(parts, "Function", ir_function_json(item), true);
+            ()
+        } else {
+            ()
+        },
+        IrStructItemValue(item) => if true {
+            parts = push_json_field(parts, "Struct", ir_struct_json(item), true);
+            ()
+        } else {
+            ()
+        },
+        IrEnumItemValue(item) => if true {
+            parts = push_json_field(parts, "Enum", ir_enum_json(item), true);
+            ()
+        } else {
+            ()
+        },
+        IrTraitItemValue(item) => if true {
+            parts = push_json_field(parts, "Trait", ir_trait_json(item), true);
+            ()
+        } else {
+            ()
+        },
+        IrImplItemValue(item) => if true {
+            parts = push_json_field(parts, "Impl", ir_impl_json(item), true);
+            ()
+        } else {
+            ()
+        },
+        IrTypeAliasItemValue(item) => if true {
+            parts = push_json_field(parts, "TypeAlias", ir_type_alias_json(item), true);
+            ()
+        } else {
+            ()
+        },
+        IrConstItemValue(item) => if true {
+            parts = push_json_field(parts, "Const", ir_const_json(item), true);
+            ()
+        } else {
+            ()
+        },
+    };
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_items_json(values: Vec[IrItem]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_item_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_generic_instantiation_json(value: IrGenericInstantiation) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "id", json_int(value.id), true);
+    parts = push_json_field(parts, "kind", json_quote(ir_generic_instantiation_kind_name(value.kind)), false);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "symbol", optional_symbol_id_json(value.symbol), false);
+    parts = push_json_field(parts, "type_args", json_string_array(value.type_args), false);
+    parts = push_json_field(parts, "mangled", json_quote(value.mangled), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_generic_instantiations_json(values: Vec[IrGenericInstantiation]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_generic_instantiation_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn ir_source_map_entry_json(value: IrSourceMapEntry) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "kind", json_quote(value.kind), true);
+    parts = push_json_field(parts, "name", json_quote(value.name), false);
+    parts = push_json_field(parts, "node", ir_node_id_json(value.node), false);
+    parts = push_json_field(parts, "span", json_source_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn ir_source_map_json(values: Vec[IrSourceMapEntry]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, ir_source_map_entry_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn diagnostic_severity_json(value: Severity) -> String {
+    match value {
+        Error => json_quote("error"),
+        Warning => json_quote("warning"),
+        Note => json_quote("note"),
+    }
+}
+
+fn diagnostic_help_json(value: DiagnosticHelp) -> String {
+    match value {
+        NoHelp => "null",
+        Help(text) => json_quote(text),
+    }
+}
+
+fn diagnostic_json(value: Diagnostic) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "code", json_quote(value.code.value), true);
+    parts = push_json_field(parts, "severity", diagnostic_severity_json(value.severity), false);
+    parts = push_json_field(parts, "span", json_source_span(value.span), false);
+    parts = push_json_field(parts, "message", json_quote(value.message), false);
+    parts = push_json_field(parts, "help", diagnostic_help_json(value.help), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+fn diagnostics_json(values: Vec[Diagnostic]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "[");
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ",");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, diagnostic_json(value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+pub fn ir_program_to_json(value: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "schema_version", json_int(value.schema_version), true);
+    parts = push_json_field(parts, "format", json_quote("aicore-selfhost-ir-v1"), false);
+    parts = push_json_field(parts, "module", json_module_path(value.module_path), false);
+    parts = push_json_field(parts, "module_path", json_quote(value.module_path), false);
+    parts = push_json_field(parts, "imports", json_imports(value.imports), false);
+    parts = push_json_field(parts, "items", ir_items_json(value.items), false);
+    parts = push_json_field(parts, "symbols", ir_symbols_json(value.symbols), false);
+    parts = push_json_field(parts, "types", ir_types_json(value.types), false);
+    parts = push_json_field(parts, "generic_instantiations", ir_generic_instantiations_json(value.generic_instantiations), false);
+    parts = push_json_field(parts, "source_map", ir_source_map_json(value.source_map), false);
+    parts = push_json_field(parts, "span", json_span(value.span), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+pub fn ir_lowering_result_to_json(value: IrLoweringResult) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "format", json_quote("aicore-selfhost-ir-lowering-v1"), true);
+    parts = push_json_field(parts, "schema_version", json_int(current_ir_schema_version()), false);
+    parts = push_json_field(parts, "diagnostics", diagnostics_json(value.diagnostics), false);
+    parts = push_json_field(parts, "program", match value.program { Some(program_value) => ir_program_to_json(program_value), None => "null" }, false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+pub fn ir_program_to_debug_text(value: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "IR schema ");
+    parts = vec.push(parts, string.int_to_string(value.schema_version));
+    parts = vec.push(parts, "\nmodule ");
+    parts = vec.push(parts, if value.module_path == "" { "<none>" } else { value.module_path });
+    parts = vec.push(parts, "\nitems ");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.items)));
+    parts = vec.push(parts, "\nsymbols ");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.symbols)));
+    parts = vec.push(parts, "\ntypes ");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.types)));
+    parts = vec.push(parts, "\ninstantiations ");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.generic_instantiations)));
+    parts = vec.push(parts, "\nruntime_functions ");
+    parts = vec.push(parts, string.int_to_string(ir_runtime_function_count(value)));
+    parts = vec.push(parts, "\ndigest ");
+    parts = vec.push(parts, ir_program_digest(value));
+    string.join(parts, "")
+}
+
+fn serialization_error(code: String, span_value: SourceSpan, message: String, help: String) -> Diagnostic {
+    with_help(error(diagnostic_code(code), span_value, message), help)
+}
+
+fn has_source_map_for_node(values: Vec[IrSourceMapEntry], node_value: IrNodeId) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(entry) => if entry.node.value == node_value.value {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn item_source_map_kind(value: IrItem) -> String {
+    match value {
+        IrFunctionItemValue(_) => "function",
+        IrStructItemValue(_) => "struct",
+        IrEnumItemValue(_) => "enum",
+        IrTraitItemValue(_) => "trait",
+        IrImplItemValue(_) => "impl",
+        IrTypeAliasItemValue(_) => "type_alias",
+        IrConstItemValue(_) => "const",
+    }
+}
+
+fn item_source_map_name(value: IrItem) -> String {
+    match value {
+        IrFunctionItemValue(item) => item.name,
+        IrStructItemValue(item) => item.name,
+        IrEnumItemValue(item) => item.name,
+        IrTraitItemValue(item) => item.name,
+        IrImplItemValue(item) => item.head_text,
+        IrTypeAliasItemValue(item) => item.name,
+        IrConstItemValue(item) => item.name,
+    }
+}
+
+fn has_source_map_for_item(values: Vec[IrSourceMapEntry], item: IrItem) -> Bool {
+    let kind = item_source_map_kind(item);
+    let name = item_source_map_name(item);
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(entry) => if entry.kind == kind && entry.name == name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn append_serialization_diagnostic(values: Vec[Diagnostic], code: String, span_value: SourceSpan, message: String, help: String) -> Vec[Diagnostic] {
+    vec.push(values, serialization_error(code, span_value, message, help))
+}
+
+pub fn validate_ir_serialization_contract(value: IrProgram) -> Vec[Diagnostic] {
+    let mut out: Vec[Diagnostic] = vec.new_vec();
+    if value.schema_version != current_ir_schema_version() {
+        out = append_serialization_diagnostic(out, "E5010", value.span, "IR serialization requires schema_version 1", "migrate older IR JSON before serializing or reject future schema versions explicitly");
+    } else {
+        ()
+    };
+    if vec.vec_len(value.items) > 0 && vec.vec_len(value.source_map) == 0 {
+        out = append_serialization_diagnostic(out, "E5011", value.span, "IR serialization requires source-map metadata for item-bearing programs", "preserve lowering source_map entries so parity reports can locate generated nodes");
+    } else {
+        ()
+    };
+    let mut symbol_index = 0;
+    let mut previous_symbol = 0;
+    while symbol_index < vec.vec_len(value.symbols) {
+        match vec.get(value.symbols, symbol_index) {
+            Some(symbol_value) => if true {
+                if symbol_value.id.value <= previous_symbol {
+                    out = append_serialization_diagnostic(out, "E5012", symbol_value.span, "IR symbols must be serialized in strictly increasing id order", "emit symbols in deterministic lowering allocation order");
+                } else {
+                    ()
+                };
+                if symbol_value.name == "" {
+                    out = append_serialization_diagnostic(out, "E5013", symbol_value.span, "IR symbol serialization requires a non-empty name", "retain symbol names during lowering");
+                } else {
+                    ()
+                };
+                previous_symbol = symbol_value.id.value;
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        symbol_index = symbol_index + 1;
+    };
+    let mut type_index = 0;
+    let mut previous_type = 0;
+    while type_index < vec.vec_len(value.types) {
+        match vec.get(value.types, type_index) {
+            Some(type_value) => if true {
+                if type_value.id.value <= previous_type {
+                    out = append_serialization_diagnostic(out, "E5012", type_value.span, "IR types must be serialized in strictly increasing id order", "emit types in deterministic interning order");
+                } else {
+                    ()
+                };
+                if type_value.name == "" {
+                    out = append_serialization_diagnostic(out, "E5013", type_value.span, "IR type serialization requires a non-empty repr", "retain canonical type repr metadata during lowering");
+                } else {
+                    ()
+                };
+                previous_type = type_value.id.value;
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        type_index = type_index + 1;
+    };
+    let mut source_index = 0;
+    let mut previous_node = 0;
+    while source_index < vec.vec_len(value.source_map) {
+        match vec.get(value.source_map, source_index) {
+            Some(entry) => if true {
+                if entry.node.value <= previous_node {
+                    out = append_serialization_diagnostic(out, "E5012", entry.span, "IR source-map entries must be serialized in strictly increasing node order", "emit source-map entries in deterministic lowering order");
+                } else {
+                    ()
+                };
+                if entry.kind == "" || entry.name == "" {
+                    out = append_serialization_diagnostic(out, "E5013", entry.span, "IR source-map serialization requires kind and name metadata", "preserve source-map kind/name fields during lowering");
+                } else {
+                    ()
+                };
+                previous_node = entry.node.value;
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        source_index = source_index + 1;
+    };
+    let mut item_index = 0;
+    while item_index < vec.vec_len(value.items) {
+        match vec.get(value.items, item_index) {
+            Some(item_value) => if !has_source_map_for_item(value.source_map, item_value) {
+                out = append_serialization_diagnostic(out, "E5011", value.span, "IR item is missing source-map metadata", "append a source-map entry for each lowered item symbol");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+pub fn ir_serialization_has_diagnostic_code(values: Vec[Diagnostic], code: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if value.code.value == code {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn ir_serialization_diagnostic_count(values: Vec[Diagnostic]) -> Int {
+    vec.vec_len(values)
+}
+
+pub fn serialize_ir_program(value: IrProgram) -> IrSerializationReport {
+    let diags = validate_ir_serialization_contract(value);
+    IrSerializationReport {
+        format: "aicore-selfhost-ir-serialization-v1",
+        schema_version: current_ir_schema_version(),
+        digest: ir_program_digest(value),
+        json: ir_program_to_json(value),
+        debug_text: ir_program_to_debug_text(value),
+        diagnostics: diags,
+    }
+}
+
+pub fn ir_serialization_report_to_json(value: IrSerializationReport) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "format", json_quote(value.format), true);
+    parts = push_json_field(parts, "schema_version", json_int(value.schema_version), false);
+    parts = push_json_field(parts, "digest", json_quote(value.digest), false);
+    parts = push_json_field(parts, "ok", json_bool(vec.vec_len(value.diagnostics) == 0), false);
+    parts = push_json_field(parts, "json", json_quote(value.json), false);
+    parts = push_json_field(parts, "debug_text", json_quote(value.debug_text), false);
+    parts = push_json_field(parts, "diagnostics", diagnostics_json(value.diagnostics), false);
+    parts = vec.push(parts, "}");
+    string.join(parts, "")
+}
+
+pub fn ir_program_to_parity_artifact_json(value: IrProgram, case_name: String, source_path: String) -> String {
+    let report = serialize_ir_program(value);
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{");
+    parts = push_json_field(parts, "format", json_quote("aicore-selfhost-ir-artifact-v1"), true);
+    parts = push_json_field(parts, "case", json_quote(case_name), false);
+    parts = push_json_field(parts, "path", json_quote(source_path), false);
+    parts = push_json_field(parts, "schema_version", json_int(report.schema_version), false);
+    parts = push_json_field(parts, "digest", json_quote(report.digest), false);
+    parts = push_json_field(parts, "ok", json_bool(vec.vec_len(report.diagnostics) == 0), false);
+    parts = push_json_field(parts, "diagnostics", diagnostics_json(report.diagnostics), false);
+    parts = push_json_field(parts, "ir", report.json, false);
+    parts = vec.push(parts, "}");
     string.join(parts, "")
 }

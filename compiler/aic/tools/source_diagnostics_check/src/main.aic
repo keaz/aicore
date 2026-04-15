@@ -1546,6 +1546,157 @@ fn valid_ir_lowering_frontend() -> Bool {
     ir_lowering_status_code() == 0
 }
 
+fn program_with_schema(program: IrProgram, version: Int) -> IrProgram {
+    IrProgram {
+        schema_version: version,
+        module_path: program.module_path,
+        imports: program.imports,
+        items: program.items,
+        symbols: program.symbols,
+        types: program.types,
+        generic_instantiations: program.generic_instantiations,
+        source_map: program.source_map,
+        span: program.span,
+    }
+}
+
+fn program_without_source_map(program: IrProgram) -> IrProgram {
+    IrProgram {
+        schema_version: program.schema_version,
+        module_path: program.module_path,
+        imports: program.imports,
+        items: program.items,
+        symbols: program.symbols,
+        types: program.types,
+        generic_instantiations: program.generic_instantiations,
+        source_map: vec.new_vec(),
+        span: program.span,
+    }
+}
+
+fn program_with_unstable_symbol_order(source: SourceId) -> IrProgram {
+    let span_value = span(source, 0, 10);
+    let mut symbols: Vec[IrSymbol] = vec.new_vec();
+    symbols = vec.push(symbols, symbol(symbol_id(2), "later", IrFunctionSymbol(), span_value));
+    symbols = vec.push(symbols, symbol(symbol_id(1), "earlier", IrFunctionSymbol(), span_value));
+    IrProgram {
+        schema_version: current_ir_schema_version(),
+        module_path: "app.order",
+        imports: vec.new_vec(),
+        items: vec.new_vec(),
+        symbols: symbols,
+        types: vec.new_vec(),
+        generic_instantiations: vec.new_vec(),
+        source_map: vec.new_vec(),
+        span: span_value,
+    }
+}
+
+fn program_with_unstable_source_map_order(source: SourceId) -> IrProgram {
+    let span_value = span(source, 0, 10);
+    let mut source_map: Vec[IrSourceMapEntry] = vec.new_vec();
+    source_map = vec.push(source_map, IrSourceMapEntry {
+        kind: "function",
+        name: "later",
+        node: node_id(2),
+        span: span_value,
+    });
+    source_map = vec.push(source_map, IrSourceMapEntry {
+        kind: "function",
+        name: "earlier",
+        node: node_id(1),
+        span: span_value,
+    });
+    IrProgram {
+        schema_version: current_ir_schema_version(),
+        module_path: "app.order",
+        imports: vec.new_vec(),
+        items: vec.new_vec(),
+        symbols: vec.new_vec(),
+        types: vec.new_vec(),
+        generic_instantiations: vec.new_vec(),
+        source_map: source_map,
+        span: span_value,
+    }
+}
+
+fn ir_serialization_positive_status_code() -> Int {
+    let result = lower_ir_text(source_id(80), "module app.main; fn helper(x: Int) -> Int { x + 1 } fn main() -> Int { helper(1) }");
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            501
+        } else if ir_serialization_diagnostic_count(validate_ir_serialization_contract(program)) != 0 {
+            if ir_serialization_has_diagnostic_code(validate_ir_serialization_contract(program), "E5010") {
+                520
+            } else if ir_serialization_has_diagnostic_code(validate_ir_serialization_contract(program), "E5011") {
+                521
+            } else if ir_serialization_has_diagnostic_code(validate_ir_serialization_contract(program), "E5012") {
+                522
+            } else if ir_serialization_has_diagnostic_code(validate_ir_serialization_contract(program), "E5013") {
+                523
+            } else {
+                502
+            }
+        } else if ir_program_to_json(program) != ir_program_to_json(program) {
+            503
+        } else if !string.contains(ir_program_to_json(program), "\"format\":\"aicore-selfhost-ir-v1\"") {
+            504
+        } else if !string.contains(ir_program_to_json(program), "\"schema_version\":1") {
+            505
+        } else if !string.contains(ir_program_to_json(program), "\"source_map\"") {
+            506
+        } else if !string.contains(ir_program_to_json(program), "\"generic_instantiations\"") {
+            507
+        } else if !string.contains(ir_program_to_debug_text(program), "module app.main") {
+            508
+        } else if !string.contains(ir_program_to_debug_text(program), "digest schema=1") {
+            509
+        } else if serialize_ir_program(program).json != ir_program_to_json(program) {
+            510
+        } else if ir_serialization_diagnostic_count(serialize_ir_program(program).diagnostics) != 0 {
+            511
+        } else if !string.contains(ir_serialization_report_to_json(serialize_ir_program(program)), "\"ok\":true") {
+            512
+        } else if !string.contains(ir_program_to_parity_artifact_json(program, "ir_serialization", "compiler/aic"), "\"format\":\"aicore-selfhost-ir-artifact-v1\"") {
+            513
+        } else if !string.contains(ir_program_to_parity_artifact_json(program, "ir_serialization", "compiler/aic"), "\"ir\":{") {
+            514
+        } else if !string.contains(ir_lowering_result_to_json(result), "\"program\":{") {
+            515
+        } else {
+            0
+        },
+        None => 500,
+    }
+}
+
+fn valid_ir_serialization_positive_cases() -> Bool {
+    ir_serialization_positive_status_code() == 0
+}
+
+fn valid_ir_serialization_negative_cases() -> Bool {
+    let result = lower_ir_text(source_id(81), "module app.main; fn main() -> Int { 0 }");
+    match result.program {
+        Some(program) => if true {
+            let bad_schema = validate_ir_serialization_contract(program_with_schema(program, 99));
+            let missing_source = validate_ir_serialization_contract(program_without_source_map(program));
+            let bad_symbols = validate_ir_serialization_contract(program_with_unstable_symbol_order(source_id(82)));
+            let bad_source_map = validate_ir_serialization_contract(program_with_unstable_source_map_order(source_id(83)));
+            ir_serialization_has_diagnostic_code(bad_schema, "E5010")
+                && ir_serialization_has_diagnostic_code(missing_source, "E5011")
+                && ir_serialization_has_diagnostic_code(bad_symbols, "E5012")
+                && ir_serialization_has_diagnostic_code(bad_source_map, "E5012")
+        } else {
+            false
+        },
+        None => false,
+    }
+}
+
+fn valid_ir_serialization_frontend() -> Bool {
+    valid_ir_serialization_positive_cases() && valid_ir_serialization_negative_cases()
+}
+
 fn valid_typecheck_frontend() -> Bool {
     valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases() && valid_ownership_resource_positive_cases() && valid_ownership_resource_negative_cases()
 }
@@ -1584,9 +1735,10 @@ fn main() -> Int effects { io } capabilities { io } {
     let semantic_ok = valid_semantic_frontend();
     let typecheck_ok = valid_typecheck_frontend();
     let ir_lowering_ok = valid_ir_lowering_frontend();
+    let ir_serialization_ok = valid_ir_serialization_frontend();
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ir_serialization_ok && ast_ir_ok {
         print_int(0);
         0
     } else {

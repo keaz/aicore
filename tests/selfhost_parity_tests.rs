@@ -83,6 +83,26 @@ fn write_manifest(path: &Path) {
     .expect("write manifest");
 }
 
+fn write_ir_json_compiler(path: &Path, payload: &str) {
+    fs::write(
+        path,
+        format!(
+            r#"#!/usr/bin/env python3
+import sys
+
+payload = {payload:?}
+action = sys.argv[1]
+if action == "ir":
+    print(payload)
+    sys.exit(0)
+print("ok")
+sys.exit(0)
+"#
+        ),
+    )
+    .expect("write ir json compiler");
+}
+
 #[test]
 fn selfhost_parity_manifest_lists_cases() {
     let output = run_parity(&[
@@ -431,6 +451,21 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(source_diagnostics_check.contains("fn valid_ownership_resource_negative_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ir_lowering_positive_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ir_lowering_negative_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_ir_serialization_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_ir_serialization_negative_cases"));
+
+    let ir =
+        fs::read_to_string(root.join("compiler/aic/libs/ir/src/main.aic")).expect("read ir lib");
+    assert!(ir.contains("pub struct IrSerializationReport"));
+    assert!(ir.contains("pub fn ir_program_to_json"));
+    assert!(ir.contains("pub fn ir_lowering_result_to_json"));
+    assert!(ir.contains("pub fn ir_program_to_debug_text"));
+    assert!(ir.contains("pub fn validate_ir_serialization_contract"));
+    assert!(ir.contains("pub fn ir_program_to_parity_artifact_json"));
+    assert!(ir.contains("E5010"));
+    assert!(ir.contains("E5011"));
+    assert!(ir.contains("E5012"));
+    assert!(ir.contains("E5013"));
 }
 
 #[test]
@@ -477,6 +512,131 @@ fn selfhost_parity_fake_compilers_match_and_write_report() {
     assert_eq!(report_json["format"], "aicore-selfhost-parity-v1");
     assert_eq!(report_json["ok"], true);
     assert_eq!(report_json["results"].as_array().expect("results").len(), 4);
+}
+
+#[test]
+fn selfhost_parity_ir_json_uses_canonical_json_fingerprint() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    let manifest = tmp.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-ir-json",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["ir-json"]
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+    let reference = tmp.path().join("reference.py");
+    let candidate = tmp.path().join("candidate.py");
+    write_ir_json_compiler(&reference, "{\"schema_version\":1,\"b\":2,\"a\":1}");
+    write_ir_json_compiler(
+        &candidate,
+        "{\n  \"a\": 1,\n  \"schema_version\": 1,\n  \"b\": 2\n}",
+    );
+    let report = tmp.path().join("ir-report.json");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--reference".into(),
+        format!("python3 {}", reference.to_string_lossy()),
+        "--candidate".into(),
+        format!("python3 {}", candidate.to_string_lossy()),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "5".into(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
+    let result = &report_json["results"][0];
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["reference"]["comparison_kind"], "canonical_json");
+    assert_eq!(result["candidate"]["comparison_kind"], "canonical_json");
+    assert_eq!(
+        result["reference"]["stdout_json_fingerprint"],
+        result["candidate"]["stdout_json_fingerprint"]
+    );
+    assert!(result["reference"]["stdout_json_error"].is_null());
+    assert!(result["candidate"]["stdout_json_error"].is_null());
+}
+
+#[test]
+fn selfhost_parity_ir_json_rejects_malformed_candidate_output() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    let manifest = tmp.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-ir-json-malformed",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["ir-json"]
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+    let reference = tmp.path().join("reference.py");
+    let candidate = tmp.path().join("candidate.py");
+    write_ir_json_compiler(&reference, "{\"schema_version\":1}");
+    write_ir_json_compiler(&candidate, "{");
+    let report = tmp.path().join("ir-malformed-report.json");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--reference".into(),
+        format!("python3 {}", reference.to_string_lossy()),
+        "--candidate".into(),
+        format!("python3 {}", candidate.to_string_lossy()),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "5".into(),
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
+    assert_eq!(report_json["ok"], false);
+    assert_eq!(
+        report_json["results"][0]["reason"],
+        "candidate emitted invalid ir json"
+    );
+    assert!(report_json["results"][0]["candidate"]["stdout_json_error"].is_string());
 }
 
 #[test]

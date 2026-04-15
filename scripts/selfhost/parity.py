@@ -38,15 +38,25 @@ class CommandResult:
     stderr: str
     artifact_exists: bool | None
     artifact_fingerprint: str | None
+    stdout_json_fingerprint: str | None = None
+    stdout_json_error: str | None = None
 
-    def fingerprint(self) -> dict[str, Any]:
+    def fingerprint(self, action: str) -> dict[str, Any]:
+        stdout_fingerprint = fingerprint_text(self.stdout)
+        comparison_kind = "text"
+        if action == "ir-json" and self.stdout_json_fingerprint is not None:
+            stdout_fingerprint = self.stdout_json_fingerprint
+            comparison_kind = "canonical_json"
         return {
             "exit_code": self.exit_code,
             "timed_out": self.timed_out,
-            "stdout_fingerprint": fingerprint_text(self.stdout),
+            "comparison_kind": comparison_kind,
+            "stdout_fingerprint": stdout_fingerprint,
             "stderr_fingerprint": fingerprint_text(self.stderr),
             "artifact_exists": self.artifact_exists,
             "artifact_fingerprint": self.artifact_fingerprint,
+            "stdout_json_fingerprint": self.stdout_json_fingerprint,
+            "stdout_json_error": self.stdout_json_error,
         }
 
 
@@ -70,12 +80,12 @@ class CaseResult:
             "reference": {
                 "command": self.reference.command,
                 "duration_ms": self.reference.duration_ms,
-                **self.reference.fingerprint(),
+                **self.reference.fingerprint(self.action),
             },
             "candidate": {
                 "command": self.candidate.command,
                 "duration_ms": self.candidate.duration_ms,
-                **self.candidate.fingerprint(),
+                **self.candidate.fingerprint(self.action),
             },
         }
 
@@ -100,6 +110,15 @@ def fingerprint_file(path: Path) -> str:
                 value ^= byte
                 value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return f"fnv1a64:{value:016x}"
+
+
+def canonical_json_fingerprint(value: str) -> tuple[str | None, str | None]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        return None, f"{exc.msg} at line {exc.lineno} column {exc.colno}"
+    canonical = json.dumps(parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return fingerprint_text(canonical), None
 
 
 def parse_command(value: str) -> list[str]:
@@ -215,6 +234,10 @@ def run_command(
     if action == "build":
         artifact_exists = artifact.exists()
         artifact_fingerprint = fingerprint_file(artifact) if artifact_exists else None
+    stdout_json_fingerprint: str | None = None
+    stdout_json_error: str | None = None
+    if action == "ir-json":
+        stdout_json_fingerprint, stdout_json_error = canonical_json_fingerprint(stdout)
     return CommandResult(
         role=role,
         command=command,
@@ -225,6 +248,8 @@ def run_command(
         stderr=stderr,
         artifact_exists=artifact_exists,
         artifact_fingerprint=artifact_fingerprint,
+        stdout_json_fingerprint=stdout_json_fingerprint,
+        stdout_json_error=stdout_json_error,
     )
 
 
@@ -290,7 +315,28 @@ def compare_results(
             reference,
             candidate,
         )
-    if reference.fingerprint() != candidate.fingerprint():
+    if action == "ir-json" and expected == "pass":
+        if reference.stdout_json_error is not None:
+            return CaseResult(
+                name,
+                path,
+                action,
+                False,
+                "reference emitted invalid ir json",
+                reference,
+                candidate,
+            )
+        if candidate.stdout_json_error is not None:
+            return CaseResult(
+                name,
+                path,
+                action,
+                False,
+                "candidate emitted invalid ir json",
+                reference,
+                candidate,
+            )
+    if reference.fingerprint(action) != candidate.fingerprint(action):
         return CaseResult(name, path, action, False, "fingerprint mismatch", reference, candidate)
     return CaseResult(name, path, action, True, "matched", reference, candidate)
 
