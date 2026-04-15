@@ -770,6 +770,193 @@ fn function_param_type_name(program: IrProgram, function_value: IrFunctionDef, n
     out
 }
 
+fn value_name_for_param(function_value: IrFunctionDef, name: String) -> String {
+    if function_has_param_named(function_value, name) {
+        concat2("%", backend_mangle_symbol(name))
+    } else {
+        ""
+    }
+}
+
+fn known_struct_field_index_by_name(name: String, field_name: String) -> Int {
+    if name == "SourceId" {
+        if field_name == "value" { 0 } else { -1 }
+    } else if name == "DriverSource" {
+        if field_name == "path" {
+            0
+        } else if field_name == "text" {
+            1
+        } else if field_name == "source" {
+            2
+        } else {
+            -1
+        }
+    } else if name == "DriverCommandResult" {
+        if field_name == "exit_code" {
+            0
+        } else if field_name == "stdout" {
+            1
+        } else if field_name == "stderr" {
+            2
+        } else if field_name == "artifact_path" {
+            3
+        } else if field_name == "artifact_text" {
+            4
+        } else if field_name == "diagnostics" {
+            5
+        } else {
+            -1
+        }
+    } else if name == "ProcOutput" {
+        if field_name == "status" {
+            0
+        } else if field_name == "stdout" {
+            1
+        } else if field_name == "stderr" {
+            2
+        } else {
+            -1
+        }
+    } else if name == "SourceLoadState" {
+        if field_name == "sources" {
+            0
+        } else if field_name == "next_source" {
+            1
+        } else {
+            -1
+        }
+    } else {
+        -1
+    }
+}
+
+fn struct_item_field_index_by_name(program: IrProgram, name: String, field_name: String) -> Int {
+    let mut item_index = 0;
+    let mut out = -1;
+    while out < 0 && item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrStructItemValue(struct_value) => if struct_value.name == name {
+                    let mut field_index = 0;
+                    while out < 0 && field_index < vec.vec_len(struct_value.fields) {
+                        match vec.get(struct_value.fields, field_index) {
+                            Some(field) => if field.name == field_name {
+                                out = field_index;
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        };
+                        field_index = field_index + 1;
+                    };
+                    ()
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+fn struct_field_index_by_name(program: IrProgram, name: String, field_name: String) -> Int {
+    let known = known_struct_field_index_by_name(name, field_name);
+    if known >= 0 {
+        known
+    } else {
+        struct_item_field_index_by_name(program, name, field_name)
+    }
+}
+
+fn field_access_name_from_text(value: String) -> String {
+    let mut index = 0;
+    let mut start = 0;
+    while index < string.len(value) {
+        if string.substring(value, index, index + 1) == "." {
+            start = index + 1;
+        } else {
+            ()
+        };
+        index = index + 1;
+    };
+    string.substring(value, start, string.len(value))
+}
+
+fn field_access_field_name(node: IrExprNode) -> String {
+    if node.name != "" {
+        node.name
+    } else {
+        field_access_name_from_text(node.text)
+    }
+}
+
+fn field_access_base_node(nodes: Vec[IrExprNode], node: IrExprNode) -> Option[IrExprNode] {
+    expr_node_child_at(nodes, node, 0)
+}
+
+fn field_access_base_type_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    match field_access_base_node(nodes, node) {
+        Some(base) => match base.kind {
+            IrNameExpr => function_param_type_name(program, function_value, base.text),
+            _ => "",
+        },
+        None => "",
+    }
+}
+
+fn field_access_node_llvm_type(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    let base_type = field_access_base_type_name(program, function_value, nodes, node);
+    let field_index = struct_field_index_by_name(program, base_type, field_access_field_name(node));
+    if base_type == "" || field_index < 0 {
+        ""
+    } else {
+        struct_field_llvm_type_by_index(program, base_type, field_index)
+    }
+}
+
+fn field_access_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, expected: String) -> Bool {
+    field_access_node_llvm_type(program, function_value, nodes, node) == expected
+}
+
+fn field_access_base_value_name(function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    match field_access_base_node(nodes, node) {
+        Some(base) => match base.kind {
+            IrNameExpr => value_name_for_param(function_value, base.text),
+            _ => "",
+        },
+        None => "",
+    }
+}
+
+fn emit_field_access_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    let base_type = field_access_base_type_name(program, function_value, nodes, node);
+    let field_index = struct_field_index_by_name(program, base_type, field_access_field_name(node));
+    let field_ty = if field_index >= 0 {
+        struct_field_llvm_type_by_index(program, base_type, field_index)
+    } else {
+        ""
+    };
+    let base_value = field_access_base_value_name(function_value, nodes, node);
+    if base_type == "" || field_ty == "" || base_value == "" || field_index < 0 {
+        ""
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, "  ");
+        parts = vec.push(parts, llvm_node_value_local(node));
+        parts = vec.push(parts, " = extractvalue ");
+        parts = vec.push(parts, llvm_type_for_repr_in_program(program, base_type));
+        parts = vec.push(parts, " ");
+        parts = vec.push(parts, base_value);
+        parts = vec.push(parts, ", ");
+        parts = vec.push(parts, string.int_to_string(field_index));
+        parts = vec.push(parts, "\n");
+        string.join(parts, "")
+    }
+}
+
 fn llvm_int_bits(value: String) -> Int {
     if value == "i8" {
         8
@@ -970,6 +1157,7 @@ fn string_call_child_can_emit(program: IrProgram, function_value: IrFunctionDef,
     match node.kind {
         IrStringExpr => true,
         IrNameExpr => function_param_llvm_type(program, function_value, node.text) == "%aic.String",
+        IrFieldAccessExpr => field_access_node_can_emit(program, function_value, nodes, node, "%aic.String"),
         IrCallExpr => if node.name == "string.replace" {
             string_replace_node_can_emit(program, function_value, nodes, node)
         } else {
@@ -1501,6 +1689,31 @@ fn statement_can_emit_as_noop(statement: IrStatement) -> Bool {
     }
 }
 
+fn expr_statement_can_emit(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> Bool {
+    match expr.kind {
+        IrCallExpr => if call_target_return_type(program, expr.name) == "void" {
+            call_expr_can_emit(program, expr, function_value)
+        } else {
+            false
+        },
+        _ => statement_expr_can_emit_as_noop(expr),
+    }
+}
+
+fn statement_can_emit(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement) -> Bool {
+    if statement_can_emit_as_noop(statement) {
+        true
+    } else {
+        match statement.kind {
+            IrExprStatement => match statement.expr {
+                Some(expr) => expr_statement_can_emit(program, function_value, expr),
+                None => true,
+            },
+            _ => false,
+        }
+    }
+}
+
 fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
     match value.kind {
         IrIntExpr => is_decimal_integer_text(value.text),
@@ -1522,7 +1735,7 @@ fn block_can_emit(program: IrProgram, block: IrBlock, function_value: IrFunction
     let mut ok = true;
     while ok && index < vec.vec_len(block.statements) {
         match vec.get(block.statements, index) {
-            Some(statement) => if statement_can_emit_as_noop(statement) {
+            Some(statement) => if statement_can_emit(program, function_value, statement) {
                 ()
             } else {
                 ok = false;
@@ -1593,7 +1806,7 @@ fn append_backend_block_emission_diagnostics(out: Vec[Diagnostic], program: IrPr
     let mut index = 0;
     while index < vec.vec_len(function_value.body.statements) {
         match vec.get(function_value.body.statements, index) {
-            Some(statement) => if vec.vec_len(diagnostics) < max_errors && !statement_can_emit_as_noop(statement) {
+            Some(statement) => if vec.vec_len(diagnostics) < max_errors && !statement_can_emit(program, function_value, statement) {
                 diagnostics = push_backend_error(diagnostics, "E5101", statement.span, "self-host backend cannot emit this executable statement yet", "restrict backend-covered executable functions to side-effect-free literal lets and while false guards, or add statement lowering");
             } else {
                 ()
@@ -2511,6 +2724,7 @@ fn emit_string_node_value(program: IrProgram, function_value: IrFunctionDef, nod
     match node.kind {
         IrStringExpr => emit_string_literal_value(llvm_string_node_global_name(function_value.name, node.node), node.text, llvm_node_prefix(node.node)),
         IrNameExpr => "",
+        IrFieldAccessExpr => emit_field_access_node_value(program, function_value, nodes, node),
         IrCallExpr => if node.name == "string.replace" {
             emit_string_replace_node_value(program, function_value, nodes, node)
         } else {
@@ -3349,6 +3563,52 @@ fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunction
     string.join(parts, "")
 }
 
+fn emit_void_call_expr_statement(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, "  call void @");
+    parts = vec.push(parts, backend_mangle_symbol(expr.name));
+    parts = vec.push(parts, "(");
+    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, ")\n");
+    string.join(parts, "")
+}
+
+fn emit_statement(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement) -> String {
+    match statement.kind {
+        IrExprStatement => match statement.expr {
+            Some(expr) => match expr.kind {
+                IrCallExpr => if call_target_return_type(program, expr.name) == "void" {
+                    emit_void_call_expr_statement(program, function_value, expr)
+                } else {
+                    ""
+                },
+                _ => "",
+            },
+            None => "",
+        },
+        _ => "",
+    }
+}
+
+fn emit_block_statements(program: IrProgram, function_value: IrFunctionDef) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(function_value.body.statements) {
+        match vec.get(function_value.body.statements, index) {
+            Some(statement) => if statement_can_emit(program, function_value, statement) {
+                parts = vec.push(parts, emit_statement(program, function_value, statement));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
 fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     match expr.kind {
@@ -3507,6 +3767,7 @@ fn emit_function_llvm(program: IrProgram, function_value: IrFunctionDef) -> Stri
     parts = vec.push(parts, "(");
     parts = vec.push(parts, params);
     parts = vec.push(parts, ") {\nentry:\n");
+    parts = vec.push(parts, emit_block_statements(program, function_value));
     match function_value.body.tail_expr {
         Some(expr) => if true {
             parts = vec.push(parts, emit_return_expr(program, function_value, expr, ret));

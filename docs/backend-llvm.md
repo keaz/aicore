@@ -30,6 +30,7 @@ The backend emits executable LLVM for the backend-covered primitive forms:
 - integer and boolean literal returns
 - string literal returns using deterministic module-level LLVM constants
 - runtime-backed `string.replace` return expressions over string literals, string parameters, and nested replacement calls
+- string field extraction from backend-covered struct parameters when passed to supported string calls
 - parameter returns
 - return-position struct literals whose fields are backend-covered primitive, string, or aggregate parameter values
 - lossless integer widening on returns, such as `Int32` aliases returning through an `Int` function boundary
@@ -39,6 +40,7 @@ The backend emits executable LLVM for the backend-covered primitive forms:
 - tail-position `print_str` and `eprint_str` calls lowered to runtime stdout/stderr calls for unit-returning functions
 - runtime-backed `std.env.arg_at` option matches in the canonical `Some(value) => value, None => ""` form
 - runtime-backed `std.fs.read_text`, `std.fs.temp_file`, `std.fs.write_text`, and `std.fs.delete` return expressions for the supported `Result[String, FsError]` and `Result[Bool, FsError]` ABI layouts
+- void call expression statements when the callee and arguments are backend-covered, including `write_stdout(result.stdout)` and `write_stderr(result.stderr)` style field accesses
 - static literal `match` expressions whose selected arm is known from literal patterns
 
 The backend also preserves deterministic metadata for structs, enums, tuples, generic definitions, generic instantiations, closures, async/future functions, trait and impl declarations, const/global declarations, resource-handle-shaped types, and native-link declarations. These metadata surfaces let parity tools verify coverage without pretending that unsupported executable forms have native code.
