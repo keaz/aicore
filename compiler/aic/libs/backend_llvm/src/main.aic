@@ -44,6 +44,23 @@ pub struct BackendSymbol {
     pub span: SourceSpan,
 }
 
+struct BackendLocal {
+    name: String,
+    type_name: String,
+    llvm_type: String,
+    value_name: String,
+}
+
+struct BackendLocalCheck {
+    ok: Bool,
+    locals: Vec[BackendLocal],
+}
+
+struct BackendStatementEmission {
+    text: String,
+    locals: Vec[BackendLocal],
+}
+
 pub struct BackendArtifact {
     pub format: String,
     pub schema_version: Int,
@@ -220,6 +237,29 @@ fn backend_symbol(source_name: String, llvm_name: String, kind: String, span_val
         llvm_name: llvm_name,
         kind: kind,
         span: span_value,
+    }
+}
+
+fn backend_local(name: String, type_name: String, llvm_type: String, value_name: String) -> BackendLocal {
+    BackendLocal {
+        name: name,
+        type_name: type_name,
+        llvm_type: llvm_type,
+        value_name: value_name,
+    }
+}
+
+fn backend_local_check(ok: Bool, locals: Vec[BackendLocal]) -> BackendLocalCheck {
+    BackendLocalCheck {
+        ok: ok,
+        locals: locals,
+    }
+}
+
+fn backend_statement_emission(text: String, locals: Vec[BackendLocal]) -> BackendStatementEmission {
+    BackendStatementEmission {
+        text: text,
+        locals: locals,
     }
 }
 
@@ -770,6 +810,55 @@ fn function_param_type_name(program: IrProgram, function_value: IrFunctionDef, n
     out
 }
 
+fn backend_local_named(locals: Vec[BackendLocal], name: String) -> Option[BackendLocal] {
+    let mut index = vec.vec_len(locals) - 1;
+    let mut out: Option[BackendLocal] = None();
+    let mut done = vec.vec_len(locals) == 0;
+    while !done {
+        match vec.get(locals, index) {
+            Some(value) => if value.name == name {
+                out = Some(value);
+                done = true;
+            } else if index == 0 {
+                done = true;
+            } else {
+                index = index - 1;
+            },
+            None => if index == 0 {
+                done = true;
+            } else {
+                index = index - 1;
+            },
+        }
+    };
+    out
+}
+
+fn value_name_for_name(function_value: IrFunctionDef, locals: Vec[BackendLocal], name: String) -> String {
+    match backend_local_named(locals, name) {
+        Some(local_value) => local_value.value_name,
+        None => value_name_for_param(function_value, name),
+    }
+}
+
+fn type_name_for_name(program: IrProgram, function_value: IrFunctionDef, locals: Vec[BackendLocal], name: String) -> String {
+    match backend_local_named(locals, name) {
+        Some(local_value) => local_value.type_name,
+        None => function_param_type_name(program, function_value, name),
+    }
+}
+
+fn llvm_type_for_name(program: IrProgram, function_value: IrFunctionDef, locals: Vec[BackendLocal], name: String) -> String {
+    match backend_local_named(locals, name) {
+        Some(local_value) => local_value.llvm_type,
+        None => function_param_llvm_type(program, function_value, name),
+    }
+}
+
+fn name_is_value_available(function_value: IrFunctionDef, locals: Vec[BackendLocal], name: String) -> Bool {
+    value_name_for_name(function_value, locals, name) != ""
+}
+
 fn value_name_for_param(function_value: IrFunctionDef, name: String) -> String {
     if function_has_param_named(function_value, name) {
         concat2("%", backend_mangle_symbol(name))
@@ -897,18 +986,18 @@ fn field_access_base_node(nodes: Vec[IrExprNode], node: IrExprNode) -> Option[Ir
     expr_node_child_at(nodes, node, 0)
 }
 
-fn field_access_base_type_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn field_access_base_type_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     match field_access_base_node(nodes, node) {
         Some(base) => match base.kind {
-            IrNameExpr => function_param_type_name(program, function_value, base.text),
+            IrNameExpr => type_name_for_name(program, function_value, locals, base.text),
             _ => "",
         },
         None => "",
     }
 }
 
-fn field_access_node_llvm_type(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
-    let base_type = field_access_base_type_name(program, function_value, nodes, node);
+fn field_access_node_llvm_type(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    let base_type = field_access_base_type_name(program, function_value, nodes, node, locals);
     let field_index = struct_field_index_by_name(program, base_type, field_access_field_name(node));
     if base_type == "" || field_index < 0 {
         ""
@@ -917,29 +1006,29 @@ fn field_access_node_llvm_type(program: IrProgram, function_value: IrFunctionDef
     }
 }
 
-fn field_access_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, expected: String) -> Bool {
-    field_access_node_llvm_type(program, function_value, nodes, node) == expected
+fn field_access_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal], expected: String) -> Bool {
+    field_access_node_llvm_type(program, function_value, nodes, node, locals) == expected
 }
 
-fn field_access_base_value_name(function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn field_access_base_value_name(function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     match field_access_base_node(nodes, node) {
         Some(base) => match base.kind {
-            IrNameExpr => value_name_for_param(function_value, base.text),
+            IrNameExpr => value_name_for_name(function_value, locals, base.text),
             _ => "",
         },
         None => "",
     }
 }
 
-fn emit_field_access_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
-    let base_type = field_access_base_type_name(program, function_value, nodes, node);
+fn emit_field_access_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    let base_type = field_access_base_type_name(program, function_value, nodes, node, locals);
     let field_index = struct_field_index_by_name(program, base_type, field_access_field_name(node));
     let field_ty = if field_index >= 0 {
         struct_field_llvm_type_by_index(program, base_type, field_index)
     } else {
         ""
     };
-    let base_value = field_access_base_value_name(function_value, nodes, node);
+    let base_value = field_access_base_value_name(function_value, nodes, node, locals);
     if base_type == "" || field_ty == "" || base_value == "" || field_index < 0 {
         ""
     } else {
@@ -998,9 +1087,13 @@ fn function_param_return_cast_op(program: IrProgram, function_value: IrFunctionD
     }
 }
 
-fn return_name_can_emit(program: IrProgram, function_value: IrFunctionDef, name: String, ret: String) -> Bool {
-    let source_llvm = function_param_llvm_type(program, function_value, name);
+fn return_name_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, locals: Vec[BackendLocal], name: String, ret: String) -> Bool {
+    let source_llvm = llvm_type_for_name(program, function_value, locals, name);
     source_llvm == ret || function_param_return_cast_op(program, function_value, name, ret) != ""
+}
+
+fn return_name_can_emit(program: IrProgram, function_value: IrFunctionDef, name: String, ret: String) -> Bool {
+    return_name_can_emit_with_locals(program, function_value, vec.new_vec(), name, ret)
 }
 
 fn direct_expr_child_at(nodes: Vec[IrExprNode], child_index: Int) -> Option[IrExprNode] {
@@ -1044,35 +1137,43 @@ fn direct_expr_child_count(nodes: Vec[IrExprNode]) -> Int {
     count
 }
 
-fn simple_node_llvm_value(node: IrExprNode, function_value: IrFunctionDef) -> String {
+fn simple_node_llvm_value_with_locals(node: IrExprNode, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> String {
     match node.kind {
         IrIntExpr => node.text,
         IrBoolExpr => if node.text == "true" { "1" } else { "0" },
-        IrNameExpr => if function_has_param_named(function_value, node.text) {
-            concat2("%", backend_mangle_symbol(node.text))
-        } else {
-            ""
-        },
+        IrNameExpr => value_name_for_name(function_value, locals, node.text),
+        _ => "",
+    }
+}
+
+fn simple_node_llvm_value(node: IrExprNode, function_value: IrFunctionDef) -> String {
+    simple_node_llvm_value_with_locals(node, function_value, vec.new_vec())
+}
+
+fn simple_node_llvm_type_with_locals(program: IrProgram, node: IrExprNode, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> String {
+    match node.kind {
+        IrIntExpr => "i64",
+        IrBoolExpr => "i1",
+        IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text),
         _ => "",
     }
 }
 
 fn simple_node_llvm_type(program: IrProgram, node: IrExprNode, function_value: IrFunctionDef) -> String {
+    simple_node_llvm_type_with_locals(program, node, function_value, vec.new_vec())
+}
+
+fn simple_node_can_emit_with_locals(node: IrExprNode, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
     match node.kind {
-        IrIntExpr => "i64",
-        IrBoolExpr => "i1",
-        IrNameExpr => function_param_llvm_type(program, function_value, node.text),
-        _ => "",
+        IrIntExpr => is_decimal_integer_text(node.text),
+        IrBoolExpr => node.text == "true" || node.text == "false",
+        IrNameExpr => name_is_value_available(function_value, locals, node.text),
+        _ => false,
     }
 }
 
 fn simple_node_can_emit(node: IrExprNode, function_value: IrFunctionDef) -> Bool {
-    match node.kind {
-        IrIntExpr => is_decimal_integer_text(node.text),
-        IrBoolExpr => node.text == "true" || node.text == "false",
-        IrNameExpr => function_has_param_named(function_value, node.text),
-        _ => false,
-    }
+    simple_node_can_emit_with_locals(node, function_value, vec.new_vec())
 }
 
 fn simple_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
@@ -1081,6 +1182,77 @@ fn simple_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
         IrBoolExpr => value.text == "true" || value.text == "false",
         IrUnitExpr => true,
         IrNameExpr => function_has_param_named(function_value, value.text),
+        _ => false,
+    }
+}
+
+fn value_node_llvm_type(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    match node.kind {
+        IrIntExpr => "i64",
+        IrBoolExpr => "i1",
+        IrStringExpr => "%aic.String",
+        IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text),
+        IrFieldAccessExpr => field_access_node_llvm_type(program, function_value, nodes, node, locals),
+        IrCallExpr => call_target_return_type(program, node.name),
+        IrStructLiteralExpr => llvm_type_for_repr_in_program(program, node.name),
+        _ => "",
+    }
+}
+
+fn value_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
+    match node.kind {
+        IrIntExpr => is_decimal_integer_text(node.text),
+        IrBoolExpr => node.text == "true" || node.text == "false",
+        IrStringExpr => true,
+        IrNameExpr => name_is_value_available(function_value, locals, node.text),
+        IrFieldAccessExpr => field_access_node_llvm_type(program, function_value, nodes, node, locals) != "",
+        IrCallExpr => if node.name == "string.replace" {
+            string_replace_node_can_emit(program, function_value, nodes, node, locals)
+        } else {
+            direct_call_node_can_emit(program, function_value, nodes, node, locals)
+        },
+        IrStructLiteralExpr => struct_literal_node_can_emit(program, function_value, nodes, node, locals, value_node_llvm_type(program, function_value, nodes, node, locals)),
+        _ => false,
+    }
+}
+
+fn value_expr_llvm_type(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> String {
+    match value.kind {
+        IrIntExpr => "i64",
+        IrBoolExpr => "i1",
+        IrStringExpr => "%aic.String",
+        IrUnitExpr => "void",
+        IrNameExpr => llvm_type_for_name(program, function_value, locals, value.text),
+        IrCallExpr => call_target_return_type(program, value.name),
+        IrIfExpr => llvm_type_for_id(program, function_value.return_type),
+        IrStructLiteralExpr => llvm_type_for_repr_in_program(program, value.name),
+        _ => "",
+    }
+}
+
+fn expr_value_name(program: IrProgram, function_value: IrFunctionDef, value: IrExpr, locals: Vec[BackendLocal]) -> String {
+    match value.kind {
+        IrIntExpr => value.text,
+        IrBoolExpr => if value.text == "true" { "1" } else { "0" },
+        IrStringExpr => llvm_expr_value_local(value),
+        IrNameExpr => value_name_for_name(function_value, locals, value.text),
+        IrCallExpr => llvm_expr_value_local(value),
+        IrStructLiteralExpr => struct_literal_value_name(llvm_expr_prefix(value.node), direct_expr_child_count(value.nodes), value_expr_llvm_type(program, value, function_value, locals)),
+        _ => "",
+    }
+}
+
+fn value_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
+    match value.kind {
+        IrIntExpr => is_decimal_integer_text(value.text),
+        IrBoolExpr => value.text == "true" || value.text == "false",
+        IrStringExpr => true,
+        IrUnitExpr => true,
+        IrNameExpr => name_is_value_available(function_value, locals, value.text),
+        IrBinaryExpr => binary_expr_can_emit_with_locals(value, function_value, locals),
+        IrCallExpr => call_expr_can_emit_with_locals(program, value, function_value, locals),
+        IrIfExpr => if_expr_can_emit_with_locals(program, value, function_value, locals),
+        IrStructLiteralExpr => struct_literal_expr_can_emit(program, value, function_value, locals, value_expr_llvm_type(program, value, function_value, locals)),
         _ => false,
     }
 }
@@ -1129,7 +1301,7 @@ fn expr_node_child_at(nodes: Vec[IrExprNode], parent: IrExprNode, child_index: I
     out
 }
 
-fn string_replace_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+fn string_replace_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
     if node.name != "string.replace" || node.direct_child_count != 3 {
         false
     } else {
@@ -1137,7 +1309,7 @@ fn string_replace_node_can_emit(program: IrProgram, function_value: IrFunctionDe
         let mut ok = true;
         while ok && index < 3 {
             match expr_node_child_at(nodes, node, index) {
-                Some(child) => if string_call_child_can_emit(program, function_value, nodes, child) {
+                Some(child) => if string_call_child_can_emit(program, function_value, nodes, child, locals) {
                     ()
                 } else {
                     ok = false;
@@ -1153,36 +1325,38 @@ fn string_replace_node_can_emit(program: IrProgram, function_value: IrFunctionDe
     }
 }
 
-fn string_call_child_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+fn string_call_child_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
     match node.kind {
         IrStringExpr => true,
-        IrNameExpr => function_param_llvm_type(program, function_value, node.text) == "%aic.String",
-        IrFieldAccessExpr => field_access_node_can_emit(program, function_value, nodes, node, "%aic.String"),
+        IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text) == "%aic.String",
+        IrFieldAccessExpr => field_access_node_can_emit(program, function_value, nodes, node, locals, "%aic.String"),
         IrCallExpr => if node.name == "string.replace" {
-            string_replace_node_can_emit(program, function_value, nodes, node)
+            string_replace_node_can_emit(program, function_value, nodes, node, locals)
         } else {
-            string_direct_call_node_can_emit(program, function_value, nodes, node)
+            string_direct_call_node_can_emit(program, function_value, nodes, node, locals)
         },
         _ => false,
     }
 }
 
-fn call_child_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String, param_index: Int, node: IrExprNode) -> Bool {
+fn call_child_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String, param_index: Int, node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
     let expected = call_target_param_type(program, callee_name, param_index);
     if expected == "%aic.String" {
-        string_call_child_can_emit(program, function_value, nodes, node)
-    } else if simple_node_can_emit(node, function_value) {
-        let actual = simple_node_llvm_type(program, node, function_value);
+        string_call_child_can_emit(program, function_value, nodes, node, locals)
+    } else if simple_node_can_emit_with_locals(node, function_value, locals) {
+        let actual = simple_node_llvm_type_with_locals(program, node, function_value, locals);
         expected != "" && actual != "" && expected == actual
     } else {
-        false
+        match node.kind {
+            IrFieldAccessExpr => field_access_node_can_emit(program, function_value, nodes, node, locals, expected),
+            IrCallExpr => call_target_return_type(program, node.name) == expected && direct_call_node_can_emit(program, function_value, nodes, node, locals),
+            _ => false,
+        }
     }
 }
 
-fn string_direct_call_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+fn direct_call_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
     if node.name == "" || string.contains(node.name, ".") || !call_target_exists(program, node.name) {
-        false
-    } else if call_target_return_type(program, node.name) != "%aic.String" {
         false
     } else if node.direct_child_count != call_target_param_count(program, node.name) {
         false
@@ -1191,7 +1365,7 @@ fn string_direct_call_node_can_emit(program: IrProgram, function_value: IrFuncti
         let mut ok = true;
         while ok && index < node.direct_child_count {
             match expr_node_child_at(nodes, node, index) {
-                Some(child) => if call_child_node_can_emit(program, function_value, nodes, node.name, index, child) {
+                Some(child) => if call_child_node_can_emit(program, function_value, nodes, node.name, index, child, locals) {
                     ()
                 } else {
                     ok = false;
@@ -1207,7 +1381,11 @@ fn string_direct_call_node_can_emit(program: IrProgram, function_value: IrFuncti
     }
 }
 
-fn string_replace_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+fn string_direct_call_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
+    call_target_return_type(program, node.name) == "%aic.String" && direct_call_node_can_emit(program, function_value, nodes, node, locals)
+}
+
+fn string_replace_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
     if value.name != "string.replace" || direct_expr_child_count(value.nodes) != 3 {
         false
     } else {
@@ -1215,7 +1393,7 @@ fn string_replace_expr_can_emit(program: IrProgram, value: IrExpr, function_valu
         let mut ok = true;
         while ok && index < 3 {
             match direct_expr_child_at(value.nodes, index) {
-                Some(node) => if string_call_child_can_emit(program, function_value, value.nodes, node) {
+                Some(node) => if string_call_child_can_emit(program, function_value, value.nodes, node, locals) {
                     ()
                 } else {
                     ok = false;
@@ -1239,6 +1417,26 @@ fn call_target_return_type(program: IrProgram, callee_name: String) -> String {
             Some(item) => match item {
                 IrFunctionItemValue(function_value) => if function_value.name == callee_name {
                     out = llvm_type_for_id(program, function_value.return_type);
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn call_target_return_type_name(program: IrProgram, callee_name: String) -> String {
+    let mut index = 0;
+    let mut out = "";
+    while out == "" && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.name == callee_name {
+                    out = type_name_for_id(program.types, function_value.return_type);
                 } else {
                     ()
                 },
@@ -1303,33 +1501,33 @@ fn call_target_exists(program: IrProgram, callee_name: String) -> Bool {
     call_target_return_type(program, callee_name) != ""
 }
 
-fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+fn call_expr_can_emit_with_locals(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
     if is_io_print_intrinsic_name(value.name) {
         direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
-            Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
+            Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child, locals),
             None => false,
         }
     } else if is_fs_string_result_intrinsic_name(value.name) {
         direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
-            Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
+            Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child, locals),
             None => false,
         }
     } else if is_fs_bool_result_intrinsic_name(value.name) {
         if value.name == "write_text" {
             direct_expr_child_count(value.nodes) == 2 && match direct_expr_child_at(value.nodes, 0) {
                 Some(path_child) => match direct_expr_child_at(value.nodes, 1) {
-                    Some(content_child) => string_call_child_can_emit(program, function_value, value.nodes, path_child) && string_call_child_can_emit(program, function_value, value.nodes, content_child),
+                    Some(content_child) => string_call_child_can_emit(program, function_value, value.nodes, path_child, locals) && string_call_child_can_emit(program, function_value, value.nodes, content_child, locals),
                     None => false,
                 },
                 None => false,
             }
         } else {
             direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
-                Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
+                Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child, locals),
                 None => false,
             }
         }
-    } else if string_replace_expr_can_emit(program, value, function_value) {
+    } else if string_replace_expr_can_emit(program, value, function_value, locals) {
         true
     } else if value.name == "" || string.contains(value.name, ".") || !call_target_exists(program, value.name) {
         false
@@ -1340,7 +1538,7 @@ fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunct
         let mut ok = true;
         while ok && index < direct_expr_child_count(value.nodes) {
             match direct_expr_child_at(value.nodes, index) {
-                Some(node) => if call_child_node_can_emit(program, function_value, value.nodes, value.name, index, node) {
+                Some(node) => if call_child_node_can_emit(program, function_value, value.nodes, value.name, index, node, locals) {
                     ()
                 } else {
                     ok = false;
@@ -1356,11 +1554,15 @@ fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunct
     }
 }
 
-fn binary_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
+fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    call_expr_can_emit_with_locals(program, value, function_value, vec.new_vec())
+}
+
+fn binary_expr_can_emit_with_locals(value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
     if value.op == "+" || value.op == "-" || value.op == "*" {
         match direct_expr_child_at(value.nodes, 0) {
             Some(left) => match direct_expr_child_at(value.nodes, 1) {
-                Some(right) => simple_node_can_emit(left, function_value) && simple_node_can_emit(right, function_value),
+                Some(right) => simple_node_can_emit_with_locals(left, function_value, locals) && simple_node_can_emit_with_locals(right, function_value, locals),
                 None => false,
             },
             None => false,
@@ -1368,6 +1570,10 @@ fn binary_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
     } else {
         false
     }
+}
+
+fn binary_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    binary_expr_can_emit_with_locals(value, function_value, vec.new_vec())
 }
 
 fn binary_compare_op_can_emit(op: String) -> Bool {
@@ -1402,18 +1608,18 @@ fn string_compare_predicate(op: String) -> String {
     }
 }
 
-fn bool_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+fn bool_node_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
     match node.kind {
         IrBoolExpr => node.text == "true" || node.text == "false",
-        IrNameExpr => function_param_llvm_type(program, function_value, node.text) == "i1",
+        IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text) == "i1",
         IrBinaryExpr => if binary_compare_op_can_emit(node.op) {
             match expr_node_child_at(nodes, node, 0) {
                 Some(left) => match expr_node_child_at(nodes, node, 1) {
-                    Some(right) => if string_call_child_can_emit(program, function_value, nodes, left) && string_call_child_can_emit(program, function_value, nodes, right) {
+                    Some(right) => if string_call_child_can_emit(program, function_value, nodes, left, locals) && string_call_child_can_emit(program, function_value, nodes, right, locals) {
                         node.op == "==" || node.op == "!="
-                    } else if simple_node_can_emit(left, function_value) && simple_node_can_emit(right, function_value) {
-                        let left_type = simple_node_llvm_type(program, left, function_value);
-                        let right_type = simple_node_llvm_type(program, right, function_value);
+                    } else if value_node_can_emit(program, function_value, nodes, left, locals) && value_node_can_emit(program, function_value, nodes, right, locals) {
+                        let left_type = value_node_llvm_type(program, function_value, nodes, left, locals);
+                        let right_type = value_node_llvm_type(program, function_value, nodes, right, locals);
                         left_type != "" && left_type == right_type
                     } else {
                         false
@@ -1429,35 +1635,40 @@ fn bool_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: 
     }
 }
 
-fn block_tail_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String) -> Bool {
-    if !is_block_expr_kind(block_node.kind) || block_node.direct_child_count != 1 {
+fn bool_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+    bool_node_can_emit_with_locals(program, function_value, nodes, node, vec.new_vec())
+}
+
+fn block_tail_node_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> Bool {
+    if !is_block_expr_kind(block_node.kind) {
         false
     } else {
-        match expr_node_child_at(nodes, block_node, 0) {
-            Some(child) => return_node_can_emit(program, function_value, nodes, child, ret),
-            None => false,
-        }
+        block_node_can_emit_return(program, function_value, nodes, block_node, ret, locals)
+    }
+}
+
+fn branch_node_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], branch_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> Bool {
+    if is_block_expr_kind(branch_node.kind) {
+        block_tail_node_can_emit_with_locals(program, function_value, nodes, branch_node, ret, locals)
+    } else {
+        return_node_can_emit_with_locals(program, function_value, nodes, branch_node, ret, locals)
     }
 }
 
 fn branch_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], branch_node: IrExprNode, ret: String) -> Bool {
-    if is_block_expr_kind(branch_node.kind) {
-        block_tail_node_can_emit(program, function_value, nodes, branch_node, ret)
-    } else {
-        return_node_can_emit(program, function_value, nodes, branch_node, ret)
-    }
+    branch_node_can_emit_with_locals(program, function_value, nodes, branch_node, ret, vec.new_vec())
 }
 
-fn if_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+fn if_node_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> Bool {
     if node.direct_child_count != 3 {
         false
     } else {
         match expr_node_child_at(nodes, node, 0) {
             Some(condition) => match expr_node_child_at(nodes, node, 1) {
                 Some(then_block) => match expr_node_child_at(nodes, node, 2) {
-                    Some(else_block) => bool_node_can_emit(program, function_value, nodes, condition)
-                        && branch_node_can_emit(program, function_value, nodes, then_block, ret)
-                        && branch_node_can_emit(program, function_value, nodes, else_block, ret),
+                    Some(else_block) => bool_node_can_emit_with_locals(program, function_value, nodes, condition, locals)
+                        && branch_node_can_emit_with_locals(program, function_value, nodes, then_block, ret, locals)
+                        && branch_node_can_emit_with_locals(program, function_value, nodes, else_block, ret, locals),
                     None => false,
                 },
                 None => false,
@@ -1467,17 +1678,21 @@ fn if_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Ve
     }
 }
 
-fn struct_literal_child_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, expected: String) -> Bool {
+fn if_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+    if_node_can_emit_with_locals(program, function_value, nodes, node, ret, vec.new_vec())
+}
+
+fn struct_literal_child_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, locals: Vec[BackendLocal], expected: String) -> Bool {
     if expected == "%aic.String" {
-        string_call_child_can_emit(program, function_value, nodes, child)
-    } else if simple_node_can_emit(child, function_value) {
-        simple_node_llvm_type(program, child, function_value) == expected
+        string_call_child_can_emit(program, function_value, nodes, child, locals)
+    } else if value_node_can_emit(program, function_value, nodes, child, locals) {
+        value_node_llvm_type(program, function_value, nodes, child, locals) == expected
     } else {
         false
     }
 }
 
-fn struct_literal_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+fn struct_literal_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal], ret: String) -> Bool {
     let struct_ty = llvm_type_for_repr_in_program(program, node.name);
     if node.name == "" || struct_ty == "" || struct_ty != ret {
         false
@@ -1488,7 +1703,7 @@ fn struct_literal_node_can_emit(program: IrProgram, function_value: IrFunctionDe
             match expr_node_child_at(nodes, node, index) {
                 Some(child) => if true {
                     let field_ty = struct_field_llvm_type_by_index(program, node.name, index);
-                    if field_ty != "" && struct_literal_child_can_emit(program, function_value, nodes, child, field_ty) {
+                    if field_ty != "" && struct_literal_child_can_emit(program, function_value, nodes, child, locals, field_ty) {
                         ()
                     } else {
                         ok = false;
@@ -1506,7 +1721,7 @@ fn struct_literal_node_can_emit(program: IrProgram, function_value: IrFunctionDe
     }
 }
 
-fn struct_literal_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, ret: String) -> Bool {
+fn struct_literal_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal], ret: String) -> Bool {
     let struct_ty = llvm_type_for_repr_in_program(program, value.name);
     if value.name == "" || struct_ty == "" || struct_ty != ret {
         false
@@ -1517,7 +1732,7 @@ fn struct_literal_expr_can_emit(program: IrProgram, value: IrExpr, function_valu
             match direct_expr_child_at(value.nodes, index) {
                 Some(child) => if true {
                     let field_ty = struct_field_llvm_type_by_index(program, value.name, index);
-                    if field_ty != "" && struct_literal_child_can_emit(program, function_value, value.nodes, child, field_ty) {
+                    if field_ty != "" && struct_literal_child_can_emit(program, function_value, value.nodes, child, locals, field_ty) {
                         ()
                     } else {
                         ok = false;
@@ -1535,25 +1750,30 @@ fn struct_literal_expr_can_emit(program: IrProgram, value: IrExpr, function_valu
     }
 }
 
-fn return_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+fn return_node_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> Bool {
     match node.kind {
         IrIntExpr => ret == "i64" && is_decimal_integer_text(node.text),
         IrBoolExpr => ret == "i1" && (node.text == "true" || node.text == "false"),
         IrStringExpr => ret == "%aic.String",
         IrUnitExpr => ret == "void",
-        IrNameExpr => return_name_can_emit(program, function_value, node.text, ret),
+        IrNameExpr => return_name_can_emit_with_locals(program, function_value, locals, node.text, ret),
+        IrFieldAccessExpr => field_access_node_can_emit(program, function_value, nodes, node, locals, ret),
         IrCallExpr => if node.name == "string.replace" {
-            ret == "%aic.String" && string_replace_node_can_emit(program, function_value, nodes, node)
+            ret == "%aic.String" && string_replace_node_can_emit(program, function_value, nodes, node, locals)
         } else {
-            call_target_return_type(program, node.name) == ret && string_direct_call_node_can_emit(program, function_value, nodes, node)
+            call_target_return_type(program, node.name) == ret && direct_call_node_can_emit(program, function_value, nodes, node, locals)
         },
-        IrIfExpr => if_node_can_emit(program, function_value, nodes, node, ret),
-        IrStructLiteralExpr => struct_literal_node_can_emit(program, function_value, nodes, node, ret),
+        IrIfExpr => if_node_can_emit_with_locals(program, function_value, nodes, node, ret, locals),
+        IrStructLiteralExpr => struct_literal_node_can_emit(program, function_value, nodes, node, locals, ret),
         _ => false,
     }
 }
 
-fn if_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+fn return_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+    return_node_can_emit_with_locals(program, function_value, nodes, node, ret, vec.new_vec())
+}
+
+fn if_expr_can_emit_with_locals(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
     let ret = llvm_type_for_id(program, function_value.return_type);
     if value.direct_child_count != 3 {
         false
@@ -1561,9 +1781,9 @@ fn if_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctio
         match direct_expr_child_at(value.nodes, 0) {
             Some(condition) => match direct_expr_child_at(value.nodes, 1) {
                 Some(then_block) => match direct_expr_child_at(value.nodes, 2) {
-                    Some(else_block) => bool_node_can_emit(program, function_value, value.nodes, condition)
-                        && branch_node_can_emit(program, function_value, value.nodes, then_block, ret)
-                        && branch_node_can_emit(program, function_value, value.nodes, else_block, ret),
+                    Some(else_block) => bool_node_can_emit_with_locals(program, function_value, value.nodes, condition, locals)
+                        && branch_node_can_emit_with_locals(program, function_value, value.nodes, then_block, ret, locals)
+                        && branch_node_can_emit_with_locals(program, function_value, value.nodes, else_block, ret, locals),
                     None => false,
                 },
                 None => false,
@@ -1571,6 +1791,10 @@ fn if_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctio
             None => false,
         }
     }
+}
+
+fn if_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    if_expr_can_emit_with_locals(program, value, function_value, vec.new_vec())
 }
 
 fn static_match_body(value: IrExpr) -> String {
@@ -1627,6 +1851,126 @@ fn match_has_arm(value: IrExpr, pattern: String, body: String) -> Bool {
         index = index + 1;
     };
     found
+}
+
+fn block_child_is_let(node: IrExprNode) -> Bool {
+    string.starts_with(node.role, "let:")
+}
+
+fn block_child_is_tail(node: IrExprNode) -> Bool {
+    node.role == "tail"
+}
+
+fn block_let_name_from_role(role: String) -> String {
+    let mut index = 4;
+    let mut out = "";
+    let mut done = !string.starts_with(role, "let:");
+    while !done && index < string.len(role) {
+        let part = string.substring(role, index, index + 1);
+        if part == ":" {
+            done = true;
+        } else {
+            out = concat2(out, part);
+            index = index + 1;
+        }
+    };
+    out
+}
+
+fn node_value_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    match node.kind {
+        IrIntExpr => node.text,
+        IrBoolExpr => if node.text == "true" { "1" } else { "0" },
+        IrStringExpr => string_node_value_name(node),
+        IrNameExpr => value_name_for_name(function_value, locals, node.text),
+        IrFieldAccessExpr => llvm_node_value_local(node),
+        IrCallExpr => llvm_node_value_local(node),
+        IrStructLiteralExpr => struct_literal_value_name(llvm_node_prefix(node.node), node.direct_child_count, value_node_llvm_type(program, function_value, nodes, node, locals)),
+        _ => "",
+    }
+}
+
+fn backend_local_for_node(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal], name: String) -> BackendLocal {
+    let type_name = match node.kind {
+        IrNameExpr => type_name_for_name(program, function_value, locals, node.text),
+        IrCallExpr => call_target_return_type_name(program, node.name),
+        IrStringExpr => "String",
+        IrIntExpr => "Int",
+        IrBoolExpr => "Bool",
+        IrFieldAccessExpr => if true {
+            let llvm = field_access_node_llvm_type(program, function_value, nodes, node, locals);
+            if llvm == "%aic.String" {
+                "String"
+            } else if llvm == "i1" {
+                "Bool"
+            } else {
+                "Int"
+            }
+        } else { "" },
+        _ => "",
+    };
+    backend_local(name, type_name, value_node_llvm_type(program, function_value, nodes, node, locals), node_value_name(program, function_value, nodes, node, locals))
+}
+
+fn let_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
+    block_let_name_from_role(node.role) != "" && value_node_can_emit(program, function_value, nodes, node, locals)
+}
+
+fn push_node_local(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Vec[BackendLocal] {
+    let name = block_let_name_from_role(node.role);
+    if name == "" {
+        locals
+    } else {
+        vec.push(locals, backend_local_for_node(program, function_value, nodes, node, locals, name))
+    }
+}
+
+fn node_is_unit_or_false_loop(node: IrExprNode) -> Bool {
+    match node.kind {
+        IrUnitExpr => true,
+        _ => string.starts_with(node.text, "while false"),
+    }
+}
+
+fn block_node_local_check(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> BackendLocalCheck {
+    let mut out = locals;
+    let mut ok = true;
+    let mut index = 0;
+    let mut saw_tail = false;
+    while ok && index < block_node.direct_child_count {
+        match expr_node_child_at(nodes, block_node, index) {
+            Some(child) => if block_child_is_let(child) {
+                if let_node_can_emit(program, function_value, nodes, child, out) {
+                    out = push_node_local(program, function_value, nodes, child, out);
+                } else {
+                    ok = false;
+                };
+                ()
+            } else if block_child_is_tail(child) {
+                saw_tail = true;
+                if return_node_can_emit_with_locals(program, function_value, nodes, child, ret, out) {
+                    ()
+                } else {
+                    ok = false;
+                };
+                ()
+            } else if node_is_unit_or_false_loop(child) {
+                ()
+            } else {
+                ok = false;
+            },
+            None => if true {
+                ok = false;
+                ()
+            } else { () },
+        };
+        index = index + 1;
+    };
+    backend_local_check(ok && saw_tail, out)
+}
+
+fn block_node_can_emit_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> Bool {
+    block_node_local_check(program, function_value, nodes, block_node, ret, locals).ok
 }
 
 fn env_arg_or_empty_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
@@ -1689,15 +2033,64 @@ fn statement_can_emit_as_noop(statement: IrStatement) -> Bool {
     }
 }
 
-fn expr_statement_can_emit(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> Bool {
+fn expr_statement_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> Bool {
     match expr.kind {
         IrCallExpr => if call_target_return_type(program, expr.name) == "void" {
-            call_expr_can_emit(program, expr, function_value)
+            call_expr_can_emit_with_locals(program, expr, function_value, locals)
         } else {
             false
         },
         _ => statement_expr_can_emit_as_noop(expr),
     }
+}
+
+fn expr_statement_can_emit(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> Bool {
+    expr_statement_can_emit_with_locals(program, function_value, expr, vec.new_vec())
+}
+
+fn let_statement_value_can_emit(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement, locals: Vec[BackendLocal]) -> Bool {
+    match statement.expr {
+        Some(expr) => value_expr_can_emit(program, expr, function_value, locals),
+        None => true,
+    }
+}
+
+fn local_for_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal], name: String) -> BackendLocal {
+    let type_name = match expr.kind {
+        IrNameExpr => type_name_for_name(program, function_value, locals, expr.text),
+        IrCallExpr => call_target_return_type_name(program, expr.name),
+        IrStringExpr => "String",
+        IrIntExpr => "Int",
+        IrBoolExpr => "Bool",
+        _ => "",
+    };
+    backend_local(name, type_name, value_expr_llvm_type(program, expr, function_value, locals), expr_value_name(program, function_value, expr, locals))
+}
+
+fn statement_check_with_locals(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement, locals: Vec[BackendLocal]) -> BackendLocalCheck {
+    if statement_can_emit_as_noop(statement) {
+        backend_local_check(true, locals)
+    } else {
+        match statement.kind {
+            IrLetStatement => if statement.name != "" && let_statement_value_can_emit(program, function_value, statement, locals) {
+                match statement.expr {
+                    Some(expr) => backend_local_check(true, vec.push(locals, local_for_expr(program, function_value, expr, locals, statement.name))),
+                    None => backend_local_check(true, locals),
+                }
+            } else {
+                backend_local_check(false, locals)
+            },
+            IrExprStatement => match statement.expr {
+                Some(expr) => backend_local_check(expr_statement_can_emit_with_locals(program, function_value, expr, locals), locals),
+                None => backend_local_check(true, locals),
+            },
+            _ => backend_local_check(false, locals),
+        }
+    }
+}
+
+fn statement_can_emit_with_locals(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement, locals: Vec[BackendLocal]) -> Bool {
+    statement_check_with_locals(program, function_value, statement, locals).ok
 }
 
 fn statement_can_emit(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement) -> Bool {
@@ -1709,36 +2102,44 @@ fn statement_can_emit(program: IrProgram, function_value: IrFunctionDef, stateme
                 Some(expr) => expr_statement_can_emit(program, function_value, expr),
                 None => true,
             },
+            IrLetStatement => let_statement_value_can_emit(program, function_value, statement, vec.new_vec()),
             _ => false,
         }
     }
 }
 
-fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+fn return_expr_can_emit_with_locals(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
     match value.kind {
         IrIntExpr => is_decimal_integer_text(value.text),
         IrBoolExpr => value.text == "true" || value.text == "false",
         IrStringExpr => llvm_type_for_id(program, function_value.return_type) == "%aic.String",
         IrUnitExpr => true,
-        IrNameExpr => return_name_can_emit(program, function_value, value.text, llvm_type_for_id(program, function_value.return_type)),
-        IrBinaryExpr => binary_expr_can_emit(value, function_value),
-        IrCallExpr => call_expr_can_emit(program, value, function_value),
-        IrIfExpr => if_expr_can_emit(program, value, function_value),
+        IrNameExpr => return_name_can_emit_with_locals(program, function_value, locals, value.text, llvm_type_for_id(program, function_value.return_type)),
+        IrBinaryExpr => binary_expr_can_emit_with_locals(value, function_value, locals),
+        IrCallExpr => call_expr_can_emit_with_locals(program, value, function_value, locals),
+        IrIfExpr => if_expr_can_emit_with_locals(program, value, function_value, locals),
         IrMatchExpr => match_expr_can_emit(value) || env_arg_or_empty_expr_can_emit(program, value, function_value),
-        IrStructLiteralExpr => struct_literal_expr_can_emit(program, value, function_value, llvm_type_for_id(program, function_value.return_type)),
+        IrStructLiteralExpr => struct_literal_expr_can_emit(program, value, function_value, locals, llvm_type_for_id(program, function_value.return_type)),
         _ => false,
     }
+}
+
+fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    return_expr_can_emit_with_locals(program, value, function_value, vec.new_vec())
 }
 
 fn block_can_emit(program: IrProgram, block: IrBlock, function_value: IrFunctionDef) -> Bool {
     let mut index = 0;
     let mut ok = true;
+    let mut locals: Vec[BackendLocal] = vec.new_vec();
     while ok && index < vec.vec_len(block.statements) {
         match vec.get(block.statements, index) {
-            Some(statement) => if statement_can_emit(program, function_value, statement) {
-                ()
+            Some(statement) => if true {
+                let checked = statement_check_with_locals(program, function_value, statement, locals);
+                ok = checked.ok;
+                locals = checked.locals;
             } else {
-                ok = false;
+                ()
             },
             None => (),
         };
@@ -1746,7 +2147,7 @@ fn block_can_emit(program: IrProgram, block: IrBlock, function_value: IrFunction
     };
     if ok {
         match block.tail_expr {
-            Some(expr) => return_expr_can_emit(program, expr, function_value),
+            Some(expr) => return_expr_can_emit_with_locals(program, expr, function_value, locals),
             None => llvm_type_for_id(program, function_value.return_type) == "void",
         }
     } else {
@@ -1804,10 +2205,19 @@ fn append_block_diagnostics(out: Vec[Diagnostic], block: IrBlock, max_errors: In
 fn append_backend_block_emission_diagnostics(out: Vec[Diagnostic], program: IrProgram, function_value: IrFunctionDef, max_errors: Int) -> Vec[Diagnostic] {
     let mut diagnostics = out;
     let mut index = 0;
+    let mut locals: Vec[BackendLocal] = vec.new_vec();
+    let mut statements_ok = true;
     while index < vec.vec_len(function_value.body.statements) {
         match vec.get(function_value.body.statements, index) {
-            Some(statement) => if vec.vec_len(diagnostics) < max_errors && !statement_can_emit(program, function_value, statement) {
-                diagnostics = push_backend_error(diagnostics, "E5101", statement.span, "self-host backend cannot emit this executable statement yet", "restrict backend-covered executable functions to side-effect-free literal lets and while false guards, or add statement lowering");
+            Some(statement) => if statements_ok && vec.vec_len(diagnostics) < max_errors {
+                let checked = statement_check_with_locals(program, function_value, statement, locals);
+                if checked.ok {
+                    locals = checked.locals;
+                } else {
+                    statements_ok = false;
+                    diagnostics = push_backend_error(diagnostics, "E5101", statement.span, "self-host backend cannot emit this executable statement yet", "restrict backend-covered executable functions to side-effect-free literal lets and while false guards, or add statement lowering");
+                };
+                ()
             } else {
                 ()
             },
@@ -1816,7 +2226,7 @@ fn append_backend_block_emission_diagnostics(out: Vec[Diagnostic], program: IrPr
         index = index + 1;
     };
     match function_value.body.tail_expr {
-        Some(expr) => if vec.vec_len(diagnostics) < max_errors && !return_expr_can_emit(program, expr, function_value) {
+        Some(expr) => if statements_ok && vec.vec_len(diagnostics) < max_errors && !return_expr_can_emit_with_locals(program, expr, function_value, locals) {
             diagnostics = push_backend_error(diagnostics, "E5101", expr.span, "self-host backend cannot emit this function return expression yet", "add expression lowering for this IR shape before emitting a backend artifact");
         } else {
             ()
@@ -2146,13 +2556,14 @@ fn binary_llvm_op(op: String) -> String {
     }
 }
 
-fn emit_call_arg_values(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String) -> String {
+fn emit_call_arg_values(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     let mut index = 0;
     while index < direct_expr_child_count(nodes) {
         match direct_expr_child_at(nodes, index) {
-            Some(node) => if call_target_param_type(program, callee_name, index) == "%aic.String" {
-                parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, node));
+            Some(node) => if true {
+                parts = vec.push(parts, emit_value_node(program, function_value, nodes, node, locals));
+                ()
             } else {
                 ()
             },
@@ -2163,15 +2574,33 @@ fn emit_call_arg_values(program: IrProgram, function_value: IrFunctionDef, nodes
     string.join(parts, "")
 }
 
-fn call_arg_node_value_name(program: IrProgram, function_value: IrFunctionDef, node: IrExprNode, expected: String) -> String {
+fn emit_node_call_arg_values(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < node.direct_child_count {
+        match expr_node_child_at(nodes, node, index) {
+            Some(child) => if true {
+                parts = vec.push(parts, emit_value_node(program, function_value, nodes, child, locals));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn call_arg_node_value_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal], expected: String) -> String {
     if expected == "%aic.String" {
-        string_node_value_name(node)
+        string_node_value_name_with_locals(function_value, locals, node)
     } else {
-        simple_node_llvm_value(node, function_value)
+        node_value_name(program, function_value, nodes, node, locals)
     }
 }
 
-fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String) -> String {
+fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     let mut index = 0;
     while index < direct_expr_child_count(nodes) {
@@ -2185,7 +2614,7 @@ fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[
                 };
                 parts = vec.push(parts, expected);
                 parts = vec.push(parts, " ");
-                parts = vec.push(parts, call_arg_node_value_name(program, function_value, node, expected));
+                parts = vec.push(parts, call_arg_node_value_name(program, function_value, nodes, node, locals, expected));
                 ()
             } else {
                 ()
@@ -2197,7 +2626,7 @@ fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[
     string.join(parts, "")
 }
 
-fn emit_node_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn emit_node_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     let mut index = 0;
     while index < node.direct_child_count {
@@ -2211,7 +2640,7 @@ fn emit_node_call_args(program: IrProgram, function_value: IrFunctionDef, nodes:
                 };
                 parts = vec.push(parts, expected);
                 parts = vec.push(parts, " ");
-                parts = vec.push(parts, call_arg_node_value_name(program, function_value, child, expected));
+                parts = vec.push(parts, call_arg_node_value_name(program, function_value, nodes, child, locals, expected));
                 ()
             } else {
                 ()
@@ -2713,6 +3142,13 @@ fn emit_string_replace_call(prefix: String, first_value: String, second_value: S
     string.join(parts, "")
 }
 
+fn string_node_value_name_with_locals(function_value: IrFunctionDef, locals: Vec[BackendLocal], node: IrExprNode) -> String {
+    match node.kind {
+        IrNameExpr => value_name_for_name(function_value, locals, node.text),
+        _ => llvm_node_value_local(node),
+    }
+}
+
 fn string_node_value_name(node: IrExprNode) -> String {
     match node.kind {
         IrNameExpr => concat2("%", backend_mangle_symbol(node.text)),
@@ -2720,40 +3156,40 @@ fn string_node_value_name(node: IrExprNode) -> String {
     }
 }
 
-fn emit_string_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn emit_string_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     match node.kind {
         IrStringExpr => emit_string_literal_value(llvm_string_node_global_name(function_value.name, node.node), node.text, llvm_node_prefix(node.node)),
         IrNameExpr => "",
-        IrFieldAccessExpr => emit_field_access_node_value(program, function_value, nodes, node),
+        IrFieldAccessExpr => emit_field_access_node_value(program, function_value, nodes, node, locals),
         IrCallExpr => if node.name == "string.replace" {
-            emit_string_replace_node_value(program, function_value, nodes, node)
+            emit_string_replace_node_value(program, function_value, nodes, node, locals)
         } else {
-            emit_string_direct_call_node_value(program, function_value, nodes, node)
+            emit_string_direct_call_node_value(program, function_value, nodes, node, locals)
         },
         _ => "",
     }
 }
 
-fn emit_string_replace_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn emit_string_replace_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     let first = match expr_node_child_at(nodes, node, 0) {
         Some(child) => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
-            string_node_value_name(child)
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child, locals));
+            string_node_value_name_with_locals(function_value, locals, child)
         } else { "" },
         None => "",
     };
     let second = match expr_node_child_at(nodes, node, 1) {
         Some(child) => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
-            string_node_value_name(child)
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child, locals));
+            string_node_value_name_with_locals(function_value, locals, child)
         } else { "" },
         None => "",
     };
     let third = match expr_node_child_at(nodes, node, 2) {
         Some(child) => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
-            string_node_value_name(child)
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child, locals));
+            string_node_value_name_with_locals(function_value, locals, child)
         } else { "" },
         None => "",
     };
@@ -2761,50 +3197,73 @@ fn emit_string_replace_node_value(program: IrProgram, function_value: IrFunction
     string.join(parts, "")
 }
 
-fn emit_string_direct_call_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn emit_string_direct_call_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
-    let mut index = 0;
-    while index < node.direct_child_count {
-        match expr_node_child_at(nodes, node, index) {
-            Some(child) => if call_target_param_type(program, node.name, index) == "%aic.String" {
-                parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
-            } else {
-                ()
-            },
-            None => (),
-        };
-        index = index + 1;
-    };
+    parts = vec.push(parts, emit_node_call_arg_values(program, function_value, nodes, node, locals));
     parts = vec.push(parts, "  ");
     parts = vec.push(parts, llvm_node_value_local(node));
     parts = vec.push(parts, " = call %aic.String @");
     parts = vec.push(parts, backend_mangle_symbol(node.name));
     parts = vec.push(parts, "(");
-    parts = vec.push(parts, emit_node_call_args(program, function_value, nodes, node));
+    parts = vec.push(parts, emit_node_call_args(program, function_value, nodes, node, locals));
     parts = vec.push(parts, ")\n");
     string.join(parts, "")
 }
 
-fn emit_string_replace_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+fn emit_direct_call_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    let ret = call_target_return_type(program, node.name);
+    if ret == "%aic.String" {
+        emit_string_direct_call_node_value(program, function_value, nodes, node, locals)
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, emit_node_call_arg_values(program, function_value, nodes, node, locals));
+        parts = vec.push(parts, "  ");
+        parts = vec.push(parts, llvm_node_value_local(node));
+        parts = vec.push(parts, " = call ");
+        parts = vec.push(parts, ret);
+        parts = vec.push(parts, " @");
+        parts = vec.push(parts, backend_mangle_symbol(node.name));
+        parts = vec.push(parts, "(");
+        parts = vec.push(parts, emit_node_call_args(program, function_value, nodes, node, locals));
+        parts = vec.push(parts, ")\n");
+        string.join(parts, "")
+    }
+}
+
+fn emit_value_node(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    match node.kind {
+        IrStringExpr => emit_string_node_value(program, function_value, nodes, node, locals),
+        IrFieldAccessExpr => emit_field_access_node_value(program, function_value, nodes, node, locals),
+        IrCallExpr => if node.name == "string.replace" {
+            emit_string_replace_node_value(program, function_value, nodes, node, locals)
+        } else {
+            emit_direct_call_node_value(program, function_value, nodes, node, locals)
+        },
+        IrStructLiteralExpr => emit_struct_literal_node_value(program, function_value, nodes, node, locals, value_node_llvm_type(program, function_value, nodes, node, locals)),
+        _ => "",
+    }
+}
+
+fn emit_string_replace_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     let first = match direct_expr_child_at(expr.nodes, 0) {
         Some(child) => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
-            string_node_value_name(child)
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child, locals));
+            string_node_value_name_with_locals(function_value, locals, child)
         } else { "" },
         None => "",
     };
     let second = match direct_expr_child_at(expr.nodes, 1) {
         Some(child) => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
-            string_node_value_name(child)
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child, locals));
+            string_node_value_name_with_locals(function_value, locals, child)
         } else { "" },
         None => "",
     };
     let third = match direct_expr_child_at(expr.nodes, 2) {
         Some(child) => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
-            string_node_value_name(child)
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child, locals));
+            string_node_value_name_with_locals(function_value, locals, child)
         } else { "" },
         None => "",
     };
@@ -2812,17 +3271,25 @@ fn emit_string_replace_expr_value(program: IrProgram, function_value: IrFunction
     string.join(parts, "")
 }
 
-fn emit_string_direct_call_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+fn emit_string_direct_call_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name, locals));
     parts = vec.push(parts, "  ");
     parts = vec.push(parts, llvm_expr_value_local(expr));
     parts = vec.push(parts, " = call %aic.String @");
     parts = vec.push(parts, backend_mangle_symbol(expr.name));
     parts = vec.push(parts, "(");
-    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name, locals));
     parts = vec.push(parts, ")\n");
     string.join(parts, "")
+}
+
+fn bool_node_value_name_with_locals(function_value: IrFunctionDef, locals: Vec[BackendLocal], node: IrExprNode) -> String {
+    match node.kind {
+        IrBoolExpr => if node.text == "true" { "1" } else { "0" },
+        IrNameExpr => value_name_for_name(function_value, locals, node.text),
+        _ => llvm_node_value_local(node),
+    }
 }
 
 fn bool_node_value_name(node: IrExprNode) -> String {
@@ -2833,22 +3300,22 @@ fn bool_node_value_name(node: IrExprNode) -> String {
     }
 }
 
-fn emit_bool_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn emit_bool_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     match node.kind {
         IrBoolExpr => "",
         IrNameExpr => "",
-        IrBinaryExpr => emit_compare_node_value(program, function_value, nodes, node),
+        IrBinaryExpr => emit_compare_node_value(program, function_value, nodes, node, locals),
         _ => "",
     }
 }
 
-fn emit_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+fn emit_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
     match expr_node_child_at(nodes, node, 0) {
         Some(left) => match expr_node_child_at(nodes, node, 1) {
-            Some(right) => if string_call_child_can_emit(program, function_value, nodes, left) && string_call_child_can_emit(program, function_value, nodes, right) {
-                emit_string_compare_node_value(program, function_value, nodes, node, left, right)
+            Some(right) => if string_call_child_can_emit(program, function_value, nodes, left, locals) && string_call_child_can_emit(program, function_value, nodes, right, locals) {
+                emit_string_compare_node_value(program, function_value, nodes, node, left, right, locals)
             } else {
-                emit_primitive_compare_node_value(program, function_value, node, left, right)
+                emit_primitive_compare_node_value(program, function_value, nodes, node, left, right, locals)
             },
             None => "",
         },
@@ -2856,9 +3323,11 @@ fn emit_compare_node_value(program: IrProgram, function_value: IrFunctionDef, no
     }
 }
 
-fn emit_primitive_compare_node_value(program: IrProgram, function_value: IrFunctionDef, node: IrExprNode, left: IrExprNode, right: IrExprNode) -> String {
-    let ty = simple_node_llvm_type(program, left, function_value);
+fn emit_primitive_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, left: IrExprNode, right: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    let ty = value_node_llvm_type(program, function_value, nodes, left, locals);
     let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, emit_value_node(program, function_value, nodes, left, locals));
+    parts = vec.push(parts, emit_value_node(program, function_value, nodes, right, locals));
     parts = vec.push(parts, "  ");
     parts = vec.push(parts, llvm_node_value_local(node));
     parts = vec.push(parts, " = icmp ");
@@ -2866,19 +3335,19 @@ fn emit_primitive_compare_node_value(program: IrProgram, function_value: IrFunct
     parts = vec.push(parts, " ");
     parts = vec.push(parts, ty);
     parts = vec.push(parts, " ");
-    parts = vec.push(parts, simple_node_llvm_value(left, function_value));
+    parts = vec.push(parts, node_value_name(program, function_value, nodes, left, locals));
     parts = vec.push(parts, ", ");
-    parts = vec.push(parts, simple_node_llvm_value(right, function_value));
+    parts = vec.push(parts, node_value_name(program, function_value, nodes, right, locals));
     parts = vec.push(parts, "\n");
     string.join(parts, "")
 }
 
-fn emit_string_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, left: IrExprNode, right: IrExprNode) -> String {
-    let left_name = string_node_value_name(left);
-    let right_name = string_node_value_name(right);
+fn emit_string_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, left: IrExprNode, right: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    let left_name = string_node_value_name_with_locals(function_value, locals, left);
+    let right_name = string_node_value_name_with_locals(function_value, locals, right);
     let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, left));
-    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, right));
+    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, left, locals));
+    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, right, locals));
     parts = vec.push(parts, emit_string_extracts(left_name, concat2(llvm_node_prefix(node.node), ".lhs")));
     parts = vec.push(parts, emit_string_extracts(right_name, concat2(llvm_node_prefix(node.node), ".rhs")));
     parts = vec.push(parts, "  ");
@@ -2936,7 +3405,7 @@ fn emit_return_name_value(program: IrProgram, function_value: IrFunctionDef, nam
     string.join(parts, "")
 }
 
-fn emit_return_node(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+fn emit_return_node_with_locals(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     match node.kind {
         IrIntExpr => if true {
@@ -2965,24 +3434,42 @@ fn emit_return_node(program: IrProgram, function_value: IrFunctionDef, nodes: Ve
             ()
         } else { () },
         IrNameExpr => if true {
-            parts = vec.push(parts, emit_return_name_value(program, function_value, node.text, ret, llvm_node_prefix(node.node)));
+            let value_name = value_name_for_name(function_value, locals, node.text);
+            if value_name == value_name_for_param(function_value, node.text) {
+                parts = vec.push(parts, emit_return_name_value(program, function_value, node.text, ret, llvm_node_prefix(node.node)));
+            } else {
+                parts = vec.push(parts, "  ret ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, value_name);
+                parts = vec.push(parts, "\n");
+            };
             ()
         } else { () },
-        IrCallExpr => if true {
-            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, node));
+        IrFieldAccessExpr => if true {
+            parts = vec.push(parts, emit_field_access_node_value(program, function_value, nodes, node, locals));
             parts = vec.push(parts, "  ret ");
             parts = vec.push(parts, ret);
             parts = vec.push(parts, " ");
-            parts = vec.push(parts, string_node_value_name(node));
+            parts = vec.push(parts, llvm_node_value_local(node));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrCallExpr => if true {
+            parts = vec.push(parts, emit_value_node(program, function_value, nodes, node, locals));
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, node_value_name(program, function_value, nodes, node, locals));
             parts = vec.push(parts, "\n");
             ()
         } else { () },
         IrIfExpr => if true {
-            parts = vec.push(parts, emit_if_node_return(program, function_value, nodes, node, ret));
+            parts = vec.push(parts, emit_if_node_return(program, function_value, nodes, node, ret, locals));
             ()
         } else { () },
         IrStructLiteralExpr => if true {
-            parts = vec.push(parts, emit_struct_literal_node_value(program, function_value, nodes, node, ret));
+            parts = vec.push(parts, emit_struct_literal_node_value(program, function_value, nodes, node, locals, ret));
             parts = vec.push(parts, "  ret ");
             parts = vec.push(parts, ret);
             parts = vec.push(parts, " ");
@@ -2995,22 +3482,23 @@ fn emit_return_node(program: IrProgram, function_value: IrFunctionDef, nodes: Ve
     string.join(parts, "")
 }
 
-fn emit_block_tail_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String) -> String {
-    match expr_node_child_at(nodes, block_node, 0) {
-        Some(child) => emit_return_node(program, function_value, nodes, child, ret),
-        None => "",
-    }
+fn emit_return_node(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+    emit_return_node_with_locals(program, function_value, nodes, node, ret, vec.new_vec())
 }
 
-fn emit_branch_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], branch_node: IrExprNode, ret: String) -> String {
+fn emit_block_tail_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> String {
+    emit_block_node_return(program, function_value, nodes, block_node, ret, locals)
+}
+
+fn emit_branch_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], branch_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> String {
     if is_block_expr_kind(branch_node.kind) {
-        emit_block_tail_return(program, function_value, nodes, branch_node, ret)
+        emit_block_tail_return(program, function_value, nodes, branch_node, ret, locals)
     } else {
-        emit_return_node(program, function_value, nodes, branch_node, ret)
+        emit_return_node_with_locals(program, function_value, nodes, branch_node, ret, locals)
     }
 }
 
-fn emit_if_node_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+fn emit_if_node_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> String {
     match expr_node_child_at(nodes, node, 0) {
         Some(condition) => match expr_node_child_at(nodes, node, 1) {
             Some(then_block) => match expr_node_child_at(nodes, node, 2) {
@@ -3018,9 +3506,9 @@ fn emit_if_node_return(program: IrProgram, function_value: IrFunctionDef, nodes:
                     let then_label = concat2("if.then.", string.int_to_string(node.node.value));
                     let else_label = concat2("if.else.", string.int_to_string(node.node.value));
                     let mut parts: Vec[String] = vec.new_vec();
-                    parts = vec.push(parts, emit_bool_node_value(program, function_value, nodes, condition));
+                    parts = vec.push(parts, emit_bool_node_value(program, function_value, nodes, condition, locals));
                     parts = vec.push(parts, "  br i1 ");
-                    parts = vec.push(parts, bool_node_value_name(condition));
+                    parts = vec.push(parts, bool_node_value_name_with_locals(function_value, locals, condition));
                     parts = vec.push(parts, ", label %");
                     parts = vec.push(parts, then_label);
                     parts = vec.push(parts, ", label %");
@@ -3028,10 +3516,10 @@ fn emit_if_node_return(program: IrProgram, function_value: IrFunctionDef, nodes:
                     parts = vec.push(parts, "\n");
                     parts = vec.push(parts, then_label);
                     parts = vec.push(parts, ":\n");
-                    parts = vec.push(parts, emit_branch_return(program, function_value, nodes, then_block, ret));
+                    parts = vec.push(parts, emit_branch_return(program, function_value, nodes, then_block, ret, locals));
                     parts = vec.push(parts, else_label);
                     parts = vec.push(parts, ":\n");
-                    parts = vec.push(parts, emit_branch_return(program, function_value, nodes, else_block, ret));
+                    parts = vec.push(parts, emit_branch_return(program, function_value, nodes, else_block, ret, locals));
                     string.join(parts, "")
                 } else { "" },
                 None => "",
@@ -3042,7 +3530,7 @@ fn emit_if_node_return(program: IrProgram, function_value: IrFunctionDef, nodes:
     }
 }
 
-fn emit_if_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+fn emit_if_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String, locals: Vec[BackendLocal]) -> String {
     match direct_expr_child_at(expr.nodes, 0) {
         Some(condition) => match direct_expr_child_at(expr.nodes, 1) {
             Some(then_block) => match direct_expr_child_at(expr.nodes, 2) {
@@ -3050,9 +3538,9 @@ fn emit_if_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: 
                     let then_label = concat2("if.then.", string.int_to_string(expr.node.value));
                     let else_label = concat2("if.else.", string.int_to_string(expr.node.value));
                     let mut parts: Vec[String] = vec.new_vec();
-                    parts = vec.push(parts, emit_bool_node_value(program, function_value, expr.nodes, condition));
+                    parts = vec.push(parts, emit_bool_node_value(program, function_value, expr.nodes, condition, locals));
                     parts = vec.push(parts, "  br i1 ");
-                    parts = vec.push(parts, bool_node_value_name(condition));
+                    parts = vec.push(parts, bool_node_value_name_with_locals(function_value, locals, condition));
                     parts = vec.push(parts, ", label %");
                     parts = vec.push(parts, then_label);
                     parts = vec.push(parts, ", label %");
@@ -3060,10 +3548,10 @@ fn emit_if_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: 
                     parts = vec.push(parts, "\n");
                     parts = vec.push(parts, then_label);
                     parts = vec.push(parts, ":\n");
-                    parts = vec.push(parts, emit_branch_return(program, function_value, expr.nodes, then_block, ret));
+                    parts = vec.push(parts, emit_branch_return(program, function_value, expr.nodes, then_block, ret, locals));
                     parts = vec.push(parts, else_label);
                     parts = vec.push(parts, ":\n");
-                    parts = vec.push(parts, emit_branch_return(program, function_value, expr.nodes, else_block, ret));
+                    parts = vec.push(parts, emit_branch_return(program, function_value, expr.nodes, else_block, ret, locals));
                     string.join(parts, "")
                 } else { "" },
                 None => "",
@@ -3072,6 +3560,35 @@ fn emit_if_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: 
         },
         None => "",
     }
+}
+
+fn emit_let_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    emit_value_node(program, function_value, nodes, node, locals)
+}
+
+fn emit_block_node_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String, locals: Vec[BackendLocal]) -> String {
+    let mut out_locals = locals;
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    let mut done = false;
+    while !done && index < block_node.direct_child_count {
+        match expr_node_child_at(nodes, block_node, index) {
+            Some(child) => if block_child_is_let(child) {
+                parts = vec.push(parts, emit_let_node_value(program, function_value, nodes, child, out_locals));
+                out_locals = push_node_local(program, function_value, nodes, child, out_locals);
+                ()
+            } else if block_child_is_tail(child) {
+                parts = vec.push(parts, emit_return_node_with_locals(program, function_value, nodes, child, ret, out_locals));
+                done = true;
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
 }
 
 fn io_print_runtime_name(name: String) -> String {
@@ -3082,13 +3599,13 @@ fn io_print_runtime_name(name: String) -> String {
     }
 }
 
-fn emit_io_print_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+fn emit_io_print_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
     match direct_expr_child_at(expr.nodes, 0) {
         Some(child) => if true {
-            let arg_name = string_node_value_name(child);
+            let arg_name = string_node_value_name_with_locals(function_value, locals, child);
             let prefix = llvm_expr_prefix(expr.node);
             let mut parts: Vec[String] = vec.new_vec();
-            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child, locals));
             parts = vec.push(parts, emit_string_extracts(arg_name, prefix));
             parts = vec.push(parts, "  call void ");
             parts = vec.push(parts, io_print_runtime_name(expr.name));
@@ -3156,17 +3673,17 @@ fn emit_fs_error_value(prefix: String, raw_code_name: String) -> String {
     string.join(parts, "")
 }
 
-fn emit_fs_string_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+fn emit_fs_string_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal], ret: String) -> String {
     match direct_expr_child_at(expr.nodes, 0) {
         Some(child) => if true {
             let prefix = llvm_expr_prefix(expr.node);
-            let arg_name = string_node_value_name(child);
+            let arg_name = string_node_value_name_with_locals(function_value, locals, child);
             let arg_prefix = concat2(prefix, ".arg0");
             let ok_label = concat2("fs.ok.", string.int_to_string(expr.node.value));
             let err_label = concat2("fs.err.", string.int_to_string(expr.node.value));
             let err_ty = known_no_payload_enum_llvm_type("FsError");
             let mut parts: Vec[String] = vec.new_vec();
-            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child, locals));
             parts = vec.push(parts, emit_string_extracts(arg_name, arg_prefix));
             parts = vec.push(parts, "  ");
             parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
@@ -3267,24 +3784,24 @@ fn emit_fs_string_result_expr_return(program: IrProgram, function_value: IrFunct
     }
 }
 
-fn emit_fs_bool_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+fn emit_fs_bool_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal], ret: String) -> String {
     match direct_expr_child_at(expr.nodes, 0) {
         Some(path_child) => if true {
             let prefix = llvm_expr_prefix(expr.node);
-            let path_name = string_node_value_name(path_child);
+            let path_name = string_node_value_name_with_locals(function_value, locals, path_child);
             let path_prefix = concat2(prefix, ".path");
             let ok_label = concat2("fs.ok.", string.int_to_string(expr.node.value));
             let err_label = concat2("fs.err.", string.int_to_string(expr.node.value));
             let err_ty = known_no_payload_enum_llvm_type("FsError");
             let mut parts: Vec[String] = vec.new_vec();
-            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, path_child));
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, path_child, locals));
             parts = vec.push(parts, emit_string_extracts(path_name, path_prefix));
             if expr.name == "write_text" {
                 match direct_expr_child_at(expr.nodes, 1) {
                     Some(content_child) => if true {
-                        let content_name = string_node_value_name(content_child);
+                        let content_name = string_node_value_name_with_locals(function_value, locals, content_child);
                         let content_prefix = concat2(prefix, ".content");
-                        parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, content_child));
+                        parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, content_child, locals));
                         parts = vec.push(parts, emit_string_extracts(content_name, content_prefix));
                         parts = vec.push(parts, "  ");
                         parts = vec.push(parts, llvm_local(prefix, ".rc"));
@@ -3475,23 +3992,23 @@ fn struct_literal_value_name(prefix: String, field_count: Int, ret: String) -> S
     }
 }
 
-fn struct_literal_child_value_name(child: IrExprNode, expected: String, function_value: IrFunctionDef) -> String {
+fn struct_literal_child_value_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, locals: Vec[BackendLocal], expected: String) -> String {
     if expected == "%aic.String" {
-        string_node_value_name(child)
+        string_node_value_name_with_locals(function_value, locals, child)
     } else {
-        simple_node_llvm_value(child, function_value)
+        node_value_name(program, function_value, nodes, child, locals)
     }
 }
 
-fn emit_struct_literal_child_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, expected: String) -> String {
+fn emit_struct_literal_child_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, locals: Vec[BackendLocal], expected: String) -> String {
     if expected == "%aic.String" {
-        emit_string_node_value(program, function_value, nodes, child)
+        emit_string_node_value(program, function_value, nodes, child, locals)
     } else {
-        ""
+        emit_value_node(program, function_value, nodes, child, locals)
     }
 }
 
-fn emit_struct_literal_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+fn emit_struct_literal_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal], ret: String) -> String {
     let prefix = llvm_node_prefix(node.node);
     let mut parts: Vec[String] = vec.new_vec();
     let mut index = 0;
@@ -3504,7 +4021,7 @@ fn emit_struct_literal_node_value(program: IrProgram, function_value: IrFunction
                 } else {
                     struct_literal_field_local(prefix, index - 1)
                 };
-                parts = vec.push(parts, emit_struct_literal_child_value(program, function_value, nodes, child, field_ty));
+                parts = vec.push(parts, emit_struct_literal_child_value(program, function_value, nodes, child, locals, field_ty));
                 parts = vec.push(parts, "  ");
                 parts = vec.push(parts, struct_literal_field_local(prefix, index));
                 parts = vec.push(parts, " = insertvalue ");
@@ -3514,7 +4031,7 @@ fn emit_struct_literal_node_value(program: IrProgram, function_value: IrFunction
                 parts = vec.push(parts, ", ");
                 parts = vec.push(parts, field_ty);
                 parts = vec.push(parts, " ");
-                parts = vec.push(parts, struct_literal_child_value_name(child, field_ty, function_value));
+                parts = vec.push(parts, struct_literal_child_value_name(program, function_value, nodes, child, locals, field_ty));
                 parts = vec.push(parts, ", ");
                 parts = vec.push(parts, string.int_to_string(index));
                 parts = vec.push(parts, "\n");
@@ -3527,7 +4044,7 @@ fn emit_struct_literal_node_value(program: IrProgram, function_value: IrFunction
     string.join(parts, "")
 }
 
-fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal], ret: String) -> String {
     let prefix = llvm_expr_prefix(expr.node);
     let mut parts: Vec[String] = vec.new_vec();
     let mut index = 0;
@@ -3540,7 +4057,7 @@ fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunction
                 } else {
                     struct_literal_field_local(prefix, index - 1)
                 };
-                parts = vec.push(parts, emit_struct_literal_child_value(program, function_value, expr.nodes, child, field_ty));
+                parts = vec.push(parts, emit_struct_literal_child_value(program, function_value, expr.nodes, child, locals, field_ty));
                 parts = vec.push(parts, "  ");
                 parts = vec.push(parts, struct_literal_field_local(prefix, index));
                 parts = vec.push(parts, " = insertvalue ");
@@ -3550,7 +4067,7 @@ fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunction
                 parts = vec.push(parts, ", ");
                 parts = vec.push(parts, field_ty);
                 parts = vec.push(parts, " ");
-                parts = vec.push(parts, struct_literal_child_value_name(child, field_ty, function_value));
+                parts = vec.push(parts, struct_literal_child_value_name(program, function_value, expr.nodes, child, locals, field_ty));
                 parts = vec.push(parts, ", ");
                 parts = vec.push(parts, string.int_to_string(index));
                 parts = vec.push(parts, "\n");
@@ -3563,15 +4080,65 @@ fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunction
     string.join(parts, "")
 }
 
-fn emit_void_call_expr_statement(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+fn emit_void_call_expr_statement(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
     let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name, locals));
     parts = vec.push(parts, "  call void @");
     parts = vec.push(parts, backend_mangle_symbol(expr.name));
     parts = vec.push(parts, "(");
-    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name, locals));
     parts = vec.push(parts, ")\n");
     string.join(parts, "")
+}
+
+fn emit_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
+    match expr.kind {
+        IrStringExpr => emit_string_literal_value(llvm_string_global_name(function_value.name), expr.text, llvm_expr_prefix(expr.node)),
+        IrCallExpr => if expr.name == "string.replace" {
+            emit_string_replace_expr_value(program, function_value, expr, locals)
+        } else if call_target_return_type(program, expr.name) == "%aic.String" {
+            emit_string_direct_call_expr_value(program, function_value, expr, locals)
+        } else {
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name, locals));
+            parts = vec.push(parts, "  ");
+            parts = vec.push(parts, llvm_expr_value_local(expr));
+            parts = vec.push(parts, " = call ");
+            parts = vec.push(parts, call_target_return_type(program, expr.name));
+            parts = vec.push(parts, " @");
+            parts = vec.push(parts, backend_mangle_symbol(expr.name));
+            parts = vec.push(parts, "(");
+            parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name, locals));
+            parts = vec.push(parts, ")\n");
+            string.join(parts, "")
+        },
+        IrStructLiteralExpr => emit_struct_literal_expr_value(program, function_value, expr, locals, value_expr_llvm_type(program, expr, function_value, locals)),
+        _ => "",
+    }
+}
+
+fn emit_statement_with_locals(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement, locals: Vec[BackendLocal]) -> BackendStatementEmission {
+    match statement.kind {
+        IrLetStatement => match statement.expr {
+            Some(expr) => if true {
+                let text = emit_expr_value(program, function_value, expr, locals);
+                backend_statement_emission(text, vec.push(locals, local_for_expr(program, function_value, expr, locals, statement.name)))
+            } else { backend_statement_emission("", locals) },
+            None => backend_statement_emission("", locals),
+        },
+        IrExprStatement => match statement.expr {
+            Some(expr) => match expr.kind {
+                IrCallExpr => if call_target_return_type(program, expr.name) == "void" {
+                    backend_statement_emission(emit_void_call_expr_statement(program, function_value, expr, locals), locals)
+                } else {
+                    backend_statement_emission("", locals)
+                },
+                _ => backend_statement_emission("", locals),
+            },
+            None => backend_statement_emission("", locals),
+        },
+        _ => backend_statement_emission("", locals),
+    }
 }
 
 fn emit_statement(program: IrProgram, function_value: IrFunctionDef, statement: IrStatement) -> String {
@@ -3579,7 +4146,7 @@ fn emit_statement(program: IrProgram, function_value: IrFunctionDef, statement: 
         IrExprStatement => match statement.expr {
             Some(expr) => match expr.kind {
                 IrCallExpr => if call_target_return_type(program, expr.name) == "void" {
-                    emit_void_call_expr_statement(program, function_value, expr)
+                    emit_void_call_expr_statement(program, function_value, expr, vec.new_vec())
                 } else {
                     ""
                 },
@@ -3591,13 +4158,21 @@ fn emit_statement(program: IrProgram, function_value: IrFunctionDef, statement: 
     }
 }
 
-fn emit_block_statements(program: IrProgram, function_value: IrFunctionDef) -> String {
+fn emit_block_statements(program: IrProgram, function_value: IrFunctionDef) -> BackendStatementEmission {
     let mut parts: Vec[String] = vec.new_vec();
+    let mut locals: Vec[BackendLocal] = vec.new_vec();
     let mut index = 0;
     while index < vec.vec_len(function_value.body.statements) {
         match vec.get(function_value.body.statements, index) {
-            Some(statement) => if statement_can_emit(program, function_value, statement) {
-                parts = vec.push(parts, emit_statement(program, function_value, statement));
+            Some(statement) => if true {
+                let checked = statement_check_with_locals(program, function_value, statement, locals);
+                if checked.ok {
+                    let emitted = emit_statement_with_locals(program, function_value, statement, locals);
+                    parts = vec.push(parts, emitted.text);
+                    locals = emitted.locals;
+                } else {
+                    ()
+                };
                 ()
             } else {
                 ()
@@ -3606,10 +4181,10 @@ fn emit_block_statements(program: IrProgram, function_value: IrFunctionDef) -> S
         };
         index = index + 1;
     };
-    string.join(parts, "")
+    backend_statement_emission(string.join(parts, ""), locals)
 }
 
-fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal], ret: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     match expr.kind {
         IrIntExpr => if true {
@@ -3654,7 +4229,16 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrNameExpr => if true {
-            parts = vec.push(parts, emit_return_name_value(program, function_value, expr.text, ret, llvm_expr_prefix(expr.node)));
+            let value_name = value_name_for_name(function_value, locals, expr.text);
+            if value_name == value_name_for_param(function_value, expr.text) {
+                parts = vec.push(parts, emit_return_name_value(program, function_value, expr.text, ret, llvm_expr_prefix(expr.node)));
+            } else {
+                parts = vec.push(parts, "  ret ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, value_name);
+                parts = vec.push(parts, "\n");
+            };
             ()
         } else { () },
         IrBinaryExpr => if true {
@@ -3666,9 +4250,9 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
                         parts = vec.push(parts, " ");
                         parts = vec.push(parts, ret);
                         parts = vec.push(parts, " ");
-                        parts = vec.push(parts, simple_node_llvm_value(left, function_value));
+                        parts = vec.push(parts, simple_node_llvm_value_with_locals(left, function_value, locals));
                         parts = vec.push(parts, ", ");
-                        parts = vec.push(parts, simple_node_llvm_value(right, function_value));
+                        parts = vec.push(parts, simple_node_llvm_value_with_locals(right, function_value, locals));
                         parts = vec.push(parts, "\n  ret ");
                         parts = vec.push(parts, ret);
                         parts = vec.push(parts, " %ret\n");
@@ -3682,13 +4266,13 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
         } else { () },
         IrCallExpr => if true {
             if is_io_print_intrinsic_name(expr.name) {
-                parts = vec.push(parts, emit_io_print_expr_return(program, function_value, expr));
+                parts = vec.push(parts, emit_io_print_expr_return(program, function_value, expr, locals));
             } else if is_fs_string_result_intrinsic_name(expr.name) {
-                parts = vec.push(parts, emit_fs_string_result_expr_return(program, function_value, expr, ret));
+                parts = vec.push(parts, emit_fs_string_result_expr_return(program, function_value, expr, locals, ret));
             } else if is_fs_bool_result_intrinsic_name(expr.name) {
-                parts = vec.push(parts, emit_fs_bool_result_expr_return(program, function_value, expr, ret));
+                parts = vec.push(parts, emit_fs_bool_result_expr_return(program, function_value, expr, locals, ret));
             } else if expr.name == "string.replace" {
-                parts = vec.push(parts, emit_string_replace_expr_value(program, function_value, expr));
+                parts = vec.push(parts, emit_string_replace_expr_value(program, function_value, expr, locals));
                 parts = vec.push(parts, "  ret ");
                 parts = vec.push(parts, ret);
                 parts = vec.push(parts, " ");
@@ -3697,20 +4281,20 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             } else {
                 let call_ret = call_target_return_type(program, expr.name);
                 if call_ret == "%aic.String" {
-                    parts = vec.push(parts, emit_string_direct_call_expr_value(program, function_value, expr));
+                    parts = vec.push(parts, emit_string_direct_call_expr_value(program, function_value, expr, locals));
                     parts = vec.push(parts, "  ret ");
                     parts = vec.push(parts, ret);
                     parts = vec.push(parts, " ");
                     parts = vec.push(parts, llvm_expr_value_local(expr));
                     parts = vec.push(parts, "\n");
                 } else {
-                    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name));
+                    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name, locals));
                     parts = vec.push(parts, "  %ret = call ");
                     parts = vec.push(parts, call_ret);
                     parts = vec.push(parts, " @");
                     parts = vec.push(parts, backend_mangle_symbol(expr.name));
                     parts = vec.push(parts, "(");
-                    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name));
+                    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name, locals));
                     parts = vec.push(parts, ")\n  ret ");
                     parts = vec.push(parts, ret);
                     parts = vec.push(parts, " %ret\n");
@@ -3719,7 +4303,7 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrIfExpr => if true {
-            parts = vec.push(parts, emit_if_expr_return(program, function_value, expr, ret));
+            parts = vec.push(parts, emit_if_expr_return(program, function_value, expr, ret, locals));
             ()
         } else { () },
         IrMatchExpr => if true {
@@ -3742,7 +4326,7 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrStructLiteralExpr => if true {
-            parts = vec.push(parts, emit_struct_literal_expr_value(program, function_value, expr, ret));
+            parts = vec.push(parts, emit_struct_literal_expr_value(program, function_value, expr, locals, ret));
             parts = vec.push(parts, "  ret ");
             parts = vec.push(parts, ret);
             parts = vec.push(parts, " ");
@@ -3767,10 +4351,11 @@ fn emit_function_llvm(program: IrProgram, function_value: IrFunctionDef) -> Stri
     parts = vec.push(parts, "(");
     parts = vec.push(parts, params);
     parts = vec.push(parts, ") {\nentry:\n");
-    parts = vec.push(parts, emit_block_statements(program, function_value));
+    let emitted_statements = emit_block_statements(program, function_value);
+    parts = vec.push(parts, emitted_statements.text);
     match function_value.body.tail_expr {
         Some(expr) => if true {
-            parts = vec.push(parts, emit_return_expr(program, function_value, expr, ret));
+            parts = vec.push(parts, emit_return_expr(program, function_value, expr, emitted_statements.locals, ret));
             ()
         } else { () },
         None => if ret == "void" {

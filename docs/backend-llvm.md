@@ -32,11 +32,13 @@ The backend emits executable LLVM for the backend-covered primitive forms:
 - runtime-backed `string.replace` return expressions over string literals, string parameters, and nested replacement calls
 - string field extraction from backend-covered struct parameters when passed to supported string calls
 - parameter returns
+- local `let` bindings for backend-covered primitive, string, aggregate call, struct field, and struct literal values
 - return-position struct literals whose fields are backend-covered primitive, string, or aggregate parameter values
 - lossless integer widening on returns, such as `Int32` aliases returning through an `Int` function boundary
 - integer `+`, `-`, and `*` over primitive operands
 - direct primitive function calls
 - return-position `if` expressions over primitive comparisons and string equality/inequality
+- nested block expression branches with backend-covered local bindings and tail returns
 - tail-position `print_str` and `eprint_str` calls lowered to runtime stdout/stderr calls for unit-returning functions
 - runtime-backed `std.env.arg_at` option matches in the canonical `Some(value) => value, None => ""` form
 - runtime-backed `std.fs.read_text`, `std.fs.temp_file`, `std.fs.write_text`, and `std.fs.delete` return expressions for the supported `Result[String, FsError]` and `Result[Bool, FsError]` ABI layouts

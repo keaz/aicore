@@ -1717,7 +1717,7 @@ fn string_vec_contains(values: Vec[String], target: String) -> Bool {
 }
 
 fn backend_positive_source() -> String {
-    "module app.main; fn add(x: Int, y: Int) -> Int { x + y } fn bool_id(flag: Bool) -> Bool { flag } fn bool_call() -> Bool { bool_id(true) } fn int_if(x: Int) -> Int { if x == 0 { 1 } else { x } } fn string_id(s: String) -> String { s } fn string_lit() -> String { \"ok\" } fn string_if(s: String) -> String { if s == \"\" { \"empty\" } else { s } } type ProcExitStatus = Int32; fn status_id(status: ProcExitStatus) -> ProcExitStatus { status } fn status_to_int(status: ProcExitStatus) -> Int { status } fn matched() -> Int { match true { true => 1, false => 0, } } fn loop_value() -> Int { while false { }; 1 } fn generic_one[T]() -> Int { 1 } async fn future() -> Int { 1 } fn closure_tuple() -> Int { let closure = || -> Int { 1 }; let tuple = (1, true); 1 } fn main() -> Int { add(40, 2) } struct Pair { left: Int, right: Int, } fn pair_value() -> Pair { Pair { left: 1, right: 2 } } struct Log { stdout: String, exit_code: Int, } fn sink(value: String) -> () { () } fn flush(log: Log) -> Int { sink(log.stdout); 0 } struct FileHandle { raw: Int, } enum Choice { One, Two(Int), } enum SmallError { NotFound, Io, } enum Result[T, E] { Ok(T), Err(E), } fn result_id(value: Result[String, SmallError]) -> Result[String, SmallError] { value } type Count = Int; const BASE: Count = 40; trait Score[T]; impl Score[Pair];"
+    "module app.main; fn add(x: Int, y: Int) -> Int { x + y } fn bool_id(flag: Bool) -> Bool { flag } fn bool_call() -> Bool { bool_id(true) } fn int_if(x: Int) -> Int { if x == 0 { 1 } else { x } } fn string_id(s: String) -> String { s } fn string_lit() -> String { \"ok\" } fn string_if(s: String) -> String { if s == \"\" { \"empty\" } else { s } } fn local_string(s: String) -> String { let value = string_id(s); value } fn branch_local(s: String) -> String { if s == \"\" { \"empty\" } else { let value = string_id(s); value } } type ProcExitStatus = Int32; fn status_id(status: ProcExitStatus) -> ProcExitStatus { status } fn status_to_int(status: ProcExitStatus) -> Int { status } fn matched() -> Int { match true { true => 1, false => 0, } } fn loop_value() -> Int { while false { }; 1 } fn generic_one[T]() -> Int { 1 } async fn future() -> Int { 1 } fn closure_tuple() -> Int { let closure = || -> Int { 1 }; let tuple = (1, true); 1 } fn main() -> Int { add(40, 2) } struct Pair { left: Int, right: Int, } fn pair_value() -> Pair { Pair { left: 1, right: 2 } } struct Log { stdout: String, exit_code: Int, } fn sink(value: String) -> () { () } fn flush(log: Log) -> Int { sink(log.stdout); 0 } fn log_status(log: Log) -> Int { if log.exit_code == 0 { 1 } else { log.exit_code } } struct FileHandle { raw: Int, } enum Choice { One, Two(Int), } enum SmallError { NotFound, Io, } enum Result[T, E] { Ok(T), Err(E), } fn result_id(value: Result[String, SmallError]) -> Result[String, SmallError] { value } type Count = Int; const BASE: Count = 40; trait Score[T]; impl Score[Pair];"
 }
 
 fn backend_positive_status_code() -> Int {
@@ -1792,6 +1792,12 @@ fn backend_positive_status_code() -> Int {
                 651
             } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_string_compare") {
                 652
+            } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_local_string(%aic.String %aic_s)") {
+                670
+            } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_branch_local(%aic.String %aic_s)") {
+                671
+            } else if !string.contains(artifact.llvm_ir, "call %aic.String @aic_string_id(%aic.String %aic_s)") {
+                672
             } else if !string.contains(artifact.llvm_ir, "define i32 @aic_status_id(i32 %aic_status)") {
                 644
             } else if !string.contains(artifact.llvm_ir, "define i64 @aic_status_to_int(i32 %aic_status)") {
@@ -1810,6 +1816,10 @@ fn backend_positive_status_code() -> Int {
                 668
             } else if !string.contains(artifact.llvm_ir, "call void @aic_sink(%aic.String") {
                 669
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_log_status({ %aic.String, i64 } %aic_log)") {
+                673
+            } else if !string.contains(artifact.llvm_ir, " = extractvalue { %aic.String, i64 } %aic_log, 1") {
+                674
             } else if !string.contains(artifact.llvm_ir, "; struct Pair") {
                 610
             } else if !string.contains(artifact.llvm_ir, "; enum Choice") {
