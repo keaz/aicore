@@ -1862,6 +1862,8 @@ fn backend_fs_positive_status_code() -> Int {
                 660
             } else if !string.contains(artifact.llvm_ir, "define { i32, %aic.String, { i32, i8, i8, i8, i8, i8, i8, i8 } } @aic_read_source_text") {
                 661
+            } else if string.contains(artifact.llvm_ir, "define { i32, %aic.String, { i32, i8, i8, i8, i8, i8, i8, i8 } } @aic_read_text") {
+                666
             } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_fs_read_text") {
                 662
             } else if !string.contains(artifact.llvm_ir, "insertvalue { i32, %aic.String, { i32, i8, i8, i8, i8, i8, i8, i8 } } undef, i32 0, 0") {

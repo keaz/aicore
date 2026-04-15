@@ -1319,7 +1319,7 @@ fn lower_function_from_parts(
 
 fn lower_signature_only_function(builder: IrLoweringBuilder, item: AstProgramItem, signature: AstFunctionSignature) -> IrLoweredFunction {
     let empty = ast_block(vec.new_vec(), None(), signature.span, "{}");
-    lower_function_from_parts(builder, signature.name.value, item.visibility, item.attrs, signature, None(), None(), empty, true, item.modifier_names, item.span)
+    lower_function_from_parts(builder, signature.name.value, item.visibility, item.attrs, signature, None(), None(), empty, false, item.modifier_names, item.span)
 }
 
 fn lower_function_item(builder: IrLoweringBuilder, item: AstProgramItem, value: AstFunctionDecl) -> IrLoweredItem {
