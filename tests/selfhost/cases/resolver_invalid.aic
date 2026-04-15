@@ -1,0 +1,5 @@
+module tests.selfhost.resolver_invalid;
+
+fn main() -> Int {
+    missing
+}

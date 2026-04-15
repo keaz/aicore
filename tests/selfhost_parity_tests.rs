@@ -121,6 +121,22 @@ fn selfhost_parity_manifest_lists_cases() {
     assert!(stdout.contains("core_language_tour pass check,ir-json"));
     assert!(stdout.contains("effects_reject fail check"));
     assert!(stdout.contains("source_diagnostics_check pass check,run"));
+
+    let candidate_output = run_parity(&[
+        "--manifest".into(),
+        "tests/selfhost/rust_vs_selfhost_manifest.json".into(),
+        "--list".into(),
+    ]);
+    assert!(
+        candidate_output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&candidate_output.stdout),
+        String::from_utf8_lossy(&candidate_output.stderr)
+    );
+    let candidate_stdout = String::from_utf8_lossy(&candidate_output.stdout);
+    assert!(candidate_stdout.contains("core_async_ping pass check,ir-json"));
+    assert!(candidate_stdout.contains("type_arithmetic_mismatch fail check"));
+    assert!(candidate_stdout.contains("resource_use_after_close fail check"));
 }
 
 #[test]
@@ -156,6 +172,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/tools/aic_selfhost/src/main.aic",
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
+        "tests/selfhost/rust_vs_selfhost_manifest.json",
+        "tests/selfhost/cases/borrow_invalid.aic",
+        "tests/selfhost/cases/resource_invalid.aic",
     ] {
         assert!(root.join(path).is_file(), "missing {path}");
     }
@@ -492,6 +511,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_tool.contains("proc.run"));
     assert!(selfhost_tool.contains("source_path_for_input"));
 
+    let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
+    assert!(makefile.contains("selfhost-parity-candidate"));
+
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
     assert!(parser.contains("trait method signatures cannot declare requires/ensures contracts"));
@@ -705,7 +727,7 @@ fn aic_selfhost_driver_tool_handles_supported_and_negative_commands() {
     let parity_artifacts = tmp.path().join("selfhost-parity-artifacts");
     let parity = run_parity(&[
         "--manifest".into(),
-        "tests/selfhost/aic_selfhost_driver_manifest.json".into(),
+        "tests/selfhost/rust_vs_selfhost_manifest.json".into(),
         "--candidate".into(),
         bin.to_string_lossy().to_string(),
         "--artifact-dir".into(),
@@ -730,6 +752,11 @@ fn aic_selfhost_driver_tool_handles_supported_and_negative_commands() {
         .expect("results")
         .iter()
         .any(|result| result["comparison_mode"] == "selfhost-ir-json"));
+    assert!(parity_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["comparison_mode"] == "diagnostic-code"));
 }
 
 #[test]
@@ -958,6 +985,10 @@ fn selfhost_parity_reports_candidate_mismatch() {
         serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
     assert_eq!(report_json["ok"], false);
     assert_eq!(report_json["results"][0]["reason"], "fingerprint mismatch");
+    assert!(report_json["results"][0]["diff"]["stdout"]
+        .as_str()
+        .expect("stdout diff")
+        .contains("--- reference stdout"));
 }
 
 #[test]

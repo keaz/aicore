@@ -1,0 +1,5 @@
+module tests.selfhost.type_arith_invalid;
+
+fn main() -> Int {
+    1 + true
+}

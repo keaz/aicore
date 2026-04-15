@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
+import re
 import signal
 import shlex
 import subprocess
@@ -26,7 +28,14 @@ ACTION_ARGS: dict[str, tuple[str, ...]] = {
     "run": ("run", "{path}"),
 }
 
-COMPARISON_MODES = {"fingerprint", "artifact-exists", "selfhost-ir-json"}
+COMPARISON_MODES = {
+    "fingerprint",
+    "artifact-exists",
+    "selfhost-ir-json",
+    "diagnostic-code",
+    "diagnostic-present",
+}
+DIAGNOSTIC_CODE_RE = re.compile(r"\bE\d{4}\b")
 
 
 @dataclass(frozen=True)
@@ -38,6 +47,7 @@ class CommandResult:
     duration_ms: int
     stdout: str
     stderr: str
+    artifact_path: str | None
     artifact_exists: bool | None
     artifact_fingerprint: str | None
     stdout_json_fingerprint: str | None = None
@@ -55,10 +65,12 @@ class CommandResult:
             "comparison_kind": comparison_kind,
             "stdout_fingerprint": stdout_fingerprint,
             "stderr_fingerprint": fingerprint_text(self.stderr),
+            "artifact_path": self.artifact_path,
             "artifact_exists": self.artifact_exists,
             "artifact_fingerprint": self.artifact_fingerprint,
             "stdout_json_fingerprint": self.stdout_json_fingerprint,
             "stdout_json_error": self.stdout_json_error,
+            "diagnostic_codes": diagnostic_codes(self),
         }
 
 
@@ -91,6 +103,10 @@ class CaseResult:
                 "duration_ms": self.candidate.duration_ms,
                 **self.candidate.fingerprint(self.action),
             },
+            "diff": {
+                "stdout": unified_text_diff("reference stdout", self.reference.stdout, "candidate stdout", self.candidate.stdout),
+                "stderr": unified_text_diff("reference stderr", self.reference.stderr, "candidate stderr", self.candidate.stderr),
+            },
         }
 
 
@@ -114,6 +130,24 @@ def fingerprint_file(path: Path) -> str:
                 value ^= byte
                 value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return f"fnv1a64:{value:016x}"
+
+
+def diagnostic_codes(value: CommandResult) -> list[str]:
+    return DIAGNOSTIC_CODE_RE.findall(f"{value.stdout}\n{value.stderr}")
+
+
+def unified_text_diff(reference_name: str, reference: str, candidate_name: str, candidate: str) -> str:
+    if reference == candidate:
+        return ""
+    diff = difflib.unified_diff(
+        reference.splitlines(),
+        candidate.splitlines(),
+        fromfile=reference_name,
+        tofile=candidate_name,
+        lineterm="",
+        n=3,
+    )
+    return "\n".join(diff)
 
 
 def canonical_json_fingerprint(value: str) -> tuple[str | None, str | None]:
@@ -245,8 +279,10 @@ def run_command(
     duration_ms = int((time.monotonic() - started) * 1000)
     artifact_exists: bool | None = None
     artifact_fingerprint: str | None = None
+    artifact_report_path: str | None = None
     if action == "build":
         artifact_exists = artifact.exists()
+        artifact_report_path = normalize_output(str(artifact), cwd, artifact_root)
         artifact_fingerprint = fingerprint_file(artifact) if artifact_exists else None
     stdout_json_fingerprint: str | None = None
     stdout_json_error: str | None = None
@@ -260,6 +296,7 @@ def run_command(
         duration_ms=duration_ms,
         stdout=stdout,
         stderr=stderr,
+        artifact_path=artifact_report_path,
         artifact_exists=artifact_exists,
         artifact_fingerprint=artifact_fingerprint,
         stdout_json_fingerprint=stdout_json_fingerprint,
@@ -454,6 +491,45 @@ def compare_results(
                 comparison_mode,
                 False,
                 "stderr fingerprint mismatch",
+                reference,
+                candidate,
+            )
+        return CaseResult(name, path, action, comparison_mode, True, "matched", reference, candidate)
+    if comparison_mode == "diagnostic-code":
+        reference_codes = diagnostic_codes(reference)
+        candidate_codes = diagnostic_codes(candidate)
+        if not reference_codes or not candidate_codes:
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "missing diagnostic code",
+                reference,
+                candidate,
+            )
+        if reference_codes[0] != candidate_codes[0]:
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "primary diagnostic code mismatch",
+                reference,
+                candidate,
+            )
+        return CaseResult(name, path, action, comparison_mode, True, "matched", reference, candidate)
+    if comparison_mode == "diagnostic-present":
+        if not diagnostic_codes(reference) or not diagnostic_codes(candidate):
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "missing diagnostic code",
                 reference,
                 candidate,
             )

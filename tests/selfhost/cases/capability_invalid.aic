@@ -1,0 +1,13 @@
+module tests.selfhost.capability_invalid;
+
+fn leaf() -> Int effects { io } capabilities { io } {
+    1
+}
+
+fn bad() -> Int effects { io } {
+    leaf()
+}
+
+fn main() -> Int effects { io } {
+    bad()
+}

@@ -1,0 +1,9 @@
+module tests.selfhost.intrinsic_body_invalid;
+
+intrinsic fn host_value() -> Int {
+    1
+}
+
+fn main() -> Int {
+    host_value()
+}

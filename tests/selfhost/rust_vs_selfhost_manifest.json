@@ -1,0 +1,182 @@
+{
+  "cases": [
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_async_ping",
+      "path": "examples/core/async_ping.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_borrow_checker_completeness",
+      "path": "examples/core/borrow_checker_completeness.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_traits_and_dispatch",
+      "path": "examples/core/traits_and_dispatch_tour.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_trait_sort",
+      "path": "examples/core/trait_sort.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_cross_compile_targets",
+      "path": "examples/core/cross_compile_targets.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json",
+        "build",
+        "run"
+      ],
+      "comparisons": {
+        "build": "artifact-exists",
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "selfhost_driver_basic",
+      "path": "examples/selfhost/driver_basic.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "build",
+        "run"
+      ],
+      "comparisons": {
+        "build": "artifact-exists"
+      },
+      "expected": "pass",
+      "name": "selfhost_driver_package",
+      "path": "examples/selfhost/driver_package"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "parser_intrinsic_body_invalid",
+      "path": "tests/selfhost/cases/intrinsic_body_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "resolver_unknown_symbol",
+      "path": "tests/selfhost/cases/resolver_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "type_arithmetic_mismatch",
+      "path": "tests/selfhost/cases/type_arith_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "effect_missing_declaration",
+      "path": "tests/selfhost/cases/effect_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "capability_missing_authority",
+      "path": "tests/selfhost/cases/capability_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "contract_static_failure",
+      "path": "tests/selfhost/cases/contract_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "borrow_use_after_move",
+      "path": "tests/selfhost/cases/borrow_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "resource_use_after_close",
+      "path": "tests/selfhost/cases/resource_invalid.aic"
+    }
+  ],
+  "name": "rust-vs-aic-selfhost-core",
+  "schema_version": 1
+}

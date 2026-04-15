@@ -70,6 +70,15 @@ fn empty_ir_program() -> Option[IrProgram] {
     None()
 }
 
+fn driver_compile_result(entry_module: String, diagnostics: Vec[Diagnostic], program: Option[IrProgram], backend_artifact: Option[BackendArtifact]) -> DriverCompileResult {
+    DriverCompileResult {
+        entry_module: entry_module,
+        diagnostics: diagnostics,
+        program: program,
+        backend_artifact: backend_artifact,
+    }
+}
+
 fn concat2(left: String, right: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     parts = vec.push(parts, left);
@@ -329,29 +338,8 @@ pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> Dri
                 let lowered = lower_checked_program(entry_program, checked, max_errors);
                 diagnostics = append_all_diagnostics(diagnostics, lowered.diagnostics, max_errors);
                 match lowered.program {
-                    Some(program) => if driver_has_error(diagnostics) {
-                        DriverCompileResult {
-                            entry_module: entry_module,
-                            diagnostics: diagnostics,
-                            program: Some(program),
-                            backend_artifact: empty_backend_artifact(),
-                        }
-                    } else {
-                        let artifact = emit_backend_artifact(program, default_backend_options("aic_selfhost"), max_errors);
-                        diagnostics = append_all_diagnostics(diagnostics, artifact.diagnostics, max_errors);
-                        DriverCompileResult {
-                            entry_module: entry_module,
-                            diagnostics: diagnostics,
-                            program: Some(program),
-                            backend_artifact: Some(artifact),
-                        }
-                    },
-                    None => DriverCompileResult {
-                        entry_module: entry_module,
-                        diagnostics: diagnostics,
-                        program: empty_ir_program(),
-                        backend_artifact: empty_backend_artifact(),
-                    },
+                    Some(program) => driver_compile_result(entry_module, diagnostics, Some(program), empty_backend_artifact()),
+                    None => driver_compile_result(entry_module, diagnostics, empty_ir_program(), empty_backend_artifact()),
                 }
             }
         },
@@ -366,6 +354,29 @@ pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> Dri
 
 pub fn driver_compile_source(path: String, text: String, max_errors: Int) -> DriverCompileResult {
     driver_compile_sources(driver_sources_with_synthetic_imports(driver_source(path, text, source_id(1)), max_errors), max_errors)
+}
+
+fn driver_compile_attach_backend(compiled: DriverCompileResult, program: IrProgram, max_errors: Int) -> DriverCompileResult {
+    let artifact = emit_backend_artifact(program, default_backend_options("aic_selfhost"), max_errors);
+    let diagnostics = append_all_diagnostics(compiled.diagnostics, artifact.diagnostics, max_errors);
+    let backend_artifact = if backend_artifact_ok(artifact) {
+        Some(artifact)
+    } else {
+        empty_backend_artifact()
+    };
+    driver_compile_result(compiled.entry_module, diagnostics, compiled.program, backend_artifact)
+}
+
+fn driver_compile_with_backend(path: String, text: String, max_errors: Int) -> DriverCompileResult {
+    let compiled: DriverCompileResult = driver_compile_source(path, text, max_errors);
+    if driver_has_error(compiled.diagnostics) {
+        compiled
+    } else {
+        match compiled.program {
+            Some(program) => driver_compile_attach_backend(compiled, program, max_errors),
+            None => compiled,
+        }
+    }
 }
 
 fn diagnostic_severity_name(value: Diagnostic) -> String {
@@ -429,7 +440,7 @@ pub fn driver_ir_json_source(path: String, text: String, max_errors: Int) -> Dri
 }
 
 pub fn driver_build_source(path: String, text: String, output_path: String, max_errors: Int) -> DriverCommandResult {
-    let compiled = driver_compile_source(path, text, max_errors);
+    let compiled = driver_compile_with_backend(path, text, max_errors);
     if driver_has_error(compiled.diagnostics) {
         driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), output_path, "", compiled.diagnostics)
     } else {

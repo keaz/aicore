@@ -1,0 +1,19 @@
+module tests.selfhost.resource_invalid;
+
+struct FileHandle {
+    handle: Int,
+}
+
+fn file_read_line(h: FileHandle) -> Int effects { fs } capabilities { fs } {
+    1
+}
+
+fn file_close(h: FileHandle) -> Bool effects { fs } capabilities { fs } {
+    true
+}
+
+fn main() -> Int effects { fs } capabilities { fs } {
+    let h = FileHandle { handle: 1 };
+    let closed = file_close(h);
+    file_read_line(h)
+}

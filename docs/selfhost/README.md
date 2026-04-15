@@ -71,11 +71,21 @@ SELFHOST_CANDIDATE=target/aic_selfhost_t12 \
 make selfhost-parity
 ```
 
+For the T13 Rust-vs-self-host conformance gate, build the candidate and run the expanded core manifest with:
+
+```bash
+make selfhost-parity-candidate
+```
+
+That target builds `compiler/aic/tools/aic_selfhost` to `target/aic_selfhost_candidate` and runs `tests/selfhost/rust_vs_selfhost_manifest.json` against the Rust reference compiler.
+
 The report is written to `target/selfhost-parity/report.json`.
 
 For `ir-json` actions, the parity harness parses both compiler outputs as JSON and compares canonical JSON fingerprints. This keeps IR parity stable across harmless whitespace or object-key ordering differences while still failing on malformed IR JSON, schema/contract mismatches, or actual semantic output differences. The report records the comparison kind, raw command metadata, canonical JSON fingerprints, and any JSON parse error for both reference and candidate commands.
 
-The T12 driver manifest uses `selfhost-ir-json` comparison for the self-host IR schema because `aic_selfhost` intentionally exposes the self-host IR contract while the Rust reference still exposes the legacy reference IR schema. It uses `artifact-exists` comparison for `build` because the T12 candidate materializes a native executable through the self-host LLVM artifact path, while byte-for-byte native binary parity is reserved for the expanded conformance and cutover issues.
+The T12/T13 self-host manifests use `selfhost-ir-json` comparison for the self-host IR schema because `aic_selfhost` intentionally exposes the self-host IR contract while the Rust reference still exposes the legacy reference IR schema. They use `artifact-exists` comparison for `build` because the T12/T13 candidate materializes a native executable through the self-host LLVM artifact path, while byte-for-byte native binary parity is reserved for the cutover issue.
+
+Negative conformance cases can use `diagnostic-code` comparison to require matching primary diagnostic codes while still recording the full stdout/stderr fingerprints and diffs. Reports include command lines, exit status, artifact paths for build actions, diagnostic code lists, and unified stdout/stderr diffs for mismatches.
 
 For default `build` actions, the parity harness compares artifact presence and fingerprints. Cases can opt into `artifact-exists` while the self-host driver is validating materialization through a different native codegen path.
 

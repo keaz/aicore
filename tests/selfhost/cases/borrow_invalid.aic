@@ -1,0 +1,11 @@
+module tests.selfhost.borrow_invalid;
+
+struct BoxedInt {
+    value: Int,
+}
+
+fn main() -> Int {
+    let b = BoxedInt { value: 1 };
+    let moved = b;
+    b.value
+}

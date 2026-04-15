@@ -1,0 +1,9 @@
+module tests.selfhost.effect_invalid;
+
+fn noisy() -> Int effects { io } capabilities { io } {
+    0
+}
+
+fn main() -> Int {
+    noisy()
+}

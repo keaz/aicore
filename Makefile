@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -27,6 +27,7 @@ help:
 	@echo "  make test-e9       Run E9 release/security operations tests"
 	@echo "  make test-selfhost Run self-hosting parity harness tests"
 	@echo "  make selfhost-parity Run reference/candidate compiler parity comparisons"
+	@echo "  make selfhost-parity-candidate Build aic_selfhost and compare it against the Rust reference"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -119,6 +120,10 @@ selfhost-parity:
 	@args=(--manifest "$${SELFHOST_PARITY_MANIFEST:-tests/selfhost/parity_manifest.json}" --reference "$${SELFHOST_REFERENCE:-cargo run --quiet --bin aic --}" --artifact-dir "$${SELFHOST_ARTIFACT_DIR:-target/selfhost-parity}" --report "$${SELFHOST_PARITY_REPORT:-target/selfhost-parity/report.json}"); \
 	if [[ -n "$${SELFHOST_CANDIDATE:-}" ]]; then args+=(--candidate "$$SELFHOST_CANDIDATE"); fi; \
 	python3 scripts/selfhost/parity.py "$${args[@]}"
+
+selfhost-parity-candidate:
+	$(AIC) build compiler/aic/tools/aic_selfhost -o target/aic_selfhost_candidate
+	SELFHOST_PARITY_MANIFEST=tests/selfhost/rust_vs_selfhost_manifest.json SELFHOST_CANDIDATE=target/aic_selfhost_candidate SELFHOST_ARTIFACT_DIR=target/selfhost-parity-candidate SELFHOST_PARITY_REPORT=target/selfhost-parity-candidate/report.json $(MAKE) selfhost-parity
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
