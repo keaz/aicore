@@ -301,6 +301,31 @@ fn is_supported_backend_expr_kind(value: IrExprKind) -> Bool {
     }
 }
 
+fn is_string_expr_kind(value: IrExprKind) -> Bool {
+    match value {
+        IrStringExpr => true,
+        _ => false,
+    }
+}
+
+fn is_call_expr_kind(value: IrExprKind) -> Bool {
+    match value {
+        IrCallExpr => true,
+        _ => false,
+    }
+}
+
+fn is_block_expr_kind(value: IrExprKind) -> Bool {
+    match value {
+        IrBlockExpr => true,
+        _ => false,
+    }
+}
+
+fn is_io_print_intrinsic_name(name: String) -> Bool {
+    name == "print_str" || name == "eprint_str"
+}
+
 fn is_decimal_digit(value: String) -> Bool {
     value == "0" || value == "1" || value == "2" || value == "3" || value == "4" || value == "5" || value == "6" || value == "7" || value == "8" || value == "9"
 }
@@ -358,6 +383,69 @@ fn function_param_llvm_type(program: IrProgram, function_value: IrFunctionDef, n
         index = index + 1;
     };
     out
+}
+
+fn function_param_type_name(program: IrProgram, function_value: IrFunctionDef, name: String) -> String {
+    let mut index = 0;
+    let mut out = "";
+    while out == "" && index < vec.vec_len(function_value.params) {
+        match vec.get(function_value.params, index) {
+            Some(param) => if param.name == name {
+                out = type_name_for_id(program.types, param.type_id);
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn llvm_int_bits(value: String) -> Int {
+    if value == "i8" {
+        8
+    } else if value == "i16" {
+        16
+    } else if value == "i32" {
+        32
+    } else if value == "i64" {
+        64
+    } else {
+        0
+    }
+}
+
+fn type_name_is_signed_integer(value: String) -> Bool {
+    value == "Int" || value == "Int8" || value == "Int16" || value == "Int32" || value == "Int64" || value == "Int128" || value == "isize" || value == "ProcExitStatus"
+}
+
+fn llvm_integer_extension_op(source_type_name: String, source_llvm: String, target_llvm: String) -> String {
+    let source_bits = llvm_int_bits(source_llvm);
+    let target_bits = llvm_int_bits(target_llvm);
+    if source_bits > 0 && target_bits > source_bits {
+        if type_name_is_signed_integer(source_type_name) {
+            "sext"
+        } else {
+            "zext"
+        }
+    } else {
+        ""
+    }
+}
+
+fn function_param_return_cast_op(program: IrProgram, function_value: IrFunctionDef, name: String, ret: String) -> String {
+    let source_llvm = function_param_llvm_type(program, function_value, name);
+    if source_llvm == ret {
+        ""
+    } else {
+        llvm_integer_extension_op(function_param_type_name(program, function_value, name), source_llvm, ret)
+    }
+}
+
+fn return_name_can_emit(program: IrProgram, function_value: IrFunctionDef, name: String, ret: String) -> Bool {
+    let source_llvm = function_param_llvm_type(program, function_value, name);
+    source_llvm == ret || function_param_return_cast_op(program, function_value, name, ret) != ""
 }
 
 fn direct_expr_child_at(nodes: Vec[IrExprNode], child_index: Int) -> Option[IrExprNode] {
@@ -442,6 +530,151 @@ fn simple_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
     }
 }
 
+fn expr_node_index(nodes: Vec[IrExprNode], target: IrNodeId) -> Int {
+    let mut index = 0;
+    let mut out = -1;
+    while out < 0 && index < vec.vec_len(nodes) {
+        match vec.get(nodes, index) {
+            Some(node) => if node.node.value == target.value {
+                out = index;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn expr_node_child_at(nodes: Vec[IrExprNode], parent: IrExprNode, child_index: Int) -> Option[IrExprNode] {
+    let parent_index = expr_node_index(nodes, parent.node);
+    let mut index = parent_index + 1;
+    let mut seen = 0;
+    let mut out: Option[IrExprNode] = None();
+    while parent_index >= 0 && index < vec.vec_len(nodes) {
+        match vec.get(nodes, index) {
+            Some(node) => if node.depth <= parent.depth {
+                index = vec.vec_len(nodes);
+            } else if node.depth == parent.depth + 1 {
+                if seen == child_index {
+                    out = Some(node);
+                    index = vec.vec_len(nodes);
+                } else {
+                    seen = seen + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn string_replace_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+    if node.name != "string.replace" || node.direct_child_count != 3 {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < 3 {
+            match expr_node_child_at(nodes, node, index) {
+                Some(child) => if string_call_child_can_emit(program, function_value, nodes, child) {
+                    ()
+                } else {
+                    ok = false;
+                },
+                None => if true {
+                    ok = false;
+                    ()
+                } else { () },
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
+fn string_call_child_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+    match node.kind {
+        IrStringExpr => true,
+        IrNameExpr => function_param_llvm_type(program, function_value, node.text) == "%aic.String",
+        IrCallExpr => if node.name == "string.replace" {
+            string_replace_node_can_emit(program, function_value, nodes, node)
+        } else {
+            string_direct_call_node_can_emit(program, function_value, nodes, node)
+        },
+        _ => false,
+    }
+}
+
+fn call_child_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String, param_index: Int, node: IrExprNode) -> Bool {
+    let expected = call_target_param_type(program, callee_name, param_index);
+    if expected == "%aic.String" {
+        string_call_child_can_emit(program, function_value, nodes, node)
+    } else if simple_node_can_emit(node, function_value) {
+        let actual = simple_node_llvm_type(program, node, function_value);
+        expected != "" && actual != "" && expected == actual
+    } else {
+        false
+    }
+}
+
+fn string_direct_call_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+    if node.name == "" || string.contains(node.name, ".") || !call_target_exists(program, node.name) {
+        false
+    } else if call_target_return_type(program, node.name) != "%aic.String" {
+        false
+    } else if node.direct_child_count != call_target_param_count(program, node.name) {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < node.direct_child_count {
+            match expr_node_child_at(nodes, node, index) {
+                Some(child) => if call_child_node_can_emit(program, function_value, nodes, node.name, index, child) {
+                    ()
+                } else {
+                    ok = false;
+                },
+                None => if true {
+                    ok = false;
+                    ()
+                } else { () },
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
+fn string_replace_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    if value.name != "string.replace" || direct_expr_child_count(value.nodes) != 3 {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < 3 {
+            match direct_expr_child_at(value.nodes, index) {
+                Some(node) => if string_call_child_can_emit(program, function_value, value.nodes, node) {
+                    ()
+                } else {
+                    ok = false;
+                },
+                None => if true {
+                    ok = false;
+                    ()
+                } else { () },
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
 fn call_target_return_type(program: IrProgram, callee_name: String) -> String {
     let mut index = 0;
     let mut out = "";
@@ -515,7 +748,14 @@ fn call_target_exists(program: IrProgram, callee_name: String) -> Bool {
 }
 
 fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
-    if value.name == "" || string.contains(value.name, ".") || !call_target_exists(program, value.name) {
+    if is_io_print_intrinsic_name(value.name) {
+        direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
+            Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
+            None => false,
+        }
+    } else if string_replace_expr_can_emit(program, value, function_value) {
+        true
+    } else if value.name == "" || string.contains(value.name, ".") || !call_target_exists(program, value.name) {
         false
     } else if direct_expr_child_count(value.nodes) != call_target_param_count(program, value.name) {
         false
@@ -524,17 +764,10 @@ fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunct
         let mut ok = true;
         while ok && index < direct_expr_child_count(value.nodes) {
             match direct_expr_child_at(value.nodes, index) {
-                Some(node) => if simple_node_can_emit(node, function_value) {
-                    let expected = call_target_param_type(program, value.name, index);
-                    let actual = simple_node_llvm_type(program, node, function_value);
-                    if expected == "" || actual == "" || expected != actual {
-                        ok = false;
-                    } else {
-                        ()
-                    };
+                Some(node) => if call_child_node_can_emit(program, function_value, value.nodes, value.name, index, node) {
+                    ()
                 } else {
                     ok = false;
-                    ()
                 },
                 None => if true {
                     ok = false;
@@ -558,6 +791,140 @@ fn binary_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
         }
     } else {
         false
+    }
+}
+
+fn binary_compare_op_can_emit(op: String) -> Bool {
+    op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">="
+}
+
+fn compare_predicate(op: String) -> String {
+    if op == "==" {
+        "eq"
+    } else if op == "!=" {
+        "ne"
+    } else if op == "<" {
+        "slt"
+    } else if op == ">" {
+        "sgt"
+    } else if op == "<=" {
+        "sle"
+    } else if op == ">=" {
+        "sge"
+    } else {
+        ""
+    }
+}
+
+fn string_compare_predicate(op: String) -> String {
+    if op == "==" {
+        "eq"
+    } else if op == "!=" {
+        "ne"
+    } else {
+        ""
+    }
+}
+
+fn bool_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> Bool {
+    match node.kind {
+        IrBoolExpr => node.text == "true" || node.text == "false",
+        IrNameExpr => function_param_llvm_type(program, function_value, node.text) == "i1",
+        IrBinaryExpr => if binary_compare_op_can_emit(node.op) {
+            match expr_node_child_at(nodes, node, 0) {
+                Some(left) => match expr_node_child_at(nodes, node, 1) {
+                    Some(right) => if string_call_child_can_emit(program, function_value, nodes, left) && string_call_child_can_emit(program, function_value, nodes, right) {
+                        node.op == "==" || node.op == "!="
+                    } else if simple_node_can_emit(left, function_value) && simple_node_can_emit(right, function_value) {
+                        let left_type = simple_node_llvm_type(program, left, function_value);
+                        let right_type = simple_node_llvm_type(program, right, function_value);
+                        left_type != "" && left_type == right_type
+                    } else {
+                        false
+                    },
+                    None => false,
+                },
+                None => false,
+            }
+        } else {
+            false
+        },
+        _ => false,
+    }
+}
+
+fn block_tail_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String) -> Bool {
+    if !is_block_expr_kind(block_node.kind) || block_node.direct_child_count != 1 {
+        false
+    } else {
+        match expr_node_child_at(nodes, block_node, 0) {
+            Some(child) => return_node_can_emit(program, function_value, nodes, child, ret),
+            None => false,
+        }
+    }
+}
+
+fn branch_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], branch_node: IrExprNode, ret: String) -> Bool {
+    if is_block_expr_kind(branch_node.kind) {
+        block_tail_node_can_emit(program, function_value, nodes, branch_node, ret)
+    } else {
+        return_node_can_emit(program, function_value, nodes, branch_node, ret)
+    }
+}
+
+fn if_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+    if node.direct_child_count != 3 {
+        false
+    } else {
+        match expr_node_child_at(nodes, node, 0) {
+            Some(condition) => match expr_node_child_at(nodes, node, 1) {
+                Some(then_block) => match expr_node_child_at(nodes, node, 2) {
+                    Some(else_block) => bool_node_can_emit(program, function_value, nodes, condition)
+                        && branch_node_can_emit(program, function_value, nodes, then_block, ret)
+                        && branch_node_can_emit(program, function_value, nodes, else_block, ret),
+                    None => false,
+                },
+                None => false,
+            },
+            None => false,
+        }
+    }
+}
+
+fn return_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+    match node.kind {
+        IrIntExpr => ret == "i64" && is_decimal_integer_text(node.text),
+        IrBoolExpr => ret == "i1" && (node.text == "true" || node.text == "false"),
+        IrStringExpr => ret == "%aic.String",
+        IrUnitExpr => ret == "void",
+        IrNameExpr => return_name_can_emit(program, function_value, node.text, ret),
+        IrCallExpr => if node.name == "string.replace" {
+            ret == "%aic.String" && string_replace_node_can_emit(program, function_value, nodes, node)
+        } else {
+            call_target_return_type(program, node.name) == ret && string_direct_call_node_can_emit(program, function_value, nodes, node)
+        },
+        IrIfExpr => if_node_can_emit(program, function_value, nodes, node, ret),
+        _ => false,
+    }
+}
+
+fn if_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    let ret = llvm_type_for_id(program.types, function_value.return_type);
+    if value.direct_child_count != 3 {
+        false
+    } else {
+        match direct_expr_child_at(value.nodes, 0) {
+            Some(condition) => match direct_expr_child_at(value.nodes, 1) {
+                Some(then_block) => match direct_expr_child_at(value.nodes, 2) {
+                    Some(else_block) => bool_node_can_emit(program, function_value, value.nodes, condition)
+                        && branch_node_can_emit(program, function_value, value.nodes, then_block, ret)
+                        && branch_node_can_emit(program, function_value, value.nodes, else_block, ret),
+                    None => false,
+                },
+                None => false,
+            },
+            None => false,
+        }
     }
 }
 
@@ -598,6 +965,47 @@ fn match_expr_can_emit(value: IrExpr) -> Bool {
         index = index + 1;
     };
     arms_ok
+}
+
+fn match_has_arm(value: IrExpr, pattern: String, body: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(value.match_arms) {
+        match vec.get(value.match_arms, index) {
+            Some(arm) => if arm.pattern_text == pattern && arm.body_text == body {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn env_arg_or_empty_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    let is_match = match value.kind {
+        IrMatchExpr => true,
+        _ => false,
+    };
+    if !is_match || llvm_type_for_id(program.types, function_value.return_type) != "%aic.String" {
+        false
+    } else if !match_has_arm(value, "Some(value)", "value") || !match_has_arm(value, "None", "\"\"") {
+        false
+    } else {
+        match direct_expr_child_at(value.nodes, 0) {
+            Some(call_node) => if is_call_expr_kind(call_node.kind) && call_node.name == "arg_at" && call_node.direct_child_count == 1 {
+                match expr_node_child_at(value.nodes, call_node, 0) {
+                    Some(index_node) => simple_node_can_emit(index_node, function_value) && simple_node_llvm_type(program, index_node, function_value) == "i64",
+                    None => false,
+                }
+            } else {
+                false
+            },
+            None => false,
+        }
+    }
 }
 
 fn statement_expr_can_emit_as_noop(value: IrExpr) -> Bool {
@@ -642,10 +1050,11 @@ fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFun
         IrBoolExpr => value.text == "true" || value.text == "false",
         IrStringExpr => llvm_type_for_id(program.types, function_value.return_type) == "%aic.String",
         IrUnitExpr => true,
-        IrNameExpr => function_has_param_named(function_value, value.text),
+        IrNameExpr => return_name_can_emit(program, function_value, value.text, llvm_type_for_id(program.types, function_value.return_type)),
         IrBinaryExpr => binary_expr_can_emit(value, function_value),
         IrCallExpr => call_expr_can_emit(program, value, function_value),
-        IrMatchExpr => match_expr_can_emit(value),
+        IrIfExpr => if_expr_can_emit(program, value, function_value),
+        IrMatchExpr => match_expr_can_emit(value) || env_arg_or_empty_expr_can_emit(program, value, function_value),
         _ => false,
     }
 }
@@ -1066,20 +1475,72 @@ fn binary_llvm_op(op: String) -> String {
     }
 }
 
-fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode]) -> String {
+fn emit_call_arg_values(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < direct_expr_child_count(nodes) {
+        match direct_expr_child_at(nodes, index) {
+            Some(node) => if call_target_param_type(program, callee_name, index) == "%aic.String" {
+                parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, node));
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn call_arg_node_value_name(program: IrProgram, function_value: IrFunctionDef, node: IrExprNode, expected: String) -> String {
+    if expected == "%aic.String" {
+        string_node_value_name(node)
+    } else {
+        simple_node_llvm_value(node, function_value)
+    }
+}
+
+fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], callee_name: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     let mut index = 0;
     while index < direct_expr_child_count(nodes) {
         match direct_expr_child_at(nodes, index) {
             Some(node) => if true {
+                let expected = call_target_param_type(program, callee_name, index);
                 if index > 0 {
                     parts = vec.push(parts, ", ");
                 } else {
                     ()
                 };
-                parts = vec.push(parts, simple_node_llvm_type(program, node, function_value));
+                parts = vec.push(parts, expected);
                 parts = vec.push(parts, " ");
-                parts = vec.push(parts, simple_node_llvm_value(node, function_value));
+                parts = vec.push(parts, call_arg_node_value_name(program, function_value, node, expected));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn emit_node_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < node.direct_child_count {
+        match expr_node_child_at(nodes, node, index) {
+            Some(child) => if true {
+                let expected = call_target_param_type(program, node.name, index);
+                if index > 0 {
+                    parts = vec.push(parts, ", ");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, expected);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, call_arg_node_value_name(program, function_value, child, expected));
                 ()
             } else {
                 ()
@@ -1093,6 +1554,10 @@ fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[
 
 fn llvm_string_global_name(function_name: String) -> String {
     concat2("@.aic.str.", backend_mangle_symbol(function_name))
+}
+
+fn llvm_string_node_global_name(function_name: String, node: IrNodeId) -> String {
+    concat3(llvm_string_global_name(function_name), ".", string.int_to_string(node.value))
 }
 
 fn string_literal_payload(value: String) -> String {
@@ -1124,10 +1589,10 @@ fn llvm_escape_string_data(value: String) -> String {
     string.join(parts, "")
 }
 
-fn emit_string_literal_global(function_value: IrFunctionDef, value: String) -> String {
+fn emit_named_string_literal_global(global_name: String, value: String) -> String {
     let payload = string_literal_payload(value);
     let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, llvm_string_global_name(function_value.name));
+    parts = vec.push(parts, global_name);
     parts = vec.push(parts, " = private unnamed_addr constant [");
     parts = vec.push(parts, string.int_to_string(string.len(payload)));
     parts = vec.push(parts, " x i8] c\"");
@@ -1136,11 +1601,32 @@ fn emit_string_literal_global(function_value: IrFunctionDef, value: String) -> S
     string.join(parts, "")
 }
 
+fn emit_string_literal_global(function_value: IrFunctionDef, value: String) -> String {
+    emit_named_string_literal_global(llvm_string_global_name(function_value.name), value)
+}
+
+fn emit_string_node_globals_for_expr(function_value: IrFunctionDef, expr: IrExpr) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if is_string_expr_kind(node.kind) {
+                parts = vec.push(parts, emit_named_string_literal_global(llvm_string_node_global_name(function_value.name, node.node), node.text));
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
 fn emit_string_globals_for_function(function_value: IrFunctionDef) -> String {
     match function_value.body.tail_expr {
         Some(expr) => match expr.kind {
-            IrStringExpr => emit_string_literal_global(function_value, expr.text),
-            _ => "",
+            IrStringExpr => concat2(emit_string_literal_global(function_value, expr.text), emit_string_node_globals_for_expr(function_value, expr)),
+            _ => emit_string_node_globals_for_expr(function_value, expr),
         },
         None => "",
     }
@@ -1183,11 +1669,758 @@ fn program_uses_string_type(program: IrProgram) -> Bool {
     found
 }
 
+fn expr_uses_string_replace(expr: IrExpr) -> Bool {
+    let mut found = is_call_expr_kind(expr.kind) && expr.name == "string.replace";
+    let mut index = 0;
+    while !found && index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if is_call_expr_kind(node.kind) && node.name == "string.replace" {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn expr_uses_io_print(expr: IrExpr) -> Bool {
+    let mut found = is_call_expr_kind(expr.kind) && is_io_print_intrinsic_name(expr.name);
+    let mut index = 0;
+    while !found && index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if is_call_expr_kind(node.kind) && is_io_print_intrinsic_name(node.name) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn expr_uses_env_arg_at(expr: IrExpr) -> Bool {
+    let mut found = is_call_expr_kind(expr.kind) && expr.name == "arg_at";
+    let mut index = 0;
+    while !found && index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if is_call_expr_kind(node.kind) && node.name == "arg_at" {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn program_uses_string_replace(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => match function_value.body.tail_expr {
+                    Some(expr) => if expr_uses_string_replace(expr) {
+                        found = true;
+                    } else {
+                        ()
+                    },
+                    None => (),
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn program_uses_io_print(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => match function_value.body.tail_expr {
+                    Some(expr) => if expr_uses_io_print(expr) {
+                        found = true;
+                    } else {
+                        ()
+                    },
+                    None => (),
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn program_uses_env_arg_at(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => match function_value.body.tail_expr {
+                    Some(expr) => if expr_uses_env_arg_at(expr) {
+                        found = true;
+                    } else {
+                        ()
+                    },
+                    None => (),
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn emit_runtime_declarations(program: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    if program_uses_string_type(program) {
+        parts = vec.push(parts, "declare i64 @aic_rt_string_compare(i8*, i64, i64, i8*, i64, i64)\n");
+    } else {
+        ()
+    };
+    if program_uses_string_replace(program) {
+        parts = vec.push(parts, "declare void @aic_rt_string_replace(i8*, i64, i64, i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n");
+    } else {
+        ()
+    };
+    if program_uses_io_print(program) {
+        parts = vec.push(parts, "declare void @aic_rt_print_str(i8*, i64, i64)\n");
+        parts = vec.push(parts, "declare void @aic_rt_eprint_str(i8*, i64, i64)\n");
+    } else {
+        ()
+    };
+    if program_uses_env_arg_at(program) {
+        parts = vec.push(parts, "declare i64 @aic_rt_env_arg_at(i64, i8**, i64*)\n");
+    } else {
+        ()
+    };
+    string.join(parts, "")
+}
+
 fn emit_type_declarations(program: IrProgram) -> String {
     if program_uses_string_type(program) {
-        "%aic.String = type { i8*, i64 }\n"
+        "%aic.String = type { i8*, i64, i64 }\n"
     } else {
         ""
+    }
+}
+
+fn llvm_expr_prefix(node: IrNodeId) -> String {
+    concat2("expr.", string.int_to_string(node.value))
+}
+
+fn llvm_node_prefix(node: IrNodeId) -> String {
+    concat2("node.", string.int_to_string(node.value))
+}
+
+fn llvm_local(prefix: String, suffix: String) -> String {
+    concat3("%", prefix, suffix)
+}
+
+fn llvm_expr_value_local(expr: IrExpr) -> String {
+    llvm_local(llvm_expr_prefix(expr.node), ".value")
+}
+
+fn llvm_node_value_local(node: IrExprNode) -> String {
+    llvm_local(llvm_node_prefix(node.node), ".value")
+}
+
+fn emit_string_literal_value(global_name: String, literal_text: String, prefix: String) -> String {
+    let payload = string_literal_payload(literal_text);
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(prefix, ".ptr"));
+    parts = vec.push(parts, " = getelementptr inbounds [");
+    parts = vec.push(parts, string.int_to_string(string.len(payload)));
+    parts = vec.push(parts, " x i8], [");
+    parts = vec.push(parts, string.int_to_string(string.len(payload)));
+    parts = vec.push(parts, " x i8]* ");
+    parts = vec.push(parts, global_name);
+    parts = vec.push(parts, ", i64 0, i64 0\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".0"));
+    parts = vec.push(parts, " = insertvalue %aic.String undef, i8* ");
+    parts = vec.push(parts, llvm_local(prefix, ".ptr"));
+    parts = vec.push(parts, ", 0\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".1"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".0"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, string.int_to_string(string.len(payload)));
+    parts = vec.push(parts, ", 1\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".value"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".1"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, string.int_to_string(string.len(payload)));
+    parts = vec.push(parts, ", 2\n");
+    string.join(parts, "")
+}
+
+fn emit_string_extracts(value_name: String, prefix: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(prefix, ".ptr"));
+    parts = vec.push(parts, " = extractvalue %aic.String ");
+    parts = vec.push(parts, value_name);
+    parts = vec.push(parts, ", 0\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".len"));
+    parts = vec.push(parts, " = extractvalue %aic.String ");
+    parts = vec.push(parts, value_name);
+    parts = vec.push(parts, ", 1\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".cap"));
+    parts = vec.push(parts, " = extractvalue %aic.String ");
+    parts = vec.push(parts, value_name);
+    parts = vec.push(parts, ", 2\n");
+    string.join(parts, "")
+}
+
+fn emit_string_replace_call(prefix: String, first_value: String, second_value: String, third_value: String) -> String {
+    let first_prefix = concat2(prefix, ".arg0");
+    let second_prefix = concat2(prefix, ".arg1");
+    let third_prefix = concat2(prefix, ".arg2");
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, emit_string_extracts(first_value, first_prefix));
+    parts = vec.push(parts, emit_string_extracts(second_value, second_prefix));
+    parts = vec.push(parts, emit_string_extracts(third_value, third_prefix));
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+    parts = vec.push(parts, " = alloca i8*\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+    parts = vec.push(parts, " = alloca i64\n  call void @aic_rt_string_replace(i8* ");
+    parts = vec.push(parts, llvm_local(first_prefix, ".ptr"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(first_prefix, ".len"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(first_prefix, ".cap"));
+    parts = vec.push(parts, ", i8* ");
+    parts = vec.push(parts, llvm_local(second_prefix, ".ptr"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(second_prefix, ".len"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(second_prefix, ".cap"));
+    parts = vec.push(parts, ", i8* ");
+    parts = vec.push(parts, llvm_local(third_prefix, ".ptr"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(third_prefix, ".len"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(third_prefix, ".cap"));
+    parts = vec.push(parts, ", i8** ");
+    parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+    parts = vec.push(parts, ", i64* ");
+    parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+    parts = vec.push(parts, ")\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".ret.ptr"));
+    parts = vec.push(parts, " = load i8*, i8** ");
+    parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+    parts = vec.push(parts, "\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".ret.len"));
+    parts = vec.push(parts, " = load i64, i64* ");
+    parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+    parts = vec.push(parts, "\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".0"));
+    parts = vec.push(parts, " = insertvalue %aic.String undef, i8* ");
+    parts = vec.push(parts, llvm_local(prefix, ".ret.ptr"));
+    parts = vec.push(parts, ", 0\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".1"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".0"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(prefix, ".ret.len"));
+    parts = vec.push(parts, ", 1\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".value"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".1"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(prefix, ".ret.len"));
+    parts = vec.push(parts, ", 2\n");
+    string.join(parts, "")
+}
+
+fn string_node_value_name(node: IrExprNode) -> String {
+    match node.kind {
+        IrNameExpr => concat2("%", backend_mangle_symbol(node.text)),
+        _ => llvm_node_value_local(node),
+    }
+}
+
+fn emit_string_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    match node.kind {
+        IrStringExpr => emit_string_literal_value(llvm_string_node_global_name(function_value.name, node.node), node.text, llvm_node_prefix(node.node)),
+        IrNameExpr => "",
+        IrCallExpr => if node.name == "string.replace" {
+            emit_string_replace_node_value(program, function_value, nodes, node)
+        } else {
+            emit_string_direct_call_node_value(program, function_value, nodes, node)
+        },
+        _ => "",
+    }
+}
+
+fn emit_string_replace_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let first = match expr_node_child_at(nodes, node, 0) {
+        Some(child) => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
+            string_node_value_name(child)
+        } else { "" },
+        None => "",
+    };
+    let second = match expr_node_child_at(nodes, node, 1) {
+        Some(child) => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
+            string_node_value_name(child)
+        } else { "" },
+        None => "",
+    };
+    let third = match expr_node_child_at(nodes, node, 2) {
+        Some(child) => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
+            string_node_value_name(child)
+        } else { "" },
+        None => "",
+    };
+    parts = vec.push(parts, emit_string_replace_call(llvm_node_prefix(node.node), first, second, third));
+    string.join(parts, "")
+}
+
+fn emit_string_direct_call_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < node.direct_child_count {
+        match expr_node_child_at(nodes, node, index) {
+            Some(child) => if call_target_param_type(program, node.name, index) == "%aic.String" {
+                parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, child));
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_node_value_local(node));
+    parts = vec.push(parts, " = call %aic.String @");
+    parts = vec.push(parts, backend_mangle_symbol(node.name));
+    parts = vec.push(parts, "(");
+    parts = vec.push(parts, emit_node_call_args(program, function_value, nodes, node));
+    parts = vec.push(parts, ")\n");
+    string.join(parts, "")
+}
+
+fn emit_string_replace_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let first = match direct_expr_child_at(expr.nodes, 0) {
+        Some(child) => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            string_node_value_name(child)
+        } else { "" },
+        None => "",
+    };
+    let second = match direct_expr_child_at(expr.nodes, 1) {
+        Some(child) => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            string_node_value_name(child)
+        } else { "" },
+        None => "",
+    };
+    let third = match direct_expr_child_at(expr.nodes, 2) {
+        Some(child) => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            string_node_value_name(child)
+        } else { "" },
+        None => "",
+    };
+    parts = vec.push(parts, emit_string_replace_call(llvm_expr_prefix(expr.node), first, second, third));
+    string.join(parts, "")
+}
+
+fn emit_string_direct_call_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_expr_value_local(expr));
+    parts = vec.push(parts, " = call %aic.String @");
+    parts = vec.push(parts, backend_mangle_symbol(expr.name));
+    parts = vec.push(parts, "(");
+    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name));
+    parts = vec.push(parts, ")\n");
+    string.join(parts, "")
+}
+
+fn bool_node_value_name(node: IrExprNode) -> String {
+    match node.kind {
+        IrBoolExpr => if node.text == "true" { "1" } else { "0" },
+        IrNameExpr => concat2("%", backend_mangle_symbol(node.text)),
+        _ => llvm_node_value_local(node),
+    }
+}
+
+fn emit_bool_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    match node.kind {
+        IrBoolExpr => "",
+        IrNameExpr => "",
+        IrBinaryExpr => emit_compare_node_value(program, function_value, nodes, node),
+        _ => "",
+    }
+}
+
+fn emit_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode) -> String {
+    match expr_node_child_at(nodes, node, 0) {
+        Some(left) => match expr_node_child_at(nodes, node, 1) {
+            Some(right) => if string_call_child_can_emit(program, function_value, nodes, left) && string_call_child_can_emit(program, function_value, nodes, right) {
+                emit_string_compare_node_value(program, function_value, nodes, node, left, right)
+            } else {
+                emit_primitive_compare_node_value(program, function_value, node, left, right)
+            },
+            None => "",
+        },
+        None => "",
+    }
+}
+
+fn emit_primitive_compare_node_value(program: IrProgram, function_value: IrFunctionDef, node: IrExprNode, left: IrExprNode, right: IrExprNode) -> String {
+    let ty = simple_node_llvm_type(program, left, function_value);
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_node_value_local(node));
+    parts = vec.push(parts, " = icmp ");
+    parts = vec.push(parts, compare_predicate(node.op));
+    parts = vec.push(parts, " ");
+    parts = vec.push(parts, ty);
+    parts = vec.push(parts, " ");
+    parts = vec.push(parts, simple_node_llvm_value(left, function_value));
+    parts = vec.push(parts, ", ");
+    parts = vec.push(parts, simple_node_llvm_value(right, function_value));
+    parts = vec.push(parts, "\n");
+    string.join(parts, "")
+}
+
+fn emit_string_compare_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, left: IrExprNode, right: IrExprNode) -> String {
+    let left_name = string_node_value_name(left);
+    let right_name = string_node_value_name(right);
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, left));
+    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, right));
+    parts = vec.push(parts, emit_string_extracts(left_name, concat2(llvm_node_prefix(node.node), ".lhs")));
+    parts = vec.push(parts, emit_string_extracts(right_name, concat2(llvm_node_prefix(node.node), ".rhs")));
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(llvm_node_prefix(node.node), ".raw"));
+    parts = vec.push(parts, " = call i64 @aic_rt_string_compare(i8* ");
+    parts = vec.push(parts, llvm_local(concat2(llvm_node_prefix(node.node), ".lhs"), ".ptr"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(concat2(llvm_node_prefix(node.node), ".lhs"), ".len"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(concat2(llvm_node_prefix(node.node), ".lhs"), ".cap"));
+    parts = vec.push(parts, ", i8* ");
+    parts = vec.push(parts, llvm_local(concat2(llvm_node_prefix(node.node), ".rhs"), ".ptr"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(concat2(llvm_node_prefix(node.node), ".rhs"), ".len"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, llvm_local(concat2(llvm_node_prefix(node.node), ".rhs"), ".cap"));
+    parts = vec.push(parts, ")\n  ");
+    parts = vec.push(parts, llvm_node_value_local(node));
+    parts = vec.push(parts, " = icmp ");
+    parts = vec.push(parts, string_compare_predicate(node.op));
+    parts = vec.push(parts, " i64 ");
+    parts = vec.push(parts, llvm_local(llvm_node_prefix(node.node), ".raw"));
+    parts = vec.push(parts, ", 0\n");
+    string.join(parts, "")
+}
+
+fn emit_return_name_value(program: IrProgram, function_value: IrFunctionDef, name: String, ret: String, prefix: String) -> String {
+    let source_llvm = function_param_llvm_type(program, function_value, name);
+    let source_value = concat2("%", backend_mangle_symbol(name));
+    let cast_op = function_param_return_cast_op(program, function_value, name, ret);
+    let mut parts: Vec[String] = vec.new_vec();
+    if cast_op == "" {
+        parts = vec.push(parts, "  ret ");
+        parts = vec.push(parts, ret);
+        parts = vec.push(parts, " ");
+        parts = vec.push(parts, source_value);
+        parts = vec.push(parts, "\n");
+    } else {
+        parts = vec.push(parts, "  ");
+        parts = vec.push(parts, llvm_local(prefix, ".cast"));
+        parts = vec.push(parts, " = ");
+        parts = vec.push(parts, cast_op);
+        parts = vec.push(parts, " ");
+        parts = vec.push(parts, source_llvm);
+        parts = vec.push(parts, " ");
+        parts = vec.push(parts, source_value);
+        parts = vec.push(parts, " to ");
+        parts = vec.push(parts, ret);
+        parts = vec.push(parts, "\n  ret ");
+        parts = vec.push(parts, ret);
+        parts = vec.push(parts, " ");
+        parts = vec.push(parts, llvm_local(prefix, ".cast"));
+        parts = vec.push(parts, "\n");
+    };
+    string.join(parts, "")
+}
+
+fn emit_return_node(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    match node.kind {
+        IrIntExpr => if true {
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, node.text);
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrBoolExpr => if true {
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, if node.text == "true" { "1" } else { "0" });
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrStringExpr => if true {
+            parts = vec.push(parts, emit_string_literal_value(llvm_string_node_global_name(function_value.name, node.node), node.text, llvm_node_prefix(node.node)));
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_node_value_local(node));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrNameExpr => if true {
+            parts = vec.push(parts, emit_return_name_value(program, function_value, node.text, ret, llvm_node_prefix(node.node)));
+            ()
+        } else { () },
+        IrCallExpr => if true {
+            parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, node));
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, string_node_value_name(node));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrIfExpr => if true {
+            parts = vec.push(parts, emit_if_node_return(program, function_value, nodes, node, ret));
+            ()
+        } else { () },
+        _ => (),
+    };
+    string.join(parts, "")
+}
+
+fn emit_block_tail_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], block_node: IrExprNode, ret: String) -> String {
+    match expr_node_child_at(nodes, block_node, 0) {
+        Some(child) => emit_return_node(program, function_value, nodes, child, ret),
+        None => "",
+    }
+}
+
+fn emit_branch_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], branch_node: IrExprNode, ret: String) -> String {
+    if is_block_expr_kind(branch_node.kind) {
+        emit_block_tail_return(program, function_value, nodes, branch_node, ret)
+    } else {
+        emit_return_node(program, function_value, nodes, branch_node, ret)
+    }
+}
+
+fn emit_if_node_return(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+    match expr_node_child_at(nodes, node, 0) {
+        Some(condition) => match expr_node_child_at(nodes, node, 1) {
+            Some(then_block) => match expr_node_child_at(nodes, node, 2) {
+                Some(else_block) => if true {
+                    let then_label = concat2("if.then.", string.int_to_string(node.node.value));
+                    let else_label = concat2("if.else.", string.int_to_string(node.node.value));
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, emit_bool_node_value(program, function_value, nodes, condition));
+                    parts = vec.push(parts, "  br i1 ");
+                    parts = vec.push(parts, bool_node_value_name(condition));
+                    parts = vec.push(parts, ", label %");
+                    parts = vec.push(parts, then_label);
+                    parts = vec.push(parts, ", label %");
+                    parts = vec.push(parts, else_label);
+                    parts = vec.push(parts, "\n");
+                    parts = vec.push(parts, then_label);
+                    parts = vec.push(parts, ":\n");
+                    parts = vec.push(parts, emit_branch_return(program, function_value, nodes, then_block, ret));
+                    parts = vec.push(parts, else_label);
+                    parts = vec.push(parts, ":\n");
+                    parts = vec.push(parts, emit_branch_return(program, function_value, nodes, else_block, ret));
+                    string.join(parts, "")
+                } else { "" },
+                None => "",
+            },
+            None => "",
+        },
+        None => "",
+    }
+}
+
+fn emit_if_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(condition) => match direct_expr_child_at(expr.nodes, 1) {
+            Some(then_block) => match direct_expr_child_at(expr.nodes, 2) {
+                Some(else_block) => if true {
+                    let then_label = concat2("if.then.", string.int_to_string(expr.node.value));
+                    let else_label = concat2("if.else.", string.int_to_string(expr.node.value));
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, emit_bool_node_value(program, function_value, expr.nodes, condition));
+                    parts = vec.push(parts, "  br i1 ");
+                    parts = vec.push(parts, bool_node_value_name(condition));
+                    parts = vec.push(parts, ", label %");
+                    parts = vec.push(parts, then_label);
+                    parts = vec.push(parts, ", label %");
+                    parts = vec.push(parts, else_label);
+                    parts = vec.push(parts, "\n");
+                    parts = vec.push(parts, then_label);
+                    parts = vec.push(parts, ":\n");
+                    parts = vec.push(parts, emit_branch_return(program, function_value, expr.nodes, then_block, ret));
+                    parts = vec.push(parts, else_label);
+                    parts = vec.push(parts, ":\n");
+                    parts = vec.push(parts, emit_branch_return(program, function_value, expr.nodes, else_block, ret));
+                    string.join(parts, "")
+                } else { "" },
+                None => "",
+            },
+            None => "",
+        },
+        None => "",
+    }
+}
+
+fn io_print_runtime_name(name: String) -> String {
+    if name == "eprint_str" {
+        "@aic_rt_eprint_str"
+    } else {
+        "@aic_rt_print_str"
+    }
+}
+
+fn emit_io_print_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(child) => if true {
+            let arg_name = string_node_value_name(child);
+            let prefix = llvm_expr_prefix(expr.node);
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            parts = vec.push(parts, emit_string_extracts(arg_name, prefix));
+            parts = vec.push(parts, "  call void ");
+            parts = vec.push(parts, io_print_runtime_name(expr.name));
+            parts = vec.push(parts, "(i8* ");
+            parts = vec.push(parts, llvm_local(prefix, ".ptr"));
+            parts = vec.push(parts, ", i64 ");
+            parts = vec.push(parts, llvm_local(prefix, ".len"));
+            parts = vec.push(parts, ", i64 ");
+            parts = vec.push(parts, llvm_local(prefix, ".cap"));
+            parts = vec.push(parts, ")\n  ret void\n");
+            string.join(parts, "")
+        } else { "" },
+        None => "",
+    }
+}
+
+fn emit_empty_string_return(prefix: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(prefix, ".empty.0"));
+    parts = vec.push(parts, " = insertvalue %aic.String undef, i8* null, 0\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".empty.1"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".empty.0"));
+    parts = vec.push(parts, ", i64 0, 1\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".empty.value"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".empty.1"));
+    parts = vec.push(parts, ", i64 0, 2\n  ret %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".empty.value"));
+    parts = vec.push(parts, "\n");
+    string.join(parts, "")
+}
+
+fn emit_env_arg_or_empty_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(call_node) => match expr_node_child_at(expr.nodes, call_node, 0) {
+            Some(index_node) => if true {
+                let prefix = llvm_expr_prefix(expr.node);
+                let some_label = concat2("match.some.", string.int_to_string(expr.node.value));
+                let none_label = concat2("match.none.", string.int_to_string(expr.node.value));
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "  ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.ptr"));
+                parts = vec.push(parts, " = alloca i8*\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.len"));
+                parts = vec.push(parts, " = alloca i64\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.ok"));
+                parts = vec.push(parts, " = call i64 @aic_rt_env_arg_at(i64 ");
+                parts = vec.push(parts, simple_node_llvm_value(index_node, function_value));
+                parts = vec.push(parts, ", i8** ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.ptr"));
+                parts = vec.push(parts, ", i64* ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.len"));
+                parts = vec.push(parts, ")\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.present"));
+                parts = vec.push(parts, " = icmp ne i64 ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.ok"));
+                parts = vec.push(parts, ", 0\n  br i1 ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.present"));
+                parts = vec.push(parts, ", label %");
+                parts = vec.push(parts, some_label);
+                parts = vec.push(parts, ", label %");
+                parts = vec.push(parts, none_label);
+                parts = vec.push(parts, "\n");
+                parts = vec.push(parts, some_label);
+                parts = vec.push(parts, ":\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.ptr"));
+                parts = vec.push(parts, " = load i8*, i8** ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.ptr"));
+                parts = vec.push(parts, "\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.len"));
+                parts = vec.push(parts, " = load i64, i64* ");
+                parts = vec.push(parts, llvm_local(prefix, ".arg.len"));
+                parts = vec.push(parts, "\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.0"));
+                parts = vec.push(parts, " = insertvalue %aic.String undef, i8* ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.ptr"));
+                parts = vec.push(parts, ", 0\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.1"));
+                parts = vec.push(parts, " = insertvalue %aic.String ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.0"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.len"));
+                parts = vec.push(parts, ", 1\n  ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.value"));
+                parts = vec.push(parts, " = insertvalue %aic.String ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.1"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.len"));
+                parts = vec.push(parts, ", 2\n  ret %aic.String ");
+                parts = vec.push(parts, llvm_local(prefix, ".some.value"));
+                parts = vec.push(parts, "\n");
+                parts = vec.push(parts, none_label);
+                parts = vec.push(parts, ":\n");
+                parts = vec.push(parts, emit_empty_string_return(prefix));
+                string.join(parts, "")
+            } else { "" },
+            None => "",
+        },
+        None => "",
     }
 }
 
@@ -1223,9 +2456,12 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             parts = vec.push(parts, "  %str.1 = insertvalue %aic.String %str.0, i64 ");
             parts = vec.push(parts, string.int_to_string(string.len(payload)));
             parts = vec.push(parts, ", 1\n");
+            parts = vec.push(parts, "  %str.2 = insertvalue %aic.String %str.1, i64 ");
+            parts = vec.push(parts, string.int_to_string(string.len(payload)));
+            parts = vec.push(parts, ", 2\n");
             parts = vec.push(parts, "  ret ");
             parts = vec.push(parts, ret);
-            parts = vec.push(parts, " %str.1\n");
+            parts = vec.push(parts, " %str.2\n");
             ()
         } else { () },
         IrUnitExpr => if true {
@@ -1233,11 +2469,7 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrNameExpr => if true {
-            parts = vec.push(parts, "  ret ");
-            parts = vec.push(parts, ret);
-            parts = vec.push(parts, " %");
-            parts = vec.push(parts, backend_mangle_symbol(expr.text));
-            parts = vec.push(parts, "\n");
+            parts = vec.push(parts, emit_return_name_value(program, function_value, expr.text, ret, llvm_expr_prefix(expr.node)));
             ()
         } else { () },
         IrBinaryExpr => if true {
@@ -1264,31 +2496,60 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrCallExpr => if true {
-            let call_ret = call_target_return_type(program, expr.name);
-            parts = vec.push(parts, "  %ret = call ");
-            parts = vec.push(parts, call_ret);
-            parts = vec.push(parts, " @");
-            parts = vec.push(parts, backend_mangle_symbol(expr.name));
-            parts = vec.push(parts, "(");
-            parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes));
-            parts = vec.push(parts, ")\n  ret ");
-            parts = vec.push(parts, ret);
-            parts = vec.push(parts, " %ret\n");
+            if is_io_print_intrinsic_name(expr.name) {
+                parts = vec.push(parts, emit_io_print_expr_return(program, function_value, expr));
+            } else if expr.name == "string.replace" {
+                parts = vec.push(parts, emit_string_replace_expr_value(program, function_value, expr));
+                parts = vec.push(parts, "  ret ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, llvm_expr_value_local(expr));
+                parts = vec.push(parts, "\n");
+            } else {
+                let call_ret = call_target_return_type(program, expr.name);
+                if call_ret == "%aic.String" {
+                    parts = vec.push(parts, emit_string_direct_call_expr_value(program, function_value, expr));
+                    parts = vec.push(parts, "  ret ");
+                    parts = vec.push(parts, ret);
+                    parts = vec.push(parts, " ");
+                    parts = vec.push(parts, llvm_expr_value_local(expr));
+                    parts = vec.push(parts, "\n");
+                } else {
+                    parts = vec.push(parts, emit_call_arg_values(program, function_value, expr.nodes, expr.name));
+                    parts = vec.push(parts, "  %ret = call ");
+                    parts = vec.push(parts, call_ret);
+                    parts = vec.push(parts, " @");
+                    parts = vec.push(parts, backend_mangle_symbol(expr.name));
+                    parts = vec.push(parts, "(");
+                    parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes, expr.name));
+                    parts = vec.push(parts, ")\n  ret ");
+                    parts = vec.push(parts, ret);
+                    parts = vec.push(parts, " %ret\n");
+                };
+            };
+            ()
+        } else { () },
+        IrIfExpr => if true {
+            parts = vec.push(parts, emit_if_expr_return(program, function_value, expr, ret));
             ()
         } else { () },
         IrMatchExpr => if true {
-            let selected = static_match_body(expr);
-            parts = vec.push(parts, "  ret ");
-            parts = vec.push(parts, ret);
-            parts = vec.push(parts, " ");
-            if selected == "true" {
-                parts = vec.push(parts, "1");
-            } else if selected == "false" {
-                parts = vec.push(parts, "0");
+            if env_arg_or_empty_expr_can_emit(program, expr, function_value) {
+                parts = vec.push(parts, emit_env_arg_or_empty_return(program, function_value, expr));
             } else {
-                parts = vec.push(parts, selected);
+                let selected = static_match_body(expr);
+                parts = vec.push(parts, "  ret ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                if selected == "true" {
+                    parts = vec.push(parts, "1");
+                } else if selected == "false" {
+                    parts = vec.push(parts, "0");
+                } else {
+                    parts = vec.push(parts, selected);
+                };
+                parts = vec.push(parts, "\n");
             };
-            parts = vec.push(parts, "\n");
             ()
         } else { () },
         _ => (),
@@ -1308,16 +2569,16 @@ fn emit_function_llvm(program: IrProgram, function_value: IrFunctionDef) -> Stri
     parts = vec.push(parts, "(");
     parts = vec.push(parts, params);
     parts = vec.push(parts, ") {\nentry:\n");
-    if ret == "void" {
-        parts = vec.push(parts, "  ret void\n");
-    } else {
-        match function_value.body.tail_expr {
-            Some(expr) => if true {
-                parts = vec.push(parts, emit_return_expr(program, function_value, expr, ret));
-                ()
-            } else { () },
-            None => (),
-        };
+    match function_value.body.tail_expr {
+        Some(expr) => if true {
+            parts = vec.push(parts, emit_return_expr(program, function_value, expr, ret));
+            ()
+        } else { () },
+        None => if ret == "void" {
+            parts = vec.push(parts, "  ret void\n");
+        } else {
+            ()
+        },
     };
     parts = vec.push(parts, "}\n");
     string.join(parts, "")
@@ -1498,6 +2759,7 @@ pub fn emit_llvm_text(program: IrProgram, options: BackendOptions) -> String {
     };
     parts = vec.push(parts, native_links_summary(options.native_links));
     parts = vec.push(parts, emit_type_declarations(program));
+    parts = vec.push(parts, emit_runtime_declarations(program));
     parts = vec.push(parts, emit_string_globals(program));
     parts = vec.push(parts, emit_item_metadata(program));
     parts = vec.push(parts, "\n");

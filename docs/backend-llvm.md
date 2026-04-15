@@ -18,18 +18,24 @@ Each artifact records:
 - deterministic digest metadata
 - backend diagnostics
 
-The package emits LLVM text directly. Requests for native object, static library, or executable materialization return `E5105`; the driver is responsible for turning validated LLVM text into native artifacts.
+The package emits LLVM text directly. Requests for native object, static library, or executable materialization return `E5105`; the driver is responsible for turning validated LLVM text into native artifacts and linking the existing runtime C sources when executable materialization needs runtime symbols.
 
 ## Lowered Surface
 
 The backend emits executable LLVM for the backend-covered primitive forms:
 
 - primitive function signatures using integer, boolean, unit, and `String` return forms
+- `String` values as `%aic.String = type { i8*, i64, i64 }`, matching the runtime `ptr`, `len`, and `cap` ABI
 - integer and boolean literal returns
 - string literal returns using deterministic module-level LLVM constants
+- runtime-backed `string.replace` return expressions over string literals, string parameters, and nested replacement calls
 - parameter returns
+- lossless integer widening on returns, such as `Int32` aliases returning through an `Int` function boundary
 - integer `+`, `-`, and `*` over primitive operands
 - direct primitive function calls
+- return-position `if` expressions over primitive comparisons and string equality/inequality
+- tail-position `print_str` and `eprint_str` calls lowered to runtime stdout/stderr calls for unit-returning functions
+- runtime-backed `std.env.arg_at` option matches in the canonical `Some(value) => value, None => ""` form
 - static literal `match` expressions whose selected arm is known from literal patterns
 
 The backend also preserves deterministic metadata for structs, enums, tuples, generic definitions, generic instantiations, closures, async/future functions, trait and impl declarations, const/global declarations, resource-handle-shaped types, and native-link declarations. These metadata surfaces let parity tools verify coverage without pretending that unsupported executable forms have native code.

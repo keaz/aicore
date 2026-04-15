@@ -12,37 +12,19 @@ import std.string;
 import std.vec;
 
 fn concat2(left: String, right: String) -> String {
-    let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, left);
-    parts = vec.push(parts, right);
-    string.join(parts, "")
+    string.replace(string.replace("{0}{1}", "{0}", left), "{1}", right)
 }
 
 fn concat3(first: String, second: String, third: String) -> String {
-    let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, first);
-    parts = vec.push(parts, second);
-    parts = vec.push(parts, third);
-    string.join(parts, "")
+    string.replace(string.replace(string.replace("{0}{1}{2}", "{0}", first), "{1}", second), "{2}", third)
 }
 
 fn concat4(first: String, second: String, third: String, fourth: String) -> String {
-    let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, first);
-    parts = vec.push(parts, second);
-    parts = vec.push(parts, third);
-    parts = vec.push(parts, fourth);
-    string.join(parts, "")
+    string.replace(string.replace(string.replace(string.replace("{0}{1}{2}{3}", "{0}", first), "{1}", second), "{2}", third), "{3}", fourth)
 }
 
 fn concat5(first: String, second: String, third: String, fourth: String, fifth: String) -> String {
-    let mut parts: Vec[String] = vec.new_vec();
-    parts = vec.push(parts, first);
-    parts = vec.push(parts, second);
-    parts = vec.push(parts, third);
-    parts = vec.push(parts, fourth);
-    parts = vec.push(parts, fifth);
-    string.join(parts, "")
+    string.replace(string.replace(string.replace(string.replace(string.replace("{0}{1}{2}{3}{4}", "{0}", first), "{1}", second), "{2}", third), "{3}", fourth), "{4}", fifth)
 }
 
 fn shell_quote(value: String) -> String {
@@ -50,25 +32,7 @@ fn shell_quote(value: String) -> String {
 }
 
 fn proc_status_to_int(value: ProcExitStatus) -> Int {
-    let zero: ProcExitStatus = 0;
-    let one: ProcExitStatus = 1;
-    if value < zero {
-        let mut remaining = zero - value;
-        let mut out = 0;
-        while remaining > zero {
-            remaining = remaining - one;
-            out = out + 1;
-        };
-        0 - out
-    } else {
-        let mut remaining = value;
-        let mut out = 0;
-        while remaining > zero {
-            remaining = remaining - one;
-            out = out + 1;
-        };
-        out
-    }
+    value
 }
 
 fn arg_or_empty(index: Int) -> String effects { env } capabilities { env } {
@@ -79,20 +43,11 @@ fn arg_or_empty(index: Int) -> String effects { env } capabilities { env } {
 }
 
 fn write_stdout(value: String) -> () effects { io } capabilities { io } {
-    if value == "" {
-        ()
-    } else {
-        print_str(value)
-    }
+    print_str(value)
 }
 
 fn write_stderr(value: String) -> () effects { io } capabilities { io } {
-    if value == "" {
-        ()
-    } else {
-        let _written = write_stream(stderr_writer(), value);
-        ()
-    }
+    eprint_str(value)
 }
 
 fn source_path_for_input(input_path: String) -> String effects { fs } capabilities { fs } {
@@ -262,8 +217,12 @@ fn native_materialization_error(message: String) -> Int effects { io } capabilit
     1
 }
 
-fn clang_command(llvm_path: String, output_path: String) -> String {
-    concat5("clang -x ir -Wno-override-module ", shell_quote(llvm_path), " -o ", shell_quote(output_path), "")
+fn runtime_c_command(runtime_path: String) -> String {
+    concat3("cat src/codegen/runtime/part01.c src/codegen/runtime/part02.c src/codegen/runtime/part03.c src/codegen/runtime/part04.c src/codegen/runtime/part05.c > ", shell_quote(runtime_path), "")
+}
+
+fn clang_command(llvm_path: String, runtime_path: String, output_path: String) -> String {
+    concat5(runtime_c_command(runtime_path), " && clang -x ir -Wno-override-module ", shell_quote(llvm_path), concat5(" -x c ", shell_quote(runtime_path), " -DAIC_RT_TLS_OPENSSL=0 -pthread -lm -o ", shell_quote(output_path), ""), "")
 }
 
 fn materialize_native(result: DriverCommandResult, output_path: String, emit_built: Bool) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
@@ -272,32 +231,44 @@ fn materialize_native(result: DriverCommandResult, output_path: String, emit_bui
         result.exit_code
     } else {
         match temp_file("aic_selfhost_llvm_") {
-            Ok(llvm_path) => match write_text(llvm_path, result.artifact_text) {
-                Ok(_) => match proc.run(clang_command(llvm_path, output_path)) {
-                    Ok(out) => if out.status == 0 {
-                        let _cleanup = delete(llvm_path);
-                        if emit_built {
-                            write_stdout(concat3("built ", output_path, "\n"))
+            Ok(llvm_path) => match temp_file("aic_selfhost_runtime_") {
+                Ok(runtime_path) => match write_text(llvm_path, result.artifact_text) {
+                    Ok(_) => match proc.run(clang_command(llvm_path, runtime_path, output_path)) {
+                        Ok(out) => if out.status == 0 {
+                            let _cleanup_llvm = delete(llvm_path);
+                            let _cleanup_runtime = delete(runtime_path);
+                            if emit_built {
+                                write_stdout(concat3("built ", output_path, "\n"))
+                            } else {
+                                ()
+                            };
+                            0
                         } else {
-                            ()
-                        };
-                        0
-                    } else {
-                        let _cleanup = delete(llvm_path);
-                        write_stderr(out.stderr);
-                        native_materialization_error("clang returned a nonzero exit status")
+                            let _cleanup_llvm = delete(llvm_path);
+                            let _cleanup_runtime = delete(runtime_path);
+                            write_stderr(out.stderr);
+                            native_materialization_error("clang returned a nonzero exit status")
+                        },
+                        Err(_) => if true {
+                            let _cleanup_llvm = delete(llvm_path);
+                            let _cleanup_runtime = delete(runtime_path);
+                            native_materialization_error("failed to launch clang")
+                        } else {
+                            1
+                        },
                     },
                     Err(_) => if true {
-                        let _cleanup = delete(llvm_path);
-                        native_materialization_error("failed to launch clang")
+                        let _cleanup_llvm = delete(llvm_path);
+                        let _cleanup_runtime = delete(runtime_path);
+                        write_stderr("error[E5203]: self-host driver could not write temporary LLVM artifact\n");
+                        1
                     } else {
                         1
                     },
                 },
                 Err(_) => if true {
                     let _cleanup = delete(llvm_path);
-                    write_stderr("error[E5203]: self-host driver could not write temporary LLVM artifact\n");
-                    1
+                    native_materialization_error("failed to allocate a temporary runtime source path")
                 } else {
                     1
                 },

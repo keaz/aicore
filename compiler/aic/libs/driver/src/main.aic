@@ -243,7 +243,7 @@ pub fn driver_import_paths_from_source(source_value: DriverSource, max_errors: I
 
 pub fn driver_synthetic_source_for_import(import_path: String, source: SourceId) -> Option[DriverSource] {
     if import_path == "std.io" {
-        Some(driver_source("std/io.aic", "module std.io; import std.result; pub enum IoError { EndOfInput, InvalidInput, Io, } pub enum Writer { WriteStdout, WriteStderr, } pub intrinsic fn stderr_writer() -> Writer; pub intrinsic fn write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects { io }; pub intrinsic fn print_int(x: Int) -> () effects { io }; pub intrinsic fn print_str(x: String) -> () effects { io };", source))
+        Some(driver_source("std/io.aic", "module std.io; import std.result; pub enum IoError { EndOfInput, InvalidInput, Io, } pub enum Writer { WriteStdout, WriteStderr, } pub intrinsic fn stderr_writer() -> Writer; pub intrinsic fn write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects { io }; pub intrinsic fn print_int(x: Int) -> () effects { io }; pub intrinsic fn print_str(x: String) -> () effects { io }; pub intrinsic fn eprint_str(x: String) -> () effects { io };", source))
     } else if import_path == "std.result" {
         Some(driver_source("std/result.aic", "module std.result; pub enum Result[T, E] { Ok(T), Err(E), }", source))
     } else if import_path == "std.option" {

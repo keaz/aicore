@@ -764,6 +764,44 @@ fn is_integer_type(text: String) -> Bool {
     is_signed_int_type(text) || is_unsigned_int_type(text)
 }
 
+fn integer_type_is_signed(text: String) -> Bool {
+    text == "Int" || text == "Int8" || text == "Int16" || text == "Int32" || text == "Int64" || text == "Int128" || text == "isize"
+}
+
+fn integer_type_bits(text: String) -> Int {
+    if text == "Int8" || text == "UInt8" {
+        8
+    } else if text == "Int16" || text == "UInt16" {
+        16
+    } else if text == "Int32" || text == "UInt32" {
+        32
+    } else if text == "Int128" || text == "UInt128" {
+        128
+    } else {
+        64
+    }
+}
+
+fn integer_conversion_is_lossless(expected: String, found: String) -> Bool {
+    if is_integer_type(expected) && is_integer_type(found) {
+        let expected_signed = integer_type_is_signed(expected);
+        let found_signed = integer_type_is_signed(found);
+        let expected_bits = integer_type_bits(expected);
+        let found_bits = integer_type_bits(found);
+        if expected_signed && found_signed {
+            found_bits <= expected_bits
+        } else if expected_signed && !found_signed {
+            expected_bits > found_bits
+        } else if !expected_signed && !found_signed {
+            found_bits <= expected_bits
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
 fn is_float_type(text: String) -> Bool {
     text == "Float" || text == "Float32" || text == "Float64"
 }
@@ -818,16 +856,20 @@ fn substitute_type_alias(alias_item: AstTypeAliasDecl, args: Vec[String]) -> Str
 }
 
 fn types_compatible(units: Vec[ResolveUnit], module_path: String, expected: String, found: String) -> Bool {
+    let expected_canonical = canonical_type_text(units, module_path, expected);
+    let found_canonical = canonical_type_text(units, module_path, found);
     if expected == "<unknown>" || found == "<unknown>" || expected == "_" || found == "_" {
         true
-    } else if expected == found {
+    } else if expected == found || expected_canonical == found_canonical {
         true
     } else if string.starts_with(expected, "Fn") && found == "Fn" {
         true
     } else if expected == "Fn" && string.starts_with(found, "Fn") {
         true
+    } else if integer_conversion_is_lossless(expected_canonical, found_canonical) {
+        true
     } else {
-        canonical_type_text(units, module_path, expected) == canonical_type_text(units, module_path, found)
+        false
     }
 }
 

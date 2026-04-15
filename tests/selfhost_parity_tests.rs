@@ -482,9 +482,15 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(backend.contains("pub fn backend_artifact_ok"));
     assert!(backend.contains("pub fn backend_has_diagnostic_code"));
     assert!(backend.contains("\"String\""));
-    assert!(backend.contains("%aic.String = type { i8*, i64 }"));
+    assert!(backend.contains("%aic.String = type { i8*, i64, i64 }"));
     assert!(backend.contains("fn llvm_escape_string_data"));
     assert!(backend.contains("fn emit_string_literal_global"));
+    assert!(backend.contains("fn emit_string_replace_call"));
+    assert!(backend.contains("aic_rt_string_replace"));
+    assert!(backend.contains("fn llvm_integer_extension_op"));
+    assert!(backend.contains("sext"));
+    assert!(backend.contains("fn emit_env_arg_or_empty_return"));
+    assert!(backend.contains("aic_rt_env_arg_at"));
     assert!(backend.contains("generic-definition-metadata"));
     assert!(backend.contains("native-link-metadata"));
     assert!(backend.contains("E5101"));
@@ -526,7 +532,17 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_tool.contains("driver_ir_json_sources"));
     assert!(selfhost_tool.contains("driver_build_sources"));
     assert!(selfhost_tool.contains("materialize_native"));
+    assert!(selfhost_tool.contains("runtime_c_command"));
+    assert!(selfhost_tool.contains("cat src/codegen/runtime/part01.c"));
+    assert!(selfhost_tool.contains("aic_selfhost_runtime_"));
+    assert!(selfhost_tool.contains("-x c "));
+    assert!(selfhost_tool.contains("src/codegen/runtime/part01.c"));
+    assert!(selfhost_tool.contains("src/codegen/runtime/part05.c"));
+    assert!(selfhost_tool.contains("-DAIC_RT_TLS_OPENSSL=0"));
+    assert!(selfhost_tool.contains("-pthread -lm"));
     assert!(selfhost_tool.contains("proc.run"));
+    assert!(selfhost_tool
+        .contains("fn proc_status_to_int(value: ProcExitStatus) -> Int {\n    value\n}"));
     assert!(selfhost_tool.contains("source_path_for_input"));
 
     let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
