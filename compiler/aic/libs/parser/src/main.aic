@@ -3228,7 +3228,7 @@ fn parse_tuple_or_parenthesized_expr(cursor: ParserCursor) -> ParseExpr {
                     if has_diagnostic(close) {
                         expr_error(close.cursor, close.token.span, "E1037", "expected ')' after expression")
                     } else {
-                        expr_ok(close.cursor, simple_expr(first_expr.kind, first_expr.op, first_expr.name, merge(open.token.span, close.token.span), first_expr.text))
+                        expr_ok(close.cursor, ast_expr(first_expr.kind, first_expr.op, first_expr.name, first_expr.direct_child_count, first_expr.nodes, first_expr.patterns, first_expr.match_arms, merge(open.token.span, close.token.span), first_expr.text))
                     }
                 },
                 None => expr_error(first.cursor, first.span, "E1300", "expected expression"),
@@ -3365,6 +3365,13 @@ fn parse_struct_literal_fields(cursor: ParserCursor, open_span: SourceSpan, name
     }
 }
 
+fn block_value_expr(block: AstBlock) -> AstExpr {
+    match block.tail_expr {
+        Some(expr) => expr,
+        None => simple_expr(AstUnitExpr(), "", "", block.span, block.text),
+    }
+}
+
 fn parse_if_expr(cursor: ParserCursor) -> ParseExpr {
     let keyword = expect_keyword(cursor, "if", "E1330", "expected if expression");
     if has_diagnostic(keyword) {
@@ -3402,7 +3409,7 @@ fn parse_if_expr(cursor: ParserCursor) -> ParseExpr {
                                     }
                                 } else {
                                     match else_block.block {
-                                        Some(block) => expr_ok(else_block.cursor, simple_expr(AstBlockExpr(), "", "", block.span, block.text)),
+                                        Some(block) => expr_ok(else_block.cursor, block_value_expr(block)),
                                         None => expr_error(else_block.cursor, else_keyword.token.span, "E1331", "expected else block"),
                                     }
                                 }
@@ -3412,13 +3419,15 @@ fn parse_if_expr(cursor: ParserCursor) -> ParseExpr {
                             } else {
                                 match else_expr.expr {
                                     Some(else_value) => if true {
-                                        let then_text = match then_block.block {
-                                            Some(block) => block.text,
-                                            None => "",
+                                        let then_value = match then_block.block {
+                                            Some(block) => block_value_expr(block),
+                                            None => simple_expr(AstUnitExpr(), "", "", else_keyword.token.span, "()"),
                                         };
+                                        let then_text = then_value.text;
                                         let text = wrap_text("if ", cond_expr.text, wrap_text(then_text, "else", else_value.text));
                                         let mut children: Vec[AstExpr] = vec.new_vec();
                                         children = vec.push(children, cond_expr);
+                                        children = vec.push(children, then_value);
                                         children = vec.push(children, else_value);
                                         expr_ok(else_expr.cursor, expr_with_children(AstIfExpr(), "", "", children, vec.new_vec(), merge(keyword.token.span, else_value.span), text))
                                     } else {

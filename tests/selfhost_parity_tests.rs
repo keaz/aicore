@@ -492,10 +492,14 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(driver.contains("pub struct DriverCommandResult"));
     assert!(driver.contains("pub fn driver_compile_source"));
     assert!(driver.contains("pub fn driver_check_source"));
+    assert!(driver.contains("pub fn driver_check_sources"));
     assert!(driver.contains("pub fn driver_ir_json_source"));
+    assert!(driver.contains("pub fn driver_ir_json_sources"));
     assert!(driver.contains("pub fn driver_build_source"));
+    assert!(driver.contains("pub fn driver_build_sources"));
     assert!(driver.contains("pub fn driver_run_source"));
     assert!(driver.contains("pub fn driver_manifest_main_path"));
+    assert!(driver.contains("driver_sources_with_synthetic_imports_for_all"));
     assert!(driver.contains("E5200"));
     assert!(driver.contains("E5201"));
     assert!(driver.contains("E5205"));
@@ -504,15 +508,35 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         fs::read_to_string(root.join("compiler/aic/tools/aic_selfhost/src/main.aic"))
             .expect("read aic_selfhost tool");
     assert!(selfhost_tool.contains("module compiler.tools.aic_selfhost"));
-    assert!(selfhost_tool.contains("driver_check_source"));
-    assert!(selfhost_tool.contains("driver_ir_json_source"));
-    assert!(selfhost_tool.contains("driver_build_source"));
+    assert!(selfhost_tool.contains("compiler_source_path_for_import"));
+    assert!(selfhost_tool.contains("read_source_bundle"));
+    assert!(selfhost_tool.contains("driver_check_sources"));
+    assert!(selfhost_tool.contains("driver_ir_json_sources"));
+    assert!(selfhost_tool.contains("driver_build_sources"));
     assert!(selfhost_tool.contains("materialize_native"));
     assert!(selfhost_tool.contains("proc.run"));
     assert!(selfhost_tool.contains("source_path_for_input"));
 
     let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
     assert!(makefile.contains("selfhost-parity-candidate"));
+    assert!(makefile.contains("selfhost-bootstrap"));
+    assert!(makefile.contains("selfhost-bootstrap-report"));
+
+    let bootstrap = fs::read_to_string(root.join("scripts/selfhost/bootstrap.py"))
+        .expect("read bootstrap script");
+    assert!(bootstrap.contains("aicore-selfhost-bootstrap-v1"));
+    assert!(bootstrap.contains("stage0"));
+    assert!(bootstrap.contains("stage1"));
+    assert!(bootstrap.contains("stage2"));
+    assert!(bootstrap.contains("allow-incomplete"));
+
+    let selfhost_docs =
+        fs::read_to_string(root.join("docs/selfhost/README.md")).expect("read selfhost docs");
+    assert!(selfhost_docs.contains("make selfhost-bootstrap-report"));
+    assert!(selfhost_docs.contains("make selfhost-bootstrap"));
+    assert!(selfhost_docs.contains("experimental"));
+    assert!(selfhost_docs.contains("supported"));
+    assert!(selfhost_docs.contains("default"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");

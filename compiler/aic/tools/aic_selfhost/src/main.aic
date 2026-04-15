@@ -1,6 +1,7 @@
 module compiler.tools.aic_selfhost;
 
 import compiler.driver;
+import compiler.source;
 import std.env;
 import std.fs;
 import std.io;
@@ -107,6 +108,124 @@ fn source_path_for_input(input_path: String) -> String effects { fs } capabiliti
     }
 }
 
+struct SourceLoadState {
+    sources: Vec[DriverSource],
+    next_source: Int,
+}
+
+fn source_load_state(sources: Vec[DriverSource], next_source: Int) -> SourceLoadState {
+    SourceLoadState {
+        sources: sources,
+        next_source: next_source,
+    }
+}
+
+fn compiler_source_path_for_import(import_path: String) -> String {
+    if import_path == "compiler.source" {
+        "compiler/aic/libs/source/src/main.aic"
+    } else if import_path == "compiler.diagnostics" {
+        "compiler/aic/libs/diagnostics/src/main.aic"
+    } else if import_path == "compiler.syntax" {
+        "compiler/aic/libs/syntax/src/main.aic"
+    } else if import_path == "compiler.lexer" {
+        "compiler/aic/libs/lexer/src/main.aic"
+    } else if import_path == "compiler.ast" {
+        "compiler/aic/libs/ast/src/main.aic"
+    } else if import_path == "compiler.parser" {
+        "compiler/aic/libs/parser/src/main.aic"
+    } else if import_path == "compiler.frontend" {
+        "compiler/aic/libs/frontend/src/main.aic"
+    } else if import_path == "compiler.semantics" {
+        "compiler/aic/libs/semantics/src/main.aic"
+    } else if import_path == "compiler.typecheck" {
+        "compiler/aic/libs/typecheck/src/main.aic"
+    } else if import_path == "compiler.ir" {
+        "compiler/aic/libs/ir/src/main.aic"
+    } else if import_path == "compiler.backend_llvm" {
+        "compiler/aic/libs/backend_llvm/src/main.aic"
+    } else if import_path == "compiler.driver" {
+        "compiler/aic/libs/driver/src/main.aic"
+    } else {
+        ""
+    }
+}
+
+fn load_mapped_import(state: SourceLoadState, import_path: String) -> Result[SourceLoadState, FsError] effects { fs } capabilities { fs } {
+    let path = compiler_source_path_for_import(import_path);
+    if path == "" || driver_has_source_path(state.sources, path) {
+        Ok(state)
+    } else {
+        match read_text(path) {
+            Ok(text) => if true {
+                let next_sources = vec.push(state.sources, driver_source(path, text, source_id(state.next_source)));
+                Ok(source_load_state(next_sources, state.next_source + 1))
+            } else {
+                Ok(state)
+            },
+            Err(error) => Err(error),
+        }
+    }
+}
+
+fn read_source_bundle(input_path: String, max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let source_path = source_path_for_input(input_path);
+    match read_source_text(source_path) {
+        Ok(text) => if true {
+            let mut sources: Vec[DriverSource] = vec.new_vec();
+            sources = vec.push(sources, driver_source(source_path, text, source_id(1)));
+            let mut state = source_load_state(sources, 2);
+            let mut failed: Option[FsError] = None();
+            let mut scan = 0;
+            while scan < vec.vec_len(state.sources) {
+                match failed {
+                    Some(_) => (),
+                    None => match vec.get(state.sources, scan) {
+                        Some(source_value) => if true {
+                            let imports = driver_import_paths_from_source(source_value, max_errors);
+                            let mut import_index = 0;
+                            while import_index < vec.vec_len(imports) {
+                                match failed {
+                                    Some(_) => (),
+                                    None => match vec.get(imports, import_index) {
+                                        Some(import_path) => match load_mapped_import(state, import_path) {
+                                            Ok(next_state) => if true {
+                                                state = next_state;
+                                                ()
+                                            } else {
+                                                ()
+                                            },
+                                            Err(error) => if true {
+                                                failed = Some(error);
+                                                ()
+                                            } else {
+                                                ()
+                                            },
+                                        },
+                                        None => (),
+                                    },
+                                };
+                                import_index = import_index + 1;
+                            };
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    },
+                };
+                scan = scan + 1;
+            };
+            match failed {
+                Some(error) => Err(error),
+                None => Ok(driver_sources_with_synthetic_imports_for_all(state.sources, max_errors)),
+            }
+        } else {
+            Ok(vec.new_vec())
+        },
+        Err(error) => Err(error),
+    }
+}
+
 fn read_source_text(path: String) -> Result[String, FsError] effects { fs } capabilities { fs } {
     read_text(path)
 }
@@ -193,9 +312,8 @@ fn missing_arg(command: String) -> DriverCommandResult {
 }
 
 fn run_check(input_path: String) -> Int effects { io, fs } capabilities { io, fs } {
-    let source_path = source_path_for_input(input_path);
-    match read_source_text(source_path) {
-        Ok(text) => flush_check_result(driver_check_source(source_path, text, 120)),
+    match read_source_bundle(input_path, 120) {
+        Ok(sources) => flush_check_result(driver_check_sources(sources, 120)),
         Err(_) => if true {
             write_stderr("error[E5202]: self-host driver could not read source input\n");
             1
@@ -209,9 +327,8 @@ fn run_ir(input_path: String, emit_flag: String, emit_kind: String) -> Int effec
     if emit_flag != "--emit" || emit_kind != "json" {
         flush_result(driver_unsupported_command("ir requires --emit json", 20), false)
     } else {
-        let source_path = source_path_for_input(input_path);
-        match read_source_text(source_path) {
-            Ok(text) => flush_result(driver_ir_json_source(source_path, text, 120), false),
+        match read_source_bundle(input_path, 120) {
+            Ok(sources) => flush_result(driver_ir_json_sources(sources, 120), false),
             Err(_) => if true {
                 write_stderr("error[E5202]: self-host driver could not read source input\n");
                 1
@@ -226,9 +343,8 @@ fn run_build(input_path: String, output_flag: String, output_path: String) -> In
     if output_flag != "-o" || output_path == "" {
         flush_result(driver_unsupported_command("build requires -o <path>", 20), false)
     } else {
-        let source_path = source_path_for_input(input_path);
-        match read_source_text(source_path) {
-            Ok(text) => materialize_native(driver_build_source(source_path, text, output_path, 120), output_path, true),
+        match read_source_bundle(input_path, 120) {
+            Ok(sources) => materialize_native(driver_build_sources(sources, output_path, 120), output_path, true),
             Err(_) => if true {
                 write_stderr("error[E5202]: self-host driver could not read source input\n");
                 1
@@ -240,10 +356,9 @@ fn run_build(input_path: String, output_flag: String, output_path: String) -> In
 }
 
 fn run_run(input_path: String) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
-    let source_path = source_path_for_input(input_path);
-    match read_source_text(source_path) {
-        Ok(text) => match temp_file("aic_selfhost_run_") {
-            Ok(exe_path) => if materialize_native(driver_build_source(source_path, text, exe_path, 120), exe_path, false) == 0 {
+    match read_source_bundle(input_path, 120) {
+        Ok(sources) => match temp_file("aic_selfhost_run_") {
+            Ok(exe_path) => if materialize_native(driver_build_sources(sources, exe_path, 120), exe_path, false) == 0 {
                 match proc.run(shell_quote(exe_path)) {
                     Ok(out) => if true {
                         let _cleanup = delete(exe_path);

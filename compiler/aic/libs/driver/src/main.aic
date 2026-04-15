@@ -243,11 +243,21 @@ pub fn driver_import_paths_from_source(source_value: DriverSource, max_errors: I
 
 pub fn driver_synthetic_source_for_import(import_path: String, source: SourceId) -> Option[DriverSource] {
     if import_path == "std.io" {
-        Some(driver_source("std/io.aic", "module std.io; pub fn print_int(x: Int) -> () effects { io } capabilities { io } { let _x = x; () } pub fn print_str(x: String) -> () effects { io } capabilities { io } { let _x = x; () }", source))
+        Some(driver_source("std/io.aic", "module std.io; import std.result; pub enum IoError { EndOfInput, InvalidInput, Io, } pub enum Writer { WriteStdout, WriteStderr, } pub intrinsic fn stderr_writer() -> Writer; pub intrinsic fn write_stream(writer: Writer, content: String) -> Result[Int, IoError] effects { io }; pub intrinsic fn print_int(x: Int) -> () effects { io }; pub intrinsic fn print_str(x: String) -> () effects { io };", source))
     } else if import_path == "std.result" {
-        Some(driver_source("std/result.aic", "module std.result; enum Result[T, E] { Ok(T), Err(E), }", source))
+        Some(driver_source("std/result.aic", "module std.result; pub enum Result[T, E] { Ok(T), Err(E), }", source))
     } else if import_path == "std.option" {
-        Some(driver_source("std/option.aic", "module std.option; enum Option[T] { Some(T), None, }", source))
+        Some(driver_source("std/option.aic", "module std.option; pub enum Option[T] { Some(T), None, }", source))
+    } else if import_path == "std.vec" {
+        Some(driver_source("std/vec.aic", "module std.vec; import std.option; pub struct Vec[T] { ptr: Int, len: Int, cap: Int, } pub intrinsic fn new_vec[T]() -> Vec[T]; pub intrinsic fn push[T](values: Vec[T], value: T) -> Vec[T]; pub intrinsic fn get[T](values: Vec[T], index: Int) -> Option[T]; pub intrinsic fn vec_len[T](values: Vec[T]) -> Int;", source))
+    } else if import_path == "std.string" {
+        Some(driver_source("std/string.aic", "module std.string; import std.option; import std.vec; pub intrinsic fn len(s: String) -> Int; pub intrinsic fn contains(haystack: String, needle: String) -> Bool; pub intrinsic fn starts_with(s: String, prefix: String) -> Bool; pub intrinsic fn ends_with(s: String, suffix: String) -> Bool; pub intrinsic fn substring(s: String, start: Int, end: Int) -> String; pub intrinsic fn replace(s: String, from: String, to: String) -> String; pub intrinsic fn split(s: String, delimiter: String) -> Vec[String]; pub intrinsic fn char_at(s: String, index: Int) -> Option[String]; pub intrinsic fn join(values: Vec[String], sep: String) -> String; pub intrinsic fn int_to_string(value: Int) -> String;", source))
+    } else if import_path == "std.env" {
+        Some(driver_source("std/env.aic", "module std.env; import std.option; pub intrinsic fn arg_at(index: Int) -> Option[String] effects { env };", source))
+    } else if import_path == "std.fs" {
+        Some(driver_source("std/fs.aic", "module std.fs; import std.result; pub enum FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Timeout, Cancelled, Io, } pub intrinsic fn read_text(path: String) -> Result[String, FsError] effects { fs }; pub intrinsic fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }; pub intrinsic fn delete(path: String) -> Result[Bool, FsError] effects { fs }; pub intrinsic fn temp_file(prefix: String) -> Result[String, FsError] effects { fs };", source))
+    } else if import_path == "std.proc" {
+        Some(driver_source("std/proc.aic", "module std.proc; import std.result; pub enum ProcError { NotFound, PermissionDenied, InvalidInput, Io, UnknownProcess, } pub type ProcExitStatus = Int32; pub struct ProcOutput { status: ProcExitStatus, stdout: String, stderr: String, } pub intrinsic fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env };", source))
     } else {
         None()
     }
@@ -273,6 +283,11 @@ pub fn driver_has_source_path(values: Vec[DriverSource], path: String) -> Bool {
 pub fn driver_sources_with_synthetic_imports(entry: DriverSource, max_errors: Int) -> Vec[DriverSource] {
     let mut out: Vec[DriverSource] = vec.new_vec();
     out = vec.push(out, entry);
+    driver_sources_with_synthetic_imports_for_all(out, max_errors)
+}
+
+pub fn driver_sources_with_synthetic_imports_for_all(entries: Vec[DriverSource], max_errors: Int) -> Vec[DriverSource] {
+    let mut out = entries;
     let mut scan = 0;
     let mut next_source = 1000;
     while scan < vec.vec_len(out) {
@@ -307,7 +322,7 @@ pub fn driver_sources_with_synthetic_imports(entry: DriverSource, max_errors: In
 }
 
 pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
-    let parsed = parse_sources(values, max_errors);
+    let parsed = parse_sources(driver_sources_with_synthetic_imports_for_all(values, max_errors), max_errors);
     let mut diagnostics = collect_parse_diagnostics(parsed, max_errors);
     let entry = first_program(parsed);
     match entry {
@@ -353,7 +368,9 @@ pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> Dri
 }
 
 pub fn driver_compile_source(path: String, text: String, max_errors: Int) -> DriverCompileResult {
-    driver_compile_sources(driver_sources_with_synthetic_imports(driver_source(path, text, source_id(1)), max_errors), max_errors)
+    let mut sources: Vec[DriverSource] = vec.new_vec();
+    sources = vec.push(sources, driver_source(path, text, source_id(1)));
+    driver_compile_sources(sources, max_errors)
 }
 
 fn driver_compile_attach_backend(compiled: DriverCompileResult, program: IrProgram, max_errors: Int) -> DriverCompileResult {
@@ -367,8 +384,8 @@ fn driver_compile_attach_backend(compiled: DriverCompileResult, program: IrProgr
     driver_compile_result(compiled.entry_module, diagnostics, compiled.program, backend_artifact)
 }
 
-fn driver_compile_with_backend(path: String, text: String, max_errors: Int) -> DriverCompileResult {
-    let compiled: DriverCompileResult = driver_compile_source(path, text, max_errors);
+fn driver_compile_sources_with_backend(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
+    let compiled: DriverCompileResult = driver_compile_sources(values, max_errors);
     if driver_has_error(compiled.diagnostics) {
         compiled
     } else {
@@ -377,6 +394,12 @@ fn driver_compile_with_backend(path: String, text: String, max_errors: Int) -> D
             None => compiled,
         }
     }
+}
+
+fn driver_compile_with_backend(path: String, text: String, max_errors: Int) -> DriverCompileResult {
+    let mut sources: Vec[DriverSource] = vec.new_vec();
+    sources = vec.push(sources, driver_source(path, text, source_id(1)));
+    driver_compile_sources_with_backend(sources, max_errors)
 }
 
 fn diagnostic_severity_name(value: Diagnostic) -> String {
@@ -394,6 +417,12 @@ fn diagnostic_line(value: Diagnostic) -> String {
     parts = vec.push(parts, value.code.value);
     parts = vec.push(parts, "]: ");
     parts = vec.push(parts, value.message);
+    parts = vec.push(parts, " @ source ");
+    parts = vec.push(parts, string.int_to_string(value.span.source.value));
+    parts = vec.push(parts, ":");
+    parts = vec.push(parts, string.int_to_string(value.span.start));
+    parts = vec.push(parts, "-");
+    parts = vec.push(parts, string.int_to_string(value.span.end));
     parts = vec.push(parts, "\n");
     string.join(parts, "")
 }
@@ -427,6 +456,11 @@ pub fn driver_check_source(path: String, text: String, max_errors: Int) -> Drive
     driver_command_result(compile_exit_code(compiled), "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics)
 }
 
+pub fn driver_check_sources(values: Vec[DriverSource], max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_sources(values, max_errors);
+    driver_command_result(compile_exit_code(compiled), "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics)
+}
+
 pub fn driver_ir_json_source(path: String, text: String, max_errors: Int) -> DriverCommandResult {
     let compiled = driver_compile_source(path, text, max_errors);
     if driver_has_error(compiled.diagnostics) {
@@ -439,8 +473,29 @@ pub fn driver_ir_json_source(path: String, text: String, max_errors: Int) -> Dri
     }
 }
 
+pub fn driver_ir_json_sources(values: Vec[DriverSource], max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_sources(values, max_errors);
+    if driver_has_error(compiled.diagnostics) {
+        driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics)
+    } else {
+        match compiled.program {
+            Some(program) => driver_command_result(0, ir_program_to_json(program), driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics),
+            None => driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics),
+        }
+    }
+}
+
 pub fn driver_build_source(path: String, text: String, output_path: String, max_errors: Int) -> DriverCommandResult {
     let compiled = driver_compile_with_backend(path, text, max_errors);
+    driver_build_compiled(compiled, output_path)
+}
+
+pub fn driver_build_sources(values: Vec[DriverSource], output_path: String, max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_sources_with_backend(values, max_errors);
+    driver_build_compiled(compiled, output_path)
+}
+
+fn driver_build_compiled(compiled: DriverCompileResult, output_path: String) -> DriverCommandResult {
     if driver_has_error(compiled.diagnostics) {
         driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), output_path, "", compiled.diagnostics)
     } else {

@@ -2113,15 +2113,36 @@ fn infer_if_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], reso
     } else {
         env_error(cond_checked.env, max_errors, "E1204", expr.span, "if condition must be Bool", "use a Bool expression as the condition")
     };
-    match direct_expr_at(expr, 1) {
-        Some(else_expr) => if true {
-            let checked_else = infer_expr(else_expr, out_env, units, resolver, semantics, max_errors, expected);
-            out_env = checked_else.env;
-            expr_check(out_env, checked_else.type_text)
-        } else {
-            expr_check(out_env, "()")
-        },
-        None => expr_check(out_env, "()"),
+    if expr.direct_child_count >= 3 {
+        match direct_expr_at(expr, 1) {
+            Some(then_expr) => match direct_expr_at(expr, 2) {
+                Some(else_expr) => if true {
+                    let checked_then = infer_expr(then_expr, out_env, units, resolver, semantics, max_errors, expected);
+                    let checked_else = infer_expr(else_expr, checked_then.env, units, resolver, semantics, max_errors, checked_then.type_text);
+                    out_env = checked_else.env;
+                    if types_compatible(units, env.module_path, checked_then.type_text, checked_else.type_text) {
+                        expr_check(out_env, checked_then.type_text)
+                    } else {
+                        expr_check(env_error(out_env, max_errors, "E1204", expr.span, "if branches must have matching types", "make both branches return the same type"), checked_then.type_text)
+                    }
+                } else {
+                    expr_check(out_env, "()")
+                },
+                None => expr_check(out_env, "()"),
+            },
+            None => expr_check(out_env, "()"),
+        }
+    } else {
+        match direct_expr_at(expr, 1) {
+            Some(else_expr) => if true {
+                let checked_else = infer_expr(else_expr, out_env, units, resolver, semantics, max_errors, expected);
+                out_env = checked_else.env;
+                expr_check(out_env, checked_else.type_text)
+            } else {
+                expr_check(out_env, "()")
+            },
+            None => expr_check(out_env, "()"),
+        }
     }
 }
 

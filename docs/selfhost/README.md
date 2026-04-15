@@ -104,3 +104,36 @@ The parity manifest should grow in lockstep with the AICore compiler port. It mu
 - deterministic output across repeated runs
 
 Each porting issue must add manifest cases for the compiler surface it implements and keep the existing Rust compiler output unchanged.
+
+## Bootstrap Readiness
+
+The final self-hosting gate uses a staged bootstrap report:
+
+```bash
+make selfhost-bootstrap-report
+```
+
+This bounded report command builds `stage0` with the Rust reference compiler, attempts to build `stage1` with `stage0`, attempts to build `stage2` with `stage1` when `stage1` exists, runs the expanded Rust-vs-self-host parity manifest with the latest available stage compiler, and writes `target/selfhost-bootstrap/report.json`.
+
+The report distinguishes compiler modes:
+
+- `experimental`: stage0 and parity can be exercised, but stage1/stage2 or reproducibility failures keep the self-host compiler unsupported.
+- `supported`: stage0, stage1, stage2, parity, and stage1/stage2 reproducibility must pass.
+- `default`: the supported gate must pass, followed by explicit release approval.
+
+The release-blocking command is:
+
+```bash
+make selfhost-bootstrap
+```
+
+That command exits nonzero until the supported criteria are met. It must not be bypassed by copying stage artifacts, reusing the Rust compiler for later stages, or treating missing stage1/stage2 artifacts as success.
+
+The current status is experimental. `aic build compiler/aic/tools/aic_selfhost` produces a real stage0 compiler, and stage0 can check smaller compiler packages such as `compiler/aic/libs/source`. The full stage1/stage2 loop remains unsupported until stage0 can compile the complete compiler package graph, emit a runnable stage1 compiler, stage1 can emit stage2, and the stage1/stage2 artifact digests match or have documented stable differences covered by tests.
+
+For troubleshooting:
+
+- Inspect `target/selfhost-bootstrap/report.json` for command lines, exit codes, timeouts, stdout/stderr, artifact paths, and SHA-256 digests.
+- Run `target/selfhost-bootstrap/stage0/aic_selfhost check <package>` to isolate package-level front-end failures.
+- Run `make selfhost-parity-candidate` to validate the currently supported Rust-vs-self-host parity corpus independently of bootstrap.
+- Keep #409 open while the report status is `experimental`; unsupported stages are not accepted as done.
