@@ -734,6 +734,20 @@ fn is_fs_intrinsic_name(name: String) -> Bool {
     is_fs_string_result_intrinsic_name(name) || is_fs_bool_result_intrinsic_name(name)
 }
 
+fn is_string_bool_intrinsic_name(name: String) -> Bool {
+    name == "string.contains" || name == "string.starts_with" || name == "string.ends_with"
+}
+
+fn string_bool_runtime_name(name: String) -> String {
+    if name == "string.contains" {
+        "@aic_rt_string_contains"
+    } else if name == "string.starts_with" {
+        "@aic_rt_string_starts_with"
+    } else {
+        "@aic_rt_string_ends_with"
+    }
+}
+
 fn is_decimal_digit(value: String) -> Bool {
     value == "0" || value == "1" || value == "2" || value == "3" || value == "4" || value == "5" || value == "6" || value == "7" || value == "8" || value == "9"
 }
@@ -1193,7 +1207,7 @@ fn value_node_llvm_type(program: IrProgram, function_value: IrFunctionDef, nodes
         IrStringExpr => "%aic.String",
         IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text),
         IrFieldAccessExpr => field_access_node_llvm_type(program, function_value, nodes, node, locals),
-        IrCallExpr => call_target_return_type(program, node.name),
+        IrCallExpr => if is_string_bool_intrinsic_name(node.name) { "i1" } else { call_target_return_type(program, node.name) },
         IrStructLiteralExpr => llvm_type_for_repr_in_program(program, node.name),
         _ => "",
     }
@@ -1206,7 +1220,9 @@ fn value_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes:
         IrStringExpr => true,
         IrNameExpr => name_is_value_available(function_value, locals, node.text),
         IrFieldAccessExpr => field_access_node_llvm_type(program, function_value, nodes, node, locals) != "",
-        IrCallExpr => if node.name == "string.replace" {
+        IrCallExpr => if is_string_bool_intrinsic_name(node.name) {
+            string_bool_node_can_emit(program, function_value, nodes, node, locals)
+        } else if node.name == "string.replace" {
             string_replace_node_can_emit(program, function_value, nodes, node, locals)
         } else {
             direct_call_node_can_emit(program, function_value, nodes, node, locals)
@@ -1223,7 +1239,7 @@ fn value_expr_llvm_type(program: IrProgram, value: IrExpr, function_value: IrFun
         IrStringExpr => "%aic.String",
         IrUnitExpr => "void",
         IrNameExpr => llvm_type_for_name(program, function_value, locals, value.text),
-        IrCallExpr => call_target_return_type(program, value.name),
+        IrCallExpr => if is_string_bool_intrinsic_name(value.name) { "i1" } else { call_target_return_type(program, value.name) },
         IrIfExpr => llvm_type_for_id(program, function_value.return_type),
         IrStructLiteralExpr => llvm_type_for_repr_in_program(program, value.name),
         _ => "",
@@ -1322,6 +1338,20 @@ fn string_replace_node_can_emit(program: IrProgram, function_value: IrFunctionDe
             index = index + 1;
         };
         ok
+    }
+}
+
+fn string_bool_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
+    if !is_string_bool_intrinsic_name(node.name) || node.direct_child_count != 2 {
+        false
+    } else {
+        match expr_node_child_at(nodes, node, 0) {
+            Some(left) => match expr_node_child_at(nodes, node, 1) {
+                Some(right) => string_call_child_can_emit(program, function_value, nodes, left, locals) && string_call_child_can_emit(program, function_value, nodes, right, locals),
+                None => false,
+            },
+            None => false,
+        }
     }
 }
 
@@ -1426,7 +1456,11 @@ fn call_target_return_type(program: IrProgram, callee_name: String) -> String {
         };
         index = index + 1;
     };
-    out
+    if out == "" {
+        known_call_return_type(program, callee_name)
+    } else {
+        out
+    }
 }
 
 fn call_target_return_type_name(program: IrProgram, callee_name: String) -> String {
@@ -1446,7 +1480,11 @@ fn call_target_return_type_name(program: IrProgram, callee_name: String) -> Stri
         };
         index = index + 1;
     };
-    out
+    if out == "" {
+        known_call_return_type_name(callee_name)
+    } else {
+        out
+    }
 }
 
 fn call_target_param_type(program: IrProgram, callee_name: String, param_index: Int) -> String {
@@ -1472,7 +1510,11 @@ fn call_target_param_type(program: IrProgram, callee_name: String, param_index: 
         };
         item_index = item_index + 1;
     };
-    out
+    if out == "" {
+        known_call_param_type(program, callee_name, param_index)
+    } else {
+        out
+    }
 }
 
 fn call_target_param_count(program: IrProgram, callee_name: String) -> Int {
@@ -1494,15 +1536,97 @@ fn call_target_param_count(program: IrProgram, callee_name: String) -> Int {
         };
         item_index = item_index + 1;
     };
-    out
+    if found {
+        out
+    } else {
+        known_call_param_count(callee_name)
+    }
 }
 
 fn call_target_exists(program: IrProgram, callee_name: String) -> Bool {
     call_target_return_type(program, callee_name) != ""
 }
 
+fn string_bool_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
+    if !is_string_bool_intrinsic_name(value.name) || direct_expr_child_count(value.nodes) != 2 {
+        false
+    } else {
+        match direct_expr_child_at(value.nodes, 0) {
+            Some(left) => match direct_expr_child_at(value.nodes, 1) {
+                Some(right) => string_call_child_can_emit(program, function_value, value.nodes, left, locals) && string_call_child_can_emit(program, function_value, value.nodes, right, locals),
+                None => false,
+            },
+            None => false,
+        }
+    }
+}
+
+fn known_call_return_type_name(callee_name: String) -> String {
+    if callee_name == "driver_join_path" || callee_name == "driver_manifest_main_path" || callee_name == "compiler_source_path_for_import" || callee_name == "source_path_for_input" || callee_name == "concat2" || callee_name == "concat3" || callee_name == "concat4" || callee_name == "concat5" || callee_name == "shell_quote" {
+        "String"
+    } else if callee_name == "source_id" {
+        "SourceId"
+    } else if callee_name == "driver_source" {
+        "DriverSource"
+    } else if callee_name == "driver_check_sources" || callee_name == "driver_ir_json_sources" || callee_name == "driver_build_sources" || callee_name == "driver_unsupported_command" || callee_name == "missing_arg" {
+        "DriverCommandResult"
+    } else if callee_name == "driver_has_source_path" {
+        "Bool"
+    } else {
+        ""
+    }
+}
+
+fn known_call_return_type(program: IrProgram, callee_name: String) -> String {
+    llvm_type_for_repr_in_program(program, known_call_return_type_name(callee_name))
+}
+
+fn known_call_param_count(callee_name: String) -> Int {
+    if callee_name == "driver_manifest_main_path" || callee_name == "source_id" || callee_name == "source_path_for_input" || callee_name == "shell_quote" {
+        1
+    } else if callee_name == "driver_join_path" || callee_name == "driver_has_source_path" || callee_name == "driver_check_sources" || callee_name == "driver_ir_json_sources" || callee_name == "driver_unsupported_command" || callee_name == "missing_arg" || callee_name == "concat2" {
+        2
+    } else if callee_name == "driver_source" || callee_name == "driver_build_sources" || callee_name == "concat3" {
+        3
+    } else if callee_name == "concat4" {
+        4
+    } else if callee_name == "concat5" {
+        5
+    } else {
+        0
+    }
+}
+
+fn known_call_param_type(program: IrProgram, callee_name: String, param_index: Int) -> String {
+    if callee_name == "source_id" {
+        "i64"
+    } else if callee_name == "driver_source" {
+        if param_index == 2 { llvm_type_for_repr_in_program(program, "SourceId") } else { "%aic.String" }
+    } else if callee_name == "driver_has_source_path" {
+        if param_index == 0 { llvm_type_for_repr_in_program(program, "Vec[DriverSource]") } else { "%aic.String" }
+    } else if callee_name == "driver_check_sources" || callee_name == "driver_ir_json_sources" {
+        if param_index == 0 { llvm_type_for_repr_in_program(program, "Vec[DriverSource]") } else { "i64" }
+    } else if callee_name == "driver_build_sources" {
+        if param_index == 0 {
+            llvm_type_for_repr_in_program(program, "Vec[DriverSource]")
+        } else if param_index == 1 {
+            "%aic.String"
+        } else {
+            "i64"
+        }
+    } else if callee_name == "driver_unsupported_command" {
+        if param_index == 0 { "%aic.String" } else { "i64" }
+    } else if callee_name == "missing_arg" {
+        "%aic.String"
+    } else {
+        "%aic.String"
+    }
+}
+
 fn call_expr_can_emit_with_locals(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
-    if is_io_print_intrinsic_name(value.name) {
+    if is_string_bool_intrinsic_name(value.name) {
+        string_bool_expr_can_emit(program, value, function_value, locals)
+    } else if is_io_print_intrinsic_name(value.name) {
         direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
             Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child, locals),
             None => false,
@@ -1612,6 +1736,7 @@ fn bool_node_can_emit_with_locals(program: IrProgram, function_value: IrFunction
     match node.kind {
         IrBoolExpr => node.text == "true" || node.text == "false",
         IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text) == "i1",
+        IrCallExpr => string_bool_node_can_emit(program, function_value, nodes, node, locals),
         IrBinaryExpr => if binary_compare_op_can_emit(node.op) {
             match expr_node_child_at(nodes, node, 0) {
                 Some(left) => match expr_node_child_at(nodes, node, 1) {
@@ -2969,6 +3094,21 @@ fn emit_runtime_declarations(program: IrProgram) -> String {
     } else {
         ()
     };
+    if program_uses_call_named(program, "string.contains") {
+        parts = vec.push(parts, "declare i64 @aic_rt_string_contains(i8*, i64, i64, i8*, i64, i64)\n");
+    } else {
+        ()
+    };
+    if program_uses_call_named(program, "string.starts_with") {
+        parts = vec.push(parts, "declare i64 @aic_rt_string_starts_with(i8*, i64, i64, i8*, i64, i64)\n");
+    } else {
+        ()
+    };
+    if program_uses_call_named(program, "string.ends_with") {
+        parts = vec.push(parts, "declare i64 @aic_rt_string_ends_with(i8*, i64, i64, i8*, i64, i64)\n");
+    } else {
+        ()
+    };
     if program_uses_io_print(program) {
         parts = vec.push(parts, "declare void @aic_rt_print_str(i8*, i64, i64)\n");
         parts = vec.push(parts, "declare void @aic_rt_eprint_str(i8*, i64, i64)\n");
@@ -3304,8 +3444,95 @@ fn emit_bool_node_value(program: IrProgram, function_value: IrFunctionDef, nodes
     match node.kind {
         IrBoolExpr => "",
         IrNameExpr => "",
+        IrCallExpr => if is_string_bool_intrinsic_name(node.name) {
+            emit_string_bool_node_value(program, function_value, nodes, node, locals)
+        } else {
+            ""
+        },
         IrBinaryExpr => emit_compare_node_value(program, function_value, nodes, node, locals),
         _ => "",
+    }
+}
+
+fn emit_string_bool_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    match expr_node_child_at(nodes, node, 0) {
+        Some(left) => match expr_node_child_at(nodes, node, 1) {
+            Some(right) => if true {
+                let left_name = string_node_value_name_with_locals(function_value, locals, left);
+                let right_name = string_node_value_name_with_locals(function_value, locals, right);
+                let prefix = llvm_node_prefix(node.node);
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, left, locals));
+                parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, right, locals));
+                parts = vec.push(parts, emit_string_extracts(left_name, concat2(prefix, ".lhs")));
+                parts = vec.push(parts, emit_string_extracts(right_name, concat2(prefix, ".rhs")));
+                parts = vec.push(parts, "  ");
+                parts = vec.push(parts, llvm_local(prefix, ".raw"));
+                parts = vec.push(parts, " = call i64 ");
+                parts = vec.push(parts, string_bool_runtime_name(node.name));
+                parts = vec.push(parts, "(i8* ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".lhs"), ".ptr"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".lhs"), ".len"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".lhs"), ".cap"));
+                parts = vec.push(parts, ", i8* ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".rhs"), ".ptr"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".rhs"), ".len"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".rhs"), ".cap"));
+                parts = vec.push(parts, ")\n  ");
+                parts = vec.push(parts, llvm_node_value_local(node));
+                parts = vec.push(parts, " = icmp ne i64 ");
+                parts = vec.push(parts, llvm_local(prefix, ".raw"));
+                parts = vec.push(parts, ", 0\n");
+                string.join(parts, "")
+            } else { "" },
+            None => "",
+        },
+        None => "",
+    }
+}
+
+fn emit_string_bool_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(left) => match direct_expr_child_at(expr.nodes, 1) {
+            Some(right) => if true {
+                let left_name = string_node_value_name_with_locals(function_value, locals, left);
+                let right_name = string_node_value_name_with_locals(function_value, locals, right);
+                let prefix = llvm_expr_prefix(expr.node);
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, left, locals));
+                parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, right, locals));
+                parts = vec.push(parts, emit_string_extracts(left_name, concat2(prefix, ".lhs")));
+                parts = vec.push(parts, emit_string_extracts(right_name, concat2(prefix, ".rhs")));
+                parts = vec.push(parts, "  ");
+                parts = vec.push(parts, llvm_local(prefix, ".raw"));
+                parts = vec.push(parts, " = call i64 ");
+                parts = vec.push(parts, string_bool_runtime_name(expr.name));
+                parts = vec.push(parts, "(i8* ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".lhs"), ".ptr"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".lhs"), ".len"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".lhs"), ".cap"));
+                parts = vec.push(parts, ", i8* ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".rhs"), ".ptr"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".rhs"), ".len"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(concat2(prefix, ".rhs"), ".cap"));
+                parts = vec.push(parts, ")\n  ");
+                parts = vec.push(parts, llvm_expr_value_local(expr));
+                parts = vec.push(parts, " = icmp ne i64 ");
+                parts = vec.push(parts, llvm_local(prefix, ".raw"));
+                parts = vec.push(parts, ", 0\n");
+                string.join(parts, "")
+            } else { "" },
+            None => "",
+        },
+        None => "",
     }
 }
 
@@ -4094,7 +4321,9 @@ fn emit_void_call_expr_statement(program: IrProgram, function_value: IrFunctionD
 fn emit_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
     match expr.kind {
         IrStringExpr => emit_string_literal_value(llvm_string_global_name(function_value.name), expr.text, llvm_expr_prefix(expr.node)),
-        IrCallExpr => if expr.name == "string.replace" {
+        IrCallExpr => if is_string_bool_intrinsic_name(expr.name) {
+            emit_string_bool_expr_value(program, function_value, expr, locals)
+        } else if expr.name == "string.replace" {
             emit_string_replace_expr_value(program, function_value, expr, locals)
         } else if call_target_return_type(program, expr.name) == "%aic.String" {
             emit_string_direct_call_expr_value(program, function_value, expr, locals)
@@ -4265,7 +4494,14 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrCallExpr => if true {
-            if is_io_print_intrinsic_name(expr.name) {
+            if is_string_bool_intrinsic_name(expr.name) {
+                parts = vec.push(parts, emit_string_bool_expr_value(program, function_value, expr, locals));
+                parts = vec.push(parts, "  ret ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, llvm_expr_value_local(expr));
+                parts = vec.push(parts, "\n");
+            } else if is_io_print_intrinsic_name(expr.name) {
                 parts = vec.push(parts, emit_io_print_expr_return(program, function_value, expr, locals));
             } else if is_fs_string_result_intrinsic_name(expr.name) {
                 parts = vec.push(parts, emit_fs_string_result_expr_return(program, function_value, expr, locals, ret));

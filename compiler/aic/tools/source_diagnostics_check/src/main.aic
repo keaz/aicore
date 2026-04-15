@@ -1173,6 +1173,13 @@ fn parsed_unit(source: SourceId, text: String) -> ResolveUnit {
     }
 }
 
+fn push_driver_synthetic_unit(units: Vec[ResolveUnit], import_path: String, source: SourceId) -> Vec[ResolveUnit] {
+    match driver_synthetic_source_for_import(import_path, source) {
+        Some(value) => vec.push(units, parsed_unit(value.source, value.text)),
+        None => units,
+    }
+}
+
 fn resolver_units_for_positive_case() -> Vec[ResolveUnit] {
     let mut units: Vec[ResolveUnit] = vec.new_vec();
     units = vec.push(units, parsed_unit(source_id(20), "module app.main; import app.math; import app.model; import app.api; struct Token { x: Int, } fn Token(x: Int) -> Int { x } enum Choice { One, Two(Int), } trait Show[T] { fn show(self: T) -> Int; } impl Show[Token] { fn show(self: Token) -> Int { self.x } } fn local(value: Int) -> Int { value } fn own(t: Token) -> Int { t.x } fn main() -> Int { math.add(1, 2) + local(3) + Token(4) + One() + api.handle() }"));
@@ -1340,6 +1347,9 @@ fn valid_typecheck_positive_cases() -> Bool {
 fn typecheck_single(text: String) -> TypecheckOutput {
     let mut units: Vec[ResolveUnit] = vec.new_vec();
     units = vec.push(units, parsed_unit(source_id(37), text));
+    units = push_driver_synthetic_unit(units, "std.option", source_id(38));
+    units = push_driver_synthetic_unit(units, "std.vec", source_id(39));
+    units = push_driver_synthetic_unit(units, "std.string", source_id(40));
     typecheck_units(units, "app.main", 80)
 }
 
@@ -1717,7 +1727,7 @@ fn string_vec_contains(values: Vec[String], target: String) -> Bool {
 }
 
 fn backend_positive_source() -> String {
-    "module app.main; fn add(x: Int, y: Int) -> Int { x + y } fn bool_id(flag: Bool) -> Bool { flag } fn bool_call() -> Bool { bool_id(true) } fn int_if(x: Int) -> Int { if x == 0 { 1 } else { x } } fn string_id(s: String) -> String { s } fn string_lit() -> String { \"ok\" } fn string_if(s: String) -> String { if s == \"\" { \"empty\" } else { s } } fn local_string(s: String) -> String { let value = string_id(s); value } fn branch_local(s: String) -> String { if s == \"\" { \"empty\" } else { let value = string_id(s); value } } type ProcExitStatus = Int32; fn status_id(status: ProcExitStatus) -> ProcExitStatus { status } fn status_to_int(status: ProcExitStatus) -> Int { status } fn matched() -> Int { match true { true => 1, false => 0, } } fn loop_value() -> Int { while false { }; 1 } fn generic_one[T]() -> Int { 1 } async fn future() -> Int { 1 } fn closure_tuple() -> Int { let closure = || -> Int { 1 }; let tuple = (1, true); 1 } fn main() -> Int { add(40, 2) } struct Pair { left: Int, right: Int, } fn pair_value() -> Pair { Pair { left: 1, right: 2 } } struct Log { stdout: String, exit_code: Int, } fn sink(value: String) -> () { () } fn flush(log: Log) -> Int { sink(log.stdout); 0 } fn log_status(log: Log) -> Int { if log.exit_code == 0 { 1 } else { log.exit_code } } struct FileHandle { raw: Int, } enum Choice { One, Two(Int), } enum SmallError { NotFound, Io, } enum Result[T, E] { Ok(T), Err(E), } fn result_id(value: Result[String, SmallError]) -> Result[String, SmallError] { value } type Count = Int; const BASE: Count = 40; trait Score[T]; impl Score[Pair];"
+    "module app.main; import std.string; fn add(x: Int, y: Int) -> Int { x + y } fn bool_id(flag: Bool) -> Bool { flag } fn bool_call() -> Bool { bool_id(true) } fn int_if(x: Int) -> Int { if x == 0 { 1 } else { x } } fn string_id(s: String) -> String { s } fn string_lit() -> String { \"ok\" } fn string_if(s: String) -> String { if s == \"\" { \"empty\" } else { s } } fn suffix(s: String) -> Bool { string.ends_with(s, \".aic\") } fn local_string(s: String) -> String { let value = string_id(s); value } fn branch_local(s: String) -> String { if string.ends_with(s, \".aic\") { \"file\" } else { let value = string_id(s); value } } type ProcExitStatus = Int32; fn status_id(status: ProcExitStatus) -> ProcExitStatus { status } fn status_to_int(status: ProcExitStatus) -> Int { status } fn matched() -> Int { match true { true => 1, false => 0, } } fn loop_value() -> Int { while false { }; 1 } fn generic_one[T]() -> Int { 1 } async fn future() -> Int { 1 } fn closure_tuple() -> Int { let closure = || -> Int { 1 }; let tuple = (1, true); 1 } fn main() -> Int { add(40, 2) } struct Pair { left: Int, right: Int, } fn pair_value() -> Pair { Pair { left: 1, right: 2 } } struct Log { stdout: String, exit_code: Int, } fn sink(value: String) -> () { () } fn flush(log: Log) -> Int { sink(log.stdout); 0 } fn log_status(log: Log) -> Int { if log.exit_code == 0 { 1 } else { log.exit_code } } struct FileHandle { raw: Int, } enum Choice { One, Two(Int), } enum SmallError { NotFound, Io, } enum Result[T, E] { Ok(T), Err(E), } fn result_id(value: Result[String, SmallError]) -> Result[String, SmallError] { value } type Count = Int; const BASE: Count = 40; trait Score[T]; impl Score[Pair];"
 }
 
 fn backend_positive_status_code() -> Int {
@@ -1792,6 +1802,12 @@ fn backend_positive_status_code() -> Int {
                 651
             } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_string_compare") {
                 652
+            } else if !string.contains(artifact.llvm_ir, "declare i64 @aic_rt_string_ends_with") {
+                675
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_string_ends_with") {
+                676
+            } else if !string.contains(artifact.llvm_ir, "define i1 @aic_suffix(%aic.String %aic_s)") {
+                677
             } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_local_string(%aic.String %aic_s)") {
                 670
             } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_branch_local(%aic.String %aic_s)") {

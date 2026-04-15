@@ -30,6 +30,7 @@ The backend emits executable LLVM for the backend-covered primitive forms:
 - integer and boolean literal returns
 - string literal returns using deterministic module-level LLVM constants
 - runtime-backed `string.replace` return expressions over string literals, string parameters, and nested replacement calls
+- runtime-backed `string.contains`, `string.starts_with`, and `string.ends_with` predicate calls over backend-covered string operands
 - string field extraction from backend-covered struct parameters when passed to supported string calls
 - parameter returns
 - local `let` bindings for backend-covered primitive, string, aggregate call, struct field, and struct literal values
@@ -37,6 +38,7 @@ The backend emits executable LLVM for the backend-covered primitive forms:
 - lossless integer widening on returns, such as `Int32` aliases returning through an `Int` function boundary
 - integer `+`, `-`, and `*` over primitive operands
 - direct primitive function calls
+- declared-call ABI typing for the imported compiler support functions used by `aic_selfhost`; imported definition emission is still tracked by the bootstrap gate
 - return-position `if` expressions over primitive comparisons and string equality/inequality
 - nested block expression branches with backend-covered local bindings and tail returns
 - tail-position `print_str` and `eprint_str` calls lowered to runtime stdout/stderr calls for unit-returning functions
