@@ -96,6 +96,44 @@ struct ExprCheck {
     type_text: String,
 }
 
+struct EffectCallEdge {
+    caller_module: String,
+    caller_name: String,
+    callee_module: String,
+    callee_name: String,
+    effect_names: Vec[String],
+    span: SourceSpan,
+}
+
+struct EffectFunctionEntry {
+    module_path: String,
+    name: String,
+    effect_names: Vec[String],
+    capability_names: Vec[String],
+    direct_effect_names: Vec[String],
+    call_edges: Vec[EffectCallEdge],
+    span: SourceSpan,
+    body_span: SourceSpan,
+    has_body: Bool,
+}
+
+struct EffectScan {
+    diagnostics: Vec[Diagnostic],
+    effect_names: Vec[String],
+    call_edges: Vec[EffectCallEdge],
+}
+
+struct EffectBodyResult {
+    entries: Vec[EffectFunctionEntry],
+    diagnostics: Vec[Diagnostic],
+}
+
+struct EffectPath {
+    names: Vec[String],
+    span: SourceSpan,
+    found: Bool,
+}
+
 pub fn typecheck_type(kind: TypecheckTypeKind, text: String, name: String, arity: Int, span: SourceSpan) -> TypecheckType {
     TypecheckType {
         kind: kind,
@@ -177,6 +215,54 @@ fn expr_check(env: TypecheckEnv, type_text_value: String) -> ExprCheck {
     ExprCheck {
         env: env,
         type_text: type_text_value,
+    }
+}
+
+fn effect_call_edge(caller_module: String, caller_name: String, callee_module: String, callee_name: String, effect_names: Vec[String], span: SourceSpan) -> EffectCallEdge {
+    EffectCallEdge {
+        caller_module: caller_module,
+        caller_name: caller_name,
+        callee_module: callee_module,
+        callee_name: callee_name,
+        effect_names: effect_names,
+        span: span,
+    }
+}
+
+fn effect_function_entry(module_path: String, name: String, effect_names: Vec[String], capability_names: Vec[String], direct_effect_names: Vec[String], call_edges: Vec[EffectCallEdge], span: SourceSpan, body_span: SourceSpan, has_body: Bool) -> EffectFunctionEntry {
+    EffectFunctionEntry {
+        module_path: module_path,
+        name: name,
+        effect_names: effect_names,
+        capability_names: capability_names,
+        direct_effect_names: direct_effect_names,
+        call_edges: call_edges,
+        span: span,
+        body_span: body_span,
+        has_body: has_body,
+    }
+}
+
+fn effect_scan(diagnostics: Vec[Diagnostic], effect_names: Vec[String], call_edges: Vec[EffectCallEdge]) -> EffectScan {
+    EffectScan {
+        diagnostics: diagnostics,
+        effect_names: effect_names,
+        call_edges: call_edges,
+    }
+}
+
+fn effect_body_result(entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic]) -> EffectBodyResult {
+    EffectBodyResult {
+        entries: entries,
+        diagnostics: diagnostics,
+    }
+}
+
+fn effect_path(names: Vec[String], span: SourceSpan, found: Bool) -> EffectPath {
+    EffectPath {
+        names: names,
+        span: span,
+        found: found,
     }
 }
 
@@ -344,6 +430,49 @@ fn same_string_vec(left: Vec[String], right: Vec[String]) -> Bool {
         };
         ok
     }
+}
+
+fn string_vec_contains(values: Vec[String], value: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(item) => if item == value {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn push_unique_string(values: Vec[String], value: String) -> Vec[String] {
+    if string_vec_contains(values, value) {
+        values
+    } else {
+        vec.push(values, value)
+    }
+}
+
+fn append_unique_strings(left: Vec[String], right: Vec[String]) -> Vec[String] {
+    let mut out = left;
+    let mut index = 0;
+    while index < vec.vec_len(right) {
+        match vec.get(right, index) {
+            Some(value) => if true {
+                out = push_unique_string(out, value);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
 }
 
 fn has_instantiation(items: Vec[TypecheckInstantiation], name: String, kind: String, type_args: Vec[String]) -> Bool {
@@ -2254,6 +2383,841 @@ fn check_item(item: AstProgramItem, module_path: String, units: Vec[ResolveUnit]
     }
 }
 
+fn effect_or_capability_names(text: String) -> Vec[String] {
+    if text == "" {
+        vec.new_vec()
+    } else {
+        string.split(text, ",")
+    }
+}
+
+fn known_effect(name: String) -> Bool {
+    name == "io" || name == "fs" || name == "net" || name == "time" || name == "rand" || name == "env" || name == "proc" || name == "concurrency"
+}
+
+fn known_capability(name: String) -> Bool {
+    known_effect(name)
+}
+
+fn append_effect_declaration_diagnostics(diagnostics: Vec[Diagnostic], names: Vec[String], span_value: SourceSpan, max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut seen: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(names) {
+        match vec.get(names, index) {
+            Some(name) => if !known_effect(name) {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "unknown effect '");
+                parts = vec.push(parts, name);
+                parts = vec.push(parts, "'");
+                out = append_diagnostic_if_room(out, max_errors, with_help(error(diagnostic_code("E2003"), span_value, string.join(parts, "")), "known effects: io, fs, net, time, rand, env, proc, concurrency"));
+                ()
+            } else if string_vec_contains(seen, name) {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "duplicate effect '");
+                parts = vec.push(parts, name);
+                parts = vec.push(parts, "' in signature");
+                out = append_diagnostic_if_room(out, max_errors, error(diagnostic_code("E2004"), span_value, string.join(parts, "")));
+                ()
+            } else {
+                seen = vec.push(seen, name);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn append_capability_declaration_diagnostics(diagnostics: Vec[Diagnostic], names: Vec[String], span_value: SourceSpan, max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut seen: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(names) {
+        match vec.get(names, index) {
+            Some(name) => if !known_capability(name) {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "unknown capability '");
+                parts = vec.push(parts, name);
+                parts = vec.push(parts, "'");
+                out = append_diagnostic_if_room(out, max_errors, with_help(error(diagnostic_code("E2007"), span_value, string.join(parts, "")), "known capabilities: io, fs, net, time, rand, env, proc, concurrency"));
+                ()
+            } else if string_vec_contains(seen, name) {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "duplicate capability '");
+                parts = vec.push(parts, name);
+                parts = vec.push(parts, "' in signature");
+                out = append_diagnostic_if_room(out, max_errors, error(diagnostic_code("E2008"), span_value, string.join(parts, "")));
+                ()
+            } else {
+                seen = vec.push(seen, name);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn function_effect_key(module_path: String, name: String) -> String {
+    if module_path == "" || module_path == "<root>" {
+        name
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, module_path);
+        parts = vec.push(parts, "::");
+        parts = vec.push(parts, name);
+        string.join(parts, "")
+    }
+}
+
+fn effect_entry_key(entry: EffectFunctionEntry) -> String {
+    function_effect_key(entry.module_path, entry.name)
+}
+
+fn effect_call_callee_key(edge: EffectCallEdge) -> String {
+    function_effect_key(edge.callee_module, edge.callee_name)
+}
+
+fn find_effect_entry(entries: Vec[EffectFunctionEntry], module_path: String, name: String) -> Option[EffectFunctionEntry] {
+    let mut out: Option[EffectFunctionEntry] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if entry.module_path == module_path && entry.name == name {
+                out = Some(entry);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn find_effect_entry_by_key(entries: Vec[EffectFunctionEntry], key: String) -> Option[EffectFunctionEntry] {
+    let mut out: Option[EffectFunctionEntry] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if effect_entry_key(entry) == key {
+                out = Some(entry);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn find_effect_entry_by_name(entries: Vec[EffectFunctionEntry], name: String) -> Option[EffectFunctionEntry] {
+    let mut out: Option[EffectFunctionEntry] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if entry.name == name {
+                out = Some(entry);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn replace_effect_entry(entries: Vec[EffectFunctionEntry], updated: EffectFunctionEntry) -> Vec[EffectFunctionEntry] {
+    let mut out: Vec[EffectFunctionEntry] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if effect_entry_key(entry) == effect_entry_key(updated) {
+                out = vec.push(out, updated);
+                ()
+            } else {
+                out = vec.push(out, entry);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn append_signature_effect_entry(entries: Vec[EffectFunctionEntry], module_path: String, signature: AstFunctionSignature, span_value: SourceSpan, body_span: SourceSpan, has_body: Bool) -> Vec[EffectFunctionEntry] {
+    vec.push(entries, effect_function_entry(module_path, signature.name.value, effect_or_capability_names(signature.effect_names), effect_or_capability_names(signature.capability_names), vec.new_vec(), vec.new_vec(), span_value, body_span, has_body))
+}
+
+fn collect_effect_entries_for_item(entries: Vec[EffectFunctionEntry], item: AstProgramItem, module_path: String) -> Vec[EffectFunctionEntry] {
+    match item.function_item {
+        Some(function_item) => append_signature_effect_entry(entries, module_path, function_item.signature, function_item.span, function_item.body.span, true),
+        None => match item.function_signature {
+            Some(signature) => append_signature_effect_entry(entries, module_path, signature, item.span, item.span, false),
+            None => match item.impl_item {
+                Some(impl_item) => if true {
+                    let mut out = entries;
+                    let mut index = 0;
+                    while index < vec.vec_len(impl_item.methods) {
+                        match vec.get(impl_item.methods, index) {
+                            Some(method) => if true {
+                                out = append_signature_effect_entry(out, module_path, method.signature, method.span, method.body.span, true);
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        };
+                        index = index + 1;
+                    };
+                    out
+                } else {
+                    entries
+                },
+                None => entries,
+            },
+        },
+    }
+}
+
+fn collect_effect_entries(units: Vec[ResolveUnit]) -> Vec[EffectFunctionEntry] {
+    let mut entries: Vec[EffectFunctionEntry] = vec.new_vec();
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => if true {
+                            entries = collect_effect_entries_for_item(entries, item, unit.module_path);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    entries
+}
+
+fn resolve_call_effect_entry(expr: AstExpr, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, module_path: String) -> Option[EffectFunctionEntry] {
+    match lookup_value_symbol(units, resolver, module_path, expr.name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+        Some(symbol) => match find_effect_entry(entries, symbol.module_path, symbol.name) {
+            Some(entry) => Some(entry),
+            None => find_effect_entry_by_name(entries, symbol.name),
+        },
+        None => if string.contains(expr.name, ".") {
+            find_effect_entry_by_name(entries, path_tail(expr.name))
+        } else {
+            find_effect_entry_by_name(entries, expr.name)
+        },
+    }
+}
+
+fn append_call_effect_diagnostics(diagnostics: Vec[Diagnostic], caller: EffectFunctionEntry, callee: EffectFunctionEntry, span_value: SourceSpan, max_errors: Int) -> Vec[Diagnostic] {
+    let mut missing: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(callee.effect_names) {
+        match vec.get(callee.effect_names, index) {
+            Some(effect) => if string_vec_contains(caller.effect_names, effect) {
+                ()
+            } else {
+                missing = push_unique_string(missing, effect);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    if vec.vec_len(missing) == 0 {
+        diagnostics
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, "calling '");
+        parts = vec.push(parts, callee.name);
+        parts = vec.push(parts, "' requires undeclared effects: ");
+        parts = vec.push(parts, string.join(missing, ", "));
+        append_diagnostic_if_room(diagnostics, max_errors, with_help(error(diagnostic_code("E2001"), span_value, string.join(parts, "")), "add the required effects on the enclosing function"))
+    }
+}
+
+fn merge_scan(left: EffectScan, right: EffectScan) -> EffectScan {
+    effect_scan(append_all_diagnostics(left.diagnostics, right.diagnostics, 100000), append_unique_strings(left.effect_names, right.effect_names), append_effect_calls(left.call_edges, right.call_edges))
+}
+
+fn append_effect_calls(left: Vec[EffectCallEdge], right: Vec[EffectCallEdge]) -> Vec[EffectCallEdge] {
+    let mut out = left;
+    let mut index = 0;
+    while index < vec.vec_len(right) {
+        match vec.get(right, index) {
+            Some(edge) => if true {
+                out = vec.push(out, edge);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn scan_expr_effects(expr: AstExpr, caller: EffectFunctionEntry, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectScan {
+    let mut out = effect_scan(diagnostics, vec.new_vec(), vec.new_vec());
+    match expr.kind {
+        AstCallExpr => match resolve_call_effect_entry(expr, entries, units, resolver, caller.module_path) {
+            Some(callee) => if vec.vec_len(callee.effect_names) > 0 || callee.has_body {
+                out = effect_scan(append_call_effect_diagnostics(out.diagnostics, caller, callee, expr.span, max_errors), append_unique_strings(out.effect_names, callee.effect_names), vec.push(out.call_edges, effect_call_edge(caller.module_path, caller.name, callee.module_path, callee.name, callee.effect_names, expr.span)));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        },
+        _ => (),
+    };
+    let mut index = 0;
+    while index < expr.direct_child_count {
+        match direct_expr_at(expr, index) {
+            Some(child) => if true {
+                out = merge_scan(out, scan_expr_effects(child, caller, entries, units, resolver, vec.new_vec(), max_errors));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    effect_scan(out.diagnostics, out.effect_names, out.call_edges)
+}
+
+fn scan_statement_effects(statement: AstStatement, caller: EffectFunctionEntry, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectScan {
+    match statement.expr {
+        Some(expr) => scan_expr_effects(expr, caller, entries, units, resolver, diagnostics, max_errors),
+        None => effect_scan(diagnostics, vec.new_vec(), vec.new_vec()),
+    }
+}
+
+fn scan_block_effects(block: AstBlock, caller: EffectFunctionEntry, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectScan {
+    let mut out = effect_scan(diagnostics, vec.new_vec(), vec.new_vec());
+    let mut index = 0;
+    while index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => if true {
+                out = merge_scan(out, scan_statement_effects(statement, caller, entries, units, resolver, vec.new_vec(), max_errors));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    match block.tail_expr {
+        Some(expr) => if true {
+            out = merge_scan(out, scan_expr_effects(expr, caller, entries, units, resolver, vec.new_vec(), max_errors));
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    out
+}
+
+fn analyze_effect_body(entries: Vec[EffectFunctionEntry], caller: EffectFunctionEntry, body: AstBlock, units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectScan {
+    scan_block_effects(body, caller, entries, units, resolver, diagnostics, max_errors)
+}
+
+fn effect_entry_with_scan(entry: EffectFunctionEntry, scanned: EffectScan) -> EffectFunctionEntry {
+    effect_function_entry(entry.module_path, entry.name, entry.effect_names, entry.capability_names, append_unique_strings(entry.direct_effect_names, scanned.effect_names), append_effect_calls(entry.call_edges, scanned.call_edges), entry.span, entry.body_span, entry.has_body)
+}
+
+fn effect_entries_with_body_scans(entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectBodyResult {
+    let mut out_entries = entries;
+    let mut out_diagnostics = diagnostics;
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => match item.function_item {
+                            Some(function_item) => match find_effect_entry(out_entries, unit.module_path, function_item.signature.name.value) {
+                                Some(caller) => if true {
+                                    let scanned = analyze_effect_body(out_entries, caller, function_item.body, units, resolver, vec.new_vec(), max_errors);
+                                    out_diagnostics = append_all_diagnostics(out_diagnostics, scanned.diagnostics, max_errors);
+                                    out_entries = replace_effect_entry(out_entries, effect_entry_with_scan(caller, scanned));
+                                    ()
+                                } else {
+                                    ()
+                                },
+                                None => (),
+                            },
+                            None => match item.impl_item {
+                                Some(impl_item) => if true {
+                                    let mut method_index = 0;
+                                    while method_index < vec.vec_len(impl_item.methods) {
+                                        match vec.get(impl_item.methods, method_index) {
+                                            Some(method) => match find_effect_entry(out_entries, unit.module_path, method.signature.name.value) {
+                                                Some(caller) => if true {
+                                                    let scanned = analyze_effect_body(out_entries, caller, method.body, units, resolver, vec.new_vec(), max_errors);
+                                                    out_diagnostics = append_all_diagnostics(out_diagnostics, scanned.diagnostics, max_errors);
+                                                    out_entries = replace_effect_entry(out_entries, effect_entry_with_scan(caller, scanned));
+                                                    ()
+                                                } else {
+                                                    ()
+                                                },
+                                                None => (),
+                                            },
+                                            None => (),
+                                        };
+                                        method_index = method_index + 1;
+                                    };
+                                    ()
+                                } else {
+                                    ()
+                                },
+                                None => (),
+                            },
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    effect_body_result(out_entries, out_diagnostics)
+}
+
+fn effect_closure_for_key(entries: Vec[EffectFunctionEntry], key: String, visiting: Vec[String]) -> Vec[String] {
+    if string_vec_contains(visiting, key) {
+        vec.new_vec()
+    } else {
+        match find_effect_entry_by_key(entries, key) {
+            Some(entry) => if true {
+                let mut out = entry.direct_effect_names;
+                let mut next_visiting = vec.push(visiting, key);
+                let mut index = 0;
+                while index < vec.vec_len(entry.call_edges) {
+                    match vec.get(entry.call_edges, index) {
+                        Some(edge) => if true {
+                            out = append_unique_strings(out, edge.effect_names);
+                            out = append_unique_strings(out, effect_closure_for_key(entries, effect_call_callee_key(edge), next_visiting));
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                out
+            } else {
+                vec.new_vec()
+            },
+            None => vec.new_vec(),
+        }
+    }
+}
+
+fn find_effect_path_from_key(entries: Vec[EffectFunctionEntry], key: String, effect: String, visited: Vec[String], path: Vec[String], first_source: Int, first_start: Int, first_end: Int, has_first_span: Bool, fallback_source: Int, fallback_start: Int, fallback_end: Int) -> EffectPath {
+    if string_vec_contains(visited, key) {
+        effect_path(vec.new_vec(), span(source_id(fallback_source), fallback_start, fallback_end), false)
+    } else {
+        match find_effect_entry_by_key(entries, key) {
+            Some(entry) => if true {
+                let mut out: Vec[String] = vec.new_vec();
+                let mut out_source = fallback_source;
+                let mut out_start = fallback_start;
+                let mut out_end = fallback_end;
+                let mut found = false;
+                let mut next_visited = vec.push(visited, key);
+                let mut index = 0;
+                while !found && index < vec.vec_len(entry.call_edges) {
+                    match vec.get(entry.call_edges, index) {
+                        Some(edge) => if true {
+                            let mut next_path = path;
+                            let next_source = if has_first_span { first_source } else { edge.span.source.value };
+                            let next_start = if has_first_span { first_start } else { edge.span.start };
+                            let next_end = if has_first_span { first_end } else { edge.span.end };
+                            next_path = vec.push(next_path, edge.callee_name);
+                            if string_vec_contains(edge.effect_names, effect) {
+                                out = next_path;
+                                out_source = next_source;
+                                out_start = next_start;
+                                out_end = next_end;
+                                found = true;
+                            } else {
+                                let nested = find_effect_path_from_key(entries, effect_call_callee_key(edge), effect, next_visited, next_path, next_source, next_start, next_end, true, fallback_source, fallback_start, fallback_end);
+                                if nested.found {
+                                    out = nested.names;
+                                    out_source = nested.span.source.value;
+                                    out_start = nested.span.start;
+                                    out_end = nested.span.end;
+                                    found = true;
+                                } else {
+                                    ()
+                                };
+                            };
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                effect_path(out, span(source_id(out_source), out_start, out_end), found)
+            } else {
+                effect_path(vec.new_vec(), span(source_id(fallback_source), fallback_start, fallback_end), false)
+            },
+            None => effect_path(vec.new_vec(), span(source_id(fallback_source), fallback_start, fallback_end), false),
+        }
+    }
+}
+
+fn append_transitive_effect_diagnostics(diagnostics: Vec[Diagnostic], entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if entry.has_body {
+                let closure = effect_closure_for_key(entries, effect_entry_key(entry), vec.new_vec());
+                let mut effect_index = 0;
+                while effect_index < vec.vec_len(closure) {
+                    match vec.get(closure, effect_index) {
+                        Some(effect) => if string_vec_contains(entry.effect_names, effect) {
+                            ()
+                        } else {
+                            let mut start_path: Vec[String] = vec.new_vec();
+                            start_path = vec.push(start_path, entry.name);
+                            let path = find_effect_path_from_key(entries, effect_entry_key(entry), effect, vec.new_vec(), start_path, entry.span.source.value, entry.span.start, entry.span.end, false, entry.span.source.value, entry.span.start, entry.span.end);
+                            if path.found && vec.vec_len(path.names) >= 3 {
+                                let mut parts: Vec[String] = vec.new_vec();
+                                parts = vec.push(parts, "function '");
+                                parts = vec.push(parts, entry.name);
+                                parts = vec.push(parts, "' requires transitive effect '");
+                                parts = vec.push(parts, effect);
+                                parts = vec.push(parts, "' via call path ");
+                                parts = vec.push(parts, string.join(path.names, " -> "));
+                                out = append_diagnostic_if_room(out, max_errors, with_help(error(diagnostic_code("E2005"), path.span, string.join(parts, "")), "declare the transitive effect on the caller or refactor the call chain"));
+                                ()
+                            } else {
+                                ()
+                            };
+                        },
+                        None => (),
+                    };
+                    effect_index = effect_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn append_capability_authority_diagnostics(diagnostics: Vec[Diagnostic], entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if entry.has_body {
+                let mut required = append_unique_strings(entry.effect_names, effect_closure_for_key(entries, effect_entry_key(entry), vec.new_vec()));
+                let mut effect_index = 0;
+                while effect_index < vec.vec_len(required) {
+                    match vec.get(required, effect_index) {
+                        Some(effect) => if string_vec_contains(entry.capability_names, effect) {
+                            ()
+                        } else {
+                            let mut start_path: Vec[String] = vec.new_vec();
+                            start_path = vec.push(start_path, entry.name);
+                            let path = find_effect_path_from_key(entries, effect_entry_key(entry), effect, vec.new_vec(), start_path, entry.span.source.value, entry.span.start, entry.span.end, false, entry.span.source.value, entry.span.start, entry.span.end);
+                            let mut parts: Vec[String] = vec.new_vec();
+                            parts = vec.push(parts, "function '");
+                            parts = vec.push(parts, entry.name);
+                            parts = vec.push(parts, "' requires capability '");
+                            parts = vec.push(parts, effect);
+                            if path.found && vec.vec_len(path.names) > 1 {
+                                parts = vec.push(parts, "' via call path ");
+                                parts = vec.push(parts, string.join(path.names, " -> "));
+                            } else {
+                                parts = vec.push(parts, "'");
+                            };
+                            out = append_diagnostic_if_room(out, max_errors, with_help(error(diagnostic_code("E2009"), path.span, string.join(parts, "")), "declare the required capability on the caller and thread authority through callers"));
+                            ()
+                        },
+                        None => (),
+                    };
+                    effect_index = effect_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn contract_proof(expr: AstExpr) -> String {
+    match expr.kind {
+        AstBoolExpr => if expr.name == "true" {
+            "true"
+        } else if expr.name == "false" {
+            "false"
+        } else {
+            "unknown"
+        },
+        AstBinaryExpr => if expr.op == "==" {
+            let left = match direct_expr_at(expr, 0) { Some(value) => value, None => simple_expr(AstUnitExpr(), "", "", expr.span, "()") };
+            let right = match direct_expr_at(expr, 1) { Some(value) => value, None => simple_expr(AstUnitExpr(), "", "", expr.span, "()") };
+            if left.text == right.text && left.text != "" {
+                "true"
+            } else {
+                "unknown"
+            }
+        } else {
+            "unknown"
+        },
+        _ => "unknown",
+    }
+}
+
+fn append_static_contract_diagnostic(diagnostics: Vec[Diagnostic], kind: String, function_name: String, expr: AstExpr, max_errors: Int) -> Vec[Diagnostic] {
+    let proof = contract_proof(expr);
+    if proof == "false" {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, kind);
+        parts = vec.push(parts, " contract for '");
+        parts = vec.push(parts, function_name);
+        parts = vec.push(parts, "' is always false");
+        if kind == "requires" {
+            append_diagnostic_if_room(diagnostics, max_errors, with_help(error(diagnostic_code("E4001"), expr.span, string.join(parts, "")), "fix the contract or function preconditions"))
+        } else {
+            append_diagnostic_if_room(diagnostics, max_errors, with_help(error(diagnostic_code("E4002"), expr.span, string.join(parts, "")), "fix the postcondition expression"))
+        }
+    } else if proof == "true" {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, kind);
+        parts = vec.push(parts, " contract for '");
+        parts = vec.push(parts, function_name);
+        parts = vec.push(parts, "' discharged at compile time");
+        append_diagnostic_if_room(diagnostics, max_errors, note(diagnostic_code("E4005"), expr.span, string.join(parts, "")))
+    } else {
+        let mut parts: Vec[String] = vec.new_vec();
+        parts = vec.push(parts, kind);
+        parts = vec.push(parts, " contract for '");
+        parts = vec.push(parts, function_name);
+        parts = vec.push(parts, "' kept as residual runtime obligation");
+        append_diagnostic_if_room(diagnostics, max_errors, note(diagnostic_code("E4003"), expr.span, string.join(parts, "")))
+    }
+}
+
+fn append_contract_purity_diagnostics(diagnostics: Vec[Diagnostic], expr: AstExpr, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, module_path: String, max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    match expr.kind {
+        AstCallExpr => match resolve_call_effect_entry(expr, entries, units, resolver, module_path) {
+            Some(callee) => if vec.vec_len(callee.effect_names) > 0 {
+                out = append_diagnostic_if_room(out, max_errors, with_help(error(diagnostic_code("E2002"), expr.span, "contracts must be pure; effectful call found"), "remove IO/time/rand/net/fs calls from requires/ensures/invariant"));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        },
+        _ => (),
+    };
+    let mut index = 0;
+    while index < expr.direct_child_count {
+        match direct_expr_at(expr, index) {
+            Some(child) => if true {
+                out = append_contract_purity_diagnostics(out, child, entries, units, resolver, module_path, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn append_contract_type_diagnostic(env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, expr: AstExpr, expected_code: String, message: String, max_errors: Int) -> TypecheckEnv {
+    let checked = infer_expr(expr, env, units, resolver, semantics, max_errors, "Bool");
+    if types_compatible(units, checked.env.module_path, "Bool", checked.type_text) {
+        checked.env
+    } else {
+        env_error(checked.env, max_errors, expected_code, expr.span, message, "found a non-Bool contract expression")
+    }
+}
+
+fn append_result_binding(env: TypecheckEnv, signature: AstFunctionSignature) -> TypecheckEnv {
+    append_binding(env, typecheck_binding(env.module_path, signature.name.value, "result", type_text(signature.return_type), false, TypecheckTemporaryValue(), signature.span))
+}
+
+fn check_function_contracts(function_item: AstFunctionDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    match function_item.requires_expr {
+        Some(expr) => if true {
+            let env = initial_env_for_signature(module_path, function_item.signature, out);
+            let checked_env = append_contract_type_diagnostic(env, units, resolver, semantics, expr, "E1200", "requires contract must have type Bool", max_errors);
+            out = checked_env.diagnostics;
+            out = append_contract_purity_diagnostics(out, expr, entries, units, resolver, module_path, max_errors);
+            out = append_static_contract_diagnostic(out, "requires", function_item.signature.name.value, expr, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match function_item.ensures_expr {
+        Some(expr) => if true {
+            let env = append_result_binding(initial_env_for_signature(module_path, function_item.signature, out), function_item.signature);
+            let checked_env = append_contract_type_diagnostic(env, units, resolver, semantics, expr, "E1201", "ensures contract must have type Bool", max_errors);
+            out = checked_env.diagnostics;
+            out = append_contract_purity_diagnostics(out, expr, entries, units, resolver, module_path, max_errors);
+            out = append_static_contract_diagnostic(out, "ensures", function_item.signature.name.value, expr, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    out
+}
+
+fn check_impl_method_contracts(method: AstImplMethod, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let fake_function = function_decl(method.signature, method.requires_expr, method.ensures_expr, method.body, method.span);
+    check_function_contracts(fake_function, module_path, units, resolver, semantics, entries, diagnostics, max_errors)
+}
+
+fn append_contract_diagnostics_for_item(diagnostics: Vec[Diagnostic], item: AstProgramItem, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+    match item.function_item {
+        Some(function_item) => check_function_contracts(function_item, module_path, units, resolver, semantics, entries, diagnostics, max_errors),
+        None => match item.impl_item {
+            Some(impl_item) => if true {
+                let mut out = diagnostics;
+                let mut index = 0;
+                while index < vec.vec_len(impl_item.methods) {
+                    match vec.get(impl_item.methods, index) {
+                        Some(method) => if true {
+                            out = check_impl_method_contracts(method, module_path, units, resolver, semantics, entries, out, max_errors);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                out
+            } else {
+                diagnostics
+            },
+            None => diagnostics,
+        },
+    }
+}
+
+fn append_contract_diagnostics(diagnostics: Vec[Diagnostic], units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => if true {
+                            out = append_contract_diagnostics_for_item(out, item, unit.module_path, units, resolver, semantics, entries, max_errors);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    out
+}
+
+fn append_effect_declaration_diagnostics_for_entries(diagnostics: Vec[Diagnostic], entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = diagnostics;
+    let mut index = 0;
+    while index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if true {
+                out = append_effect_declaration_diagnostics(out, entry.effect_names, entry.span, max_errors);
+                out = append_capability_declaration_diagnostics(out, entry.capability_names, entry.span, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn append_effect_capability_contract_diagnostics(output: TypecheckOutput, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int) -> TypecheckOutput {
+    let entries = collect_effect_entries(units);
+    let mut diagnostics = append_effect_declaration_diagnostics_for_entries(output.diagnostics, entries, max_errors);
+    diagnostics = append_contract_diagnostics(diagnostics, units, resolver, semantics, entries, max_errors);
+    let body_result = effect_entries_with_body_scans(entries, units, resolver, diagnostics, max_errors);
+    diagnostics = append_transitive_effect_diagnostics(body_result.diagnostics, body_result.entries, max_errors);
+    diagnostics = append_capability_authority_diagnostics(diagnostics, body_result.entries, max_errors);
+    typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, diagnostics)
+}
+
 pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> TypecheckOutput {
     let semantics = analyze_resolved_units(units, resolver, max_errors);
     let mut out = typecheck_output(resolver.entry_module, vec.new_vec(), vec.new_vec(), vec.new_vec(), append_all_diagnostics(resolver.diagnostics, semantics.diagnostics, max_errors));
@@ -2282,7 +3246,7 @@ pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutpu
         };
         unit_index = unit_index + 1;
     };
-    out
+    append_effect_capability_contract_diagnostics(out, units, resolver, semantics, max_errors)
 }
 
 pub fn typecheck_units(units: Vec[ResolveUnit], entry_module: String, max_errors: Int) -> TypecheckOutput {

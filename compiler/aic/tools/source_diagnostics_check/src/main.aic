@@ -688,6 +688,19 @@ fn impl_method_matches(value: AstImplDecl, index: Int, name: String, return_type
     }
 }
 
+fn impl_method_contracts_match(value: AstImplDecl, index: Int, requires_text: String, ensures_text: String) -> Bool {
+    match vec.get(value.methods, index) {
+        Some(method) => match method.requires_expr {
+            Some(requires_expr) => match method.ensures_expr {
+                Some(ensures_expr) => expr_text(requires_expr) == requires_text && expr_text(ensures_expr) == ensures_text,
+                None => false,
+            },
+            None => false,
+        },
+        None => false,
+    }
+}
+
 fn impl_matches(value: AstImplDecl, generic_params: String, head_type_name: String, has_block: Bool, body_text: String, method_count: Int) -> Bool {
     generic_params_text(value.generic_params) == generic_params
         && type_text(value.head_type) == head_type_name
@@ -707,6 +720,7 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
     let marker_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl Order[Int];"));
     let block_impl = parse_impl_declaration(parser_cursor_from_source(source, "pub impl User { fn new(age: Int) -> User { User { age: age } } }"));
     let generic_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl[T] Box[T] { fn get(self: Box[T]) -> T { self.value } }"));
+    let contract_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl User { fn ok(self: User) -> Bool requires true ensures result == result { true } }"));
     let empty_impl = parse_impl_declaration(parser_cursor_from_source(source, "impl User {}"));
     let missing_impl_head = parse_impl_declaration(parser_cursor_from_source(source, "impl ;"));
     let missing_impl_tail = parse_impl_declaration(parser_cursor_from_source(source, "impl User fn bad"));
@@ -759,6 +773,12 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
             && impl_method_matches(item, 0, "get", "T", "{self.value}"),
         None => false,
     };
+    let contract_impl_ok = match contract_impl.impl_item {
+        Some(item) => impl_matches(item, "", "User", true, "fnok(self:User)->Boolrequirestrueensuresresult==result{true}", 1)
+            && impl_method_matches(item, 0, "ok", "Bool", "{true}")
+            && impl_method_contracts_match(item, 0, "true", "result==result"),
+        None => false,
+    };
     let empty_impl_ok = match empty_impl.impl_item {
         Some(item) => impl_matches(item, "", "User", true, "", 0),
         None => false,
@@ -790,10 +810,12 @@ fn valid_parser_trait_and_impl_declarations() -> Bool {
         && marker_impl_ok
         && block_impl_ok
         && generic_impl_ok
+        && contract_impl_ok
         && empty_impl_ok
         && !has_impl_decl_diagnostic(marker_impl)
         && !has_impl_decl_diagnostic(block_impl)
         && !has_impl_decl_diagnostic(generic_impl)
+        && !has_impl_decl_diagnostic(contract_impl)
         && !has_impl_decl_diagnostic(empty_impl)
         && has_impl_decl_diagnostic(missing_impl_head)
         && missing_impl_head_ok
@@ -1343,8 +1365,52 @@ fn valid_typecheck_negative_cases() -> Bool {
         && typecheck_has_diagnostic_code(trait_bound_failure, "E1258")
 }
 
+fn valid_effect_contract_positive_cases() -> Bool {
+    let declared = typecheck_single("module app.main; fn leaf() -> Int effects { io } capabilities { io } { 1 } fn middle() -> Int effects { io } capabilities { io } { leaf() } fn top() -> Int effects { io } capabilities { io } requires true ensures result == result { middle() }");
+    let residual = typecheck_single("module app.main; fn choose(x: Int, y: Int) -> Int ensures result >= y { x }");
+    let impl_contract = typecheck_single("module app.main; struct Box { value: Int } impl Box { fn value(self: Box) -> Int requires true ensures result == result { self.value } }");
+    typecheck_has_diagnostic_code(declared, "E4005")
+        && !typecheck_has_diagnostic_code(declared, "E2001")
+        && !typecheck_has_diagnostic_code(declared, "E2005")
+        && !typecheck_has_diagnostic_code(declared, "E2009")
+        && typecheck_has_diagnostic_code(residual, "E4003")
+        && !typecheck_has_diagnostic_code(residual, "E4002")
+        && typecheck_has_diagnostic_code(impl_contract, "E4005")
+        && !typecheck_has_diagnostic_code(impl_contract, "E1200")
+        && !typecheck_has_diagnostic_code(impl_contract, "E1201")
+}
+
+fn valid_effect_contract_negative_cases() -> Bool {
+    let missing_effect = typecheck_single("module app.main; fn leaf() -> Int effects { io } capabilities { io } { 1 } fn bad() -> Int { leaf() }");
+    let missing_capability = typecheck_single("module app.main; fn leaf() -> Int effects { io } capabilities { io } { 1 } fn bad() -> Int effects { io } { leaf() }");
+    let unknown_effect = typecheck_single("module app.main; fn bad() -> Int effects { mystery } { 0 }");
+    let duplicate_effect = typecheck_single("module app.main; fn bad() -> Int effects { io, io } capabilities { io } { 0 }");
+    let unknown_capability = typecheck_single("module app.main; fn bad() -> Int capabilities { mystery } { 0 }");
+    let duplicate_capability = typecheck_single("module app.main; fn bad() -> Int effects { io } capabilities { io, io } { 0 }");
+    let invalid_requires = typecheck_single("module app.main; fn bad() -> Int requires 1 { 0 }");
+    let invalid_ensures = typecheck_single("module app.main; fn bad() -> Int ensures 1 { 0 }");
+    let invalid_impl_requires = typecheck_single("module app.main; struct Box { value: Int } impl Box { fn bad(self: Box) -> Int requires 1 { self.value } }");
+    let effectful_contract = typecheck_single("module app.main; fn leaf() -> Bool effects { io } capabilities { io } { true } fn bad() -> Int effects { io } capabilities { io } requires leaf() { 0 }");
+    let transitive_effect = typecheck_single("module app.main; fn leaf() -> Int effects { io } capabilities { io } { 1 } fn middle() -> Int { leaf() } fn top() -> Int { middle() }");
+    let false_contract = typecheck_single("module app.main; fn bad() -> Int ensures false { 0 }");
+    let trait_contract = parse_source_program(source_id(38), "module app.main; trait Bad { fn score(self: Int) -> Int requires true; }", 20);
+    typecheck_has_diagnostic_code(missing_effect, "E2001")
+        && typecheck_has_diagnostic_code(missing_capability, "E2009")
+        && typecheck_has_diagnostic_code(unknown_effect, "E2003")
+        && typecheck_has_diagnostic_code(duplicate_effect, "E2004")
+        && typecheck_has_diagnostic_code(unknown_capability, "E2007")
+        && typecheck_has_diagnostic_code(duplicate_capability, "E2008")
+        && typecheck_has_diagnostic_code(invalid_requires, "E1200")
+        && typecheck_has_diagnostic_code(invalid_ensures, "E1201")
+        && typecheck_has_diagnostic_code(invalid_impl_requires, "E1200")
+        && typecheck_has_diagnostic_code(effectful_contract, "E2002")
+        && typecheck_has_diagnostic_code(transitive_effect, "E2005")
+        && typecheck_has_diagnostic_code(false_contract, "E4002")
+        && program_diagnostic_code_matches(trait_contract, 0, "E1089")
+}
+
 fn valid_typecheck_frontend() -> Bool {
-    valid_typecheck_positive_cases() && valid_typecheck_negative_cases()
+    valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases()
 }
 
 fn main() -> Int effects { io } capabilities { io } {

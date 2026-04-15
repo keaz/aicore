@@ -5439,6 +5439,28 @@ pub fn parse_function_declaration(cursor: ParserCursor) -> ParseFunctionDecl {
     }
 }
 
+fn recover_to_trait_method_signature_end(cursor: ParserCursor) -> ParserCursor {
+    let mut out = cursor;
+    let mut done = false;
+    while !done && !is_at_end(out) {
+        if at_delimiter(out, ";") || at_delimiter(out, "}") {
+            done = true;
+        } else {
+            let next = advance(skip_trivia(out));
+            if next.index == out.index {
+                done = true;
+            } else {
+                out = next;
+            };
+        };
+    };
+    if at_delimiter(out, ";") {
+        advance(skip_trivia(out))
+    } else {
+        out
+    }
+}
+
 pub fn parse_trait_method_signature(cursor: ParserCursor) -> ParseTraitMethodSignature {
     let attrs_result = parse_attribute_list(cursor);
     if has_attribute_list_diagnostic(attrs_result) {
@@ -5456,6 +5478,13 @@ pub fn parse_trait_method_signature(cursor: ParserCursor) -> ParseTraitMethodSig
             diagnostic: signature_result.diagnostic,
         }
     } else {
+        if at_keyword(signature_result.cursor, "requires") || at_keyword(signature_result.cursor, "ensures") {
+            ParseTraitMethodSignature {
+                cursor: recover_to_trait_method_signature_end(signature_result.cursor),
+                signature: None(),
+                diagnostic: Some(with_help(error(diagnostic_code("E1089"), current_token(skip_trivia(signature_result.cursor)).span, "trait method signatures cannot declare requires/ensures contracts"), "move contracts to concrete impl methods")),
+            }
+        } else {
         let semi_result = expect_delimiter(signature_result.cursor, ";", "E1200", "expected semicolon after trait method signature");
         if has_diagnostic(semi_result) {
             ParseTraitMethodSignature {
@@ -5472,6 +5501,7 @@ pub fn parse_trait_method_signature(cursor: ParserCursor) -> ParseTraitMethodSig
                 },
                 diagnostic: None(),
             }
+        }
         }
     }
     }
@@ -5632,7 +5662,79 @@ pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
         match signature_result.signature {
             Some(signature) => if true {
                 let attributed_signature = function_signature_with_new_attrs(signature, attrs_result.attrs);
-                let body_result = parse_block(signature_result.cursor);
+                let mut out_cursor = signature_result.cursor;
+                let mut requires_expr: Option[AstExpr] = None();
+                let mut ensures_expr: Option[AstExpr] = None();
+                let mut diagnostic: Option[Diagnostic] = None();
+                let mut contract_span = attributed_signature.span;
+                if at_keyword(out_cursor, "requires") {
+                    let keyword = expect_keyword(out_cursor, "requires", "E1371", "expected requires clause");
+                    let expr = parse_expr(keyword.cursor);
+                    if has_expr_diagnostic(expr) {
+                        diagnostic = expr.diagnostic;
+                        out_cursor = expr.cursor;
+                        contract_span = expr.span;
+                    } else {
+                        match expr.expr {
+                            Some(value) => if true {
+                                contract_span = value.span;
+                                requires_expr = Some(value);
+                                out_cursor = expr.cursor;
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                diagnostic = Some(error(diagnostic_code("E1372"), expr.span, "expected requires expression"));
+                                out_cursor = expr.cursor;
+                                contract_span = expr.span;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                } else {
+                    ()
+                };
+                if !has_optional_diagnostic(diagnostic) && at_keyword(out_cursor, "ensures") {
+                    let keyword = expect_keyword(out_cursor, "ensures", "E1373", "expected ensures clause");
+                    let expr = parse_expr(keyword.cursor);
+                    if has_expr_diagnostic(expr) {
+                        diagnostic = expr.diagnostic;
+                        out_cursor = expr.cursor;
+                        contract_span = expr.span;
+                    } else {
+                        match expr.expr {
+                            Some(value) => if true {
+                                contract_span = value.span;
+                                ensures_expr = Some(value);
+                                out_cursor = expr.cursor;
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                diagnostic = Some(error(diagnostic_code("E1374"), expr.span, "expected ensures expression"));
+                                out_cursor = expr.cursor;
+                                contract_span = expr.span;
+                                ()
+                            } else {
+                                ()
+                            },
+                        }
+                    }
+                } else {
+                    ()
+                };
+                match diagnostic {
+                    Some(diag) => ParseImplMethod {
+                        cursor: out_cursor,
+                        method: None(),
+                        diagnostic: Some(diag),
+                    },
+                    None => if true {
+                let body_result = parse_block(out_cursor);
                 if has_block_diagnostic(body_result) {
                     ParseImplMethod {
                         cursor: body_result.cursor,
@@ -5650,16 +5752,24 @@ pub fn parse_impl_method(cursor: ParserCursor) -> ParseImplMethod {
                         } else {
                             ParseImplMethod {
                                 cursor: body_result.cursor,
-                                method: Some(impl_method(attributed_signature, block, merge(attributed_signature.span, block.span))),
+                                method: Some(impl_method(attributed_signature, requires_expr, ensures_expr, block, merge(attributed_signature.span, block.span))),
                                 diagnostic: None(),
                             }
                         },
                         None => ParseImplMethod {
                             cursor: body_result.cursor,
                             method: None(),
-                            diagnostic: Some(error(diagnostic_code("E1240"), current_token(skip_trivia(body_result.cursor)).span, "missing impl method body")),
+                            diagnostic: Some(error(diagnostic_code("E1240"), contract_span, "missing impl method body")),
                         },
                     }
+                }
+                    } else {
+                        ParseImplMethod {
+                            cursor: out_cursor,
+                            method: None(),
+                            diagnostic: Some(error(diagnostic_code("E1240"), contract_span, "missing impl method body")),
+                        }
+                    },
                 }
             } else {
                 ParseImplMethod {

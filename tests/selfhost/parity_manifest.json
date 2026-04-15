@@ -46,6 +46,14 @@
       "actions": [
         "check"
       ],
+      "expected": "pass",
+      "name": "capability_protocol_ok",
+      "path": "examples/verify/capability_protocol_ok.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
       "expected": "fail",
       "name": "effects_reject",
       "path": "examples/effects_reject.aic"
@@ -57,6 +65,14 @@
       "expected": "fail",
       "name": "missing_effect",
       "path": "examples/e8/conformance_pack/diagnostics/missing_effect.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "fail",
+      "name": "capability_missing_invalid",
+      "path": "examples/verify/capability_missing_invalid.aic"
     },
     {
       "actions": [

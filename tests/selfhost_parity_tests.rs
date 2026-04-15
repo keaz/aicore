@@ -233,6 +233,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub struct AstFunctionDecl"));
     assert!(ast.contains("pub struct AstTraitDecl"));
     assert!(ast.contains("pub struct AstImplMethod"));
+    assert!(ast.contains("pub requires_expr: Option[AstExpr]"));
+    assert!(ast.contains("pub ensures_expr: Option[AstExpr]"));
     assert!(ast.contains("pub struct AstImplDecl"));
     assert!(ast.contains("pub struct AstAttribute"));
     assert!(ast.contains("pub struct AstAttributeArg"));
@@ -378,6 +380,28 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(typecheck.contains("pub fn typecheck_has_instantiation"));
     assert!(typecheck.contains("fn direct_expr_at"));
     assert!(typecheck.contains("fn check_generic_bounds"));
+    assert!(typecheck.contains("struct EffectFunctionEntry"));
+    assert!(typecheck.contains("fn append_effect_capability_contract_diagnostics"));
+    assert!(typecheck.contains("fn append_transitive_effect_diagnostics"));
+    assert!(typecheck.contains("fn append_capability_authority_diagnostics"));
+    assert!(typecheck.contains("fn append_static_contract_diagnostic"));
+    assert!(typecheck.contains("struct EffectPath"));
+    assert!(typecheck.contains("E2005"));
+    assert!(typecheck.contains("E2009"));
+    assert!(typecheck.contains("E4003"));
+    assert!(typecheck.contains("E4005"));
+
+    let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
+        .expect("read parser lib");
+    assert!(parser.contains("trait method signatures cannot declare requires/ensures contracts"));
+    assert!(parser.contains("E1089"));
+    assert!(parser.contains("impl_method(attributed_signature, requires_expr, ensures_expr"));
+
+    let source_diagnostics_check =
+        fs::read_to_string(root.join("compiler/aic/tools/source_diagnostics_check/src/main.aic"))
+            .expect("read source diagnostics check tool");
+    assert!(source_diagnostics_check.contains("fn valid_effect_contract_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_effect_contract_negative_cases"));
 }
 
 #[test]

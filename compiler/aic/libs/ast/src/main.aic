@@ -335,6 +335,8 @@ pub struct AstTraitDecl {
 
 pub struct AstImplMethod {
     pub signature: AstFunctionSignature,
+    pub requires_expr: Option[AstExpr],
+    pub ensures_expr: Option[AstExpr],
     pub body: AstBlock,
     pub span: SourceSpan,
 }
@@ -1119,9 +1121,11 @@ pub fn trait_decl(
     }
 }
 
-pub fn impl_method(signature: AstFunctionSignature, body: AstBlock, span: SourceSpan) -> AstImplMethod {
+pub fn impl_method(signature: AstFunctionSignature, requires_expr: Option[AstExpr], ensures_expr: Option[AstExpr], body: AstBlock, span: SourceSpan) -> AstImplMethod {
     AstImplMethod {
         signature: signature,
+        requires_expr: requires_expr,
+        ensures_expr: ensures_expr,
         body: body,
         span: span,
     }
@@ -1452,6 +1456,26 @@ pub fn function_signature_text(value: AstFunctionSignature) -> String {
 pub fn impl_method_text(value: AstImplMethod) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     parts = vec.push(parts, function_signature_text(value.signature));
+    match value.requires_expr {
+        Some(expr) => if true {
+            parts = vec.push(parts, "requires");
+            parts = vec.push(parts, expr_text(expr));
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    match value.ensures_expr {
+        Some(expr) => if true {
+            parts = vec.push(parts, "ensures");
+            parts = vec.push(parts, expr_text(expr));
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
     parts = vec.push(parts, block_text(value.body));
     string.join(parts, "")
 }
