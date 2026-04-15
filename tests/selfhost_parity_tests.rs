@@ -307,6 +307,20 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ir.contains("pub struct IrSymbolId"));
     assert!(ir.contains("pub fn next_symbol_id"));
     assert!(ir.contains("pub fn is_concrete_type"));
+    assert!(ir.contains("pub struct IrProgram"));
+    assert!(ir.contains("pub enum IrItem"));
+    assert!(ir.contains("pub struct IrFunctionDef"));
+    assert!(ir.contains("pub struct IrBlock"));
+    assert!(ir.contains("pub struct IrStatement"));
+    assert!(ir.contains("pub struct IrExpr"));
+    assert!(ir.contains("pub struct IrPattern"));
+    assert!(ir.contains("pub struct IrGenericInstantiation"));
+    assert!(ir.contains("pub fn lower_checked_program"));
+    assert!(ir.contains("pub fn ir_program_digest"));
+    assert!(ir.contains("E5001"));
+    assert!(ir.contains("E5002"));
+    assert!(ir.contains("E5003"));
+    assert!(ir.contains("E5004"));
 
     let frontend = fs::read_to_string(root.join("compiler/aic/libs/frontend/src/main.aic"))
         .expect("read frontend lib");
@@ -415,6 +429,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(source_diagnostics_check.contains("fn valid_effect_contract_negative_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ownership_resource_positive_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ownership_resource_negative_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_ir_lowering_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_ir_lowering_negative_cases"));
 }
 
 #[test]

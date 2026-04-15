@@ -36,7 +36,8 @@
     },
     {
       "actions": [
-        "check"
+        "check",
+        "ir-json"
       ],
       "expected": "pass",
       "name": "effects_capabilities_patterns_tour",
@@ -52,7 +53,8 @@
     },
     {
       "actions": [
-        "check"
+        "check",
+        "ir-json"
       ],
       "expected": "pass",
       "name": "fs_protocol_ok",

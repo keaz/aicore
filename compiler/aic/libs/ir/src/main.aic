@@ -1,6 +1,12 @@
 module compiler.ir;
 
 import compiler.source;
+import compiler.diagnostics;
+import compiler.ast;
+import compiler.typecheck;
+import std.option;
+import std.string;
+import std.vec;
 
 pub struct IrNodeId {
     pub value: Int,
@@ -20,7 +26,12 @@ pub enum IrSymbolKind {
     IrEnumSymbol,
     IrTraitSymbol,
     IrImplSymbol,
+    IrVariantSymbol,
+    IrFieldSymbol,
+    IrParameterSymbol,
+    IrLocalSymbol,
     IrConstSymbol,
+    IrTypeAliasSymbol,
     IrModuleSymbol,
 }
 
@@ -28,11 +39,84 @@ pub enum IrTypeKind {
     IrUnitType,
     IrBoolType,
     IrIntType,
+    IrUIntType,
     IrFloatType,
     IrStringType,
+    IrCharType,
     IrNamedType(String),
+    IrTupleType(String),
     IrFunctionType(String),
+    IrDynTraitType(String),
     IrUnknownType,
+}
+
+pub enum IrExprKind {
+    IrIntExpr,
+    IrFloatExpr,
+    IrBoolExpr,
+    IrStringExpr,
+    IrCharExpr,
+    IrTemplateExpr,
+    IrUnitExpr,
+    IrNameExpr,
+    IrCallExpr,
+    IrClosureExpr,
+    IrIfExpr,
+    IrWhileExpr,
+    IrForExpr,
+    IrLoopExpr,
+    IrBreakExpr,
+    IrContinueExpr,
+    IrMatchExpr,
+    IrBinaryExpr,
+    IrUnaryExpr,
+    IrBorrowExpr,
+    IrAwaitExpr,
+    IrTryExpr,
+    IrStructLiteralExpr,
+    IrTupleExpr,
+    IrFieldAccessExpr,
+    IrBlockExpr,
+    IrUnsafeBlockExpr,
+}
+
+pub enum IrPatternKind {
+    IrWildcardPattern,
+    IrVarPattern,
+    IrIntPattern,
+    IrBoolPattern,
+    IrCharPattern,
+    IrStringPattern,
+    IrUnitPattern,
+    IrOrPattern,
+    IrVariantPattern,
+    IrTuplePattern,
+    IrStructPattern,
+}
+
+pub enum IrStatementKind {
+    IrLetStatement,
+    IrAssignStatement,
+    IrExprStatement,
+    IrReturnStatement,
+    IrAssertStatement,
+}
+
+pub enum IrItemKind {
+    IrFunctionItem,
+    IrStructItem,
+    IrEnumItem,
+    IrTraitItem,
+    IrImplItem,
+    IrTypeAliasItem,
+    IrConstItem,
+}
+
+pub enum IrGenericInstantiationKind {
+    IrFunctionInstantiation,
+    IrStructInstantiation,
+    IrEnumInstantiation,
+    IrUnknownInstantiation,
 }
 
 pub struct IrSymbol {
@@ -54,6 +138,296 @@ pub struct IrFunction {
     pub name: String,
     pub return_type: IrTypeId,
     pub span: SourceSpan,
+}
+
+pub struct IrGenericParam {
+    pub name: String,
+    pub bounds: Vec[String],
+    pub span: SourceSpan,
+}
+
+pub struct IrParam {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub attrs: Vec[AstAttribute],
+    pub type_id: IrTypeId,
+    pub span: SourceSpan,
+}
+
+pub struct IrClosureParam {
+    pub name: String,
+    pub type_id: Option[IrTypeId],
+    pub span: SourceSpan,
+}
+
+pub struct IrField {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub visibility: AstVisibility,
+    pub attrs: Vec[AstAttribute],
+    pub type_id: IrTypeId,
+    pub default_value: Option[IrExpr],
+    pub span: SourceSpan,
+}
+
+pub struct IrVariant {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub attrs: Vec[AstAttribute],
+    pub payload_type: Option[IrTypeId],
+    pub span: SourceSpan,
+}
+
+pub struct IrExprNode {
+    pub node: IrNodeId,
+    pub kind: IrExprKind,
+    pub role: String,
+    pub op: String,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub depth: Int,
+    pub type_id: Option[IrTypeId],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrPatternNode {
+    pub node: IrNodeId,
+    pub kind: IrPatternKind,
+    pub role: String,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub depth: Int,
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrMatchArm {
+    pub pattern_text: String,
+    pub guard_text: String,
+    pub body_text: String,
+    pub pattern_nodes: Vec[IrPatternNode],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrPattern {
+    pub node: IrNodeId,
+    pub kind: IrPatternKind,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub nodes: Vec[IrPatternNode],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrExpr {
+    pub node: IrNodeId,
+    pub kind: IrExprKind,
+    pub op: String,
+    pub name: String,
+    pub direct_child_count: Int,
+    pub nodes: Vec[IrExprNode],
+    pub patterns: Vec[IrPatternNode],
+    pub match_arms: Vec[IrMatchArm],
+    pub type_id: Option[IrTypeId],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrStatement {
+    pub kind: IrStatementKind,
+    pub symbol: Option[IrSymbolId],
+    pub name: String,
+    pub target: String,
+    pub mutable: Bool,
+    pub type_id: Option[IrTypeId],
+    pub pattern: Option[IrPattern],
+    pub expr: Option[IrExpr],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrBlock {
+    pub node: IrNodeId,
+    pub statements: Vec[IrStatement],
+    pub tail_expr: Option[IrExpr],
+    pub span: SourceSpan,
+    pub text: String,
+}
+
+pub struct IrFunctionDef {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub visibility: AstVisibility,
+    pub attrs: Vec[AstAttribute],
+    pub is_async: Bool,
+    pub is_unsafe: Bool,
+    pub is_extern: Bool,
+    pub extern_abi: String,
+    pub is_intrinsic: Bool,
+    pub intrinsic_abi: String,
+    pub generics: Vec[IrGenericParam],
+    pub params: Vec[IrParam],
+    pub return_type: IrTypeId,
+    pub effect_names: Vec[String],
+    pub capability_names: Vec[String],
+    pub requires_expr: Option[IrExpr],
+    pub ensures_expr: Option[IrExpr],
+    pub body: IrBlock,
+    pub runtime_visible: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct IrStructDef {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub visibility: AstVisibility,
+    pub attrs: Vec[AstAttribute],
+    pub generics: Vec[IrGenericParam],
+    pub fields: Vec[IrField],
+    pub invariant_expr: Option[IrExpr],
+    pub span: SourceSpan,
+}
+
+pub struct IrEnumDef {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub visibility: AstVisibility,
+    pub attrs: Vec[AstAttribute],
+    pub generics: Vec[IrGenericParam],
+    pub variants: Vec[IrVariant],
+    pub span: SourceSpan,
+}
+
+pub struct IrTraitDef {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub visibility: AstVisibility,
+    pub attrs: Vec[AstAttribute],
+    pub generics: Vec[IrGenericParam],
+    pub methods: Vec[IrFunctionDef],
+    pub span: SourceSpan,
+}
+
+pub struct IrImplDef {
+    pub symbol: IrSymbolId,
+    pub head_type: IrTypeId,
+    pub head_text: String,
+    pub visibility: AstVisibility,
+    pub attrs: Vec[AstAttribute],
+    pub generics: Vec[IrGenericParam],
+    pub methods: Vec[IrFunctionDef],
+    pub is_inherent: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct IrTypeAliasDef {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub generics: Vec[IrGenericParam],
+    pub target_type: IrTypeId,
+    pub runtime_visible: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct IrConstDef {
+    pub symbol: IrSymbolId,
+    pub name: String,
+    pub type_id: IrTypeId,
+    pub initializer: Option[IrExpr],
+    pub runtime_visible: Bool,
+    pub span: SourceSpan,
+}
+
+pub enum IrItem {
+    IrFunctionItemValue(IrFunctionDef),
+    IrStructItemValue(IrStructDef),
+    IrEnumItemValue(IrEnumDef),
+    IrTraitItemValue(IrTraitDef),
+    IrImplItemValue(IrImplDef),
+    IrTypeAliasItemValue(IrTypeAliasDef),
+    IrConstItemValue(IrConstDef),
+}
+
+pub struct IrGenericInstantiation {
+    pub id: Int,
+    pub kind: IrGenericInstantiationKind,
+    pub name: String,
+    pub symbol: Option[IrSymbolId],
+    pub type_args: Vec[String],
+    pub mangled: String,
+    pub span: SourceSpan,
+}
+
+pub struct IrSourceMapEntry {
+    pub kind: String,
+    pub name: String,
+    pub node: IrNodeId,
+    pub span: SourceSpan,
+}
+
+pub struct IrProgram {
+    pub schema_version: Int,
+    pub module_path: String,
+    pub imports: Vec[String],
+    pub items: Vec[IrItem],
+    pub symbols: Vec[IrSymbol],
+    pub types: Vec[IrTypeDef],
+    pub generic_instantiations: Vec[IrGenericInstantiation],
+    pub source_map: Vec[IrSourceMapEntry],
+    pub span: SourceSpan,
+}
+
+pub struct IrLoweringResult {
+    pub program: Option[IrProgram],
+    pub diagnostics: Vec[Diagnostic],
+}
+
+struct IrLoweringBuilder {
+    next_symbol: Int,
+    next_type: Int,
+    next_node: Int,
+    symbols: Vec[IrSymbol],
+    types: Vec[IrTypeDef],
+    source_map: Vec[IrSourceMapEntry],
+    diagnostics: Vec[Diagnostic],
+    max_errors: Int,
+}
+
+struct IrSymbolAlloc {
+    builder: IrLoweringBuilder,
+    id: IrSymbolId,
+}
+
+struct IrTypeAlloc {
+    builder: IrLoweringBuilder,
+    id: IrTypeId,
+}
+
+struct IrNodeAlloc {
+    builder: IrLoweringBuilder,
+    id: IrNodeId,
+}
+
+struct IrLoweredExpr {
+    builder: IrLoweringBuilder,
+    expr: IrExpr,
+}
+
+struct IrLoweredPattern {
+    builder: IrLoweringBuilder,
+    pattern: IrPattern,
+}
+
+struct IrLoweredBlock {
+    builder: IrLoweringBuilder,
+    block: IrBlock,
+}
+
+struct IrLoweredFunction {
+    builder: IrLoweringBuilder,
+    function_item: IrFunctionDef,
 }
 
 pub struct IrProgramStats {
@@ -134,8 +508,13 @@ pub fn is_type_symbol(value: IrSymbolKind) -> Bool {
         IrStructSymbol => true,
         IrEnumSymbol => true,
         IrTraitSymbol => true,
+        IrTypeAliasSymbol => true,
         IrFunctionSymbol => false,
         IrImplSymbol => false,
+        IrVariantSymbol => false,
+        IrFieldSymbol => false,
+        IrParameterSymbol => false,
+        IrLocalSymbol => false,
         IrConstSymbol => false,
         IrModuleSymbol => false,
     }
@@ -145,10 +524,15 @@ pub fn is_value_symbol(value: IrSymbolKind) -> Bool {
     match value {
         IrFunctionSymbol => true,
         IrConstSymbol => true,
+        IrVariantSymbol => true,
+        IrFieldSymbol => true,
+        IrParameterSymbol => true,
+        IrLocalSymbol => true,
         IrStructSymbol => false,
         IrEnumSymbol => false,
         IrTraitSymbol => false,
         IrImplSymbol => false,
+        IrTypeAliasSymbol => false,
         IrModuleSymbol => false,
     }
 }
@@ -159,10 +543,14 @@ pub fn is_concrete_type(value: IrTypeKind) -> Bool {
         IrUnitType => true,
         IrBoolType => true,
         IrIntType => true,
+        IrUIntType => true,
         IrFloatType => true,
         IrStringType => true,
+        IrCharType => true,
         IrNamedType(_) => true,
+        IrTupleType(_) => true,
         IrFunctionType(_) => true,
+        IrDynTraitType(_) => true,
     }
 }
 
@@ -172,4 +560,1429 @@ pub fn same_symbol_id(left: IrSymbolId, right: IrSymbolId) -> Bool {
 
 pub fn same_type_id(left: IrTypeId, right: IrTypeId) -> Bool {
     left.value == right.value
+}
+
+pub fn current_ir_schema_version() -> Int {
+    1
+}
+
+pub fn generic_param(name: String, bounds: Vec[String], span_value: SourceSpan) -> IrGenericParam {
+    IrGenericParam {
+        name: name,
+        bounds: bounds,
+        span: span_value,
+    }
+}
+
+pub fn ir_lowering_result(program_value: Option[IrProgram], diagnostics_value: Vec[Diagnostic]) -> IrLoweringResult {
+    IrLoweringResult {
+        program: program_value,
+        diagnostics: diagnostics_value,
+    }
+}
+
+fn ir_source_map_entry(kind: String, name: String, node_value: IrNodeId, span_value: SourceSpan) -> IrSourceMapEntry {
+    IrSourceMapEntry {
+        kind: kind,
+        name: name,
+        node: node_value,
+        span: span_value,
+    }
+}
+
+fn lower_builder(max_errors: Int) -> IrLoweringBuilder {
+    IrLoweringBuilder {
+        next_symbol: 1,
+        next_type: 1,
+        next_node: 1,
+        symbols: vec.new_vec(),
+        types: vec.new_vec(),
+        source_map: vec.new_vec(),
+        diagnostics: vec.new_vec(),
+        max_errors: max_errors,
+    }
+}
+
+fn with_builder_diagnostic(builder: IrLoweringBuilder, diagnostic_value: Diagnostic) -> IrLoweringBuilder {
+    if vec.vec_len(builder.diagnostics) < builder.max_errors {
+        IrLoweringBuilder {
+            next_symbol: builder.next_symbol,
+            next_type: builder.next_type,
+            next_node: builder.next_node,
+            symbols: builder.symbols,
+            types: builder.types,
+            source_map: builder.source_map,
+            diagnostics: vec.push(builder.diagnostics, diagnostic_value),
+            max_errors: builder.max_errors,
+        }
+    } else {
+        builder
+    }
+}
+
+fn builder_error(builder: IrLoweringBuilder, code: String, span_value: SourceSpan, message: String, help: String) -> IrLoweringBuilder {
+    with_builder_diagnostic(builder, with_help(error(diagnostic_code(code), span_value, message), help))
+}
+
+fn push_symbol(builder: IrLoweringBuilder, name: String, kind: IrSymbolKind, span_value: SourceSpan) -> IrSymbolAlloc {
+    let id = symbol_id(builder.next_symbol);
+    let next_symbols = vec.push(builder.symbols, symbol(id, name, kind, span_value));
+    IrSymbolAlloc {
+        builder: IrLoweringBuilder {
+            next_symbol: builder.next_symbol + 1,
+            next_type: builder.next_type,
+            next_node: builder.next_node,
+            symbols: next_symbols,
+            types: builder.types,
+            source_map: builder.source_map,
+            diagnostics: builder.diagnostics,
+            max_errors: builder.max_errors,
+        },
+        id: id,
+    }
+}
+
+fn push_node(builder: IrLoweringBuilder) -> IrNodeAlloc {
+    let id = node_id(builder.next_node);
+    IrNodeAlloc {
+        builder: IrLoweringBuilder {
+            next_symbol: builder.next_symbol,
+            next_type: builder.next_type,
+            next_node: builder.next_node + 1,
+            symbols: builder.symbols,
+            types: builder.types,
+            source_map: builder.source_map,
+            diagnostics: builder.diagnostics,
+            max_errors: builder.max_errors,
+        },
+        id: id,
+    }
+}
+
+fn append_source_map(builder: IrLoweringBuilder, kind: String, name: String, node_value: IrNodeId, span_value: SourceSpan) -> IrLoweringBuilder {
+    IrLoweringBuilder {
+        next_symbol: builder.next_symbol,
+        next_type: builder.next_type,
+        next_node: builder.next_node,
+        symbols: builder.symbols,
+        types: builder.types,
+        source_map: vec.push(builder.source_map, ir_source_map_entry(kind, name, node_value, span_value)),
+        diagnostics: builder.diagnostics,
+        max_errors: builder.max_errors,
+    }
+}
+
+fn same_type_repr(value: IrTypeDef, repr: String) -> Bool {
+    value.name == repr
+}
+
+fn find_type_id(types: Vec[IrTypeDef], repr: String) -> Option[IrTypeId] {
+    let mut index = 0;
+    let mut out: Option[IrTypeId] = None();
+    while index < vec.vec_len(types) {
+        match vec.get(types, index) {
+            Some(item) => if same_type_repr(item, repr) {
+                out = Some(item.id);
+                index = vec.vec_len(types);
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn infer_type_kind(repr: String) -> IrTypeKind {
+    if repr == "()" {
+        IrUnitType()
+    } else if repr == "Bool" {
+        IrBoolType()
+    } else if repr == "Int" || string.starts_with(repr, "Int") || repr == "isize" {
+        IrIntType()
+    } else if repr == "UInt" || repr == "uint" || repr == "usize" || string.starts_with(repr, "UInt") {
+        IrUIntType()
+    } else if repr == "Float" || string.starts_with(repr, "Float") {
+        IrFloatType()
+    } else if repr == "String" {
+        IrStringType()
+    } else if repr == "Char" {
+        IrCharType()
+    } else if string.starts_with(repr, "Fn") {
+        IrFunctionType(repr)
+    } else if string.starts_with(repr, "dyn ") {
+        IrDynTraitType(repr)
+    } else if string.starts_with(repr, "(") {
+        IrTupleType(repr)
+    } else if repr == "" || repr == "_" || repr == "<?>" {
+        IrUnknownType()
+    } else {
+        IrNamedType(repr)
+    }
+}
+
+fn intern_type_repr(builder: IrLoweringBuilder, repr: String, span_value: SourceSpan) -> IrTypeAlloc {
+    match find_type_id(builder.types, repr) {
+        Some(existing) => IrTypeAlloc {
+            builder: builder,
+            id: existing,
+        },
+        None => if true {
+            let id = type_id(builder.next_type);
+            let next_types = vec.push(builder.types, type_def(id, repr, infer_type_kind(repr), span_value));
+            IrTypeAlloc {
+                builder: IrLoweringBuilder {
+                    next_symbol: builder.next_symbol,
+                    next_type: builder.next_type + 1,
+                    next_node: builder.next_node,
+                    symbols: builder.symbols,
+                    types: next_types,
+                    source_map: builder.source_map,
+                    diagnostics: builder.diagnostics,
+                    max_errors: builder.max_errors,
+                },
+                id: id,
+            }
+        } else {
+            IrTypeAlloc {
+                builder: builder,
+                id: type_id(0),
+            }
+        },
+    }
+}
+
+fn lower_type_ref(builder: IrLoweringBuilder, value: AstType) -> IrTypeAlloc {
+    match value.kind {
+        AstNamedType => if value.name == "" || type_text(value) == "" {
+            let errored = builder_error(builder, "E5003", value.span, "invalid type metadata cannot be lowered to IR", "ensure the typed AST carries a non-empty nominal type name and text");
+            intern_type_repr(errored, "<?>", value.span)
+        } else {
+            intern_type_repr(builder, type_text(value), value.span)
+        },
+        AstDynTraitType => if type_text(value) == "" {
+            let errored = builder_error(builder, "E5003", value.span, "invalid dyn trait type metadata cannot be lowered to IR", "preserve dyn trait text during AST construction");
+            intern_type_repr(errored, "<?>", value.span)
+        } else {
+            intern_type_repr(builder, type_text(value), value.span)
+        },
+        AstUnitType => intern_type_repr(builder, "()", value.span),
+        AstHoleType => intern_type_repr(builder, "<?>", value.span),
+    }
+}
+
+fn lower_optional_type(builder: IrLoweringBuilder, value: Option[AstType]) -> IrTypeAlloc {
+    match value {
+        Some(type_value) => lower_type_ref(builder, type_value),
+        None => intern_type_repr(builder, "<?>", empty_span(source_id(0), 0)),
+    }
+}
+
+fn split_name_list(text: String) -> Vec[String] {
+    if text == "" {
+        vec.new_vec()
+    } else {
+        string.split(text, ",")
+    }
+}
+
+fn ast_expr_kind_to_ir(value: AstExprKind) -> IrExprKind {
+    match value {
+        AstIntExpr => IrIntExpr(),
+        AstFloatExpr => IrFloatExpr(),
+        AstBoolExpr => IrBoolExpr(),
+        AstStringExpr => IrStringExpr(),
+        AstCharExpr => IrCharExpr(),
+        AstTemplateExpr => IrTemplateExpr(),
+        AstUnitExpr => IrUnitExpr(),
+        AstNameExpr => IrNameExpr(),
+        AstCallExpr => IrCallExpr(),
+        AstClosureExpr => IrClosureExpr(),
+        AstIfExpr => IrIfExpr(),
+        AstWhileExpr => IrWhileExpr(),
+        AstForExpr => IrForExpr(),
+        AstLoopExpr => IrLoopExpr(),
+        AstBreakExpr => IrBreakExpr(),
+        AstContinueExpr => IrContinueExpr(),
+        AstMatchExpr => IrMatchExpr(),
+        AstBinaryExpr => IrBinaryExpr(),
+        AstUnaryExpr => IrUnaryExpr(),
+        AstBorrowExpr => IrBorrowExpr(),
+        AstAwaitExpr => IrAwaitExpr(),
+        AstTryExpr => IrTryExpr(),
+        AstStructLiteralExpr => IrStructLiteralExpr(),
+        AstTupleExpr => IrTupleExpr(),
+        AstFieldAccessExpr => IrFieldAccessExpr(),
+        AstBlockExpr => IrBlockExpr(),
+    }
+}
+
+fn ast_pattern_kind_to_ir(value: AstPatternKind) -> IrPatternKind {
+    match value {
+        AstWildcardPattern => IrWildcardPattern(),
+        AstVarPattern => IrVarPattern(),
+        AstIntPattern => IrIntPattern(),
+        AstBoolPattern => IrBoolPattern(),
+        AstCharPattern => IrCharPattern(),
+        AstStringPattern => IrStringPattern(),
+        AstUnitPattern => IrUnitPattern(),
+        AstOrPattern => IrOrPattern(),
+        AstVariantPattern => IrVariantPattern(),
+        AstTuplePattern => IrTuplePattern(),
+        AstStructPattern => IrStructPattern(),
+    }
+}
+
+fn ast_statement_kind_to_ir(value: AstStatementKind) -> IrStatementKind {
+    match value {
+        AstLetStatement => IrLetStatement(),
+        AstAssignStatement => IrAssignStatement(),
+        AstExprStatement => IrExprStatement(),
+        AstReturnStatement => IrReturnStatement(),
+    }
+}
+
+fn is_ast_let_statement(value: AstStatementKind) -> Bool {
+    match value {
+        AstLetStatement => true,
+        AstAssignStatement => false,
+        AstExprStatement => false,
+        AstReturnStatement => false,
+    }
+}
+
+fn lower_generic_params(value: AstGenericParamList) -> Vec[IrGenericParam] {
+    let mut out: Vec[IrGenericParam] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(value.params) {
+        match vec.get(value.params, index) {
+            Some(param) => if true {
+                let mut bounds: Vec[String] = vec.new_vec();
+                let mut bound_index = 0;
+                while bound_index < vec.vec_len(param.bounds) {
+                    match vec.get(param.bounds, bound_index) {
+                        Some(bound) => if true {
+                            bounds = vec.push(bounds, bound.value);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    bound_index = bound_index + 1;
+                };
+                out = vec.push(out, generic_param(param.name.value, bounds, param.span));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn lower_expr_node(builder: IrLoweringBuilder, value: AstExprNode) -> IrNodeAlloc {
+    push_node(builder)
+}
+
+fn lower_expr_nodes(builder: IrLoweringBuilder, values: Vec[AstExprNode]) -> IrLoweredExprNodes {
+    let mut out_builder = builder;
+    let mut out: Vec[IrExprNode] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(node_value) => if true {
+                let alloc = lower_expr_node(out_builder, node_value);
+                out_builder = alloc.builder;
+                out = vec.push(out, IrExprNode {
+                    node: alloc.id,
+                    kind: ast_expr_kind_to_ir(node_value.kind),
+                    role: node_value.role,
+                    op: node_value.op,
+                    name: node_value.name,
+                    direct_child_count: node_value.direct_child_count,
+                    depth: node_value.depth,
+                    type_id: None(),
+                    span: node_value.span,
+                    text: node_value.text,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredExprNodes {
+        builder: out_builder,
+        nodes: out,
+    }
+}
+
+struct IrLoweredExprNodes {
+    builder: IrLoweringBuilder,
+    nodes: Vec[IrExprNode],
+}
+
+struct IrLoweredPatternNodes {
+    builder: IrLoweringBuilder,
+    nodes: Vec[IrPatternNode],
+}
+
+fn lower_pattern_nodes(builder: IrLoweringBuilder, values: Vec[AstPatternNode]) -> IrLoweredPatternNodes {
+    let mut out_builder = builder;
+    let mut out: Vec[IrPatternNode] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(node_value) => if true {
+                let alloc = push_node(out_builder);
+                out_builder = alloc.builder;
+                out = vec.push(out, IrPatternNode {
+                    node: alloc.id,
+                    kind: ast_pattern_kind_to_ir(node_value.kind),
+                    role: node_value.role,
+                    name: node_value.name,
+                    direct_child_count: node_value.direct_child_count,
+                    depth: node_value.depth,
+                    span: node_value.span,
+                    text: node_value.text,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredPatternNodes {
+        builder: out_builder,
+        nodes: out,
+    }
+}
+
+struct IrLoweredMatchArms {
+    builder: IrLoweringBuilder,
+    arms: Vec[IrMatchArm],
+}
+
+fn lower_match_arms(builder: IrLoweringBuilder, values: Vec[AstMatchArmNode]) -> IrLoweredMatchArms {
+    let mut out_builder = builder;
+    let mut out: Vec[IrMatchArm] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(arm) => if true {
+                out = vec.push(out, IrMatchArm {
+                    pattern_text: arm.pattern_text,
+                    guard_text: arm.guard_text,
+                    body_text: arm.body_text,
+                    pattern_nodes: vec.new_vec(),
+                    span: arm.span,
+                    text: arm.text,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredMatchArms {
+        builder: out_builder,
+        arms: out,
+    }
+}
+
+fn lower_expr(builder: IrLoweringBuilder, value: AstExpr) -> IrLoweredExpr {
+    let alloc = push_node(builder);
+    let lowered_nodes = lower_expr_nodes(alloc.builder, value.nodes);
+    let lowered_patterns = lower_pattern_nodes(lowered_nodes.builder, value.patterns);
+    let lowered_arms = lower_match_arms(lowered_patterns.builder, value.match_arms);
+    IrLoweredExpr {
+        builder: lowered_arms.builder,
+        expr: IrExpr {
+            node: alloc.id,
+            kind: ast_expr_kind_to_ir(value.kind),
+            op: value.op,
+            name: value.name,
+            direct_child_count: value.direct_child_count,
+            nodes: lowered_nodes.nodes,
+            patterns: lowered_patterns.nodes,
+            match_arms: lowered_arms.arms,
+            type_id: None(),
+            span: value.span,
+            text: value.text,
+        },
+    }
+}
+
+fn lower_pattern(builder: IrLoweringBuilder, value: AstPattern) -> IrLoweredPattern {
+    let alloc = push_node(builder);
+    let lowered_nodes = lower_pattern_nodes(alloc.builder, value.nodes);
+    IrLoweredPattern {
+        builder: lowered_nodes.builder,
+        pattern: IrPattern {
+            node: alloc.id,
+            kind: ast_pattern_kind_to_ir(value.kind),
+            name: value.name,
+            direct_child_count: value.direct_child_count,
+            nodes: lowered_nodes.nodes,
+            span: value.span,
+            text: value.text,
+        },
+    }
+}
+
+struct IrLoweredStatement {
+    builder: IrLoweringBuilder,
+    statement: IrStatement,
+}
+
+fn lower_statement(builder: IrLoweringBuilder, value: AstStatement) -> IrLoweredStatement {
+    let is_let = is_ast_let_statement(value.kind);
+    let symbol_alloc = if is_let {
+        push_symbol(builder, value.name, IrLocalSymbol(), value.span)
+    } else {
+        IrSymbolAlloc {
+            builder: builder,
+            id: symbol_id(0),
+        }
+    };
+    let type_alloc = match value.type_ref {
+        Some(type_value) => lower_type_ref(symbol_alloc.builder, type_value),
+        None => IrTypeAlloc {
+            builder: symbol_alloc.builder,
+            id: type_id(0),
+        },
+    };
+    let lowered_pattern = match value.pattern {
+        Some(pattern_value) => if true {
+            let out = lower_pattern(type_alloc.builder, pattern_value);
+            IrOptionalPatternLowering {
+                builder: out.builder,
+                pattern: Some(out.pattern),
+            }
+        } else {
+            IrOptionalPatternLowering {
+                builder: type_alloc.builder,
+                pattern: None(),
+            }
+        },
+        None => IrOptionalPatternLowering {
+            builder: type_alloc.builder,
+            pattern: None(),
+        },
+    };
+    let lowered_expr = match value.expr {
+        Some(expr_value) => if true {
+            let out = lower_expr(lowered_pattern.builder, expr_value);
+            IrOptionalExprLowering {
+                builder: out.builder,
+                expr: Some(out.expr),
+            }
+        } else {
+            IrOptionalExprLowering {
+                builder: lowered_pattern.builder,
+                expr: None(),
+            }
+        },
+        None => IrOptionalExprLowering {
+            builder: lowered_pattern.builder,
+            expr: None(),
+        },
+    };
+    IrLoweredStatement {
+        builder: lowered_expr.builder,
+        statement: IrStatement {
+            kind: ast_statement_kind_to_ir(value.kind),
+            symbol: if is_let { Some(symbol_alloc.id) } else { None() },
+            name: value.name,
+            target: value.target,
+            mutable: value.mutable,
+            type_id: match value.type_ref { Some(_) => Some(type_alloc.id), None => None() },
+            pattern: lowered_pattern.pattern,
+            expr: lowered_expr.expr,
+            span: value.span,
+            text: value.text,
+        },
+    }
+}
+
+struct IrOptionalExprLowering {
+    builder: IrLoweringBuilder,
+    expr: Option[IrExpr],
+}
+
+struct IrOptionalPatternLowering {
+    builder: IrLoweringBuilder,
+    pattern: Option[IrPattern],
+}
+
+fn lower_block(builder: IrLoweringBuilder, value: AstBlock) -> IrLoweredBlock {
+    let alloc = push_node(builder);
+    let mut out_builder = alloc.builder;
+    let mut statements: Vec[IrStatement] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(value.statements) {
+        match vec.get(value.statements, index) {
+            Some(statement_value) => if true {
+                let lowered = lower_statement(out_builder, statement_value);
+                out_builder = lowered.builder;
+                statements = vec.push(statements, lowered.statement);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    let lowered_tail = match value.tail_expr {
+        Some(expr_value) => if true {
+            let lowered = lower_expr(out_builder, expr_value);
+            IrOptionalExprLowering {
+                builder: lowered.builder,
+                expr: Some(lowered.expr),
+            }
+        } else {
+            IrOptionalExprLowering {
+                builder: out_builder,
+                expr: None(),
+            }
+        },
+        None => IrOptionalExprLowering {
+            builder: out_builder,
+            expr: None(),
+        },
+    };
+    IrLoweredBlock {
+        builder: lowered_tail.builder,
+        block: IrBlock {
+            node: alloc.id,
+            statements: statements,
+            tail_expr: lowered_tail.expr,
+            span: value.span,
+            text: value.text,
+        },
+    }
+}
+
+fn empty_block(builder: IrLoweringBuilder, span_value: SourceSpan) -> IrLoweredBlock {
+    let alloc = push_node(builder);
+    IrLoweredBlock {
+        builder: alloc.builder,
+        block: IrBlock {
+            node: alloc.id,
+            statements: vec.new_vec(),
+            tail_expr: None(),
+            span: span_value,
+            text: "{}",
+        },
+    }
+}
+
+fn lower_params(builder: IrLoweringBuilder, params: Vec[AstParam]) -> IrLoweredParams {
+    let mut out_builder = builder;
+    let mut out: Vec[IrParam] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(params) {
+        match vec.get(params, index) {
+            Some(param) => if true {
+                let sym = push_symbol(out_builder, param.name.value, IrParameterSymbol(), param.span);
+                let ty = lower_type_ref(sym.builder, param.type_ref);
+                out_builder = ty.builder;
+                out = vec.push(out, IrParam {
+                    symbol: sym.id,
+                    name: param.name.value,
+                    attrs: param.attrs,
+                    type_id: ty.id,
+                    span: param.span,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredParams {
+        builder: out_builder,
+        params: out,
+    }
+}
+
+struct IrLoweredParams {
+    builder: IrLoweringBuilder,
+    params: Vec[IrParam],
+}
+
+fn modifier_has(value: String, target: String) -> Bool {
+    string.contains(value, target)
+}
+
+fn lower_function_from_parts(
+    builder: IrLoweringBuilder,
+    name: String,
+    visibility: AstVisibility,
+    attrs: Vec[AstAttribute],
+    signature: AstFunctionSignature,
+    requires_expr: Option[AstExpr],
+    ensures_expr: Option[AstExpr],
+    body: AstBlock,
+    runtime_visible: Bool,
+    modifiers: String,
+    span_value: SourceSpan,
+) -> IrLoweredFunction {
+    let sym = push_symbol(builder, name, IrFunctionSymbol(), span_value);
+    let params = lower_params(sym.builder, signature.params);
+    let ret = lower_type_ref(params.builder, signature.return_type);
+    let lowered_requires = match requires_expr {
+        Some(expr_value) => if true {
+            let lowered = lower_expr(ret.builder, expr_value);
+            IrOptionalExprLowering {
+                builder: lowered.builder,
+                expr: Some(lowered.expr),
+            }
+        } else {
+            IrOptionalExprLowering {
+                builder: ret.builder,
+                expr: None(),
+            }
+        },
+        None => IrOptionalExprLowering {
+            builder: ret.builder,
+            expr: None(),
+        },
+    };
+    let lowered_ensures = match ensures_expr {
+        Some(expr_value) => if true {
+            let lowered = lower_expr(lowered_requires.builder, expr_value);
+            IrOptionalExprLowering {
+                builder: lowered.builder,
+                expr: Some(lowered.expr),
+            }
+        } else {
+            IrOptionalExprLowering {
+                builder: lowered_requires.builder,
+                expr: None(),
+            }
+        },
+        None => IrOptionalExprLowering {
+            builder: lowered_requires.builder,
+            expr: None(),
+        },
+    };
+    let lowered_body = lower_block(lowered_ensures.builder, body);
+    IrLoweredFunction {
+        builder: append_source_map(lowered_body.builder, "function", name, lowered_body.block.node, span_value),
+        function_item: IrFunctionDef {
+            symbol: sym.id,
+            name: name,
+            visibility: visibility,
+            attrs: attrs,
+            is_async: modifier_has(modifiers, "async"),
+            is_unsafe: modifier_has(modifiers, "unsafe"),
+            is_extern: modifier_has(modifiers, "extern"),
+            extern_abi: if modifier_has(modifiers, "extern") { "C" } else { "" },
+            is_intrinsic: modifier_has(modifiers, "intrinsic"),
+            intrinsic_abi: if modifier_has(modifiers, "intrinsic") { "aic" } else { "" },
+            generics: lower_generic_params(signature.generic_params),
+            params: params.params,
+            return_type: ret.id,
+            effect_names: split_name_list(signature.effect_names),
+            capability_names: split_name_list(signature.capability_names),
+            requires_expr: lowered_requires.expr,
+            ensures_expr: lowered_ensures.expr,
+            body: lowered_body.block,
+            runtime_visible: runtime_visible,
+            span: span_value,
+        },
+    }
+}
+
+fn lower_signature_only_function(builder: IrLoweringBuilder, item: AstProgramItem, signature: AstFunctionSignature) -> IrLoweredFunction {
+    let empty = ast_block(vec.new_vec(), None(), signature.span, "{}");
+    lower_function_from_parts(builder, signature.name.value, item.visibility, item.attrs, signature, None(), None(), empty, true, item.modifier_names, item.span)
+}
+
+fn lower_function_item(builder: IrLoweringBuilder, item: AstProgramItem, value: AstFunctionDecl) -> IrLoweredItem {
+    let lowered = lower_function_from_parts(builder, value.signature.name.value, item.visibility, item.attrs, value.signature, value.requires_expr, value.ensures_expr, value.body, true, item.modifier_names, value.span);
+    IrLoweredItem {
+        builder: lowered.builder,
+        item: Some(IrFunctionItemValue(lowered.function_item)),
+    }
+}
+
+struct IrLoweredItem {
+    builder: IrLoweringBuilder,
+    item: Option[IrItem],
+}
+
+fn lower_fields(builder: IrLoweringBuilder, fields: Vec[AstField]) -> IrLoweredFields {
+    let mut out_builder = builder;
+    let mut out: Vec[IrField] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(fields) {
+        match vec.get(fields, index) {
+            Some(field) => if true {
+                let sym = push_symbol(out_builder, field.name.value, IrFieldSymbol(), field.span);
+                let ty = lower_type_ref(sym.builder, field.type_ref);
+                let lowered_default = match field.default_expr {
+                    Some(expr_value) => if true {
+                        let lowered = lower_expr(ty.builder, expr_value);
+                        IrOptionalExprLowering {
+                            builder: lowered.builder,
+                            expr: Some(lowered.expr),
+                        }
+                    } else {
+                        IrOptionalExprLowering {
+                            builder: ty.builder,
+                            expr: None(),
+                        }
+                    },
+                    None => IrOptionalExprLowering {
+                        builder: ty.builder,
+                        expr: None(),
+                    },
+                };
+                out_builder = lowered_default.builder;
+                out = vec.push(out, IrField {
+                    symbol: sym.id,
+                    name: field.name.value,
+                    visibility: field.visibility,
+                    attrs: field.attrs,
+                    type_id: ty.id,
+                    default_value: lowered_default.expr,
+                    span: field.span,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredFields {
+        builder: out_builder,
+        fields: out,
+    }
+}
+
+struct IrLoweredFields {
+    builder: IrLoweringBuilder,
+    fields: Vec[IrField],
+}
+
+fn lower_struct_item(builder: IrLoweringBuilder, item: AstProgramItem, value: AstStructDecl) -> IrLoweredItem {
+    let sym = push_symbol(builder, value.name.value, IrStructSymbol(), value.span);
+    let fields = lower_fields(sym.builder, value.fields);
+    let lowered_invariant = match value.invariant_expr {
+        Some(expr_value) => if true {
+            let lowered = lower_expr(fields.builder, expr_value);
+            IrOptionalExprLowering {
+                builder: lowered.builder,
+                expr: Some(lowered.expr),
+            }
+        } else {
+            IrOptionalExprLowering {
+                builder: fields.builder,
+                expr: None(),
+            }
+        },
+        None => IrOptionalExprLowering {
+            builder: fields.builder,
+            expr: None(),
+        },
+    };
+    IrLoweredItem {
+        builder: append_source_map(lowered_invariant.builder, "struct", value.name.value, node_id(sym.id.value), value.span),
+        item: Some(IrStructItemValue(IrStructDef {
+            symbol: sym.id,
+            name: value.name.value,
+            visibility: value.visibility,
+            attrs: item.attrs,
+            generics: lower_generic_params(value.generic_params),
+            fields: fields.fields,
+            invariant_expr: lowered_invariant.expr,
+            span: value.span,
+        })),
+    }
+}
+
+fn lower_variants(builder: IrLoweringBuilder, variants: Vec[AstEnumVariant]) -> IrLoweredVariants {
+    let mut out_builder = builder;
+    let mut out: Vec[IrVariant] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(variants) {
+        match vec.get(variants, index) {
+            Some(variant) => if true {
+                let sym = push_symbol(out_builder, variant.name.value, IrVariantSymbol(), variant.span);
+                let payload = match variant.payload_type {
+                    Some(type_value) => if true {
+                        let lowered = lower_type_ref(sym.builder, type_value);
+                        IrOptionalTypeLowering {
+                            builder: lowered.builder,
+                            type_id_value: Some(lowered.id),
+                        }
+                    } else {
+                        IrOptionalTypeLowering {
+                            builder: sym.builder,
+                            type_id_value: None(),
+                        }
+                    },
+                    None => IrOptionalTypeLowering {
+                        builder: sym.builder,
+                        type_id_value: None(),
+                    },
+                };
+                out_builder = payload.builder;
+                out = vec.push(out, IrVariant {
+                    symbol: sym.id,
+                    name: variant.name.value,
+                    attrs: variant.attrs,
+                    payload_type: payload.type_id_value,
+                    span: variant.span,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredVariants {
+        builder: out_builder,
+        variants: out,
+    }
+}
+
+struct IrOptionalTypeLowering {
+    builder: IrLoweringBuilder,
+    type_id_value: Option[IrTypeId],
+}
+
+struct IrLoweredVariants {
+    builder: IrLoweringBuilder,
+    variants: Vec[IrVariant],
+}
+
+fn lower_enum_item(builder: IrLoweringBuilder, item: AstProgramItem, value: AstEnumDecl) -> IrLoweredItem {
+    let sym = push_symbol(builder, value.name.value, IrEnumSymbol(), value.span);
+    let variants = lower_variants(sym.builder, value.variants);
+    IrLoweredItem {
+        builder: append_source_map(variants.builder, "enum", value.name.value, node_id(sym.id.value), value.span),
+        item: Some(IrEnumItemValue(IrEnumDef {
+            symbol: sym.id,
+            name: value.name.value,
+            visibility: value.visibility,
+            attrs: item.attrs,
+            generics: lower_generic_params(value.generic_params),
+            variants: variants.variants,
+            span: value.span,
+        })),
+    }
+}
+
+fn lower_trait_methods(builder: IrLoweringBuilder, methods: Vec[AstFunctionSignature], trait_name: String) -> IrLoweredFunctions {
+    let mut out_builder = builder;
+    let mut out: Vec[IrFunctionDef] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(methods) {
+        match vec.get(methods, index) {
+            Some(method) => if true {
+                let empty = ast_block(vec.new_vec(), None(), method.span, "{}");
+                let lowered = lower_function_from_parts(out_builder, method.name.value, PrivateVisibility(), method.attrs, method, None(), None(), empty, false, "", method.span);
+                out_builder = lowered.builder;
+                out = vec.push(out, lowered.function_item);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredFunctions {
+        builder: out_builder,
+        functions: out,
+    }
+}
+
+struct IrLoweredFunctions {
+    builder: IrLoweringBuilder,
+    functions: Vec[IrFunctionDef],
+}
+
+fn lower_trait_item(builder: IrLoweringBuilder, item: AstProgramItem, value: AstTraitDecl) -> IrLoweredItem {
+    let sym = push_symbol(builder, value.name.value, IrTraitSymbol(), value.span);
+    let methods = lower_trait_methods(sym.builder, value.methods, value.name.value);
+    IrLoweredItem {
+        builder: append_source_map(methods.builder, "trait", value.name.value, node_id(sym.id.value), value.span),
+        item: Some(IrTraitItemValue(IrTraitDef {
+            symbol: sym.id,
+            name: value.name.value,
+            visibility: value.visibility,
+            attrs: item.attrs,
+            generics: lower_generic_params(value.generic_params),
+            methods: methods.functions,
+            span: value.span,
+        })),
+    }
+}
+
+fn lower_impl_methods(builder: IrLoweringBuilder, methods: Vec[AstImplMethod], head_text: String) -> IrLoweredFunctions {
+    let mut out_builder = builder;
+    let mut out: Vec[IrFunctionDef] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(methods) {
+        match vec.get(methods, index) {
+            Some(method) => if true {
+                let mut name_parts: Vec[String] = vec.new_vec();
+                name_parts = vec.push(name_parts, head_text);
+                name_parts = vec.push(name_parts, "::");
+                name_parts = vec.push(name_parts, method.signature.name.value);
+                let lowered_name = string.join(name_parts, "");
+                let lowered = lower_function_from_parts(out_builder, lowered_name, PrivateVisibility(), method.signature.attrs, method.signature, method.requires_expr, method.ensures_expr, method.body, true, "", method.span);
+                out_builder = lowered.builder;
+                out = vec.push(out, lowered.function_item);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    IrLoweredFunctions {
+        builder: out_builder,
+        functions: out,
+    }
+}
+
+fn lower_impl_item(builder: IrLoweringBuilder, item: AstProgramItem, value: AstImplDecl) -> IrLoweredItem {
+    let sym = push_symbol(builder, type_text(value.head_type), IrImplSymbol(), value.span);
+    let head = lower_type_ref(sym.builder, value.head_type);
+    let methods = lower_impl_methods(head.builder, value.methods, type_text(value.head_type));
+    IrLoweredItem {
+        builder: append_source_map(methods.builder, "impl", type_text(value.head_type), node_id(sym.id.value), value.span),
+        item: Some(IrImplItemValue(IrImplDef {
+            symbol: sym.id,
+            head_type: head.id,
+            head_text: type_text(value.head_type),
+            visibility: value.visibility,
+            attrs: item.attrs,
+            generics: lower_generic_params(value.generic_params),
+            methods: methods.functions,
+            is_inherent: value.has_block && value.head_type.direct_arg_count == 0,
+            span: value.span,
+        })),
+    }
+}
+
+fn const_initializer_supported_expr(value: AstExpr) -> Bool {
+    match value.kind {
+        AstIntExpr => true,
+        AstFloatExpr => true,
+        AstBoolExpr => true,
+        AstStringExpr => true,
+        AstCharExpr => true,
+        AstUnitExpr => true,
+        AstNameExpr => true,
+        AstBinaryExpr => true,
+        AstUnaryExpr => true,
+        AstTupleExpr => true,
+        AstTemplateExpr => false,
+        AstCallExpr => false,
+        AstClosureExpr => false,
+        AstIfExpr => false,
+        AstWhileExpr => false,
+        AstForExpr => false,
+        AstLoopExpr => false,
+        AstBreakExpr => false,
+        AstContinueExpr => false,
+        AstMatchExpr => false,
+        AstBorrowExpr => false,
+        AstAwaitExpr => false,
+        AstTryExpr => false,
+        AstStructLiteralExpr => false,
+        AstFieldAccessExpr => false,
+        AstBlockExpr => false,
+    }
+}
+
+fn lower_type_alias_item(builder: IrLoweringBuilder, value: AstTypeAliasDecl) -> IrLoweredItem {
+    let sym = push_symbol(builder, value.name.value, IrTypeAliasSymbol(), value.span);
+    let target = lower_type_ref(sym.builder, value.target_type);
+    IrLoweredItem {
+        builder: append_source_map(target.builder, "type_alias", value.name.value, node_id(sym.id.value), value.span),
+        item: Some(IrTypeAliasItemValue(IrTypeAliasDef {
+            symbol: sym.id,
+            name: value.name.value,
+            generics: lower_generic_params(value.generic_params),
+            target_type: target.id,
+            runtime_visible: false,
+            span: value.span,
+        })),
+    }
+}
+
+fn lower_const_item(builder: IrLoweringBuilder, value: AstConstDecl) -> IrLoweredItem {
+    let sym = push_symbol(builder, value.name.value, IrConstSymbol(), value.span);
+    let ty = lower_type_ref(sym.builder, value.type_ref);
+    let checked_builder = match value.initializer_expr {
+        Some(expr_value) => if const_initializer_supported_expr(expr_value) {
+            ty.builder
+        } else {
+            builder_error(ty.builder, "E5001", expr_value.span, "const initializer form cannot be lowered into compile-time IR", "use literals, unary or binary operators, tuples, and references to other constants")
+        },
+        None => builder_error(ty.builder, "E5001", value.span, "const item is missing an initializer expression", "add a compile-time initializer expression"),
+    };
+    let lowered_init = match value.initializer_expr {
+        Some(expr_value) => if true {
+            let lowered = lower_expr(checked_builder, expr_value);
+            IrOptionalExprLowering {
+                builder: lowered.builder,
+                expr: Some(lowered.expr),
+            }
+        } else {
+            IrOptionalExprLowering {
+                builder: checked_builder,
+                expr: None(),
+            }
+        },
+        None => IrOptionalExprLowering {
+            builder: checked_builder,
+            expr: None(),
+        },
+    };
+    IrLoweredItem {
+        builder: append_source_map(lowered_init.builder, "const", value.name.value, node_id(sym.id.value), value.span),
+        item: Some(IrConstItemValue(IrConstDef {
+            symbol: sym.id,
+            name: value.name.value,
+            type_id: ty.id,
+            initializer: lowered_init.expr,
+            runtime_visible: false,
+            span: value.span,
+        })),
+    }
+}
+
+fn missing_lowering(builder: IrLoweringBuilder, item: AstProgramItem) -> IrLoweredItem {
+    IrLoweredItem {
+        builder: builder_error(builder, "E5004", item.span, "AST item is missing its lowering payload", "rerun parsing and semantic analysis so each item carries its typed payload"),
+        item: None(),
+    }
+}
+
+fn lower_program_item(builder: IrLoweringBuilder, item: AstProgramItem) -> IrLoweredItem {
+    match item.kind {
+        FunctionItem => match item.function_item {
+            Some(value) => lower_function_item(builder, item, value),
+            None => match item.function_signature {
+                Some(signature) => if item.is_signature_only {
+                    let lowered = lower_signature_only_function(builder, item, signature);
+                    IrLoweredItem {
+                        builder: lowered.builder,
+                        item: Some(IrFunctionItemValue(lowered.function_item)),
+                    }
+                } else {
+                    missing_lowering(builder, item)
+                },
+                None => missing_lowering(builder, item),
+            },
+        },
+        StructItem => match item.struct_item {
+            Some(value) => lower_struct_item(builder, item, value),
+            None => missing_lowering(builder, item),
+        },
+        EnumItem => match item.enum_item {
+            Some(value) => lower_enum_item(builder, item, value),
+            None => missing_lowering(builder, item),
+        },
+        TraitItem => match item.trait_item {
+            Some(value) => lower_trait_item(builder, item, value),
+            None => missing_lowering(builder, item),
+        },
+        ImplItem => match item.impl_item {
+            Some(value) => lower_impl_item(builder, item, value),
+            None => missing_lowering(builder, item),
+        },
+        TypeAliasItem => match item.type_alias_item {
+            Some(value) => lower_type_alias_item(builder, value),
+            None => missing_lowering(builder, item),
+        },
+        ConstItem => match item.const_item {
+            Some(value) => lower_const_item(builder, value),
+            None => missing_lowering(builder, item),
+        },
+    }
+}
+
+fn module_path_text(value: AstProgram) -> String {
+    match value.module_item {
+        Some(module_value) => module_value.path.text,
+        None => "",
+    }
+}
+
+fn lower_imports(values: Vec[AstImportDecl]) -> Vec[String] {
+    let mut out: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(import_value) => if true {
+                out = vec.push(out, import_value.path.text);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn instantiation_kind(value: String) -> IrGenericInstantiationKind {
+    if value == "function" {
+        IrFunctionInstantiation()
+    } else if value == "struct" {
+        IrStructInstantiation()
+    } else if value == "enum" {
+        IrEnumInstantiation()
+    } else {
+        IrUnknownInstantiation()
+    }
+}
+
+fn mangle_instantiation(kind: String, name: String, type_args: Vec[String]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, kind);
+    parts = vec.push(parts, "::");
+    parts = vec.push(parts, name);
+    parts = vec.push(parts, "[");
+    parts = vec.push(parts, string.join(type_args, ","));
+    parts = vec.push(parts, "]");
+    string.join(parts, "")
+}
+
+fn lower_generic_instantiations(values: Vec[TypecheckInstantiation]) -> Vec[IrGenericInstantiation] {
+    let mut out: Vec[IrGenericInstantiation] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                out = vec.push(out, IrGenericInstantiation {
+                    id: index + 1,
+                    kind: instantiation_kind(value.kind),
+                    name: value.name,
+                    symbol: None(),
+                    type_args: value.type_args,
+                    mangled: mangle_instantiation(value.kind, value.name, value.type_args),
+                    span: value.span,
+                });
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn checked_has_error(checked: TypecheckOutput) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(checked.diagnostics) {
+        match vec.get(checked.diagnostics, index) {
+            Some(diag) => if is_error(diag) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn append_checked_precondition_diagnostic(builder: IrLoweringBuilder, checked: TypecheckOutput, program_span: SourceSpan) -> IrLoweringBuilder {
+    if checked_has_error(checked) {
+        builder_error(builder, "E5002", program_span, "IR lowering requires a resolved and type-checked program", "run resolver, semantic analysis, and type checking successfully before AST-to-IR lowering")
+    } else {
+        builder
+    }
+}
+
+pub fn lower_checked_program(program: AstProgram, checked: TypecheckOutput, max_errors: Int) -> IrLoweringResult {
+    let mut builder = append_checked_precondition_diagnostic(lower_builder(max_errors), checked, program.span);
+    let mut items: Vec[IrItem] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => if true {
+                let lowered = lower_program_item(builder, item);
+                builder = lowered.builder;
+                match lowered.item {
+                    Some(ir_item) => if true {
+                        items = vec.push(items, ir_item);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    let program_value = IrProgram {
+        schema_version: current_ir_schema_version(),
+        module_path: module_path_text(program),
+        imports: lower_imports(program.imports),
+        items: items,
+        symbols: builder.symbols,
+        types: builder.types,
+        generic_instantiations: lower_generic_instantiations(checked.instantiations),
+        source_map: builder.source_map,
+        span: program.span,
+    };
+    if vec.vec_len(builder.diagnostics) == 0 {
+        ir_lowering_result(Some(program_value), builder.diagnostics)
+    } else {
+        ir_lowering_result(Some(program_value), builder.diagnostics)
+    }
+}
+
+pub fn ir_lowering_diagnostic_count(value: IrLoweringResult) -> Int {
+    vec.vec_len(value.diagnostics)
+}
+
+pub fn ir_lowering_has_diagnostic_code(value: IrLoweringResult, code: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(value.diagnostics) {
+        match vec.get(value.diagnostics, index) {
+            Some(diag) => if diag.code.value == code {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn ir_program_item_count(value: IrProgram) -> Int {
+    vec.vec_len(value.items)
+}
+
+pub fn ir_program_symbol_count(value: IrProgram) -> Int {
+    vec.vec_len(value.symbols)
+}
+
+pub fn ir_program_type_count(value: IrProgram) -> Int {
+    vec.vec_len(value.types)
+}
+
+pub fn ir_program_instantiation_count(value: IrProgram) -> Int {
+    vec.vec_len(value.generic_instantiations)
+}
+
+pub fn ir_runtime_function_count(value: IrProgram) -> Int {
+    let mut index = 0;
+    let mut count = 0;
+    while index < vec.vec_len(value.items) {
+        match vec.get(value.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.runtime_visible {
+                    count = count + 1;
+                } else {
+                    ()
+                },
+                IrStructItemValue(_) => (),
+                IrEnumItemValue(_) => (),
+                IrTraitItemValue(_) => (),
+                IrImplItemValue(_) => (),
+                IrTypeAliasItemValue(_) => (),
+                IrConstItemValue(_) => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    count
+}
+
+fn same_ir_symbol_kind(left: IrSymbolKind, right: IrSymbolKind) -> Bool {
+    match left {
+        IrFunctionSymbol => match right { IrFunctionSymbol => true, _ => false },
+        IrStructSymbol => match right { IrStructSymbol => true, _ => false },
+        IrEnumSymbol => match right { IrEnumSymbol => true, _ => false },
+        IrTraitSymbol => match right { IrTraitSymbol => true, _ => false },
+        IrImplSymbol => match right { IrImplSymbol => true, _ => false },
+        IrVariantSymbol => match right { IrVariantSymbol => true, _ => false },
+        IrFieldSymbol => match right { IrFieldSymbol => true, _ => false },
+        IrParameterSymbol => match right { IrParameterSymbol => true, _ => false },
+        IrLocalSymbol => match right { IrLocalSymbol => true, _ => false },
+        IrConstSymbol => match right { IrConstSymbol => true, _ => false },
+        IrTypeAliasSymbol => match right { IrTypeAliasSymbol => true, _ => false },
+        IrModuleSymbol => match right { IrModuleSymbol => true, _ => false },
+    }
+}
+
+pub fn ir_program_has_symbol(value: IrProgram, name: String, kind: IrSymbolKind) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(value.symbols) {
+        match vec.get(value.symbols, index) {
+            Some(symbol_value) => if symbol_value.name == name && same_ir_symbol_kind(symbol_value.kind, kind) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn ir_program_digest(value: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "schema=");
+    parts = vec.push(parts, "1");
+    parts = vec.push(parts, ";module=");
+    parts = vec.push(parts, value.module_path);
+    parts = vec.push(parts, ";items=");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.items)));
+    parts = vec.push(parts, ";symbols=");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.symbols)));
+    parts = vec.push(parts, ";types=");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.types)));
+    parts = vec.push(parts, ";instantiations=");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.generic_instantiations)));
+    parts = vec.push(parts, ";runtime_functions=");
+    parts = vec.push(parts, string.int_to_string(ir_runtime_function_count(value)));
+    string.join(parts, "")
 }

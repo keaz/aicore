@@ -5,3 +5,6 @@ main = "src/main.aic"
 
 [dependencies]
 aic_compiler_source = { path = "../source" }
+aic_compiler_diagnostics = { path = "../diagnostics" }
+aic_compiler_ast = { path = "../ast" }
+aic_compiler_typecheck = { path = "../typecheck" }

@@ -12,6 +12,7 @@ import compiler.semantics;
 import compiler.typecheck;
 import std.io;
 import std.result;
+import std.string;
 import std.vec;
 
 fn valid_ast_header(name: AstName) -> Bool {
@@ -1438,6 +1439,113 @@ fn valid_ownership_resource_negative_cases() -> Bool {
         && typecheck_has_diagnostic_code(terminal_reuse, "E2006")
 }
 
+fn lower_ir_text(source: SourceId, text: String) -> IrLoweringResult {
+    let parsed = parse_source_program(source, text, 80);
+    match parsed.program {
+        Some(program) => lower_checked_program(program, typecheck_single(text), 80),
+        None => ir_lowering_result(None(), parsed.diagnostics),
+    }
+}
+
+fn ir_lowering_positive_status_code() -> Int {
+    let result = lower_ir_text(source_id(70), "module app.main; trait Order[T]; impl Order[Int]; trait Score[T] { fn score(self: T) -> Int; } struct Meter { value: Int = 0, } invariant true struct Pair { left: Int, right: Int, } enum Choice { One, Two(Int), } type Count = Int; const BASE: Count = 40; fn id[T: Order](value: T) -> T { value } fn add(x: Int, y: Int) -> Int effects { io } capabilities { io } { x + y } fn apply(f: Fn() -> Int) -> Int { 1 } async fn future() -> Int { 1 } fn loop_value() -> Int { while false { } 1 } impl Score[Meter] { fn score(self: Meter) -> Int { self.value } } fn main() -> Int effects { io } capabilities { io } { let count: Count = BASE + 2; let meter = Meter { value: count }; let scored = meter.score(); let pair = Pair { left: scored, right: id(1) }; let closure = || -> Int { 1 }; let tuple = (pair.left, true); let chosen = match true { true if true => pair.left, true => pair.right, false => 0, }; add(chosen, apply(closure)) }");
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            if ir_lowering_has_diagnostic_code(result, "E5002") {
+                431
+            } else if ir_lowering_has_diagnostic_code(result, "E5001") {
+                432
+            } else if ir_lowering_has_diagnostic_code(result, "E5003") {
+                433
+            } else if ir_lowering_has_diagnostic_code(result, "E5004") {
+                434
+            } else {
+                411
+            }
+        } else if ir_program_item_count(program) < 9 {
+            412
+        } else if ir_program_symbol_count(program) < 18 {
+            413
+        } else if ir_program_type_count(program) < 6 {
+            414
+        } else if ir_program_instantiation_count(program) < 1 {
+            415
+        } else if ir_runtime_function_count(program) < 5 {
+            416
+        } else if !ir_program_has_symbol(program, "main", IrFunctionSymbol()) {
+            417
+        } else if !ir_program_has_symbol(program, "Meter", IrStructSymbol()) {
+            418
+        } else if !ir_program_has_symbol(program, "Choice", IrEnumSymbol()) {
+            419
+        } else if !ir_program_has_symbol(program, "Score", IrTraitSymbol()) {
+            420
+        } else if !ir_program_has_symbol(program, "Count", IrTypeAliasSymbol()) {
+            421
+        } else if !ir_program_has_symbol(program, "BASE", IrConstSymbol()) {
+            422
+        } else if !string.contains(ir_program_digest(program), "schema=1;module=app.main") {
+            423
+        } else {
+            0
+        },
+        None => 410,
+    }
+}
+
+fn valid_ir_lowering_positive_cases() -> Bool {
+    ir_lowering_positive_status_code() == 0
+}
+
+fn empty_checked_output() -> TypecheckOutput {
+    typecheck_output("app.main", vec.new_vec(), vec.new_vec(), vec.new_vec(), vec.new_vec())
+}
+
+fn invalid_type_metadata_program(source: SourceId) -> AstProgram {
+    let span_value = span(source, 0, 10);
+    let bad_type = ast_type(AstNamedType(), "", 0, vec.new_vec(), span_value, "");
+    let alias = type_alias_decl(ast_name("BadAlias", span_value), empty_generic_params(span_value), bad_type, span_value);
+    let item = ast_program_item(TypeAliasItem(), ast_name("BadAlias", span_value), PrivateVisibility(), vec.new_vec(), None(), None(), None(), None(), Some(alias), None(), None(), None(), false, "", span_value);
+    let mut items: Vec[AstProgramItem] = vec.new_vec();
+    items = vec.push(items, item);
+    ast_program(source, Some(module_decl(module_path("app.main", span_value), span_value)), vec.new_vec(), items, vec.new_vec(), span_value)
+}
+
+fn missing_lowering_payload_program(source: SourceId) -> AstProgram {
+    let span_value = span(source, 0, 10);
+    let item = ast_program_item(FunctionItem(), ast_name("ghost", span_value), PrivateVisibility(), vec.new_vec(), None(), None(), None(), None(), None(), None(), None(), None(), false, "", span_value);
+    let mut items: Vec[AstProgramItem] = vec.new_vec();
+    items = vec.push(items, item);
+    ast_program(source, Some(module_decl(module_path("app.main", span_value), span_value)), vec.new_vec(), items, vec.new_vec(), span_value)
+}
+
+fn valid_ir_lowering_negative_cases() -> Bool {
+    let const_if = lower_ir_text(source_id(71), "module app.main; const BAD: Int = if true { 1 } else { 2 }; fn main() -> Int { 0 }");
+    let const_call = lower_ir_text(source_id(72), "module app.main; fn value() -> Int { 1 } const BAD: Int = value(); fn main() -> Int { 0 }");
+    let unresolved = lower_ir_text(source_id(73), "module app.main; fn main() -> Int { missing }");
+    let bad_type = lower_checked_program(invalid_type_metadata_program(source_id(74)), empty_checked_output(), 20);
+    let missing_hook = lower_checked_program(missing_lowering_payload_program(source_id(75)), empty_checked_output(), 20);
+    ir_lowering_has_diagnostic_code(const_if, "E5001")
+        && ir_lowering_has_diagnostic_code(const_call, "E5001")
+        && ir_lowering_has_diagnostic_code(unresolved, "E5002")
+        && ir_lowering_has_diagnostic_code(bad_type, "E5003")
+        && ir_lowering_has_diagnostic_code(missing_hook, "E5004")
+}
+
+fn ir_lowering_status_code() -> Int {
+    if !valid_ir_lowering_positive_cases() {
+        ir_lowering_positive_status_code()
+    } else if !valid_ir_lowering_negative_cases() {
+        402
+    } else {
+        0
+    }
+}
+
+fn valid_ir_lowering_frontend() -> Bool {
+    ir_lowering_status_code() == 0
+}
+
 fn valid_typecheck_frontend() -> Bool {
     valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases() && valid_ownership_resource_positive_cases() && valid_ownership_resource_negative_cases()
 }
@@ -1475,9 +1583,10 @@ fn main() -> Int effects { io } capabilities { io } {
     let resolver_ok = valid_resolver_frontend();
     let semantic_ok = valid_semantic_frontend();
     let typecheck_ok = valid_typecheck_frontend();
+    let ir_lowering_ok = valid_ir_lowering_frontend();
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ast_ir_ok {
         print_int(0);
         0
     } else {
