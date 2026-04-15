@@ -186,6 +186,8 @@ pub struct IrExprNode {
     pub name: String,
     pub direct_child_count: Int,
     pub depth: Int,
+    pub patterns: Vec[IrPatternNode],
+    pub match_arms: Vec[IrMatchArm],
     pub type_id: Option[IrTypeId],
     pub span: SourceSpan,
     pub text: String,
@@ -906,6 +908,9 @@ fn lower_expr_nodes(builder: IrLoweringBuilder, values: Vec[AstExprNode]) -> IrL
             Some(node_value) => if true {
                 let alloc = lower_expr_node(out_builder, node_value);
                 out_builder = alloc.builder;
+                let lowered_patterns = lower_pattern_nodes(out_builder, node_value.patterns);
+                let lowered_arms = lower_match_arms(lowered_patterns.builder, node_value.match_arms);
+                out_builder = lowered_arms.builder;
                 out = vec.push(out, IrExprNode {
                     node: alloc.id,
                     kind: ast_expr_kind_to_ir(node_value.kind),
@@ -914,6 +919,8 @@ fn lower_expr_nodes(builder: IrLoweringBuilder, values: Vec[AstExprNode]) -> IrL
                     name: node_value.name,
                     direct_child_count: node_value.direct_child_count,
                     depth: node_value.depth,
+                    patterns: lowered_patterns.nodes,
+                    match_arms: lowered_arms.arms,
                     type_id: None(),
                     span: node_value.span,
                     text: node_value.text,
@@ -2498,6 +2505,8 @@ fn ir_expr_node_json(value: IrExprNode) -> String {
     parts = push_json_field(parts, "name", json_quote(value.name), false);
     parts = push_json_field(parts, "direct_child_count", json_int(value.direct_child_count), false);
     parts = push_json_field(parts, "depth", json_int(value.depth), false);
+    parts = push_json_field(parts, "patterns", ir_pattern_nodes_json(value.patterns), false);
+    parts = push_json_field(parts, "match_arms", ir_match_arms_json(value.match_arms), false);
     parts = push_json_field(parts, "type_id", optional_type_id_json(value.type_id), false);
     parts = push_json_field(parts, "span", json_span(value.span), false);
     parts = push_json_field(parts, "text", json_quote(value.text), false);

@@ -1208,6 +1208,7 @@ fn value_node_llvm_type(program: IrProgram, function_value: IrFunctionDef, nodes
         IrNameExpr => llvm_type_for_name(program, function_value, locals, node.text),
         IrFieldAccessExpr => field_access_node_llvm_type(program, function_value, nodes, node, locals),
         IrCallExpr => if is_string_bool_intrinsic_name(node.name) { "i1" } else { call_target_return_type(program, node.name) },
+        IrMatchExpr => if result_string_match_node_can_emit(program, function_value, nodes, node, locals) { "%aic.String" } else { "" },
         IrStructLiteralExpr => llvm_type_for_repr_in_program(program, node.name),
         _ => "",
     }
@@ -1227,6 +1228,7 @@ fn value_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes:
         } else {
             direct_call_node_can_emit(program, function_value, nodes, node, locals)
         },
+        IrMatchExpr => result_string_match_node_can_emit(program, function_value, nodes, node, locals),
         IrStructLiteralExpr => struct_literal_node_can_emit(program, function_value, nodes, node, locals, value_node_llvm_type(program, function_value, nodes, node, locals)),
         _ => false,
     }
@@ -1241,6 +1243,7 @@ fn value_expr_llvm_type(program: IrProgram, value: IrExpr, function_value: IrFun
         IrNameExpr => llvm_type_for_name(program, function_value, locals, value.text),
         IrCallExpr => if is_string_bool_intrinsic_name(value.name) { "i1" } else { call_target_return_type(program, value.name) },
         IrIfExpr => llvm_type_for_id(program, function_value.return_type),
+        IrMatchExpr => if result_string_match_expr_can_emit(program, value, function_value, locals) { "%aic.String" } else { "" },
         IrStructLiteralExpr => llvm_type_for_repr_in_program(program, value.name),
         _ => "",
     }
@@ -1253,6 +1256,7 @@ fn expr_value_name(program: IrProgram, function_value: IrFunctionDef, value: IrE
         IrStringExpr => llvm_expr_value_local(value),
         IrNameExpr => value_name_for_name(function_value, locals, value.text),
         IrCallExpr => llvm_expr_value_local(value),
+        IrMatchExpr => llvm_expr_value_local(value),
         IrStructLiteralExpr => struct_literal_value_name(llvm_expr_prefix(value.node), direct_expr_child_count(value.nodes), value_expr_llvm_type(program, value, function_value, locals)),
         _ => "",
     }
@@ -1268,6 +1272,7 @@ fn value_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunc
         IrBinaryExpr => binary_expr_can_emit_with_locals(value, function_value, locals),
         IrCallExpr => call_expr_can_emit_with_locals(program, value, function_value, locals),
         IrIfExpr => if_expr_can_emit_with_locals(program, value, function_value, locals),
+        IrMatchExpr => result_string_match_expr_can_emit(program, value, function_value, locals),
         IrStructLiteralExpr => struct_literal_expr_can_emit(program, value, function_value, locals, value_expr_llvm_type(program, value, function_value, locals)),
         _ => false,
     }
@@ -1889,6 +1894,7 @@ fn return_node_can_emit_with_locals(program: IrProgram, function_value: IrFuncti
             call_target_return_type(program, node.name) == ret && direct_call_node_can_emit(program, function_value, nodes, node, locals)
         },
         IrIfExpr => if_node_can_emit_with_locals(program, function_value, nodes, node, ret, locals),
+        IrMatchExpr => ret == "%aic.String" && result_string_match_node_can_emit(program, function_value, nodes, node, locals),
         IrStructLiteralExpr => struct_literal_node_can_emit(program, function_value, nodes, node, locals, ret),
         _ => false,
     }
@@ -1978,6 +1984,183 @@ fn match_has_arm(value: IrExpr, pattern: String, body: String) -> Bool {
     found
 }
 
+fn match_arm_is_variant(arm: IrMatchArm, variant: String) -> Bool {
+    arm.guard_text == "" && (arm.pattern_text == variant || string.starts_with(arm.pattern_text, concat2(variant, "(")))
+}
+
+fn match_arm_payload_binding(arm: IrMatchArm, variant: String) -> String {
+    let prefix = concat2(variant, "(");
+    if string.starts_with(arm.pattern_text, prefix) && string.ends_with(arm.pattern_text, ")") && string.len(arm.pattern_text) > string.len(prefix) + 1 {
+        let raw = string.trim(string.substring(arm.pattern_text, string.len(prefix), string.len(arm.pattern_text) - 1));
+        if raw == "_" { "" } else { raw }
+    } else {
+        ""
+    }
+}
+
+fn result_match_has_variant(arms: Vec[IrMatchArm], variant: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(arms) {
+        match vec.get(arms, index) {
+            Some(arm) => if match_arm_is_variant(arm, variant) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn result_match_arms_are_ok_err(arms: Vec[IrMatchArm]) -> Bool {
+    if vec.vec_len(arms) != 2 || !result_match_has_variant(arms, "Ok") || !result_match_has_variant(arms, "Err") {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < vec.vec_len(arms) {
+            match vec.get(arms, index) {
+                Some(arm) => if arm.guard_text == "" {
+                    ()
+                } else {
+                    ok = false;
+                },
+                None => (),
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
+fn result_match_payload_name(arms: Vec[IrMatchArm], variant: String) -> String {
+    let mut index = 0;
+    let mut out = "";
+    while out == "" && index < vec.vec_len(arms) {
+        match vec.get(arms, index) {
+            Some(arm) => if match_arm_is_variant(arm, variant) {
+                out = match_arm_payload_binding(arm, variant);
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn result_match_expr_body_node_for_variant(value: IrExpr, variant: String) -> Option[IrExprNode] {
+    let mut arm_index = 0;
+    let mut child_index = 1;
+    let mut out: Option[IrExprNode] = None();
+    while arm_index < vec.vec_len(value.match_arms) {
+        match vec.get(value.match_arms, arm_index) {
+            Some(arm) => if match_arm_is_variant(arm, variant) {
+                out = direct_expr_child_at(value.nodes, child_index);
+                arm_index = vec.vec_len(value.match_arms);
+            } else {
+                child_index = child_index + 1;
+            },
+            None => (),
+        };
+        arm_index = arm_index + 1;
+    };
+    out
+}
+
+fn result_match_node_body_node_for_variant(nodes: Vec[IrExprNode], node: IrExprNode, variant: String) -> Option[IrExprNode] {
+    let mut arm_index = 0;
+    let mut child_index = 1;
+    let mut out: Option[IrExprNode] = None();
+    while arm_index < vec.vec_len(node.match_arms) {
+        match vec.get(node.match_arms, arm_index) {
+            Some(arm) => if match_arm_is_variant(arm, variant) {
+                out = expr_node_child_at(nodes, node, child_index);
+                arm_index = vec.vec_len(node.match_arms);
+            } else {
+                child_index = child_index + 1;
+            },
+            None => (),
+        };
+        arm_index = arm_index + 1;
+    };
+    out
+}
+
+fn push_result_string_payload_local(locals: Vec[BackendLocal], payload_name: String, value_name: String) -> Vec[BackendLocal] {
+    if payload_name == "" {
+        locals
+    } else {
+        vec.push(locals, backend_local(payload_name, "String", "%aic.String", value_name))
+    }
+}
+
+fn result_string_match_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, locals: Vec[BackendLocal]) -> Bool {
+    if !result_match_arms_are_ok_err(value.match_arms) {
+        false
+    } else {
+        match direct_expr_child_at(value.nodes, 0) {
+            Some(scrutinee) => if is_call_expr_kind(scrutinee.kind) && is_fs_string_result_intrinsic_name(scrutinee.name) && scrutinee.direct_child_count == 1 {
+                match expr_node_child_at(value.nodes, scrutinee, 0) {
+                    Some(path_child) => if string_call_child_can_emit(program, function_value, value.nodes, path_child, locals) {
+                        match result_match_expr_body_node_for_variant(value, "Ok") {
+                            Some(ok_body) => match result_match_expr_body_node_for_variant(value, "Err") {
+                                Some(err_body) => if true {
+                                    let ok_locals = push_result_string_payload_local(locals, result_match_payload_name(value.match_arms, "Ok"), llvm_local(concat2(llvm_expr_prefix(value.node), ".ok.str"), ".2"));
+                                    string_call_child_can_emit(program, function_value, value.nodes, ok_body, ok_locals) && string_call_child_can_emit(program, function_value, value.nodes, err_body, locals)
+                                } else { false },
+                                None => false,
+                            },
+                            None => false,
+                        }
+                    } else {
+                        false
+                    },
+                    None => false,
+                }
+            } else {
+                false
+            },
+            None => false,
+        }
+    }
+}
+
+fn result_string_match_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> Bool {
+    if !result_match_arms_are_ok_err(node.match_arms) {
+        false
+    } else {
+        match expr_node_child_at(nodes, node, 0) {
+            Some(scrutinee) => if is_call_expr_kind(scrutinee.kind) && is_fs_string_result_intrinsic_name(scrutinee.name) && scrutinee.direct_child_count == 1 {
+                match expr_node_child_at(nodes, scrutinee, 0) {
+                    Some(path_child) => if string_call_child_can_emit(program, function_value, nodes, path_child, locals) {
+                        match result_match_node_body_node_for_variant(nodes, node, "Ok") {
+                            Some(ok_body) => match result_match_node_body_node_for_variant(nodes, node, "Err") {
+                                Some(err_body) => if true {
+                                    let ok_locals = push_result_string_payload_local(locals, result_match_payload_name(node.match_arms, "Ok"), llvm_local(concat2(llvm_node_prefix(node.node), ".ok.str"), ".2"));
+                                    string_call_child_can_emit(program, function_value, nodes, ok_body, ok_locals) && string_call_child_can_emit(program, function_value, nodes, err_body, locals)
+                                } else { false },
+                                None => false,
+                            },
+                            None => false,
+                        }
+                    } else {
+                        false
+                    },
+                    None => false,
+                }
+            } else {
+                false
+            },
+            None => false,
+        }
+    }
+}
+
 fn block_child_is_let(node: IrExprNode) -> Bool {
     string.starts_with(node.role, "let:")
 }
@@ -2010,6 +2193,7 @@ fn node_value_name(program: IrProgram, function_value: IrFunctionDef, nodes: Vec
         IrNameExpr => value_name_for_name(function_value, locals, node.text),
         IrFieldAccessExpr => llvm_node_value_local(node),
         IrCallExpr => llvm_node_value_local(node),
+        IrMatchExpr => llvm_node_value_local(node),
         IrStructLiteralExpr => struct_literal_value_name(llvm_node_prefix(node.node), node.direct_child_count, value_node_llvm_type(program, function_value, nodes, node, locals)),
         _ => "",
     }
@@ -2022,6 +2206,7 @@ fn backend_local_for_node(program: IrProgram, function_value: IrFunctionDef, nod
         IrStringExpr => "String",
         IrIntExpr => "Int",
         IrBoolExpr => "Bool",
+        IrMatchExpr => if result_string_match_node_can_emit(program, function_value, nodes, node, locals) { "String" } else { "" },
         IrFieldAccessExpr => if true {
             let llvm = field_access_node_llvm_type(program, function_value, nodes, node, locals);
             if llvm == "%aic.String" {
@@ -2187,6 +2372,7 @@ fn local_for_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExp
         IrStringExpr => "String",
         IrIntExpr => "Int",
         IrBoolExpr => "Bool",
+        IrMatchExpr => if result_string_match_expr_can_emit(program, expr, function_value, locals) { "String" } else { "" },
         _ => "",
     };
     backend_local(name, type_name, value_expr_llvm_type(program, expr, function_value, locals), expr_value_name(program, function_value, expr, locals))
@@ -2243,7 +2429,7 @@ fn return_expr_can_emit_with_locals(program: IrProgram, value: IrExpr, function_
         IrBinaryExpr => binary_expr_can_emit_with_locals(value, function_value, locals),
         IrCallExpr => call_expr_can_emit_with_locals(program, value, function_value, locals),
         IrIfExpr => if_expr_can_emit_with_locals(program, value, function_value, locals),
-        IrMatchExpr => match_expr_can_emit(value) || env_arg_or_empty_expr_can_emit(program, value, function_value),
+        IrMatchExpr => match_expr_can_emit(value) || env_arg_or_empty_expr_can_emit(program, value, function_value) || (llvm_type_for_id(program, function_value.return_type) == "%aic.String" && result_string_match_expr_can_emit(program, value, function_value, locals)),
         IrStructLiteralExpr => struct_literal_expr_can_emit(program, value, function_value, locals, llvm_type_for_id(program, function_value.return_type)),
         _ => false,
     }
@@ -3379,6 +3565,7 @@ fn emit_value_node(program: IrProgram, function_value: IrFunctionDef, nodes: Vec
         } else {
             emit_direct_call_node_value(program, function_value, nodes, node, locals)
         },
+        IrMatchExpr => emit_result_string_match_node_value(program, function_value, nodes, node, locals),
         IrStructLiteralExpr => emit_struct_literal_node_value(program, function_value, nodes, node, locals, value_node_llvm_type(program, function_value, nodes, node, locals)),
         _ => "",
     }
@@ -3695,6 +3882,15 @@ fn emit_return_node_with_locals(program: IrProgram, function_value: IrFunctionDe
             parts = vec.push(parts, emit_if_node_return(program, function_value, nodes, node, ret, locals));
             ()
         } else { () },
+        IrMatchExpr => if true {
+            parts = vec.push(parts, emit_result_string_match_node_value(program, function_value, nodes, node, locals));
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_node_value_local(node));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
         IrStructLiteralExpr => if true {
             parts = vec.push(parts, emit_struct_literal_node_value(program, function_value, nodes, node, locals, ret));
             parts = vec.push(parts, "  ret ");
@@ -3898,6 +4094,217 @@ fn emit_fs_error_value(prefix: String, raw_code_name: String) -> String {
     parts = vec.push(parts, llvm_local(prefix, ".err.tag"));
     parts = vec.push(parts, ", 0\n");
     string.join(parts, "")
+}
+
+fn emit_string_from_ptr_len(prefix: String, ptr_name: String, len_name: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(prefix, ".0"));
+    parts = vec.push(parts, " = insertvalue %aic.String undef, i8* ");
+    parts = vec.push(parts, ptr_name);
+    parts = vec.push(parts, ", 0\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".1"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".0"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, len_name);
+    parts = vec.push(parts, ", 1\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".2"));
+    parts = vec.push(parts, " = insertvalue %aic.String ");
+    parts = vec.push(parts, llvm_local(prefix, ".1"));
+    parts = vec.push(parts, ", i64 ");
+    parts = vec.push(parts, len_name);
+    parts = vec.push(parts, ", 2\n");
+    string.join(parts, "")
+}
+
+fn emit_store_string_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal], out_ptr: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, node, locals));
+    parts = vec.push(parts, "  store %aic.String ");
+    parts = vec.push(parts, string_node_value_name_with_locals(function_value, locals, node));
+    parts = vec.push(parts, ", %aic.String* ");
+    parts = vec.push(parts, out_ptr);
+    parts = vec.push(parts, "\n");
+    string.join(parts, "")
+}
+
+fn emit_result_string_match_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, locals: Vec[BackendLocal]) -> String {
+    match expr_node_child_at(nodes, node, 0) {
+        Some(scrutinee) => match expr_node_child_at(nodes, scrutinee, 0) {
+            Some(path_child) => match result_match_node_body_node_for_variant(nodes, node, "Ok") {
+                Some(ok_body) => match result_match_node_body_node_for_variant(nodes, node, "Err") {
+                    Some(err_body) => if true {
+                        let prefix = llvm_node_prefix(node.node);
+                        let path_name = string_node_value_name_with_locals(function_value, locals, path_child);
+                        let path_prefix = concat2(prefix, ".path");
+                        let ok_label = concat2("match.ok.", string.int_to_string(node.node.value));
+                        let err_label = concat2("match.err.", string.int_to_string(node.node.value));
+                        let end_label = concat2("match.end.", string.int_to_string(node.node.value));
+                        let out_ptr = llvm_local(prefix, ".out");
+                        let ok_string_prefix = concat2(prefix, ".ok.str");
+                        let ok_locals = push_result_string_payload_local(locals, result_match_payload_name(node.match_arms, "Ok"), llvm_local(ok_string_prefix, ".2"));
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "  ");
+                        parts = vec.push(parts, out_ptr);
+                        parts = vec.push(parts, " = alloca %aic.String\n");
+                        parts = vec.push(parts, emit_string_node_value(program, function_value, nodes, path_child, locals));
+                        parts = vec.push(parts, emit_string_extracts(path_name, path_prefix));
+                        parts = vec.push(parts, "  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+                        parts = vec.push(parts, " = alloca i8*\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+                        parts = vec.push(parts, " = alloca i64\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".rc"));
+                        parts = vec.push(parts, " = call i64 ");
+                        parts = vec.push(parts, fs_string_runtime_name(scrutinee.name));
+                        parts = vec.push(parts, "(i8* ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".ptr"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".len"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".cap"));
+                        parts = vec.push(parts, ", i8** ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+                        parts = vec.push(parts, ", i64* ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+                        parts = vec.push(parts, ")\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+                        parts = vec.push(parts, " = icmp eq i64 ");
+                        parts = vec.push(parts, llvm_local(prefix, ".rc"));
+                        parts = vec.push(parts, ", 0\n  br i1 ");
+                        parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+                        parts = vec.push(parts, ", label %");
+                        parts = vec.push(parts, ok_label);
+                        parts = vec.push(parts, ", label %");
+                        parts = vec.push(parts, err_label);
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, ok_label);
+                        parts = vec.push(parts, ":\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".ok.ptr"));
+                        parts = vec.push(parts, " = load i8*, i8** ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+                        parts = vec.push(parts, "\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".ok.len"));
+                        parts = vec.push(parts, " = load i64, i64* ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, emit_string_from_ptr_len(ok_string_prefix, llvm_local(prefix, ".ok.ptr"), llvm_local(prefix, ".ok.len")));
+                        parts = vec.push(parts, emit_store_string_node_value(program, function_value, nodes, ok_body, ok_locals, out_ptr));
+                        parts = vec.push(parts, "  br label %");
+                        parts = vec.push(parts, end_label);
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, err_label);
+                        parts = vec.push(parts, ":\n");
+                        parts = vec.push(parts, emit_store_string_node_value(program, function_value, nodes, err_body, locals, out_ptr));
+                        parts = vec.push(parts, "  br label %");
+                        parts = vec.push(parts, end_label);
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, end_label);
+                        parts = vec.push(parts, ":\n  ");
+                        parts = vec.push(parts, llvm_node_value_local(node));
+                        parts = vec.push(parts, " = load %aic.String, %aic.String* ");
+                        parts = vec.push(parts, out_ptr);
+                        parts = vec.push(parts, "\n");
+                        string.join(parts, "")
+                    } else { "" },
+                    None => "",
+                },
+                None => "",
+            },
+            None => "",
+        },
+        None => "",
+    }
+}
+
+fn emit_result_string_match_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal]) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(scrutinee) => match expr_node_child_at(expr.nodes, scrutinee, 0) {
+            Some(path_child) => match result_match_expr_body_node_for_variant(expr, "Ok") {
+                Some(ok_body) => match result_match_expr_body_node_for_variant(expr, "Err") {
+                    Some(err_body) => if true {
+                        let prefix = llvm_expr_prefix(expr.node);
+                        let path_name = string_node_value_name_with_locals(function_value, locals, path_child);
+                        let path_prefix = concat2(prefix, ".path");
+                        let ok_label = concat2("match.ok.", string.int_to_string(expr.node.value));
+                        let err_label = concat2("match.err.", string.int_to_string(expr.node.value));
+                        let end_label = concat2("match.end.", string.int_to_string(expr.node.value));
+                        let out_ptr = llvm_local(prefix, ".out");
+                        let ok_string_prefix = concat2(prefix, ".ok.str");
+                        let ok_locals = push_result_string_payload_local(locals, result_match_payload_name(expr.match_arms, "Ok"), llvm_local(ok_string_prefix, ".2"));
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "  ");
+                        parts = vec.push(parts, out_ptr);
+                        parts = vec.push(parts, " = alloca %aic.String\n");
+                        parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, path_child, locals));
+                        parts = vec.push(parts, emit_string_extracts(path_name, path_prefix));
+                        parts = vec.push(parts, "  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+                        parts = vec.push(parts, " = alloca i8*\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+                        parts = vec.push(parts, " = alloca i64\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".rc"));
+                        parts = vec.push(parts, " = call i64 ");
+                        parts = vec.push(parts, fs_string_runtime_name(scrutinee.name));
+                        parts = vec.push(parts, "(i8* ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".ptr"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".len"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".cap"));
+                        parts = vec.push(parts, ", i8** ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+                        parts = vec.push(parts, ", i64* ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+                        parts = vec.push(parts, ")\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+                        parts = vec.push(parts, " = icmp eq i64 ");
+                        parts = vec.push(parts, llvm_local(prefix, ".rc"));
+                        parts = vec.push(parts, ", 0\n  br i1 ");
+                        parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+                        parts = vec.push(parts, ", label %");
+                        parts = vec.push(parts, ok_label);
+                        parts = vec.push(parts, ", label %");
+                        parts = vec.push(parts, err_label);
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, ok_label);
+                        parts = vec.push(parts, ":\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".ok.ptr"));
+                        parts = vec.push(parts, " = load i8*, i8** ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+                        parts = vec.push(parts, "\n  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".ok.len"));
+                        parts = vec.push(parts, " = load i64, i64* ");
+                        parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, emit_string_from_ptr_len(ok_string_prefix, llvm_local(prefix, ".ok.ptr"), llvm_local(prefix, ".ok.len")));
+                        parts = vec.push(parts, emit_store_string_node_value(program, function_value, expr.nodes, ok_body, ok_locals, out_ptr));
+                        parts = vec.push(parts, "  br label %");
+                        parts = vec.push(parts, end_label);
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, err_label);
+                        parts = vec.push(parts, ":\n");
+                        parts = vec.push(parts, emit_store_string_node_value(program, function_value, expr.nodes, err_body, locals, out_ptr));
+                        parts = vec.push(parts, "  br label %");
+                        parts = vec.push(parts, end_label);
+                        parts = vec.push(parts, "\n");
+                        parts = vec.push(parts, end_label);
+                        parts = vec.push(parts, ":\n  ");
+                        parts = vec.push(parts, llvm_expr_value_local(expr));
+                        parts = vec.push(parts, " = load %aic.String, %aic.String* ");
+                        parts = vec.push(parts, out_ptr);
+                        parts = vec.push(parts, "\n");
+                        string.join(parts, "")
+                    } else { "" },
+                    None => "",
+                },
+                None => "",
+            },
+            None => "",
+        },
+        None => "",
+    }
 }
 
 fn emit_fs_string_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, locals: Vec[BackendLocal], ret: String) -> String {
@@ -4341,6 +4748,7 @@ fn emit_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrEx
             parts = vec.push(parts, ")\n");
             string.join(parts, "")
         },
+        IrMatchExpr => emit_result_string_match_expr_value(program, function_value, expr, locals),
         IrStructLiteralExpr => emit_struct_literal_expr_value(program, function_value, expr, locals, value_expr_llvm_type(program, expr, function_value, locals)),
         _ => "",
     }
@@ -4543,7 +4951,14 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             ()
         } else { () },
         IrMatchExpr => if true {
-            if env_arg_or_empty_expr_can_emit(program, expr, function_value) {
+            if result_string_match_expr_can_emit(program, expr, function_value, locals) {
+                parts = vec.push(parts, emit_result_string_match_expr_value(program, function_value, expr, locals));
+                parts = vec.push(parts, "  ret ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, llvm_expr_value_local(expr));
+                parts = vec.push(parts, "\n");
+            } else if env_arg_or_empty_expr_can_emit(program, expr, function_value) {
                 parts = vec.push(parts, emit_env_arg_or_empty_return(program, function_value, expr));
             } else {
                 let selected = static_match_body(expr);

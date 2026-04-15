@@ -1881,7 +1881,7 @@ fn backend_positive_status_code() -> Int {
 }
 
 fn backend_fs_positive_status_code() -> Int {
-    let source_text = "module app.main; enum FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Timeout, Cancelled, Io, } enum Result[T, E] { Ok(T), Err(E), } intrinsic fn read_text(path: String) -> Result[String, FsError] effects { fs }; fn read_source_text(path: String) -> Result[String, FsError] effects { fs } capabilities { fs } { read_text(path) } fn main() -> Int { 0 }";
+    let source_text = "module app.main; enum FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Timeout, Cancelled, Io, } enum Result[T, E] { Ok(T), Err(E), } intrinsic fn read_text(path: String) -> Result[String, FsError] effects { fs }; fn read_source_text(path: String) -> Result[String, FsError] effects { fs } capabilities { fs } { read_text(path) } fn manifest_or_default(path: String) -> String effects { fs } capabilities { fs } { let value = match read_text(path) { Ok(text) => text, Err(_) => \"src/main.aic\", }; value } fn main() -> Int { 0 }";
     let result = lower_ir_text(source_id(96), source_text);
     match result.program {
         Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
@@ -1902,6 +1902,16 @@ fn backend_fs_positive_status_code() -> Int {
                 663
             } else if !string.contains(artifact.llvm_ir, "insertvalue { i32, %aic.String, { i32, i8, i8, i8, i8, i8, i8, i8 } } undef, i32 1, 0") {
                 664
+            } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_manifest_or_default(%aic.String %aic_path)") {
+                667
+            } else if !string.contains(artifact.llvm_ir, "match.ok.") {
+                668
+            } else if !string.contains(artifact.llvm_ir, "match.err.") {
+                669
+            } else if !string.contains(artifact.llvm_ir, "match.end.") {
+                671
+            } else if !string.contains(artifact.llvm_ir, "load %aic.String, %aic.String*") {
+                672
             } else {
                 0
             }

@@ -41,6 +41,7 @@ The backend emits executable LLVM for the backend-covered primitive forms:
 - declared-call ABI typing for the imported compiler support functions used by `aic_selfhost`; imported definition emission is still tracked by the bootstrap gate
 - return-position `if` expressions over primitive comparisons and string equality/inequality
 - nested block expression branches with backend-covered local bindings and tail returns
+- structured `Result[String, FsError]` matches over filesystem string intrinsics when both `Ok` and `Err` arms produce backend-covered `String` values
 - tail-position `print_str` and `eprint_str` calls lowered to runtime stdout/stderr calls for unit-returning functions
 - runtime-backed `std.env.arg_at` option matches in the canonical `Some(value) => value, None => ""` form
 - runtime-backed `std.fs.read_text`, `std.fs.temp_file`, `std.fs.write_text`, and `std.fs.delete` return expressions for the supported `Result[String, FsError]` and `Result[Bool, FsError]` ABI layouts
