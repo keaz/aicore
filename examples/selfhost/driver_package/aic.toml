@@ -1,0 +1,6 @@
+[package]
+name = "selfhost_driver_package"
+version = "0.1.0"
+
+[targets]
+main = "src/main.aic"

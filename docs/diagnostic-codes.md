@@ -131,6 +131,12 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E5103` | Self-host LLVM backend received invalid native-link metadata. | Preserve non-empty native link names and required object/search-path paths from the package manifest or driver. |
 | `E5104` | Self-host LLVM backend received invalid artifact input, such as an empty artifact name or missing required entry point. | Provide a deterministic artifact name and lower a checked program with the requested entry point. |
 | `E5105` | Native object, archive, or executable materialization was requested from the LLVM-text backend package. | Emit LLVM text through `compiler.backend_llvm`, then let the driver materialize native artifacts. |
+| `E5200` | Self-host driver received an unsupported command or malformed command shape. | Use `check`, `ir <path> --emit json`, `build <path> -o <artifact>`, or `run` when the documented driver mode supports it. |
+| `E5201` | Self-host driver could not parse an entry program from the provided source set. | Provide a readable `.aic` file or package manifest with a main source file. |
+| `E5202` | `aic_selfhost` could not read the requested source input. | Check the file or package path and filesystem permissions. |
+| `E5203` | `aic_selfhost build` could not write the requested backend artifact. | Check the output directory and filesystem permissions. |
+| `E5204` | `aic_selfhost` could not materialize a native executable from the self-host LLVM artifact. | Ensure `clang` is available and the backend-covered program emitted valid LLVM IR. |
+| `E5205` | Low-level self-host driver run execution is not enabled for direct library calls. | Use the `aic_selfhost run` executable path, which materializes and runs backend-covered programs. |
 | `E6001` | Deprecated std API usage warning (for example `std.time.now`). | Migrate to replacement API shown in diagnostic help (for example `std.time.now_ms`). |
 | `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
 | `E6003` | Typed hole (`_`) was accepted and inferred from context. | Replace `_` with the inferred concrete type when finalizing API/contracts. |

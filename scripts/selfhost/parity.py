@@ -26,6 +26,8 @@ ACTION_ARGS: dict[str, tuple[str, ...]] = {
     "run": ("run", "{path}"),
 }
 
+COMPARISON_MODES = {"fingerprint", "artifact-exists", "selfhost-ir-json"}
+
 
 @dataclass(frozen=True)
 class CommandResult:
@@ -65,6 +67,7 @@ class CaseResult:
     name: str
     path: str
     action: str
+    comparison_mode: str
     ok: bool
     reason: str
     reference: CommandResult
@@ -75,6 +78,7 @@ class CaseResult:
             "name": self.name,
             "path": self.path,
             "action": self.action,
+            "comparison_mode": self.comparison_mode,
             "ok": self.ok,
             "reason": self.reason,
             "reference": {
@@ -161,6 +165,16 @@ def load_manifest(path: Path) -> dict[str, Any]:
                 raise SystemExit(f"{path}: case {name} has unsupported action {action!r}")
         if expected not in {"pass", "fail"}:
             raise SystemExit(f"{path}: case {name} expected must be pass or fail")
+        comparisons = case.get("comparisons", {})
+        if not isinstance(comparisons, dict):
+            raise SystemExit(f"{path}: case {name} comparisons must be an object when present")
+        for action, mode in comparisons.items():
+            if action not in actions:
+                raise SystemExit(f"{path}: case {name} comparison for non-case action {action!r}")
+            if mode not in COMPARISON_MODES:
+                raise SystemExit(
+                    f"{path}: case {name} action {action} has unsupported comparison mode {mode!r}"
+                )
     return manifest
 
 
@@ -299,16 +313,18 @@ def compare_results(
     path: str,
     action: str,
     expected: str,
+    comparison_mode: str,
     reference: CommandResult,
     candidate: CommandResult,
 ) -> CaseResult:
     if reference.timed_out or candidate.timed_out:
-        return CaseResult(name, path, action, False, "timeout", reference, candidate)
+        return CaseResult(name, path, action, comparison_mode, False, "timeout", reference, candidate)
     if not expected_matches(reference.exit_code, expected):
         return CaseResult(
             name,
             path,
             action,
+            comparison_mode,
             False,
             f"reference did not satisfy expected={expected}",
             reference,
@@ -319,6 +335,7 @@ def compare_results(
             name,
             path,
             action,
+            comparison_mode,
             False,
             f"candidate did not satisfy expected={expected}",
             reference,
@@ -330,6 +347,7 @@ def compare_results(
                 name,
                 path,
                 action,
+                comparison_mode,
                 False,
                 "reference emitted invalid ir json",
                 reference,
@@ -340,14 +358,111 @@ def compare_results(
                 name,
                 path,
                 action,
+                comparison_mode,
                 False,
                 "candidate emitted invalid ir json",
                 reference,
                 candidate,
             )
+    if comparison_mode == "artifact-exists":
+        if action != "build":
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "artifact-exists comparison is only valid for build actions",
+                reference,
+                candidate,
+            )
+        if reference.artifact_exists is not True or candidate.artifact_exists is not True:
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "build artifact was not created",
+                reference,
+                candidate,
+            )
+        if fingerprint_text(reference.stdout) != fingerprint_text(candidate.stdout):
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "stdout fingerprint mismatch",
+                reference,
+                candidate,
+            )
+        if fingerprint_text(reference.stderr) != fingerprint_text(candidate.stderr):
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "stderr fingerprint mismatch",
+                reference,
+                candidate,
+            )
+        return CaseResult(name, path, action, comparison_mode, True, "matched", reference, candidate)
+    if comparison_mode == "selfhost-ir-json":
+        if action != "ir-json":
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "selfhost-ir-json comparison is only valid for ir-json actions",
+                reference,
+                candidate,
+            )
+        try:
+            candidate_json = json.loads(candidate.stdout)
+        except json.JSONDecodeError as exc:
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                f"candidate emitted invalid self-host ir json: {exc.msg}",
+                reference,
+                candidate,
+            )
+        if candidate_json.get("format") != "aicore-selfhost-ir-v1":
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "candidate self-host ir json format marker missing",
+                reference,
+                candidate,
+            )
+        if fingerprint_text(reference.stderr) != fingerprint_text(candidate.stderr):
+            return CaseResult(
+                name,
+                path,
+                action,
+                comparison_mode,
+                False,
+                "stderr fingerprint mismatch",
+                reference,
+                candidate,
+            )
+        return CaseResult(name, path, action, comparison_mode, True, "matched", reference, candidate)
     if reference.fingerprint(action) != candidate.fingerprint(action):
-        return CaseResult(name, path, action, False, "fingerprint mismatch", reference, candidate)
-    return CaseResult(name, path, action, True, "matched", reference, candidate)
+        return CaseResult(
+            name, path, action, comparison_mode, False, "fingerprint mismatch", reference, candidate
+        )
+    return CaseResult(name, path, action, comparison_mode, True, "matched", reference, candidate)
 
 
 def run_manifest(args: argparse.Namespace, manifest: dict[str, Any]) -> list[CaseResult]:
@@ -356,7 +471,9 @@ def run_manifest(args: argparse.Namespace, manifest: dict[str, Any]) -> list[Cas
     results: list[CaseResult] = []
     for case in manifest["cases"]:
         source_path = cwd / case["path"]
+        comparisons = case.get("comparisons", {})
         for action in case["actions"]:
+            comparison_mode = comparisons.get(action, "fingerprint")
             reference = run_command(
                 "reference",
                 args.reference,
@@ -383,6 +500,7 @@ def run_manifest(args: argparse.Namespace, manifest: dict[str, Any]) -> list[Cas
                     case["path"],
                     action,
                     case["expected"],
+                    comparison_mode,
                     reference,
                     candidate,
                 )

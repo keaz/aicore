@@ -116,7 +116,9 @@ test-selfhost:
 	$(CARGO) test --locked --test selfhost_parity_tests
 
 selfhost-parity:
-	python3 scripts/selfhost/parity.py --manifest tests/selfhost/parity_manifest.json
+	@args=(--manifest "$${SELFHOST_PARITY_MANIFEST:-tests/selfhost/parity_manifest.json}" --reference "$${SELFHOST_REFERENCE:-cargo run --quiet --bin aic --}" --artifact-dir "$${SELFHOST_ARTIFACT_DIR:-target/selfhost-parity}" --report "$${SELFHOST_PARITY_REPORT:-target/selfhost-parity/report.json}"); \
+	if [[ -n "$${SELFHOST_CANDIDATE:-}" ]]; then args+=(--candidate "$$SELFHOST_CANDIDATE"); fi; \
+	python3 scripts/selfhost/parity.py "$${args[@]}"
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
@@ -168,6 +170,8 @@ docs-check:
 	@test -f docs/sarif.md
 	@test -f docs/ide-integration.md
 	@test -f docs/llvm-backend.md
+	@test -f docs/backend-llvm.md
+	@test -f docs/selfhost-driver.md
 	@test -f docs/agent-tooling/README.md
 	@test -f docs/agent-tooling/protocol-v1.md
 	@test -f docs/agent-tooling/incremental-daemon.md

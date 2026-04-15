@@ -1,0 +1,492 @@
+module compiler.driver;
+
+import compiler.source;
+import compiler.diagnostics;
+import compiler.ast;
+import compiler.parser;
+import compiler.frontend;
+import compiler.semantics;
+import compiler.typecheck;
+import compiler.ir;
+import compiler.backend_llvm;
+import std.option;
+import std.string;
+import std.vec;
+
+pub enum DriverCommandKind {
+    DriverCheckCommand,
+    DriverIrJsonCommand,
+    DriverBuildCommand,
+    DriverRunCommand,
+    DriverUnsupportedCommand,
+}
+
+pub struct DriverSource {
+    pub path: String,
+    pub text: String,
+    pub source: SourceId,
+}
+
+pub struct DriverCompileResult {
+    pub entry_module: String,
+    pub diagnostics: Vec[Diagnostic],
+    pub program: Option[IrProgram],
+    pub backend_artifact: Option[BackendArtifact],
+}
+
+pub struct DriverCommandResult {
+    pub exit_code: Int,
+    pub stdout: String,
+    pub stderr: String,
+    pub artifact_path: String,
+    pub artifact_text: String,
+    pub diagnostics: Vec[Diagnostic],
+}
+
+pub fn driver_source(path: String, text: String, source: SourceId) -> DriverSource {
+    DriverSource {
+        path: path,
+        text: text,
+        source: source,
+    }
+}
+
+fn driver_command_result(exit_code: Int, stdout: String, stderr: String, artifact_path: String, artifact_text: String, diagnostics: Vec[Diagnostic]) -> DriverCommandResult {
+    DriverCommandResult {
+        exit_code: exit_code,
+        stdout: stdout,
+        stderr: stderr,
+        artifact_path: artifact_path,
+        artifact_text: artifact_text,
+        diagnostics: diagnostics,
+    }
+}
+
+fn empty_backend_artifact() -> Option[BackendArtifact] {
+    None()
+}
+
+fn empty_ir_program() -> Option[IrProgram] {
+    None()
+}
+
+fn concat2(left: String, right: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, left);
+    parts = vec.push(parts, right);
+    string.join(parts, "")
+}
+
+fn concat3(first: String, second: String, third: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, first);
+    parts = vec.push(parts, second);
+    parts = vec.push(parts, third);
+    string.join(parts, "")
+}
+
+fn append_all_diagnostics(left: Vec[Diagnostic], right: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+    let mut out = left;
+    let mut index = 0;
+    while vec.vec_len(out) < max_errors && index < vec.vec_len(right) {
+        match vec.get(right, index) {
+            Some(value) => if true {
+                out = vec.push(out, value);
+                ()
+            } else { () },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn push_driver_error(values: Vec[Diagnostic], code: String, span_value: SourceSpan, message: String, help: String, max_errors: Int) -> Vec[Diagnostic] {
+    if vec.vec_len(values) < max_errors {
+        vec.push(values, with_help(error(diagnostic_code(code), span_value, message), help))
+    } else {
+        values
+    }
+}
+
+fn driver_has_error(values: Vec[Diagnostic]) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if is_error(value) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn program_module_path(value: AstProgram) -> String {
+    match value.module_item {
+        Some(module_value) => module_value.path.text,
+        None => "<root>",
+    }
+}
+
+fn parse_driver_source(value: DriverSource, max_errors: Int) -> ParseProgram {
+    parse_source_program(value.source, value.text, max_errors)
+}
+
+fn parse_sources(values: Vec[DriverSource], max_errors: Int) -> Vec[ParseProgram] {
+    let mut out: Vec[ParseProgram] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                out = vec.push(out, parse_driver_source(value, max_errors));
+                ()
+            } else { () },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn collect_parse_diagnostics(values: Vec[ParseProgram], max_errors: Int) -> Vec[Diagnostic] {
+    let mut diagnostics: Vec[Diagnostic] = vec.new_vec();
+    let mut index = 0;
+    while vec.vec_len(diagnostics) < max_errors && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                diagnostics = append_all_diagnostics(diagnostics, value.diagnostics, max_errors);
+                ()
+            } else { () },
+            None => (),
+        };
+        index = index + 1;
+    };
+    diagnostics
+}
+
+fn parse_results_to_units(values: Vec[ParseProgram]) -> Vec[ResolveUnit] {
+    let mut units: Vec[ResolveUnit] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => match value.program {
+                Some(program) => if true {
+                    units = vec.push(units, resolve_unit(program));
+                    ()
+                } else { () },
+                None => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    units
+}
+
+fn first_program(values: Vec[ParseProgram]) -> Option[AstProgram] {
+    let mut index = 0;
+    let mut out: Option[AstProgram] = None();
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => match value.program {
+                Some(program) => if true {
+                    out = Some(program);
+                    index = vec.vec_len(values);
+                    ()
+                } else { () },
+                None => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+pub fn driver_import_paths_from_source(source_value: DriverSource, max_errors: Int) -> Vec[String] {
+    let parsed = parse_driver_source(source_value, max_errors);
+    let mut out: Vec[String] = vec.new_vec();
+    match parsed.program {
+        Some(program) => if true {
+            let mut index = 0;
+            while index < vec.vec_len(program.imports) {
+                match vec.get(program.imports, index) {
+                    Some(import_item) => if true {
+                        out = vec.push(out, import_item.path.text);
+                        ()
+                    } else { () },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            out
+        } else {
+            out
+        },
+        None => out,
+    }
+}
+
+pub fn driver_synthetic_source_for_import(import_path: String, source: SourceId) -> Option[DriverSource] {
+    if import_path == "std.io" {
+        Some(driver_source("std/io.aic", "module std.io; pub fn print_int(x: Int) -> () effects { io } capabilities { io } { let _x = x; () } pub fn print_str(x: String) -> () effects { io } capabilities { io } { let _x = x; () }", source))
+    } else if import_path == "std.result" {
+        Some(driver_source("std/result.aic", "module std.result; enum Result[T, E] { Ok(T), Err(E), }", source))
+    } else if import_path == "std.option" {
+        Some(driver_source("std/option.aic", "module std.option; enum Option[T] { Some(T), None, }", source))
+    } else {
+        None()
+    }
+}
+
+pub fn driver_has_source_path(values: Vec[DriverSource], path: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if value.path == path {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn driver_sources_with_synthetic_imports(entry: DriverSource, max_errors: Int) -> Vec[DriverSource] {
+    let mut out: Vec[DriverSource] = vec.new_vec();
+    out = vec.push(out, entry);
+    let mut scan = 0;
+    let mut next_source = 1000;
+    while scan < vec.vec_len(out) {
+        match vec.get(out, scan) {
+            Some(source_value) => if true {
+                let imports = driver_import_paths_from_source(source_value, max_errors);
+                let mut import_index = 0;
+                while import_index < vec.vec_len(imports) {
+                    match vec.get(imports, import_index) {
+                        Some(import_path) => match driver_synthetic_source_for_import(import_path, source_id(next_source)) {
+                            Some(synthetic) => if !driver_has_source_path(out, synthetic.path) {
+                                out = vec.push(out, synthetic);
+                                next_source = next_source + 1;
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        None => (),
+                    };
+                    import_index = import_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        scan = scan + 1;
+    };
+    out
+}
+
+pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
+    let parsed = parse_sources(values, max_errors);
+    let mut diagnostics = collect_parse_diagnostics(parsed, max_errors);
+    let entry = first_program(parsed);
+    match entry {
+        Some(entry_program) => if driver_has_error(diagnostics) {
+            DriverCompileResult {
+                entry_module: program_module_path(entry_program),
+                diagnostics: diagnostics,
+                program: empty_ir_program(),
+                backend_artifact: empty_backend_artifact(),
+            }
+        } else {
+            let units = parse_results_to_units(parsed);
+            let entry_module = program_module_path(entry_program);
+            let resolver = resolve_units(units, entry_module, max_errors);
+            diagnostics = append_all_diagnostics(diagnostics, resolver.diagnostics, max_errors);
+            let semantic = analyze_resolved_units(units, resolver, max_errors);
+            diagnostics = append_all_diagnostics(diagnostics, semantic.diagnostics, max_errors);
+            let checked = typecheck_resolved_units(units, resolver, max_errors);
+            diagnostics = append_all_diagnostics(diagnostics, checked.diagnostics, max_errors);
+            if driver_has_error(diagnostics) {
+                DriverCompileResult {
+                    entry_module: entry_module,
+                    diagnostics: diagnostics,
+                    program: empty_ir_program(),
+                    backend_artifact: empty_backend_artifact(),
+                }
+            } else {
+                let lowered = lower_checked_program(entry_program, checked, max_errors);
+                diagnostics = append_all_diagnostics(diagnostics, lowered.diagnostics, max_errors);
+                match lowered.program {
+                    Some(program) => if driver_has_error(diagnostics) {
+                        DriverCompileResult {
+                            entry_module: entry_module,
+                            diagnostics: diagnostics,
+                            program: Some(program),
+                            backend_artifact: empty_backend_artifact(),
+                        }
+                    } else {
+                        let artifact = emit_backend_artifact(program, default_backend_options("aic_selfhost"), max_errors);
+                        diagnostics = append_all_diagnostics(diagnostics, artifact.diagnostics, max_errors);
+                        DriverCompileResult {
+                            entry_module: entry_module,
+                            diagnostics: diagnostics,
+                            program: Some(program),
+                            backend_artifact: Some(artifact),
+                        }
+                    },
+                    None => DriverCompileResult {
+                        entry_module: entry_module,
+                        diagnostics: diagnostics,
+                        program: empty_ir_program(),
+                        backend_artifact: empty_backend_artifact(),
+                    },
+                }
+            }
+        },
+        None => DriverCompileResult {
+            entry_module: "<unknown>",
+            diagnostics: push_driver_error(diagnostics, "E5201", empty_span(source_id(0), 0), "self-host driver could not parse an entry program", "provide a readable .aic file or package manifest with a main source", max_errors),
+            program: empty_ir_program(),
+            backend_artifact: empty_backend_artifact(),
+        },
+    }
+}
+
+pub fn driver_compile_source(path: String, text: String, max_errors: Int) -> DriverCompileResult {
+    driver_compile_sources(driver_sources_with_synthetic_imports(driver_source(path, text, source_id(1)), max_errors), max_errors)
+}
+
+fn diagnostic_severity_name(value: Diagnostic) -> String {
+    match value.severity {
+        Error => "error",
+        Warning => "warning",
+        Note => "note",
+    }
+}
+
+fn diagnostic_line(value: Diagnostic) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, diagnostic_severity_name(value));
+    parts = vec.push(parts, "[");
+    parts = vec.push(parts, value.code.value);
+    parts = vec.push(parts, "]: ");
+    parts = vec.push(parts, value.message);
+    parts = vec.push(parts, "\n");
+    string.join(parts, "")
+}
+
+pub fn driver_format_diagnostics(values: Vec[Diagnostic]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if true {
+                parts = vec.push(parts, diagnostic_line(value));
+                ()
+            } else { () },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn compile_exit_code(value: DriverCompileResult) -> Int {
+    if driver_has_error(value.diagnostics) {
+        1
+    } else {
+        0
+    }
+}
+
+pub fn driver_check_source(path: String, text: String, max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_source(path, text, max_errors);
+    driver_command_result(compile_exit_code(compiled), "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics)
+}
+
+pub fn driver_ir_json_source(path: String, text: String, max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_source(path, text, max_errors);
+    if driver_has_error(compiled.diagnostics) {
+        driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics)
+    } else {
+        match compiled.program {
+            Some(program) => driver_command_result(0, ir_program_to_json(program), driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics),
+            None => driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), "", "", compiled.diagnostics),
+        }
+    }
+}
+
+pub fn driver_build_source(path: String, text: String, output_path: String, max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_source(path, text, max_errors);
+    if driver_has_error(compiled.diagnostics) {
+        driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), output_path, "", compiled.diagnostics)
+    } else {
+        match compiled.backend_artifact {
+            Some(artifact) => if backend_artifact_ok(artifact) {
+                driver_command_result(0, "", driver_format_diagnostics(compiled.diagnostics), output_path, artifact.llvm_ir, compiled.diagnostics)
+            } else {
+                driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), output_path, "", compiled.diagnostics)
+            },
+            None => driver_command_result(1, "", driver_format_diagnostics(compiled.diagnostics), output_path, "", compiled.diagnostics),
+        }
+    }
+}
+
+pub fn driver_run_source(path: String, text: String, max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_source(path, text, max_errors);
+    let mut diagnostics = compiled.diagnostics;
+    diagnostics = push_driver_error(diagnostics, "E5205", empty_span(source_id(0), 0), "self-host run is not enabled for this driver stage", "use build to emit a backend artifact, then run the materialized executable through the next driver integration stage", max_errors);
+    driver_command_result(1, "", driver_format_diagnostics(diagnostics), "", "", diagnostics)
+}
+
+pub fn driver_unsupported_command(command: String, max_errors: Int) -> DriverCommandResult {
+    let diagnostics = push_driver_error(vec.new_vec(), "E5200", empty_span(source_id(0), 0), concat3("unsupported self-host command '", command, "'"), "supported commands are check, ir --emit json, build, and run", max_errors);
+    driver_command_result(1, "", driver_format_diagnostics(diagnostics), "", "", diagnostics)
+}
+
+fn quoted_value_after(text: String, key: String) -> String {
+    let needle = concat2(key, " = \"");
+    if string.contains(text, needle) {
+        let after = match vec.get(string.split(text, needle), 1) {
+            Some(value) => value,
+            None => "",
+        };
+        match vec.get(string.split(after, "\""), 0) {
+            Some(value) => value,
+            None => "",
+        }
+    } else {
+        ""
+    }
+}
+
+pub fn driver_manifest_main_path(manifest_text: String) -> String {
+    let configured = quoted_value_after(manifest_text, "main");
+    if configured == "" {
+        "src/main.aic"
+    } else {
+        configured
+    }
+}
+
+pub fn driver_join_path(base: String, child: String) -> String {
+    if base == "" || base == "." {
+        child
+    } else if string.ends_with(base, "/") {
+        concat2(base, child)
+    } else {
+        concat3(base, "/", child)
+    }
+}

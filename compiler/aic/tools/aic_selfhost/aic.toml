@@ -1,0 +1,9 @@
+[package]
+name = "aic_selfhost"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../../libs/source" }
+aic_compiler_diagnostics = { path = "../../libs/diagnostics" }
+aic_compiler_driver = { path = "../../libs/driver" }

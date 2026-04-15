@@ -42,7 +42,9 @@ Current implemented package slice:
 - `compiler/aic/libs/semantics` models self-hosted semantic output for generic parameter environments, trait-bound resolution, generic arity validation, trait and trait-method indexes, inherent and trait impl indexes, conflicting impl metadata, and deterministic semantic diagnostics over resolved AST units.
 - `compiler/aic/libs/typecheck` consumes resolver and semantic outputs, checks signatures, constants, local bindings, assignments, expressions, function and variant calls, named arguments, struct literals and field access, match guards and exhaustiveness, loops, numeric width constraints, generic instantiations, trait-bound dispatch, effect/capability declarations, direct and transitive effect usage, capability authority, contract Bool requirements, contract purity, static contract discharge notes, residual runtime contract obligations, local move/use tracking, reinitialization after move, shared and mutable borrow conflicts, assignment while borrowed, mutable borrow of immutable bindings, and terminal resource protocol reuse, and produces typed function, binding, and instantiation metadata for later IR lowering.
 - `compiler/aic/libs/backend_llvm` consumes deterministic self-host IR and emits deterministic LLVM-text backend artifacts for the backend-covered corpus. The package models backend options, artifact kind, native-link metadata, backend symbols, artifact naming, feature summaries, and diagnostics. It emits real LLVM functions for primitive executable functions, integer arithmetic, direct primitive calls, literal returns, static literal matches, and metadata-backed struct, enum, tuple, generic-definition, closure, async/future, trait/impl, const/global, resource-handle, and native-link surfaces. It rejects unsupported executable statement or return-expression shapes, aggregate ABI forms, invalid native-link metadata, invalid IR schema/source/name metadata, missing entry points, and native materialization requests that must be completed by the driver after LLVM IR emission.
-- `compiler/aic/tools/source_diagnostics_check` imports the implemented libraries and validates the data model through a small executable tool, including typecheck positive and negative cases for generics, structs, enums, traits, impl methods, tuple/closure/async signatures, aliases, constants, numeric widths, named arguments, match guards, exhaustiveness, trait-bound failures, declared/missing/transitive effects, capability authority, invalid effect/capability declarations, function and impl-method contract Bool failures, effectful contract rejection, static contract discharge, residual contract notes, move/use tracking, borrow conflicts, branch-local borrow false-positive prevention, resource use-after-close, terminal resource reuse, positive IR lowering for functions, structs/defaults/invariants, enums, generics, traits/impls, closures, async signatures, loops, matches, aliases, constants, tuple types, effects, and capabilities, negative IR lowering diagnostics for unsupported const initializer forms, unresolved semantic preconditions, invalid type metadata, and missing lowering hooks, positive/negative IR serialization validation for deterministic JSON, debug text, parity artifacts, malformed schema metadata, missing source maps, and unstable ordering, plus positive/negative backend validation for deterministic LLVM artifacts, symbol naming, feature metadata, native-link metadata, missing lowering hooks, unsupported ABI/type forms, invalid link metadata, invalid IR inputs, empty artifact names, and native materialization requests.
+- `compiler/aic/libs/driver` orchestrates the self-host compiler phases over source/package inputs. It parses, resolves, analyzes semantics, typechecks, lowers IR, emits backend artifacts, formats diagnostics, reads package `main` metadata, and exposes command-level results for check, IR JSON, build, and guarded direct-library run requests.
+- `compiler/aic/tools/aic_selfhost` is the self-host candidate executable. It reads `.aic` files or package directories, invokes `compiler.driver`, materializes backend LLVM through `clang` for `build` and `run`, and returns deterministic nonzero diagnostics for unsupported command shapes or native materialization failures.
+- `compiler/aic/tools/source_diagnostics_check` imports the implemented libraries and validates the data model through a small executable tool, including typecheck positive and negative cases for generics, structs, enums, traits, impl methods, tuple/closure/async signatures, aliases, constants, numeric widths, named arguments, match guards, exhaustiveness, trait-bound failures, declared/missing/transitive effects, capability authority, invalid effect/capability declarations, function and impl-method contract Bool failures, effectful contract rejection, static contract discharge, residual contract notes, move/use tracking, borrow conflicts, branch-local borrow false-positive prevention, resource use-after-close, terminal resource reuse, positive IR lowering for functions, structs/defaults/invariants, enums, generics, traits/impls, closures, async signatures, loops, matches, aliases, constants, tuple types, effects, and capabilities, negative IR lowering diagnostics for unsupported const initializer forms, unresolved semantic preconditions, invalid type metadata, and missing lowering hooks, positive/negative IR serialization validation for deterministic JSON, debug text, parity artifacts, malformed schema metadata, missing source maps, and unstable ordering, positive/negative backend validation for deterministic LLVM artifacts, symbol naming, feature metadata, native-link metadata, missing lowering hooks, unsupported ABI/type forms, invalid link metadata, invalid IR inputs, empty artifact names, and native materialization requests, plus positive/negative driver validation for command results, manifest main-path metadata, build artifact text, unsupported commands, and guarded library-level run diagnostics.
 
 ## Parity Harness
 
@@ -58,26 +60,24 @@ make selfhost-parity
 `make selfhost-parity` compares a reference compiler command against a candidate compiler command using `tests/selfhost/parity_manifest.json`. By default, both sides use the current Rust compiler command:
 
 ```bash
-python3 scripts/selfhost/parity.py \
-  --manifest tests/selfhost/parity_manifest.json \
-  --reference "cargo run --quiet --bin aic --" \
-  --candidate "cargo run --quiet --bin aic --"
+make selfhost-parity
 ```
 
-When an AICore-built compiler exists, run:
+When an AICore-built compiler exists, configure the candidate and, for the T12 driver slice, use the driver-specific covered manifest:
 
 ```bash
-python3 scripts/selfhost/parity.py \
-  --manifest tests/selfhost/parity_manifest.json \
-  --reference "cargo run --quiet --bin aic --" \
-  --candidate "path/to/aic_selfhost"
+SELFHOST_PARITY_MANIFEST=tests/selfhost/aic_selfhost_driver_manifest.json \
+SELFHOST_CANDIDATE=target/aic_selfhost_t12 \
+make selfhost-parity
 ```
 
 The report is written to `target/selfhost-parity/report.json`.
 
 For `ir-json` actions, the parity harness parses both compiler outputs as JSON and compares canonical JSON fingerprints. This keeps IR parity stable across harmless whitespace or object-key ordering differences while still failing on malformed IR JSON, schema/contract mismatches, or actual semantic output differences. The report records the comparison kind, raw command metadata, canonical JSON fingerprints, and any JSON parse error for both reference and candidate commands.
 
-For `build` actions, the parity harness compares artifact presence and fingerprints. Backend-covered core examples now include build actions so the parity gate exercises native artifact production in addition to check and IR JSON surfaces.
+The T12 driver manifest uses `selfhost-ir-json` comparison for the self-host IR schema because `aic_selfhost` intentionally exposes the self-host IR contract while the Rust reference still exposes the legacy reference IR schema. It uses `artifact-exists` comparison for `build` because the T12 candidate materializes a native executable through the self-host LLVM artifact path, while byte-for-byte native binary parity is reserved for the expanded conformance and cutover issues.
+
+For default `build` actions, the parity harness compares artifact presence and fingerprints. Cases can opt into `artifact-exists` while the self-host driver is validating materialization through a different native codegen path.
 
 ## Required Coverage
 

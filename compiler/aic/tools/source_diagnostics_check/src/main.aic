@@ -11,6 +11,7 @@ import compiler.frontend;
 import compiler.semantics;
 import compiler.typecheck;
 import compiler.backend_llvm;
+import compiler.driver;
 import std.io;
 import std.result;
 import std.string;
@@ -1866,6 +1867,78 @@ fn valid_backend_frontend() -> Bool {
     valid_backend_positive_cases() && valid_backend_negative_cases()
 }
 
+fn driver_positive_source() -> String {
+    "module smoke.main; fn add(x: Int, y: Int) -> Int { x + y } fn main() -> Int { add(40, 2) }"
+}
+
+fn driver_positive_status_code() -> Int {
+    let source_text = driver_positive_source();
+    let check = driver_check_source("smoke.aic", source_text, 80);
+    let ir_json = driver_ir_json_source("smoke.aic", source_text, 80);
+    let build = driver_build_source("smoke.aic", source_text, "smoke.ll", 80);
+    if check.exit_code != 0 {
+        661
+    } else if check.stderr != "" {
+        662
+    } else if ir_json.exit_code != 0 {
+        663
+    } else if !string.contains(ir_json.stdout, "\"format\":\"aicore-selfhost-ir-v1\"") {
+        664
+    } else if build.exit_code != 0 {
+        665
+    } else if build.artifact_path != "smoke.ll" {
+        666
+    } else if !string.contains(build.artifact_text, "define i64 @main") {
+        667
+    } else if !string.contains(build.artifact_text, "%ret = call i64 @aic_add(i64 40, i64 2)") {
+        668
+    } else if driver_manifest_main_path("[package]\nname = \"demo\"\nmain = \"src/app.aic\"\n") != "src/app.aic" {
+        669
+    } else if driver_manifest_main_path("[package]\nname = \"demo\"\n") != "src/main.aic" {
+        670
+    } else {
+        0
+    }
+}
+
+fn valid_driver_positive_cases() -> Bool {
+    driver_positive_status_code() == 0
+}
+
+fn driver_negative_status_code() -> Int {
+    let missing = driver_check_source("bad.aic", "module smoke.main; fn main() -> Int { missing }", 80);
+    let unsupported_backend = driver_build_source("bad_backend.aic", "module smoke.main; fn main() -> Int { let x = 1; x }", "bad.ll", 80);
+    let run_result = driver_run_source("smoke.aic", driver_positive_source(), 80);
+    let bad_command = driver_unsupported_command("fmt", 20);
+    if missing.exit_code != 1 {
+        671
+    } else if !string.contains(missing.stderr, "E1208") {
+        672
+    } else if unsupported_backend.exit_code != 1 {
+        673
+    } else if !string.contains(unsupported_backend.stderr, "E5101") {
+        674
+    } else if run_result.exit_code != 1 {
+        675
+    } else if !string.contains(run_result.stderr, "E5205") {
+        676
+    } else if bad_command.exit_code != 1 {
+        677
+    } else if !string.contains(bad_command.stderr, "E5200") {
+        678
+    } else {
+        0
+    }
+}
+
+fn valid_driver_negative_cases() -> Bool {
+    driver_negative_status_code() == 0
+}
+
+fn valid_driver_frontend() -> Bool {
+    valid_driver_positive_cases() && valid_driver_negative_cases()
+}
+
 fn valid_typecheck_frontend() -> Bool {
     valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases() && valid_ownership_resource_positive_cases() && valid_ownership_resource_negative_cases()
 }
@@ -1908,9 +1981,12 @@ fn main() -> Int effects { io } capabilities { io } {
     let backend_status = backend_positive_status_code();
     let backend_negative_ok = valid_backend_negative_cases();
     let backend_ok = backend_status == 0 && backend_negative_ok;
+    let driver_positive_status = driver_positive_status_code();
+    let driver_negative_status = driver_negative_status_code();
+    let driver_ok = driver_positive_status == 0 && driver_negative_status == 0;
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ir_serialization_ok && backend_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ir_serialization_ok && backend_ok && driver_ok && ast_ir_ok {
         print_int(0);
         0
     } else {
@@ -1918,6 +1994,12 @@ fn main() -> Int effects { io } capabilities { io } {
             print_int(backend_status);
         } else if !backend_negative_ok {
             print_int(650);
+        } else if !driver_ok {
+            if driver_positive_status != 0 {
+                print_int(driver_positive_status);
+            } else {
+                print_int(driver_negative_status);
+            };
         } else {
             print_int(1);
         };

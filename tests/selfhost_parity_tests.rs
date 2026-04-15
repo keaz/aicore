@@ -150,6 +150,10 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/libs/typecheck/src/main.aic",
         "compiler/aic/libs/backend_llvm/aic.toml",
         "compiler/aic/libs/backend_llvm/src/main.aic",
+        "compiler/aic/libs/driver/aic.toml",
+        "compiler/aic/libs/driver/src/main.aic",
+        "compiler/aic/tools/aic_selfhost/aic.toml",
+        "compiler/aic/tools/aic_selfhost/src/main.aic",
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
     ] {
@@ -461,6 +465,33 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(backend.contains("E5104"));
     assert!(backend.contains("E5105"));
 
+    let driver = fs::read_to_string(root.join("compiler/aic/libs/driver/src/main.aic"))
+        .expect("read selfhost driver lib");
+    assert!(driver.contains("module compiler.driver"));
+    assert!(driver.contains("pub struct DriverSource"));
+    assert!(driver.contains("pub struct DriverCompileResult"));
+    assert!(driver.contains("pub struct DriverCommandResult"));
+    assert!(driver.contains("pub fn driver_compile_source"));
+    assert!(driver.contains("pub fn driver_check_source"));
+    assert!(driver.contains("pub fn driver_ir_json_source"));
+    assert!(driver.contains("pub fn driver_build_source"));
+    assert!(driver.contains("pub fn driver_run_source"));
+    assert!(driver.contains("pub fn driver_manifest_main_path"));
+    assert!(driver.contains("E5200"));
+    assert!(driver.contains("E5201"));
+    assert!(driver.contains("E5205"));
+
+    let selfhost_tool =
+        fs::read_to_string(root.join("compiler/aic/tools/aic_selfhost/src/main.aic"))
+            .expect("read aic_selfhost tool");
+    assert!(selfhost_tool.contains("module compiler.tools.aic_selfhost"));
+    assert!(selfhost_tool.contains("driver_check_source"));
+    assert!(selfhost_tool.contains("driver_ir_json_source"));
+    assert!(selfhost_tool.contains("driver_build_source"));
+    assert!(selfhost_tool.contains("materialize_native"));
+    assert!(selfhost_tool.contains("proc.run"));
+    assert!(selfhost_tool.contains("source_path_for_input"));
+
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
     assert!(parser.contains("trait method signatures cannot declare requires/ensures contracts"));
@@ -481,8 +512,12 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(source_diagnostics_check.contains("fn valid_backend_positive_cases"));
     assert!(source_diagnostics_check.contains("fn valid_backend_negative_cases"));
     assert!(source_diagnostics_check.contains("fn valid_backend_frontend"));
+    assert!(source_diagnostics_check.contains("fn valid_driver_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_driver_negative_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_driver_frontend"));
     assert!(source_diagnostics_check.contains("emit_backend_artifact"));
     assert!(source_diagnostics_check.contains("backend_has_diagnostic_code"));
+    assert!(source_diagnostics_check.contains("driver_build_source"));
 
     let ir =
         fs::read_to_string(root.join("compiler/aic/libs/ir/src/main.aic")).expect("read ir lib");
@@ -496,6 +531,205 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ir.contains("E5011"));
     assert!(ir.contains("E5012"));
     assert!(ir.contains("E5013"));
+}
+
+#[test]
+fn aic_selfhost_driver_tool_handles_supported_and_negative_commands() {
+    let root = repo_root();
+    let tmp = tempdir().expect("tempdir");
+    let bin = tmp.path().join("aic_selfhost");
+    let ok_source = tmp.path().join("ok.aic");
+    let bad_source = tmp.path().join("bad.aic");
+    let package_dir = tmp.path().join("pkg");
+    let package_src = package_dir.join("src");
+    let artifact = tmp.path().join("ok");
+
+    fs::write(
+        &ok_source,
+        "module smoke.main; fn add(x: Int, y: Int) -> Int { x + y } fn main() -> Int { add(0, 0) }\n",
+    )
+    .expect("write ok source");
+    fs::write(
+        &bad_source,
+        "module smoke.main; fn main() -> Int { missing }\n",
+    )
+    .expect("write bad source");
+    fs::create_dir_all(&package_src).expect("package src");
+    fs::write(
+        package_dir.join("aic.toml"),
+        "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write package manifest");
+    fs::write(
+        package_src.join("main.aic"),
+        "module pkg.main; fn main() -> Int { 0 }\n",
+    )
+    .expect("write package main");
+
+    let build = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("build")
+        .arg("compiler/aic/tools/aic_selfhost")
+        .arg("-o")
+        .arg(&bin)
+        .current_dir(&root)
+        .output()
+        .expect("build aic_selfhost");
+    assert!(
+        build.status.success(),
+        "aic_selfhost build failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let check = Command::new(&bin)
+        .arg("check")
+        .arg(&ok_source)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost check");
+    assert!(
+        check.status.success(),
+        "check failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(String::from_utf8_lossy(&check.stdout).contains("check: ok"));
+
+    let ir = Command::new(&bin)
+        .arg("ir")
+        .arg(&ok_source)
+        .arg("--emit")
+        .arg("json")
+        .current_dir(&root)
+        .output()
+        .expect("selfhost ir json");
+    assert!(
+        ir.status.success(),
+        "ir failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&ir.stdout),
+        String::from_utf8_lossy(&ir.stderr)
+    );
+    assert!(String::from_utf8_lossy(&ir.stdout).contains("\"format\":\"aicore-selfhost-ir-v1\""));
+
+    let ir_alias = Command::new(&bin)
+        .arg("ir-json")
+        .arg(&ok_source)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost ir-json alias");
+    assert!(
+        ir_alias.status.success(),
+        "ir-json alias failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&ir_alias.stdout),
+        String::from_utf8_lossy(&ir_alias.stderr)
+    );
+
+    let built = Command::new(&bin)
+        .arg("build")
+        .arg(&ok_source)
+        .arg("-o")
+        .arg(&artifact)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost build");
+    assert!(
+        built.status.success(),
+        "build failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&built.stdout),
+        String::from_utf8_lossy(&built.stderr)
+    );
+    assert!(String::from_utf8_lossy(&built.stdout).contains("built "));
+    assert!(
+        fs::metadata(&artifact)
+            .expect("built artifact metadata")
+            .len()
+            > 0
+    );
+    let artifact_run = Command::new(&artifact)
+        .current_dir(&root)
+        .status()
+        .expect("run built artifact");
+    assert!(
+        artifact_run.success(),
+        "built artifact did not run successfully"
+    );
+
+    let package_check = Command::new(&bin)
+        .arg("check")
+        .arg(&package_dir)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost package check");
+    assert!(
+        package_check.status.success(),
+        "package check failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&package_check.stdout),
+        String::from_utf8_lossy(&package_check.stderr)
+    );
+
+    let bad = Command::new(&bin)
+        .arg("check")
+        .arg(&bad_source)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost negative check");
+    assert!(!bad.status.success(), "negative check unexpectedly passed");
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("E1208"));
+
+    let run = Command::new(&bin)
+        .arg("run")
+        .arg(&ok_source)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost run");
+    assert!(
+        run.status.success(),
+        "run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let unsupported = Command::new(&bin)
+        .arg("fmt")
+        .arg(&ok_source)
+        .current_dir(&root)
+        .output()
+        .expect("selfhost unsupported command");
+    assert!(
+        !unsupported.status.success(),
+        "unsupported command unexpectedly passed"
+    );
+    assert!(String::from_utf8_lossy(&unsupported.stderr).contains("E5200"));
+
+    let parity_report = tmp.path().join("selfhost-parity-report.json");
+    let parity_artifacts = tmp.path().join("selfhost-parity-artifacts");
+    let parity = run_parity(&[
+        "--manifest".into(),
+        "tests/selfhost/aic_selfhost_driver_manifest.json".into(),
+        "--candidate".into(),
+        bin.to_string_lossy().to_string(),
+        "--artifact-dir".into(),
+        parity_artifacts.to_string_lossy().to_string(),
+        "--report".into(),
+        parity_report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "60".into(),
+    ]);
+    assert!(
+        parity.status.success(),
+        "selfhost candidate parity failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&parity.stdout),
+        String::from_utf8_lossy(&parity.stderr)
+    );
+    let parity_json: Value =
+        serde_json::from_str(&fs::read_to_string(parity_report).expect("read parity report"))
+            .expect("parity json");
+    assert_eq!(parity_json["ok"], true);
+    assert!(parity_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["comparison_mode"] == "selfhost-ir-json"));
 }
 
 #[test]

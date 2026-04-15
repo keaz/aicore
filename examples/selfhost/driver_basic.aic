@@ -1,0 +1,9 @@
+module examples.selfhost.driver_basic;
+
+fn identity(value: Int) -> Int {
+    value
+}
+
+fn main() -> Int {
+    identity(0)
+}

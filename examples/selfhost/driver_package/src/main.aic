@@ -1,0 +1,9 @@
+module examples.selfhost.driver_package;
+
+fn add(left: Int, right: Int) -> Int {
+    left + right
+}
+
+fn main() -> Int {
+    add(0, 0)
+}

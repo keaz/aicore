@@ -1,0 +1,15 @@
+[package]
+name = "aic_compiler_driver"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../source" }
+aic_compiler_diagnostics = { path = "../diagnostics" }
+aic_compiler_ast = { path = "../ast" }
+aic_compiler_parser = { path = "../parser" }
+aic_compiler_frontend = { path = "../frontend" }
+aic_compiler_semantics = { path = "../semantics" }
+aic_compiler_typecheck = { path = "../typecheck" }
+aic_compiler_ir = { path = "../ir" }
+aic_compiler_backend_llvm = { path = "../backend_llvm" }

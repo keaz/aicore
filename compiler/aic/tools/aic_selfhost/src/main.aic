@@ -1,0 +1,318 @@
+module compiler.tools.aic_selfhost;
+
+import compiler.driver;
+import std.env;
+import std.fs;
+import std.io;
+import std.option;
+import std.proc;
+import std.result;
+import std.string;
+import std.vec;
+
+fn concat2(left: String, right: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, left);
+    parts = vec.push(parts, right);
+    string.join(parts, "")
+}
+
+fn concat3(first: String, second: String, third: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, first);
+    parts = vec.push(parts, second);
+    parts = vec.push(parts, third);
+    string.join(parts, "")
+}
+
+fn concat4(first: String, second: String, third: String, fourth: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, first);
+    parts = vec.push(parts, second);
+    parts = vec.push(parts, third);
+    parts = vec.push(parts, fourth);
+    string.join(parts, "")
+}
+
+fn concat5(first: String, second: String, third: String, fourth: String, fifth: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, first);
+    parts = vec.push(parts, second);
+    parts = vec.push(parts, third);
+    parts = vec.push(parts, fourth);
+    parts = vec.push(parts, fifth);
+    string.join(parts, "")
+}
+
+fn shell_quote(value: String) -> String {
+    concat3("'", string.replace(value, "'", "'\\''"), "'")
+}
+
+fn proc_status_to_int(value: ProcExitStatus) -> Int {
+    let zero: ProcExitStatus = 0;
+    let one: ProcExitStatus = 1;
+    if value < zero {
+        let mut remaining = zero - value;
+        let mut out = 0;
+        while remaining > zero {
+            remaining = remaining - one;
+            out = out + 1;
+        };
+        0 - out
+    } else {
+        let mut remaining = value;
+        let mut out = 0;
+        while remaining > zero {
+            remaining = remaining - one;
+            out = out + 1;
+        };
+        out
+    }
+}
+
+fn arg_or_empty(index: Int) -> String effects { env } capabilities { env } {
+    match arg_at(index) {
+        Some(value) => value,
+        None => "",
+    }
+}
+
+fn write_stdout(value: String) -> () effects { io } capabilities { io } {
+    if value == "" {
+        ()
+    } else {
+        print_str(value)
+    }
+}
+
+fn write_stderr(value: String) -> () effects { io } capabilities { io } {
+    if value == "" {
+        ()
+    } else {
+        let _written = write_stream(stderr_writer(), value);
+        ()
+    }
+}
+
+fn source_path_for_input(input_path: String) -> String effects { fs } capabilities { fs } {
+    if string.ends_with(input_path, ".aic") {
+        input_path
+    } else {
+        let manifest_path = driver_join_path(input_path, "aic.toml");
+        let main_path = match read_text(manifest_path) {
+            Ok(text) => driver_manifest_main_path(text),
+            Err(_) => "src/main.aic",
+        };
+        driver_join_path(input_path, main_path)
+    }
+}
+
+fn read_source_text(path: String) -> Result[String, FsError] effects { fs } capabilities { fs } {
+    read_text(path)
+}
+
+fn flush_result(result: DriverCommandResult, write_artifact: Bool) -> Int effects { io, fs } capabilities { io, fs } {
+    write_stdout(result.stdout);
+    write_stderr(result.stderr);
+    if result.exit_code == 0 && write_artifact {
+        match write_text(result.artifact_path, result.artifact_text) {
+            Ok(_) => result.exit_code,
+            Err(_) => if true {
+                write_stderr("error[E5203]: self-host driver could not write build artifact\n");
+                1
+            } else {
+                1
+            },
+        }
+    } else {
+        result.exit_code
+    }
+}
+
+fn flush_check_result(result: DriverCommandResult) -> Int effects { io, fs } capabilities { io, fs } {
+    if result.exit_code == 0 {
+        write_stdout("check: ok\n");
+        0
+    } else {
+        flush_result(result, false)
+    }
+}
+
+fn native_materialization_error(message: String) -> Int effects { io } capabilities { io } {
+    write_stderr(concat3("error[E5204]: self-host driver could not materialize native executable: ", message, "\n"));
+    1
+}
+
+fn clang_command(llvm_path: String, output_path: String) -> String {
+    concat5("clang -x ir -Wno-override-module ", shell_quote(llvm_path), " -o ", shell_quote(output_path), "")
+}
+
+fn materialize_native(result: DriverCommandResult, output_path: String, emit_built: Bool) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
+    write_stderr(result.stderr);
+    if result.exit_code != 0 {
+        result.exit_code
+    } else {
+        match temp_file("aic_selfhost_llvm_") {
+            Ok(llvm_path) => match write_text(llvm_path, result.artifact_text) {
+                Ok(_) => match proc.run(clang_command(llvm_path, output_path)) {
+                    Ok(out) => if out.status == 0 {
+                        let _cleanup = delete(llvm_path);
+                        if emit_built {
+                            write_stdout(concat3("built ", output_path, "\n"))
+                        } else {
+                            ()
+                        };
+                        0
+                    } else {
+                        let _cleanup = delete(llvm_path);
+                        write_stderr(out.stderr);
+                        native_materialization_error("clang returned a nonzero exit status")
+                    },
+                    Err(_) => if true {
+                        let _cleanup = delete(llvm_path);
+                        native_materialization_error("failed to launch clang")
+                    } else {
+                        1
+                    },
+                },
+                Err(_) => if true {
+                    let _cleanup = delete(llvm_path);
+                    write_stderr("error[E5203]: self-host driver could not write temporary LLVM artifact\n");
+                    1
+                } else {
+                    1
+                },
+            },
+            Err(_) => native_materialization_error("failed to allocate a temporary LLVM artifact path"),
+        }
+    }
+}
+
+fn missing_arg(command: String) -> DriverCommandResult {
+    driver_unsupported_command(concat2(command, " missing required path"), 20)
+}
+
+fn run_check(input_path: String) -> Int effects { io, fs } capabilities { io, fs } {
+    let source_path = source_path_for_input(input_path);
+    match read_source_text(source_path) {
+        Ok(text) => flush_check_result(driver_check_source(source_path, text, 120)),
+        Err(_) => if true {
+            write_stderr("error[E5202]: self-host driver could not read source input\n");
+            1
+        } else {
+            1
+        },
+    }
+}
+
+fn run_ir(input_path: String, emit_flag: String, emit_kind: String) -> Int effects { io, fs } capabilities { io, fs } {
+    if emit_flag != "--emit" || emit_kind != "json" {
+        flush_result(driver_unsupported_command("ir requires --emit json", 20), false)
+    } else {
+        let source_path = source_path_for_input(input_path);
+        match read_source_text(source_path) {
+            Ok(text) => flush_result(driver_ir_json_source(source_path, text, 120), false),
+            Err(_) => if true {
+                write_stderr("error[E5202]: self-host driver could not read source input\n");
+                1
+            } else {
+                1
+            },
+        }
+    }
+}
+
+fn run_build(input_path: String, output_flag: String, output_path: String) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
+    if output_flag != "-o" || output_path == "" {
+        flush_result(driver_unsupported_command("build requires -o <path>", 20), false)
+    } else {
+        let source_path = source_path_for_input(input_path);
+        match read_source_text(source_path) {
+            Ok(text) => materialize_native(driver_build_source(source_path, text, output_path, 120), output_path, true),
+            Err(_) => if true {
+                write_stderr("error[E5202]: self-host driver could not read source input\n");
+                1
+            } else {
+                1
+            },
+        }
+    }
+}
+
+fn run_run(input_path: String) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
+    let source_path = source_path_for_input(input_path);
+    match read_source_text(source_path) {
+        Ok(text) => match temp_file("aic_selfhost_run_") {
+            Ok(exe_path) => if materialize_native(driver_build_source(source_path, text, exe_path, 120), exe_path, false) == 0 {
+                match proc.run(shell_quote(exe_path)) {
+                    Ok(out) => if true {
+                        let _cleanup = delete(exe_path);
+                        write_stdout(out.stdout);
+                        write_stderr(out.stderr);
+                        proc_status_to_int(out.status)
+                    } else {
+                        1
+                    },
+                    Err(_) => if true {
+                        let _cleanup = delete(exe_path);
+                        native_materialization_error("failed to launch generated executable")
+                    } else {
+                        1
+                    },
+                }
+            } else {
+                let _cleanup = delete(exe_path);
+                1
+            },
+            Err(_) => native_materialization_error("failed to allocate a temporary executable path"),
+        },
+        Err(_) => if true {
+            write_stderr("error[E5202]: self-host driver could not read source input\n");
+            1
+        } else {
+            1
+        },
+    }
+}
+
+fn main() -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
+    let command = arg_or_empty(1);
+    if command == "check" {
+        let input = arg_or_empty(2);
+        if input == "" {
+            flush_result(missing_arg("check"), false)
+        } else {
+            run_check(input)
+        }
+    } else if command == "ir" {
+        let input = arg_or_empty(2);
+        if input == "" {
+            flush_result(missing_arg("ir"), false)
+        } else {
+            run_ir(input, arg_or_empty(3), arg_or_empty(4))
+        }
+    } else if command == "ir-json" {
+        let input = arg_or_empty(2);
+        if input == "" {
+            flush_result(missing_arg("ir-json"), false)
+        } else {
+            run_ir(input, "--emit", "json")
+        }
+    } else if command == "build" {
+        let input = arg_or_empty(2);
+        if input == "" {
+            flush_result(missing_arg("build"), false)
+        } else {
+            run_build(input, arg_or_empty(3), arg_or_empty(4))
+        }
+    } else if command == "run" {
+        let input = arg_or_empty(2);
+        if input == "" {
+            flush_result(missing_arg("run"), false)
+        } else {
+            run_run(input)
+        }
+    } else {
+        flush_result(driver_unsupported_command(command, 20), false)
+    }
+}

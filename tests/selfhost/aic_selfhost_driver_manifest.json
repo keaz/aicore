@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "actions": [
+        "check",
+        "ir-json",
+        "build",
+        "run"
+      ],
+      "comparisons": {
+        "build": "artifact-exists",
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "selfhost_driver_basic",
+      "path": "examples/selfhost/driver_basic.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "build",
+        "run"
+      ],
+      "comparisons": {
+        "build": "artifact-exists"
+      },
+      "expected": "pass",
+      "name": "selfhost_driver_package",
+      "path": "examples/selfhost/driver_package"
+    }
+  ],
+  "name": "aic-selfhost-driver-candidate",
+  "schema_version": 1
+}
