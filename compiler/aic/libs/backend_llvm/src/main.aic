@@ -261,8 +261,364 @@ fn llvm_type_for_repr(repr: String) -> String {
     }
 }
 
-fn llvm_type_for_id(types: Vec[IrTypeDef], id: IrTypeId) -> String {
-    llvm_type_for_repr(type_name_for_id(types, id))
+fn base_type_name_text(value: String) -> String {
+    let mut index = 0;
+    let mut out = value;
+    while index < string.len(value) {
+        if string.substring(value, index, index + 1) == "[" {
+            out = string.trim(string.substring(value, 0, index));
+            index = string.len(value);
+        } else {
+            ()
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn generic_arg_at(value: String, target: Int) -> String {
+    let mut bracket = -1;
+    let mut index = 0;
+    while bracket < 0 && index < string.len(value) {
+        if string.substring(value, index, index + 1) == "[" {
+            bracket = index;
+        } else {
+            ()
+        };
+        index = index + 1;
+    };
+    let mut out = "";
+    if bracket >= 0 {
+        let mut depth = 0;
+        let mut seen = 0;
+        let mut start = bracket + 1;
+        index = bracket + 1;
+        while out == "" && index < string.len(value) {
+            let ch = string.substring(value, index, index + 1);
+            if ch == "[" {
+                depth = depth + 1;
+            } else if ch == "]" {
+                if depth == 0 {
+                    if seen == target {
+                        out = string.trim(string.substring(value, start, index));
+                    } else {
+                        ()
+                    };
+                    index = string.len(value);
+                } else {
+                    depth = depth - 1;
+                }
+            } else if ch == "," && depth == 0 {
+                if seen == target {
+                    out = string.trim(string.substring(value, start, index));
+                    index = string.len(value);
+                } else {
+                    seen = seen + 1;
+                    start = index + 1;
+                }
+            } else {
+                ()
+            };
+            index = index + 1;
+        }
+    } else {
+        ()
+    };
+    out
+}
+
+fn llvm_no_payload_enum_type(variant_count: Int) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "{ i32");
+    let mut index = 0;
+    while index < variant_count {
+        parts = vec.push(parts, ", i8");
+        index = index + 1;
+    };
+    parts = vec.push(parts, " }");
+    string.join(parts, "")
+}
+
+fn known_no_payload_enum_llvm_type(name: String) -> String {
+    if name == "FsError" {
+        llvm_no_payload_enum_type(7)
+    } else if name == "ProcError" {
+        llvm_no_payload_enum_type(5)
+    } else if name == "IoError" {
+        llvm_no_payload_enum_type(3)
+    } else if name == "Writer" {
+        llvm_no_payload_enum_type(2)
+    } else {
+        ""
+    }
+}
+
+fn llvm_payload_slot_type(program: IrProgram, repr: String) -> String {
+    let ty = llvm_type_for_repr_in_program(program, repr);
+    if ty == "void" {
+        "i8"
+    } else {
+        ty
+    }
+}
+
+fn llvm_result_type(program: IrProgram, repr: String) -> String {
+    let ok = generic_arg_at(repr, 0);
+    let err = generic_arg_at(repr, 1);
+    let ok_ty = llvm_payload_slot_type(program, ok);
+    let err_ty = llvm_payload_slot_type(program, err);
+    if ok_ty == "" || err_ty == "" {
+        ""
+    } else {
+        concat3(concat3("{ i32, ", ok_ty, ", "), err_ty, " }")
+    }
+}
+
+fn llvm_option_type(program: IrProgram, repr: String) -> String {
+    let some = generic_arg_at(repr, 0);
+    let some_ty = llvm_payload_slot_type(program, some);
+    if some_ty == "" {
+        ""
+    } else {
+        concat3("{ i32, ", some_ty, ", i8 }")
+    }
+}
+
+fn known_struct_llvm_type(program: IrProgram, name: String) -> String {
+    if name == "SourceId" {
+        "{ i64 }"
+    } else if name == "DriverSource" {
+        "{ %aic.String, %aic.String, { i64 } }"
+    } else if name == "DriverCommandResult" {
+        "{ i64, %aic.String, %aic.String, %aic.String, %aic.String, { i64, i64, i64 } }"
+    } else if name == "ProcOutput" {
+        "{ i32, %aic.String, %aic.String }"
+    } else if name == "SourceLoadState" {
+        "{ { i64, i64, i64 }, i64 }"
+    } else {
+        ""
+    }
+}
+
+fn known_struct_field_llvm_type_by_index(name: String, field_index: Int) -> String {
+    if name == "SourceId" {
+        if field_index == 0 { "i64" } else { "" }
+    } else if name == "DriverSource" {
+        if field_index == 0 {
+            "%aic.String"
+        } else if field_index == 1 {
+            "%aic.String"
+        } else if field_index == 2 {
+            "{ i64 }"
+        } else {
+            ""
+        }
+    } else if name == "DriverCommandResult" {
+        if field_index == 0 {
+            "i64"
+        } else if field_index == 1 {
+            "%aic.String"
+        } else if field_index == 2 {
+            "%aic.String"
+        } else if field_index == 3 {
+            "%aic.String"
+        } else if field_index == 4 {
+            "%aic.String"
+        } else if field_index == 5 {
+            "{ i64, i64, i64 }"
+        } else {
+            ""
+        }
+    } else if name == "ProcOutput" {
+        if field_index == 0 {
+            "i32"
+        } else if field_index == 1 {
+            "%aic.String"
+        } else if field_index == 2 {
+            "%aic.String"
+        } else {
+            ""
+        }
+    } else if name == "SourceLoadState" {
+        if field_index == 0 {
+            "{ i64, i64, i64 }"
+        } else if field_index == 1 {
+            "i64"
+        } else {
+            ""
+        }
+    } else {
+        ""
+    }
+}
+
+fn struct_item_field_llvm_type_by_index(program: IrProgram, name: String, field_index: Int) -> String {
+    let mut item_index = 0;
+    let mut out = "";
+    while out == "" && item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrStructItemValue(struct_value) => if struct_value.name == name {
+                    match vec.get(struct_value.fields, field_index) {
+                        Some(field) => if true {
+                            out = llvm_type_for_id(program, field.type_id);
+                            ()
+                        } else { () },
+                        None => (),
+                    }
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+fn struct_field_llvm_type_by_index(program: IrProgram, name: String, field_index: Int) -> String {
+    let known = known_struct_field_llvm_type_by_index(name, field_index);
+    if known != "" {
+        known
+    } else {
+        struct_item_field_llvm_type_by_index(program, name, field_index)
+    }
+}
+
+fn struct_item_llvm_type(program: IrProgram, name: String) -> String {
+    let mut item_index = 0;
+    let mut out = "";
+    while out == "" && item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrStructItemValue(struct_value) => if struct_value.name == name {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "{ ");
+                    let mut field_index = 0;
+                    let mut ok = true;
+                    while ok && field_index < vec.vec_len(struct_value.fields) {
+                        match vec.get(struct_value.fields, field_index) {
+                            Some(field) => if true {
+                                let field_ty = llvm_type_for_id(program, field.type_id);
+                                if field_ty == "" {
+                                    ok = false;
+                                } else {
+                                    if field_index > 0 {
+                                        parts = vec.push(parts, ", ");
+                                    } else {
+                                        ()
+                                    };
+                                    parts = vec.push(parts, field_ty);
+                                };
+                                ()
+                            } else { () },
+                            None => (),
+                        };
+                        field_index = field_index + 1;
+                    };
+                    if ok {
+                        parts = vec.push(parts, " }");
+                        out = string.join(parts, "");
+                    } else {
+                        ()
+                    }
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+fn enum_item_llvm_type(program: IrProgram, name: String) -> String {
+    let mut item_index = 0;
+    let mut out = "";
+    while out == "" && item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrEnumItemValue(enum_value) => if enum_value.name == name {
+                    let mut parts: Vec[String] = vec.new_vec();
+                    parts = vec.push(parts, "{ i32");
+                    let mut variant_index = 0;
+                    let mut ok = true;
+                    while ok && variant_index < vec.vec_len(enum_value.variants) {
+                        match vec.get(enum_value.variants, variant_index) {
+                            Some(variant) => if true {
+                                let slot_ty = match variant.payload_type {
+                                    Some(type_id_value) => llvm_payload_slot_type(program, type_name_for_id(program.types, type_id_value)),
+                                    None => "i8",
+                                };
+                                if slot_ty == "" {
+                                    ok = false;
+                                } else {
+                                    parts = vec.push(parts, ", ");
+                                    parts = vec.push(parts, slot_ty);
+                                };
+                                ()
+                            } else { () },
+                            None => (),
+                        };
+                        variant_index = variant_index + 1;
+                    };
+                    if ok {
+                        parts = vec.push(parts, " }");
+                        out = string.join(parts, "");
+                    } else {
+                        ()
+                    }
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+fn llvm_type_for_repr_in_program(program: IrProgram, repr: String) -> String {
+    let primitive = llvm_type_for_repr(repr);
+    if primitive != "" {
+        primitive
+    } else {
+        let base = base_type_name_text(repr);
+        if base == "Vec" {
+            "{ i64, i64, i64 }"
+        } else if base == "Result" {
+            llvm_result_type(program, repr)
+        } else if base == "Option" {
+            llvm_option_type(program, repr)
+        } else {
+            let known_struct = known_struct_llvm_type(program, base);
+            if known_struct != "" {
+                known_struct
+            } else {
+                let known_enum = known_no_payload_enum_llvm_type(base);
+                if known_enum != "" {
+                    known_enum
+                } else {
+                    let struct_ty = struct_item_llvm_type(program, base);
+                    if struct_ty != "" {
+                        struct_ty
+                    } else {
+                        enum_item_llvm_type(program, base)
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn llvm_type_for_id(program: IrProgram, id: IrTypeId) -> String {
+    llvm_type_for_repr_in_program(program, type_name_for_id(program.types, id))
 }
 
 fn is_llvm_primitive_type(repr: String) -> Bool {
@@ -326,6 +682,18 @@ fn is_io_print_intrinsic_name(name: String) -> Bool {
     name == "print_str" || name == "eprint_str"
 }
 
+fn is_fs_string_result_intrinsic_name(name: String) -> Bool {
+    name == "read_text" || name == "temp_file"
+}
+
+fn is_fs_bool_result_intrinsic_name(name: String) -> Bool {
+    name == "write_text" || name == "delete"
+}
+
+fn is_fs_intrinsic_name(name: String) -> Bool {
+    is_fs_string_result_intrinsic_name(name) || is_fs_bool_result_intrinsic_name(name)
+}
+
 fn is_decimal_digit(value: String) -> Bool {
     value == "0" || value == "1" || value == "2" || value == "3" || value == "4" || value == "5" || value == "6" || value == "7" || value == "8" || value == "9"
 }
@@ -374,7 +742,7 @@ fn function_param_llvm_type(program: IrProgram, function_value: IrFunctionDef, n
     while out == "" && index < vec.vec_len(function_value.params) {
         match vec.get(function_value.params, index) {
             Some(param) => if param.name == name {
-                out = llvm_type_for_id(program.types, param.type_id);
+                out = llvm_type_for_id(program, param.type_id);
             } else {
                 ()
             },
@@ -682,7 +1050,7 @@ fn call_target_return_type(program: IrProgram, callee_name: String) -> String {
         match vec.get(program.items, index) {
             Some(item) => match item {
                 IrFunctionItemValue(function_value) => if function_value.name == callee_name {
-                    out = llvm_type_for_id(program.types, function_value.return_type);
+                    out = llvm_type_for_id(program, function_value.return_type);
                 } else {
                     ()
                 },
@@ -704,7 +1072,7 @@ fn call_target_param_type(program: IrProgram, callee_name: String, param_index: 
                 IrFunctionItemValue(function_value) => if function_value.name == callee_name {
                     match vec.get(function_value.params, param_index) {
                         Some(param) => if true {
-                            out = llvm_type_for_id(program.types, param.type_id);
+                            out = llvm_type_for_id(program, param.type_id);
                             ()
                         } else { () },
                         None => (),
@@ -752,6 +1120,26 @@ fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunct
         direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
             Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
             None => false,
+        }
+    } else if is_fs_string_result_intrinsic_name(value.name) {
+        direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
+            Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
+            None => false,
+        }
+    } else if is_fs_bool_result_intrinsic_name(value.name) {
+        if value.name == "write_text" {
+            direct_expr_child_count(value.nodes) == 2 && match direct_expr_child_at(value.nodes, 0) {
+                Some(path_child) => match direct_expr_child_at(value.nodes, 1) {
+                    Some(content_child) => string_call_child_can_emit(program, function_value, value.nodes, path_child) && string_call_child_can_emit(program, function_value, value.nodes, content_child),
+                    None => false,
+                },
+                None => false,
+            }
+        } else {
+            direct_expr_child_count(value.nodes) == 1 && match direct_expr_child_at(value.nodes, 0) {
+                Some(child) => string_call_child_can_emit(program, function_value, value.nodes, child),
+                None => false,
+            }
         }
     } else if string_replace_expr_can_emit(program, value, function_value) {
         true
@@ -891,6 +1279,74 @@ fn if_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Ve
     }
 }
 
+fn struct_literal_child_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, expected: String) -> Bool {
+    if expected == "%aic.String" {
+        string_call_child_can_emit(program, function_value, nodes, child)
+    } else if simple_node_can_emit(child, function_value) {
+        simple_node_llvm_type(program, child, function_value) == expected
+    } else {
+        false
+    }
+}
+
+fn struct_literal_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
+    let struct_ty = llvm_type_for_repr_in_program(program, node.name);
+    if node.name == "" || struct_ty == "" || struct_ty != ret {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < node.direct_child_count {
+            match expr_node_child_at(nodes, node, index) {
+                Some(child) => if true {
+                    let field_ty = struct_field_llvm_type_by_index(program, node.name, index);
+                    if field_ty != "" && struct_literal_child_can_emit(program, function_value, nodes, child, field_ty) {
+                        ()
+                    } else {
+                        ok = false;
+                    };
+                    ()
+                } else { () },
+                None => if true {
+                    ok = false;
+                    ()
+                } else { () },
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
+fn struct_literal_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef, ret: String) -> Bool {
+    let struct_ty = llvm_type_for_repr_in_program(program, value.name);
+    if value.name == "" || struct_ty == "" || struct_ty != ret {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < direct_expr_child_count(value.nodes) {
+            match direct_expr_child_at(value.nodes, index) {
+                Some(child) => if true {
+                    let field_ty = struct_field_llvm_type_by_index(program, value.name, index);
+                    if field_ty != "" && struct_literal_child_can_emit(program, function_value, value.nodes, child, field_ty) {
+                        ()
+                    } else {
+                        ok = false;
+                    };
+                    ()
+                } else { () },
+                None => if true {
+                    ok = false;
+                    ()
+                } else { () },
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
 fn return_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> Bool {
     match node.kind {
         IrIntExpr => ret == "i64" && is_decimal_integer_text(node.text),
@@ -904,12 +1360,13 @@ fn return_node_can_emit(program: IrProgram, function_value: IrFunctionDef, nodes
             call_target_return_type(program, node.name) == ret && string_direct_call_node_can_emit(program, function_value, nodes, node)
         },
         IrIfExpr => if_node_can_emit(program, function_value, nodes, node, ret),
+        IrStructLiteralExpr => struct_literal_node_can_emit(program, function_value, nodes, node, ret),
         _ => false,
     }
 }
 
 fn if_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
-    let ret = llvm_type_for_id(program.types, function_value.return_type);
+    let ret = llvm_type_for_id(program, function_value.return_type);
     if value.direct_child_count != 3 {
         false
     } else {
@@ -989,7 +1446,7 @@ fn env_arg_or_empty_expr_can_emit(program: IrProgram, value: IrExpr, function_va
         IrMatchExpr => true,
         _ => false,
     };
-    if !is_match || llvm_type_for_id(program.types, function_value.return_type) != "%aic.String" {
+    if !is_match || llvm_type_for_id(program, function_value.return_type) != "%aic.String" {
         false
     } else if !match_has_arm(value, "Some(value)", "value") || !match_has_arm(value, "None", "\"\"") {
         false
@@ -1048,13 +1505,14 @@ fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFun
     match value.kind {
         IrIntExpr => is_decimal_integer_text(value.text),
         IrBoolExpr => value.text == "true" || value.text == "false",
-        IrStringExpr => llvm_type_for_id(program.types, function_value.return_type) == "%aic.String",
+        IrStringExpr => llvm_type_for_id(program, function_value.return_type) == "%aic.String",
         IrUnitExpr => true,
-        IrNameExpr => return_name_can_emit(program, function_value, value.text, llvm_type_for_id(program.types, function_value.return_type)),
+        IrNameExpr => return_name_can_emit(program, function_value, value.text, llvm_type_for_id(program, function_value.return_type)),
         IrBinaryExpr => binary_expr_can_emit(value, function_value),
         IrCallExpr => call_expr_can_emit(program, value, function_value),
         IrIfExpr => if_expr_can_emit(program, value, function_value),
         IrMatchExpr => match_expr_can_emit(value) || env_arg_or_empty_expr_can_emit(program, value, function_value),
+        IrStructLiteralExpr => struct_literal_expr_can_emit(program, value, function_value, llvm_type_for_id(program, function_value.return_type)),
         _ => false,
     }
 }
@@ -1076,7 +1534,7 @@ fn block_can_emit(program: IrProgram, block: IrBlock, function_value: IrFunction
     if ok {
         match block.tail_expr {
             Some(expr) => return_expr_can_emit(program, expr, function_value),
-            None => llvm_type_for_id(program.types, function_value.return_type) == "void",
+            None => llvm_type_for_id(program, function_value.return_type) == "void",
         }
     } else {
         false
@@ -1150,7 +1608,7 @@ fn append_backend_block_emission_diagnostics(out: Vec[Diagnostic], program: IrPr
         } else {
             ()
         },
-        None => if vec.vec_len(diagnostics) < max_errors && llvm_type_for_id(program.types, function_value.return_type) != "void" {
+        None => if vec.vec_len(diagnostics) < max_errors && llvm_type_for_id(program, function_value.return_type) != "void" {
             diagnostics = push_backend_error(diagnostics, "E5101", function_value.body.span, "self-host backend requires a return expression for non-void functions", "add a tail expression or lower explicit return statements");
         } else {
             ()
@@ -1166,7 +1624,7 @@ fn append_function_diagnostics(out: Vec[Diagnostic], program: IrProgram, functio
     } else {
         ()
     };
-    let ret = llvm_type_for_id(program.types, function_value.return_type);
+    let ret = llvm_type_for_id(program, function_value.return_type);
     if ret == "" {
         diagnostics = push_backend_error(diagnostics, "E5102", function_value.span, "self-host backend cannot lower this function return type to LLVM", "restrict backend-covered functions to primitive return values until aggregate return lowering is implemented");
     } else {
@@ -1175,7 +1633,7 @@ fn append_function_diagnostics(out: Vec[Diagnostic], program: IrProgram, functio
     let mut param_index = 0;
     while param_index < vec.vec_len(function_value.params) {
         match vec.get(function_value.params, param_index) {
-            Some(param) => if llvm_type_for_id(program.types, param.type_id) == "" {
+            Some(param) => if llvm_type_for_id(program, param.type_id) == "" {
                 diagnostics = push_backend_error(diagnostics, "E5102", param.span, "self-host backend cannot lower this parameter type to LLVM", "use primitive parameters for backend-covered executable functions");
             } else {
                 ()
@@ -1449,7 +1907,7 @@ fn llvm_param_list(program: IrProgram, params: Vec[IrParam]) -> String {
         match vec.get(params, index) {
             Some(param) => if true {
                 if index > 0 { parts = vec.push(parts, ", "); } else { () };
-                parts = vec.push(parts, llvm_type_for_id(program.types, param.type_id));
+                parts = vec.push(parts, llvm_type_for_id(program, param.type_id));
                 parts = vec.push(parts, " %");
                 parts = vec.push(parts, backend_mangle_symbol(param.name));
                 ()
@@ -1720,6 +2178,74 @@ fn expr_uses_env_arg_at(expr: IrExpr) -> Bool {
     found
 }
 
+fn expr_uses_call_named(expr: IrExpr, name: String) -> Bool {
+    let mut found = is_call_expr_kind(expr.kind) && expr.name == name;
+    let mut index = 0;
+    while !found && index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if is_call_expr_kind(node.kind) && node.name == name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn statement_uses_call_named(statement: IrStatement, name: String) -> Bool {
+    match statement.expr {
+        Some(expr) => expr_uses_call_named(expr, name),
+        None => false,
+    }
+}
+
+fn block_uses_call_named(block: IrBlock, name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => if statement_uses_call_named(statement, name) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    if found {
+        true
+    } else {
+        match block.tail_expr {
+            Some(expr) => expr_uses_call_named(expr, name),
+            None => false,
+        }
+    }
+}
+
+fn program_uses_call_named(program: IrProgram, name: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if block_uses_call_named(function_value.body, name) {
+                    found = true;
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
 fn program_uses_string_replace(program: IrProgram) -> Bool {
     let mut index = 0;
     let mut found = false;
@@ -1809,6 +2335,26 @@ fn emit_runtime_declarations(program: IrProgram) -> String {
     };
     if program_uses_env_arg_at(program) {
         parts = vec.push(parts, "declare i64 @aic_rt_env_arg_at(i64, i8**, i64*)\n");
+    } else {
+        ()
+    };
+    if program_uses_call_named(program, "read_text") {
+        parts = vec.push(parts, "declare i64 @aic_rt_fs_read_text(i8*, i64, i64, i8**, i64*)\n");
+    } else {
+        ()
+    };
+    if program_uses_call_named(program, "temp_file") {
+        parts = vec.push(parts, "declare i64 @aic_rt_fs_temp_file(i8*, i64, i64, i8**, i64*)\n");
+    } else {
+        ()
+    };
+    if program_uses_call_named(program, "write_text") {
+        parts = vec.push(parts, "declare i64 @aic_rt_fs_write_text(i8*, i64, i64, i8*, i64, i64)\n");
+    } else {
+        ()
+    };
+    if program_uses_call_named(program, "delete") {
+        parts = vec.push(parts, "declare i64 @aic_rt_fs_delete(i8*, i64, i64)\n");
     } else {
         ()
     };
@@ -2221,6 +2767,15 @@ fn emit_return_node(program: IrProgram, function_value: IrFunctionDef, nodes: Ve
             parts = vec.push(parts, emit_if_node_return(program, function_value, nodes, node, ret));
             ()
         } else { () },
+        IrStructLiteralExpr => if true {
+            parts = vec.push(parts, emit_struct_literal_node_value(program, function_value, nodes, node, ret));
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, struct_literal_value_name(llvm_node_prefix(node.node), node.direct_child_count, ret));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
         _ => (),
     };
     string.join(parts, "")
@@ -2336,6 +2891,276 @@ fn emit_io_print_expr_return(program: IrProgram, function_value: IrFunctionDef, 
     }
 }
 
+fn fs_string_runtime_name(name: String) -> String {
+    if name == "temp_file" {
+        "@aic_rt_fs_temp_file"
+    } else {
+        "@aic_rt_fs_read_text"
+    }
+}
+
+fn fs_bool_runtime_name(name: String) -> String {
+    if name == "delete" {
+        "@aic_rt_fs_delete"
+    } else {
+        "@aic_rt_fs_write_text"
+    }
+}
+
+fn fs_error_value_name(prefix: String) -> String {
+    llvm_local(prefix, ".err.value")
+}
+
+fn emit_fs_error_value(prefix: String, raw_code_name: String) -> String {
+    let err_ty = known_no_payload_enum_llvm_type("FsError");
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "  ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.is_io"));
+    parts = vec.push(parts, " = icmp eq i64 ");
+    parts = vec.push(parts, raw_code_name);
+    parts = vec.push(parts, ", 5\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.minus64"));
+    parts = vec.push(parts, " = sub i64 ");
+    parts = vec.push(parts, raw_code_name);
+    parts = vec.push(parts, ", 1\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.minus"));
+    parts = vec.push(parts, " = trunc i64 ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.minus64"));
+    parts = vec.push(parts, " to i32\n  ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.tag"));
+    parts = vec.push(parts, " = select i1 ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.is_io"));
+    parts = vec.push(parts, ", i32 6, i32 ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.minus"));
+    parts = vec.push(parts, "\n  ");
+    parts = vec.push(parts, fs_error_value_name(prefix));
+    parts = vec.push(parts, " = insertvalue ");
+    parts = vec.push(parts, err_ty);
+    parts = vec.push(parts, " undef, i32 ");
+    parts = vec.push(parts, llvm_local(prefix, ".err.tag"));
+    parts = vec.push(parts, ", 0\n");
+    string.join(parts, "")
+}
+
+fn emit_fs_string_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(child) => if true {
+            let prefix = llvm_expr_prefix(expr.node);
+            let arg_name = string_node_value_name(child);
+            let arg_prefix = concat2(prefix, ".arg0");
+            let ok_label = concat2("fs.ok.", string.int_to_string(expr.node.value));
+            let err_label = concat2("fs.err.", string.int_to_string(expr.node.value));
+            let err_ty = known_no_payload_enum_llvm_type("FsError");
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, child));
+            parts = vec.push(parts, emit_string_extracts(arg_name, arg_prefix));
+            parts = vec.push(parts, "  ");
+            parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+            parts = vec.push(parts, " = alloca i8*\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+            parts = vec.push(parts, " = alloca i64\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".rc"));
+            parts = vec.push(parts, " = call i64 ");
+            parts = vec.push(parts, fs_string_runtime_name(expr.name));
+            parts = vec.push(parts, "(i8* ");
+            parts = vec.push(parts, llvm_local(arg_prefix, ".ptr"));
+            parts = vec.push(parts, ", i64 ");
+            parts = vec.push(parts, llvm_local(arg_prefix, ".len"));
+            parts = vec.push(parts, ", i64 ");
+            parts = vec.push(parts, llvm_local(arg_prefix, ".cap"));
+            parts = vec.push(parts, ", i8** ");
+            parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+            parts = vec.push(parts, ", i64* ");
+            parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+            parts = vec.push(parts, ")\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+            parts = vec.push(parts, " = icmp eq i64 ");
+            parts = vec.push(parts, llvm_local(prefix, ".rc"));
+            parts = vec.push(parts, ", 0\n  br i1 ");
+            parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+            parts = vec.push(parts, ", label %");
+            parts = vec.push(parts, ok_label);
+            parts = vec.push(parts, ", label %");
+            parts = vec.push(parts, err_label);
+            parts = vec.push(parts, "\n");
+            parts = vec.push(parts, ok_label);
+            parts = vec.push(parts, ":\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.ptr"));
+            parts = vec.push(parts, " = load i8*, i8** ");
+            parts = vec.push(parts, llvm_local(prefix, ".out.ptr"));
+            parts = vec.push(parts, "\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.len"));
+            parts = vec.push(parts, " = load i64, i64* ");
+            parts = vec.push(parts, llvm_local(prefix, ".out.len"));
+            parts = vec.push(parts, "\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.str.0"));
+            parts = vec.push(parts, " = insertvalue %aic.String undef, i8* ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.ptr"));
+            parts = vec.push(parts, ", 0\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.str.1"));
+            parts = vec.push(parts, " = insertvalue %aic.String ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.str.0"));
+            parts = vec.push(parts, ", i64 ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.len"));
+            parts = vec.push(parts, ", 1\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.str.2"));
+            parts = vec.push(parts, " = insertvalue %aic.String ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.str.1"));
+            parts = vec.push(parts, ", i64 ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.len"));
+            parts = vec.push(parts, ", 2\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.0"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " undef, i32 0, 0\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.1"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.0"));
+            parts = vec.push(parts, ", %aic.String ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.str.2"));
+            parts = vec.push(parts, ", 1\n  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.1"));
+            parts = vec.push(parts, "\n");
+            parts = vec.push(parts, err_label);
+            parts = vec.push(parts, ":\n");
+            parts = vec.push(parts, emit_fs_error_value(prefix, llvm_local(prefix, ".rc")));
+            parts = vec.push(parts, "  ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.0"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " undef, i32 1, 0\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.1"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.0"));
+            parts = vec.push(parts, ", ");
+            parts = vec.push(parts, err_ty);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, fs_error_value_name(prefix));
+            parts = vec.push(parts, ", 2\n  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.1"));
+            parts = vec.push(parts, "\n");
+            string.join(parts, "")
+        } else { "" },
+        None => "",
+    }
+}
+
+fn emit_fs_bool_result_expr_return(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+    match direct_expr_child_at(expr.nodes, 0) {
+        Some(path_child) => if true {
+            let prefix = llvm_expr_prefix(expr.node);
+            let path_name = string_node_value_name(path_child);
+            let path_prefix = concat2(prefix, ".path");
+            let ok_label = concat2("fs.ok.", string.int_to_string(expr.node.value));
+            let err_label = concat2("fs.err.", string.int_to_string(expr.node.value));
+            let err_ty = known_no_payload_enum_llvm_type("FsError");
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, path_child));
+            parts = vec.push(parts, emit_string_extracts(path_name, path_prefix));
+            if expr.name == "write_text" {
+                match direct_expr_child_at(expr.nodes, 1) {
+                    Some(content_child) => if true {
+                        let content_name = string_node_value_name(content_child);
+                        let content_prefix = concat2(prefix, ".content");
+                        parts = vec.push(parts, emit_string_node_value(program, function_value, expr.nodes, content_child));
+                        parts = vec.push(parts, emit_string_extracts(content_name, content_prefix));
+                        parts = vec.push(parts, "  ");
+                        parts = vec.push(parts, llvm_local(prefix, ".rc"));
+                        parts = vec.push(parts, " = call i64 ");
+                        parts = vec.push(parts, fs_bool_runtime_name(expr.name));
+                        parts = vec.push(parts, "(i8* ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".ptr"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".len"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(path_prefix, ".cap"));
+                        parts = vec.push(parts, ", i8* ");
+                        parts = vec.push(parts, llvm_local(content_prefix, ".ptr"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(content_prefix, ".len"));
+                        parts = vec.push(parts, ", i64 ");
+                        parts = vec.push(parts, llvm_local(content_prefix, ".cap"));
+                        parts = vec.push(parts, ")\n");
+                        ()
+                    } else { () },
+                    None => (),
+                };
+            } else {
+                parts = vec.push(parts, "  ");
+                parts = vec.push(parts, llvm_local(prefix, ".rc"));
+                parts = vec.push(parts, " = call i64 ");
+                parts = vec.push(parts, fs_bool_runtime_name(expr.name));
+                parts = vec.push(parts, "(i8* ");
+                parts = vec.push(parts, llvm_local(path_prefix, ".ptr"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(path_prefix, ".len"));
+                parts = vec.push(parts, ", i64 ");
+                parts = vec.push(parts, llvm_local(path_prefix, ".cap"));
+                parts = vec.push(parts, ")\n");
+            };
+            parts = vec.push(parts, "  ");
+            parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+            parts = vec.push(parts, " = icmp eq i64 ");
+            parts = vec.push(parts, llvm_local(prefix, ".rc"));
+            parts = vec.push(parts, ", 0\n  br i1 ");
+            parts = vec.push(parts, llvm_local(prefix, ".is_ok"));
+            parts = vec.push(parts, ", label %");
+            parts = vec.push(parts, ok_label);
+            parts = vec.push(parts, ", label %");
+            parts = vec.push(parts, err_label);
+            parts = vec.push(parts, "\n");
+            parts = vec.push(parts, ok_label);
+            parts = vec.push(parts, ":\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.0"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " undef, i32 0, 0\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.1"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.0"));
+            parts = vec.push(parts, ", i1 1, 1\n  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".ok.result.1"));
+            parts = vec.push(parts, "\n");
+            parts = vec.push(parts, err_label);
+            parts = vec.push(parts, ":\n");
+            parts = vec.push(parts, emit_fs_error_value(prefix, llvm_local(prefix, ".rc")));
+            parts = vec.push(parts, "  ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.0"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " undef, i32 1, 0\n  ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.1"));
+            parts = vec.push(parts, " = insertvalue ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.0"));
+            parts = vec.push(parts, ", ");
+            parts = vec.push(parts, err_ty);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, fs_error_value_name(prefix));
+            parts = vec.push(parts, ", 2\n  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, llvm_local(prefix, ".err.result.1"));
+            parts = vec.push(parts, "\n");
+            string.join(parts, "")
+        } else { "" },
+        None => "",
+    }
+}
+
 fn emit_empty_string_return(prefix: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     parts = vec.push(parts, "  ");
@@ -2424,6 +3249,106 @@ fn emit_env_arg_or_empty_return(program: IrProgram, function_value: IrFunctionDe
     }
 }
 
+fn struct_literal_field_local(prefix: String, field_index: Int) -> String {
+    llvm_local(prefix, concat2(".field.", string.int_to_string(field_index)))
+}
+
+fn struct_literal_value_name(prefix: String, field_count: Int, ret: String) -> String {
+    if field_count == 0 {
+        if ret == "{}" { "{}" } else { "undef" }
+    } else {
+        struct_literal_field_local(prefix, field_count - 1)
+    }
+}
+
+fn struct_literal_child_value_name(child: IrExprNode, expected: String, function_value: IrFunctionDef) -> String {
+    if expected == "%aic.String" {
+        string_node_value_name(child)
+    } else {
+        simple_node_llvm_value(child, function_value)
+    }
+}
+
+fn emit_struct_literal_child_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], child: IrExprNode, expected: String) -> String {
+    if expected == "%aic.String" {
+        emit_string_node_value(program, function_value, nodes, child)
+    } else {
+        ""
+    }
+}
+
+fn emit_struct_literal_node_value(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode], node: IrExprNode, ret: String) -> String {
+    let prefix = llvm_node_prefix(node.node);
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < node.direct_child_count {
+        match expr_node_child_at(nodes, node, index) {
+            Some(child) => if true {
+                let field_ty = struct_field_llvm_type_by_index(program, node.name, index);
+                let previous = if index == 0 {
+                    "undef"
+                } else {
+                    struct_literal_field_local(prefix, index - 1)
+                };
+                parts = vec.push(parts, emit_struct_literal_child_value(program, function_value, nodes, child, field_ty));
+                parts = vec.push(parts, "  ");
+                parts = vec.push(parts, struct_literal_field_local(prefix, index));
+                parts = vec.push(parts, " = insertvalue ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, previous);
+                parts = vec.push(parts, ", ");
+                parts = vec.push(parts, field_ty);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, struct_literal_child_value_name(child, field_ty, function_value));
+                parts = vec.push(parts, ", ");
+                parts = vec.push(parts, string.int_to_string(index));
+                parts = vec.push(parts, "\n");
+                ()
+            } else { () },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn emit_struct_literal_expr_value(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+    let prefix = llvm_expr_prefix(expr.node);
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < direct_expr_child_count(expr.nodes) {
+        match direct_expr_child_at(expr.nodes, index) {
+            Some(child) => if true {
+                let field_ty = struct_field_llvm_type_by_index(program, expr.name, index);
+                let previous = if index == 0 {
+                    "undef"
+                } else {
+                    struct_literal_field_local(prefix, index - 1)
+                };
+                parts = vec.push(parts, emit_struct_literal_child_value(program, function_value, expr.nodes, child, field_ty));
+                parts = vec.push(parts, "  ");
+                parts = vec.push(parts, struct_literal_field_local(prefix, index));
+                parts = vec.push(parts, " = insertvalue ");
+                parts = vec.push(parts, ret);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, previous);
+                parts = vec.push(parts, ", ");
+                parts = vec.push(parts, field_ty);
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, struct_literal_child_value_name(child, field_ty, function_value));
+                parts = vec.push(parts, ", ");
+                parts = vec.push(parts, string.int_to_string(index));
+                parts = vec.push(parts, "\n");
+                ()
+            } else { () },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
 fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     match expr.kind {
@@ -2498,6 +3423,10 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
         IrCallExpr => if true {
             if is_io_print_intrinsic_name(expr.name) {
                 parts = vec.push(parts, emit_io_print_expr_return(program, function_value, expr));
+            } else if is_fs_string_result_intrinsic_name(expr.name) {
+                parts = vec.push(parts, emit_fs_string_result_expr_return(program, function_value, expr, ret));
+            } else if is_fs_bool_result_intrinsic_name(expr.name) {
+                parts = vec.push(parts, emit_fs_bool_result_expr_return(program, function_value, expr, ret));
             } else if expr.name == "string.replace" {
                 parts = vec.push(parts, emit_string_replace_expr_value(program, function_value, expr));
                 parts = vec.push(parts, "  ret ");
@@ -2552,13 +3481,22 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             };
             ()
         } else { () },
+        IrStructLiteralExpr => if true {
+            parts = vec.push(parts, emit_struct_literal_expr_value(program, function_value, expr, ret));
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, struct_literal_value_name(llvm_expr_prefix(expr.node), direct_expr_child_count(expr.nodes), ret));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
         _ => (),
     };
     string.join(parts, "")
 }
 
 fn emit_function_llvm(program: IrProgram, function_value: IrFunctionDef) -> String {
-    let ret = llvm_type_for_id(program.types, function_value.return_type);
+    let ret = llvm_type_for_id(program, function_value.return_type);
     let name = backend_mangle_symbol(function_value.name);
     let params = llvm_param_list(program, function_value.params);
     let mut parts: Vec[String] = vec.new_vec();

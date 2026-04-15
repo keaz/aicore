@@ -25,17 +25,20 @@ The package emits LLVM text directly. Requests for native object, static library
 The backend emits executable LLVM for the backend-covered primitive forms:
 
 - primitive function signatures using integer, boolean, unit, and `String` return forms
+- aggregate function signatures for backend-covered structs and enums, including `Vec[T]`, `Option[T]`, `Result[T, E]`, `SourceId`, `DriverSource`, `DriverCommandResult`, `ProcOutput`, and `SourceLoadState`
 - `String` values as `%aic.String = type { i8*, i64, i64 }`, matching the runtime `ptr`, `len`, and `cap` ABI
 - integer and boolean literal returns
 - string literal returns using deterministic module-level LLVM constants
 - runtime-backed `string.replace` return expressions over string literals, string parameters, and nested replacement calls
 - parameter returns
+- return-position struct literals whose fields are backend-covered primitive, string, or aggregate parameter values
 - lossless integer widening on returns, such as `Int32` aliases returning through an `Int` function boundary
 - integer `+`, `-`, and `*` over primitive operands
 - direct primitive function calls
 - return-position `if` expressions over primitive comparisons and string equality/inequality
 - tail-position `print_str` and `eprint_str` calls lowered to runtime stdout/stderr calls for unit-returning functions
 - runtime-backed `std.env.arg_at` option matches in the canonical `Some(value) => value, None => ""` form
+- runtime-backed `std.fs.read_text`, `std.fs.temp_file`, `std.fs.write_text`, and `std.fs.delete` return expressions for the supported `Result[String, FsError]` and `Result[Bool, FsError]` ABI layouts
 - static literal `match` expressions whose selected arm is known from literal patterns
 
 The backend also preserves deterministic metadata for structs, enums, tuples, generic definitions, generic instantiations, closures, async/future functions, trait and impl declarations, const/global declarations, resource-handle-shaped types, and native-link declarations. These metadata surfaces let parity tools verify coverage without pretending that unsupported executable forms have native code.
@@ -47,7 +50,7 @@ Backend diagnostics are part of the artifact and suppress LLVM text emission whe
 | Code | Meaning |
 | --- | --- |
 | `E5101` | Missing executable lowering hook, unsupported executable statement, or unsupported return expression |
-| `E5102` | Unsupported ABI or type form, such as aggregate function parameters or return values in executable functions |
+| `E5102` | Unsupported ABI or type form that has no deterministic LLVM layout in the self-host backend |
 | `E5103` | Invalid native-link metadata |
 | `E5104` | Invalid backend input, including empty artifact names or missing required entry points |
 | `E5105` | Native materialization requested from the LLVM-text backend package instead of the driver |
