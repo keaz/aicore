@@ -126,6 +126,11 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E5024` | Unsupported extern backend lowering path (currently only `extern \"C\"` is supported). | Use `extern \"C\"` plain signatures and wrapper functions. |
 | `E5025` | `break` reached backend outside loop context. | Ensure `break` is only emitted inside `loop`/`while`. |
 | `E5026` | `continue` reached backend outside loop context. | Ensure `continue` is only emitted inside `loop`/`while`. |
+| `E5101` | Self-host LLVM backend has no executable lowering hook for the IR statement or expression shape. | Keep backend-covered executable functions to supported primitive forms or implement the missing lowering case. |
+| `E5102` | Self-host LLVM backend received an unsupported ABI or type form. | Use primitive backend-covered function parameters/returns or add aggregate ABI lowering. |
+| `E5103` | Self-host LLVM backend received invalid native-link metadata. | Preserve non-empty native link names and required object/search-path paths from the package manifest or driver. |
+| `E5104` | Self-host LLVM backend received invalid artifact input, such as an empty artifact name or missing required entry point. | Provide a deterministic artifact name and lower a checked program with the requested entry point. |
+| `E5105` | Native object, archive, or executable materialization was requested from the LLVM-text backend package. | Emit LLVM text through `compiler.backend_llvm`, then let the driver materialize native artifacts. |
 | `E6001` | Deprecated std API usage warning (for example `std.time.now`). | Migrate to replacement API shown in diagnostic help (for example `std.time.now_ms`). |
 | `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
 | `E6003` | Typed hole (`_`) was accepted and inferred from context. | Replace `_` with the inferred concrete type when finalizing API/contracts. |

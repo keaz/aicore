@@ -210,8 +210,8 @@ def run_command(
         stdout_raw, stderr_raw = process.communicate(timeout=timeout_seconds)
         timed_out = False
         exit_code: int | None = process.returncode
-        stdout = normalize_output(stdout_raw, cwd)
-        stderr = normalize_output(stderr_raw, cwd)
+        stdout = normalize_output(stdout_raw, cwd, artifact_root)
+        stderr = normalize_output(stderr_raw, cwd, artifact_root)
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         exit_code = None
@@ -221,8 +221,8 @@ def run_command(
         else:
             stdout_raw = decode_timeout_output(exc.stdout)
             stderr_raw = decode_timeout_output(exc.stderr)
-        stdout = normalize_output(stdout_raw, cwd)
-        stderr = normalize_output(stderr_raw, cwd)
+        stdout = normalize_output(stdout_raw, cwd, artifact_root)
+        stderr = normalize_output(stderr_raw, cwd, artifact_root)
     except Exception:
         if process is not None and process.poll() is None:
             kill_process_tree(process)
@@ -271,9 +271,18 @@ def decode_timeout_output(value: str | bytes | None) -> str:
     return value
 
 
-def normalize_output(value: str, cwd: Path) -> str:
+def normalize_output(value: str, cwd: Path, artifact_root: Path | None = None) -> str:
     root = str(cwd.resolve())
     text = value.replace(root, "$ROOT")
+    if artifact_root is not None:
+        artifact_abs = str(artifact_root.resolve())
+        try:
+            artifact_rel = os.path.relpath(artifact_root.resolve(), cwd.resolve())
+        except ValueError:
+            artifact_rel = str(artifact_root)
+        for base in {artifact_abs, artifact_rel, str(artifact_root)}:
+            text = text.replace(f"{base}/reference/", f"{base}/$ROLE/")
+            text = text.replace(f"{base}/candidate/", f"{base}/$ROLE/")
     return text.replace("\r\n", "\n")
 
 

@@ -3,7 +3,8 @@
     {
       "actions": [
         "check",
-        "ir-json"
+        "ir-json",
+        "build"
       ],
       "expected": "pass",
       "name": "core_language_tour",
@@ -12,7 +13,8 @@
     {
       "actions": [
         "check",
-        "ir-json"
+        "ir-json",
+        "build"
       ],
       "expected": "pass",
       "name": "traits_and_dispatch_tour",
@@ -21,7 +23,8 @@
     {
       "actions": [
         "check",
-        "ir-json"
+        "ir-json",
+        "build"
       ],
       "expected": "pass",
       "name": "async_ping",
@@ -30,7 +33,8 @@
     {
       "actions": [
         "check",
-        "ir-json"
+        "ir-json",
+        "build"
       ],
       "expected": "pass",
       "name": "tuple_types",

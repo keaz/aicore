@@ -148,6 +148,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/libs/semantics/src/main.aic",
         "compiler/aic/libs/typecheck/aic.toml",
         "compiler/aic/libs/typecheck/src/main.aic",
+        "compiler/aic/libs/backend_llvm/aic.toml",
+        "compiler/aic/libs/backend_llvm/src/main.aic",
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
     ] {
@@ -436,6 +438,29 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(typecheck.contains("E1278"));
     assert!(typecheck.contains("E2006"));
 
+    let backend = fs::read_to_string(root.join("compiler/aic/libs/backend_llvm/src/main.aic"))
+        .expect("read backend llvm lib");
+    assert!(backend.contains("module compiler.backend_llvm"));
+    assert!(backend.contains("pub enum BackendArtifactKind"));
+    assert!(backend.contains("pub enum BackendNativeLinkKind"));
+    assert!(backend.contains("pub struct BackendOptions"));
+    assert!(backend.contains("pub struct BackendArtifact"));
+    assert!(backend.contains("pub fn backend_mangle_symbol"));
+    assert!(backend.contains("pub fn backend_artifact_file_name"));
+    assert!(backend.contains("pub fn validate_backend_program"));
+    assert!(backend.contains("pub fn backend_program_features"));
+    assert!(backend.contains("pub fn emit_llvm_text"));
+    assert!(backend.contains("pub fn emit_backend_artifact"));
+    assert!(backend.contains("pub fn backend_artifact_ok"));
+    assert!(backend.contains("pub fn backend_has_diagnostic_code"));
+    assert!(backend.contains("generic-definition-metadata"));
+    assert!(backend.contains("native-link-metadata"));
+    assert!(backend.contains("E5101"));
+    assert!(backend.contains("E5102"));
+    assert!(backend.contains("E5103"));
+    assert!(backend.contains("E5104"));
+    assert!(backend.contains("E5105"));
+
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
     assert!(parser.contains("trait method signatures cannot declare requires/ensures contracts"));
@@ -453,6 +478,11 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(source_diagnostics_check.contains("fn valid_ir_lowering_negative_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ir_serialization_positive_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ir_serialization_negative_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_backend_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_backend_negative_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_backend_frontend"));
+    assert!(source_diagnostics_check.contains("emit_backend_artifact"));
+    assert!(source_diagnostics_check.contains("backend_has_diagnostic_code"));
 
     let ir =
         fs::read_to_string(root.join("compiler/aic/libs/ir/src/main.aic")).expect("read ir lib");

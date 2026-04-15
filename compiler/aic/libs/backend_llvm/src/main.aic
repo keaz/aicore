@@ -1,0 +1,1450 @@
+module compiler.backend_llvm;
+
+import compiler.source;
+import compiler.diagnostics;
+import compiler.ir;
+import std.option;
+import std.string;
+import std.vec;
+
+pub enum BackendArtifactKind {
+    LlvmIrArtifact,
+    NativeObjectArtifact,
+    StaticLibraryArtifact,
+    ExecutableArtifact,
+}
+
+pub enum BackendNativeLinkKind {
+    NativeLibraryLink,
+    NativeFrameworkLink,
+    NativeObjectLink,
+    NativeSearchPathLink,
+}
+
+pub struct BackendNativeLink {
+    pub name: String,
+    pub kind: BackendNativeLinkKind,
+    pub path: String,
+    pub static_link: Bool,
+    pub span: SourceSpan,
+}
+
+pub struct BackendOptions {
+    pub artifact_name: String,
+    pub target_triple: String,
+    pub artifact_kind: BackendArtifactKind,
+    pub require_entry: Bool,
+    pub native_links: Vec[BackendNativeLink],
+}
+
+pub struct BackendSymbol {
+    pub source_name: String,
+    pub llvm_name: String,
+    pub kind: String,
+    pub span: SourceSpan,
+}
+
+pub struct BackendArtifact {
+    pub format: String,
+    pub schema_version: Int,
+    pub artifact_name: String,
+    pub file_name: String,
+    pub artifact_kind: BackendArtifactKind,
+    pub target_triple: String,
+    pub llvm_ir: String,
+    pub symbols: Vec[BackendSymbol],
+    pub features: Vec[String],
+    pub native_links: Vec[BackendNativeLink],
+    pub digest: String,
+    pub diagnostics: Vec[Diagnostic],
+}
+
+pub fn backend_native_link(name: String, kind: BackendNativeLinkKind, path: String, static_link: Bool, span_value: SourceSpan) -> BackendNativeLink {
+    BackendNativeLink {
+        name: name,
+        kind: kind,
+        path: path,
+        static_link: static_link,
+        span: span_value,
+    }
+}
+
+pub fn backend_options(artifact_name: String, target_triple: String, artifact_kind: BackendArtifactKind, require_entry: Bool, native_links: Vec[BackendNativeLink]) -> BackendOptions {
+    BackendOptions {
+        artifact_name: artifact_name,
+        target_triple: target_triple,
+        artifact_kind: artifact_kind,
+        require_entry: require_entry,
+        native_links: native_links,
+    }
+}
+
+fn backend_artifact_kind_name(value: BackendArtifactKind) -> String {
+    match value {
+        LlvmIrArtifact => "llvm-ir",
+        NativeObjectArtifact => "object",
+        StaticLibraryArtifact => "static-library",
+        ExecutableArtifact => "executable",
+    }
+}
+
+fn backend_native_link_kind_name(value: BackendNativeLinkKind) -> String {
+    match value {
+        NativeLibraryLink => "library",
+        NativeFrameworkLink => "framework",
+        NativeObjectLink => "object",
+        NativeSearchPathLink => "search-path",
+    }
+}
+
+fn backend_artifact_extension(value: BackendArtifactKind) -> String {
+    match value {
+        LlvmIrArtifact => ".ll",
+        NativeObjectArtifact => ".o",
+        StaticLibraryArtifact => ".a",
+        ExecutableArtifact => "",
+    }
+}
+
+fn backend_error(code: String, span_value: SourceSpan, message: String, help: String) -> Diagnostic {
+    with_help(error(diagnostic_code(code), span_value, message), help)
+}
+
+fn push_backend_error(values: Vec[Diagnostic], code: String, span_value: SourceSpan, message: String, help: String) -> Vec[Diagnostic] {
+    vec.push(values, backend_error(code, span_value, message, help))
+}
+
+fn validate_backend_ir_input(program: IrProgram) -> Vec[Diagnostic] {
+    let mut diagnostics: Vec[Diagnostic] = vec.new_vec();
+    if program.schema_version != current_ir_schema_version() {
+        diagnostics = push_backend_error(diagnostics, "E5010", program.span, "backend emission requires schema_version 1 IR", "migrate older IR or reject future schema versions before backend lowering");
+    } else {
+        ()
+    };
+    if vec.vec_len(program.items) > 0 && vec.vec_len(program.source_map) == 0 {
+        diagnostics = push_backend_error(diagnostics, "E5011", program.span, "backend emission requires source-map metadata for item-bearing programs", "preserve lowering source_map entries so backend diagnostics can locate generated nodes");
+    } else {
+        ()
+    };
+    let mut symbol_index = 0;
+    while symbol_index < vec.vec_len(program.symbols) {
+        match vec.get(program.symbols, symbol_index) {
+            Some(symbol_value) => if symbol_value.name == "" {
+                diagnostics = push_backend_error(diagnostics, "E5013", symbol_value.span, "backend emission requires named IR symbols", "retain symbol names during IR lowering");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        symbol_index = symbol_index + 1;
+    };
+    let mut type_index = 0;
+    while type_index < vec.vec_len(program.types) {
+        match vec.get(program.types, type_index) {
+            Some(type_value) => if type_value.name == "" {
+                diagnostics = push_backend_error(diagnostics, "E5013", type_value.span, "backend emission requires named IR types", "retain canonical type repr metadata during IR lowering");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        type_index = type_index + 1;
+    };
+    let mut source_index = 0;
+    while source_index < vec.vec_len(program.source_map) {
+        match vec.get(program.source_map, source_index) {
+            Some(entry) => if entry.kind == "" || entry.name == "" {
+                diagnostics = push_backend_error(diagnostics, "E5013", entry.span, "backend emission requires named source-map entries", "preserve source-map kind/name fields during IR lowering");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        source_index = source_index + 1;
+    };
+    diagnostics
+}
+
+pub fn default_backend_options(name: String) -> BackendOptions {
+    backend_options(name, "", LlvmIrArtifact(), true, vec.new_vec())
+}
+
+fn concat2(left: String, right: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, left);
+    parts = vec.push(parts, right);
+    string.join(parts, "")
+}
+
+fn concat3(first: String, second: String, third: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, first);
+    parts = vec.push(parts, second);
+    parts = vec.push(parts, third);
+    string.join(parts, "")
+}
+
+pub fn backend_mangle_symbol(name: String) -> String {
+    let mut out = string.replace(name, "::", "_");
+    out = string.replace(out, ".", "_");
+    out = string.replace(out, "[", "_");
+    out = string.replace(out, "]", "");
+    out = string.replace(out, ",", "_");
+    out = string.replace(out, " ", "_");
+    out = string.replace(out, "-", "_");
+    out = string.replace(out, "(", "_");
+    out = string.replace(out, ")", "");
+    if out == "main" {
+        "main"
+    } else {
+        concat2("aic_", out)
+    }
+}
+
+pub fn backend_artifact_file_name(options: BackendOptions) -> String {
+    let base = if options.artifact_name == "" {
+        "aic_selfhost"
+    } else {
+        backend_mangle_symbol(options.artifact_name)
+    };
+    if match options.artifact_kind { StaticLibraryArtifact => true, _ => false } {
+        concat3("lib", base, backend_artifact_extension(options.artifact_kind))
+    } else {
+        concat2(base, backend_artifact_extension(options.artifact_kind))
+    }
+}
+
+fn backend_symbol(source_name: String, llvm_name: String, kind: String, span_value: SourceSpan) -> BackendSymbol {
+    BackendSymbol {
+        source_name: source_name,
+        llvm_name: llvm_name,
+        kind: kind,
+        span: span_value,
+    }
+}
+
+fn type_name_for_id(types: Vec[IrTypeDef], id: IrTypeId) -> String {
+    let mut index = 0;
+    let mut out = "<?>";
+    while index < vec.vec_len(types) {
+        match vec.get(types, index) {
+            Some(value) => if value.id.value == id.value {
+                out = value.name;
+                index = vec.vec_len(types);
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn llvm_type_for_repr(repr: String) -> String {
+    if repr == "Int" || repr == "Int64" || repr == "UInt" || repr == "usize" || repr == "isize" {
+        "i64"
+    } else if repr == "Int32" || repr == "UInt32" {
+        "i32"
+    } else if repr == "Int16" || repr == "UInt16" {
+        "i16"
+    } else if repr == "Int8" || repr == "UInt8" {
+        "i8"
+    } else if repr == "Bool" {
+        "i1"
+    } else if repr == "()" {
+        "void"
+    } else {
+        ""
+    }
+}
+
+fn llvm_type_for_id(types: Vec[IrTypeDef], id: IrTypeId) -> String {
+    llvm_type_for_repr(type_name_for_id(types, id))
+}
+
+fn is_llvm_primitive_type(repr: String) -> Bool {
+    llvm_type_for_repr(repr) != ""
+}
+
+fn is_supported_backend_expr_kind(value: IrExprKind) -> Bool {
+    match value {
+        IrIntExpr => true,
+        IrFloatExpr => true,
+        IrBoolExpr => true,
+        IrStringExpr => true,
+        IrCharExpr => true,
+        IrTemplateExpr => false,
+        IrUnitExpr => true,
+        IrNameExpr => true,
+        IrCallExpr => true,
+        IrClosureExpr => true,
+        IrIfExpr => true,
+        IrWhileExpr => true,
+        IrForExpr => false,
+        IrLoopExpr => true,
+        IrBreakExpr => true,
+        IrContinueExpr => true,
+        IrMatchExpr => true,
+        IrBinaryExpr => true,
+        IrUnaryExpr => true,
+        IrBorrowExpr => true,
+        IrAwaitExpr => true,
+        IrTryExpr => true,
+        IrStructLiteralExpr => true,
+        IrTupleExpr => true,
+        IrFieldAccessExpr => true,
+        IrBlockExpr => true,
+        IrUnsafeBlockExpr => false,
+    }
+}
+
+fn is_decimal_digit(value: String) -> Bool {
+    value == "0" || value == "1" || value == "2" || value == "3" || value == "4" || value == "5" || value == "6" || value == "7" || value == "8" || value == "9"
+}
+
+fn is_decimal_integer_text(value: String) -> Bool {
+    if value == "" {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < string.len(value) {
+            let part = string.substring(value, index, index + 1);
+            if index == 0 && part == "-" {
+                ok = string.len(value) > 1;
+            } else if !is_decimal_digit(part) {
+                ok = false;
+            } else {
+                ()
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
+fn function_has_param_named(function_value: IrFunctionDef, name: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(function_value.params) {
+        match vec.get(function_value.params, index) {
+            Some(param) => if param.name == name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn function_param_llvm_type(program: IrProgram, function_value: IrFunctionDef, name: String) -> String {
+    let mut index = 0;
+    let mut out = "";
+    while out == "" && index < vec.vec_len(function_value.params) {
+        match vec.get(function_value.params, index) {
+            Some(param) => if param.name == name {
+                out = llvm_type_for_id(program.types, param.type_id);
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn direct_expr_child_at(nodes: Vec[IrExprNode], child_index: Int) -> Option[IrExprNode] {
+    let mut index = 0;
+    let mut seen = 0;
+    let mut out: Option[IrExprNode] = None();
+    while index < vec.vec_len(nodes) {
+        match vec.get(nodes, index) {
+            Some(node) => if node.depth == 1 {
+                if seen == child_index {
+                    out = Some(node);
+                    index = vec.vec_len(nodes);
+                } else {
+                    seen = seen + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn direct_expr_child_count(nodes: Vec[IrExprNode]) -> Int {
+    let mut index = 0;
+    let mut count = 0;
+    while index < vec.vec_len(nodes) {
+        match vec.get(nodes, index) {
+            Some(node) => if node.depth == 1 {
+                count = count + 1;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    count
+}
+
+fn simple_node_llvm_value(node: IrExprNode, function_value: IrFunctionDef) -> String {
+    match node.kind {
+        IrIntExpr => node.text,
+        IrBoolExpr => if node.text == "true" { "1" } else { "0" },
+        IrNameExpr => if function_has_param_named(function_value, node.text) {
+            concat2("%", backend_mangle_symbol(node.text))
+        } else {
+            ""
+        },
+        _ => "",
+    }
+}
+
+fn simple_node_llvm_type(program: IrProgram, node: IrExprNode, function_value: IrFunctionDef) -> String {
+    match node.kind {
+        IrIntExpr => "i64",
+        IrBoolExpr => "i1",
+        IrNameExpr => function_param_llvm_type(program, function_value, node.text),
+        _ => "",
+    }
+}
+
+fn simple_node_can_emit(node: IrExprNode, function_value: IrFunctionDef) -> Bool {
+    match node.kind {
+        IrIntExpr => is_decimal_integer_text(node.text),
+        IrBoolExpr => node.text == "true" || node.text == "false",
+        IrNameExpr => function_has_param_named(function_value, node.text),
+        _ => false,
+    }
+}
+
+fn simple_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    match value.kind {
+        IrIntExpr => is_decimal_integer_text(value.text),
+        IrBoolExpr => value.text == "true" || value.text == "false",
+        IrUnitExpr => true,
+        IrNameExpr => function_has_param_named(function_value, value.text),
+        _ => false,
+    }
+}
+
+fn call_target_return_type(program: IrProgram, callee_name: String) -> String {
+    let mut index = 0;
+    let mut out = "";
+    while out == "" && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.name == callee_name {
+                    out = llvm_type_for_id(program.types, function_value.return_type);
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn call_target_param_type(program: IrProgram, callee_name: String, param_index: Int) -> String {
+    let mut item_index = 0;
+    let mut out = "";
+    while out == "" && item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.name == callee_name {
+                    match vec.get(function_value.params, param_index) {
+                        Some(param) => if true {
+                            out = llvm_type_for_id(program.types, param.type_id);
+                            ()
+                        } else { () },
+                        None => (),
+                    }
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+fn call_target_param_count(program: IrProgram, callee_name: String) -> Int {
+    let mut item_index = 0;
+    let mut out = 0;
+    let mut found = false;
+    while !found && item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.name == callee_name {
+                    out = vec.vec_len(function_value.params);
+                    found = true;
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    out
+}
+
+fn call_target_exists(program: IrProgram, callee_name: String) -> Bool {
+    call_target_return_type(program, callee_name) != ""
+}
+
+fn call_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    if value.name == "" || string.contains(value.name, ".") || !call_target_exists(program, value.name) {
+        false
+    } else if direct_expr_child_count(value.nodes) != call_target_param_count(program, value.name) {
+        false
+    } else {
+        let mut index = 0;
+        let mut ok = true;
+        while ok && index < direct_expr_child_count(value.nodes) {
+            match direct_expr_child_at(value.nodes, index) {
+                Some(node) => if simple_node_can_emit(node, function_value) {
+                    let expected = call_target_param_type(program, value.name, index);
+                    let actual = simple_node_llvm_type(program, node, function_value);
+                    if expected == "" || actual == "" || expected != actual {
+                        ok = false;
+                    } else {
+                        ()
+                    };
+                } else {
+                    ok = false;
+                    ()
+                },
+                None => if true {
+                    ok = false;
+                    ()
+                } else { () },
+            };
+            index = index + 1;
+        };
+        ok
+    }
+}
+
+fn binary_expr_can_emit(value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    if value.op == "+" || value.op == "-" || value.op == "*" {
+        match direct_expr_child_at(value.nodes, 0) {
+            Some(left) => match direct_expr_child_at(value.nodes, 1) {
+                Some(right) => simple_node_can_emit(left, function_value) && simple_node_can_emit(right, function_value),
+                None => false,
+            },
+            None => false,
+        }
+    } else {
+        false
+    }
+}
+
+fn static_match_body(value: IrExpr) -> String {
+    let matched = match direct_expr_child_at(value.nodes, 0) {
+        Some(node) => node.text,
+        None => "",
+    };
+    let mut index = 0;
+    let mut out = "";
+    while out == "" && index < vec.vec_len(value.match_arms) {
+        match vec.get(value.match_arms, index) {
+            Some(arm) => if arm.pattern_text == matched || arm.pattern_text == "_" {
+                out = arm.body_text;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn match_expr_can_emit(value: IrExpr) -> Bool {
+    let selected = static_match_body(value);
+    let mut arms_ok = vec.vec_len(value.match_arms) > 0 && selected != "";
+    let mut index = 0;
+    while arms_ok && index < vec.vec_len(value.match_arms) {
+        match vec.get(value.match_arms, index) {
+            Some(arm) => if is_decimal_integer_text(arm.body_text) || arm.body_text == "true" || arm.body_text == "false" {
+                ()
+            } else {
+                arms_ok = false;
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    arms_ok
+}
+
+fn statement_expr_can_emit_as_noop(value: IrExpr) -> Bool {
+    match value.kind {
+        IrUnitExpr => true,
+        IrWhileExpr => string.starts_with(value.text, "while false"),
+        IrLoopExpr => false,
+        IrForExpr => false,
+        IrBreakExpr => false,
+        IrContinueExpr => false,
+        _ => false,
+    }
+}
+
+fn statement_can_emit_as_noop(statement: IrStatement) -> Bool {
+    match statement.kind {
+        IrLetStatement => match statement.expr {
+            Some(expr) => match expr.kind {
+                IrIntExpr => is_decimal_integer_text(expr.text),
+                IrBoolExpr => expr.text == "true" || expr.text == "false",
+                IrUnitExpr => true,
+                IrClosureExpr => true,
+                IrStructLiteralExpr => true,
+                IrTupleExpr => true,
+                _ => false,
+            },
+            None => true,
+        },
+        IrExprStatement => match statement.expr {
+            Some(expr) => statement_expr_can_emit_as_noop(expr),
+            None => true,
+        },
+        IrAssertStatement => false,
+        IrAssignStatement => false,
+        IrReturnStatement => false,
+    }
+}
+
+fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFunctionDef) -> Bool {
+    match value.kind {
+        IrIntExpr => is_decimal_integer_text(value.text),
+        IrBoolExpr => value.text == "true" || value.text == "false",
+        IrUnitExpr => true,
+        IrNameExpr => function_has_param_named(function_value, value.text),
+        IrBinaryExpr => binary_expr_can_emit(value, function_value),
+        IrCallExpr => call_expr_can_emit(program, value, function_value),
+        IrMatchExpr => match_expr_can_emit(value),
+        _ => false,
+    }
+}
+
+fn block_can_emit(program: IrProgram, block: IrBlock, function_value: IrFunctionDef) -> Bool {
+    let mut index = 0;
+    let mut ok = true;
+    while ok && index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => if statement_can_emit_as_noop(statement) {
+                ()
+            } else {
+                ok = false;
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    if ok {
+        match block.tail_expr {
+            Some(expr) => return_expr_can_emit(program, expr, function_value),
+            None => llvm_type_for_id(program.types, function_value.return_type) == "void",
+        }
+    } else {
+        false
+    }
+}
+
+fn append_expr_diagnostics(out: Vec[Diagnostic], expr: IrExpr, max_errors: Int) -> Vec[Diagnostic] {
+    let mut diagnostics = out;
+    if vec.vec_len(diagnostics) < max_errors && !is_supported_backend_expr_kind(expr.kind) {
+        diagnostics = push_backend_error(diagnostics, "E5101", expr.span, "self-host backend has no lowering hook for this expression kind", "add a backend lowering case before emitting LLVM for this IR node");
+    } else {
+        ()
+    };
+    let mut index = 0;
+    while index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if vec.vec_len(diagnostics) < max_errors && !is_supported_backend_expr_kind(node.kind) {
+                diagnostics = push_backend_error(diagnostics, "E5101", node.span, "self-host backend has no lowering hook for this nested expression kind", "extend backend lowering coverage for this expression node");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    diagnostics
+}
+
+fn append_optional_expr_diagnostics(out: Vec[Diagnostic], expr: Option[IrExpr], max_errors: Int) -> Vec[Diagnostic] {
+    match expr {
+        Some(value) => append_expr_diagnostics(out, value, max_errors),
+        None => out,
+    }
+}
+
+fn append_block_diagnostics(out: Vec[Diagnostic], block: IrBlock, max_errors: Int) -> Vec[Diagnostic] {
+    let mut diagnostics = out;
+    let mut index = 0;
+    while index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => if true {
+                diagnostics = append_optional_expr_diagnostics(diagnostics, statement.expr, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    append_optional_expr_diagnostics(diagnostics, block.tail_expr, max_errors)
+}
+
+fn append_backend_block_emission_diagnostics(out: Vec[Diagnostic], program: IrProgram, function_value: IrFunctionDef, max_errors: Int) -> Vec[Diagnostic] {
+    let mut diagnostics = out;
+    let mut index = 0;
+    while index < vec.vec_len(function_value.body.statements) {
+        match vec.get(function_value.body.statements, index) {
+            Some(statement) => if vec.vec_len(diagnostics) < max_errors && !statement_can_emit_as_noop(statement) {
+                diagnostics = push_backend_error(diagnostics, "E5101", statement.span, "self-host backend cannot emit this executable statement yet", "restrict backend-covered executable functions to side-effect-free literal lets and while false guards, or add statement lowering");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    match function_value.body.tail_expr {
+        Some(expr) => if vec.vec_len(diagnostics) < max_errors && !return_expr_can_emit(program, expr, function_value) {
+            diagnostics = push_backend_error(diagnostics, "E5101", expr.span, "self-host backend cannot emit this function return expression yet", "add expression lowering for this IR shape before emitting a backend artifact");
+        } else {
+            ()
+        },
+        None => if vec.vec_len(diagnostics) < max_errors && llvm_type_for_id(program.types, function_value.return_type) != "void" {
+            diagnostics = push_backend_error(diagnostics, "E5101", function_value.body.span, "self-host backend requires a return expression for non-void functions", "add a tail expression or lower explicit return statements");
+        } else {
+            ()
+        },
+    };
+    diagnostics
+}
+
+fn append_function_diagnostics(out: Vec[Diagnostic], program: IrProgram, function_value: IrFunctionDef, max_errors: Int) -> Vec[Diagnostic] {
+    let mut diagnostics = out;
+    if function_value.is_extern && function_value.extern_abi != "" && function_value.extern_abi != "C" {
+        diagnostics = push_backend_error(diagnostics, "E5102", function_value.span, "self-host backend only supports extern C ABI metadata", "use extern \"C\" or keep this declaration out of the backend-covered corpus");
+    } else {
+        ()
+    };
+    let ret = llvm_type_for_id(program.types, function_value.return_type);
+    if ret == "" {
+        diagnostics = push_backend_error(diagnostics, "E5102", function_value.span, "self-host backend cannot lower this function return type to LLVM", "restrict backend-covered functions to primitive return values until aggregate return lowering is implemented");
+    } else {
+        ()
+    };
+    let mut param_index = 0;
+    while param_index < vec.vec_len(function_value.params) {
+        match vec.get(function_value.params, param_index) {
+            Some(param) => if llvm_type_for_id(program.types, param.type_id) == "" {
+                diagnostics = push_backend_error(diagnostics, "E5102", param.span, "self-host backend cannot lower this parameter type to LLVM", "use primitive parameters for backend-covered executable functions");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        param_index = param_index + 1;
+    };
+    diagnostics = append_optional_expr_diagnostics(diagnostics, function_value.requires_expr, max_errors);
+    diagnostics = append_optional_expr_diagnostics(diagnostics, function_value.ensures_expr, max_errors);
+    diagnostics = append_block_diagnostics(diagnostics, function_value.body, max_errors);
+    append_backend_block_emission_diagnostics(diagnostics, program, function_value, max_errors)
+}
+
+fn append_link_diagnostics(out: Vec[Diagnostic], links: Vec[BackendNativeLink]) -> Vec[Diagnostic] {
+    let mut diagnostics = out;
+    let mut index = 0;
+    while index < vec.vec_len(links) {
+        match vec.get(links, index) {
+            Some(link) => if link.name == "" {
+                diagnostics = push_backend_error(diagnostics, "E5103", link.span, "native link metadata requires a non-empty name", "preserve package manifest native-link names before backend emission");
+            } else if link.path == "" && match link.kind { NativeObjectLink => true, NativeSearchPathLink => true, _ => false } {
+                diagnostics = push_backend_error(diagnostics, "E5103", link.span, "native object/search-path link metadata requires a path", "preserve package manifest native-link paths before backend emission");
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    diagnostics
+}
+
+fn program_has_entry(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.runtime_visible && function_value.name == "main" {
+                    found = true;
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+pub fn validate_backend_program(program: IrProgram, options: BackendOptions, max_errors: Int) -> Vec[Diagnostic] {
+    let mut diagnostics = validate_backend_ir_input(program);
+    if options.artifact_name == "" {
+        diagnostics = push_backend_error(diagnostics, "E5104", program.span, "backend artifact name must not be empty", "choose a deterministic artifact name before backend emission");
+    } else {
+        ()
+    };
+    if options.require_entry && !program_has_entry(program) {
+        diagnostics = push_backend_error(diagnostics, "E5104", program.span, "backend executable artifact requires a runtime-visible main function", "lower a checked program with a main function or emit a library artifact");
+    } else {
+        ()
+    };
+    match options.artifact_kind {
+        LlvmIrArtifact => (),
+        NativeObjectArtifact => if true {
+            diagnostics = push_backend_error(diagnostics, "E5105", program.span, "self-host backend emits LLVM IR text artifacts in this package", "materialize object files through the driver after LLVM IR emission");
+            ()
+        } else { () },
+        StaticLibraryArtifact => if true {
+            diagnostics = push_backend_error(diagnostics, "E5105", program.span, "self-host backend emits LLVM IR text artifacts in this package", "archive object files through the driver after LLVM IR emission");
+            ()
+        } else { () },
+        ExecutableArtifact => if true {
+            diagnostics = push_backend_error(diagnostics, "E5105", program.span, "self-host backend emits LLVM IR text artifacts in this package", "link executables through the driver after LLVM IR emission");
+            ()
+        } else { () },
+    };
+    diagnostics = append_link_diagnostics(diagnostics, options.native_links);
+    let mut type_index = 0;
+    while type_index < vec.vec_len(program.types) {
+        match vec.get(program.types, type_index) {
+            Some(type_value) => match type_value.kind {
+                IrUnknownType => if true {
+                    diagnostics = push_backend_error(diagnostics, "E5102", type_value.span, "self-host backend cannot lower unknown IR types", "complete type metadata before backend emission");
+                    ()
+                } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        type_index = type_index + 1;
+    };
+    let mut item_index = 0;
+    while item_index < vec.vec_len(program.items) {
+        match vec.get(program.items, item_index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.runtime_visible {
+                    diagnostics = append_function_diagnostics(diagnostics, program, function_value, max_errors);
+                } else {
+                    ()
+                },
+                IrTraitItemValue(_) => (),
+                IrImplItemValue(_) => (),
+                IrConstItemValue(const_value) => if true {
+                    diagnostics = append_optional_expr_diagnostics(diagnostics, const_value.initializer, max_errors);
+                    ()
+                } else { () },
+                IrStructItemValue(_) => (),
+                IrEnumItemValue(_) => (),
+                IrTypeAliasItemValue(_) => (),
+            },
+            None => (),
+        };
+        item_index = item_index + 1;
+    };
+    diagnostics
+}
+
+fn has_struct_item(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrStructItemValue(_) => if true { found = true; () } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_enum_item(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrEnumItemValue(_) => if true { found = true; () } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_trait_or_impl_item(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrTraitItemValue(_) => if true { found = true; () } else { () },
+                IrImplItemValue(_) => if true { found = true; () } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_alias_or_const_item(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrTypeAliasItemValue(_) => if true { found = true; () } else { () },
+                IrConstItemValue(_) => if true { found = true; () } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_tuple_type(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.types) {
+        match vec.get(program.types, index) {
+            Some(type_value) => match type_value.kind {
+                IrTupleType(_) => if true { found = true; () } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_function_instantiation(program: IrProgram) -> Bool {
+    vec.vec_len(program.generic_instantiations) > 0
+}
+
+fn has_generic_item(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if vec.vec_len(function_value.generics) > 0 { found = true; } else { () },
+                IrStructItemValue(struct_value) => if vec.vec_len(struct_value.generics) > 0 { found = true; } else { () },
+                IrEnumItemValue(enum_value) => if vec.vec_len(enum_value.generics) > 0 { found = true; } else { () },
+                IrTraitItemValue(trait_value) => if vec.vec_len(trait_value.generics) > 0 { found = true; } else { () },
+                IrImplItemValue(impl_value) => if vec.vec_len(impl_value.generics) > 0 { found = true; } else { () },
+                IrTypeAliasItemValue(alias_value) => if vec.vec_len(alias_value.generics) > 0 { found = true; } else { () },
+                IrConstItemValue(_) => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_async_function(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.is_async { found = true; } else { () },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn has_expr_kind(program: IrProgram, kind_name: String) -> Bool {
+    string.contains(ir_program_to_json(program), concat3("\"kind\":\"", kind_name, "\""))
+}
+
+pub fn backend_program_features(program: IrProgram, options: BackendOptions) -> Vec[String] {
+    let mut features: Vec[String] = vec.new_vec();
+    features = vec.push(features, "primitive-lowering");
+    features = vec.push(features, "function-lowering");
+    if has_struct_item(program) { features = vec.push(features, "struct-lowering"); } else { () };
+    if has_enum_item(program) { features = vec.push(features, "enum-lowering"); } else { () };
+    if has_tuple_type(program) || has_expr_kind(program, "tuple") { features = vec.push(features, "tuple-lowering"); } else { () };
+    if has_generic_item(program) { features = vec.push(features, "generic-definition-metadata"); } else { () };
+    if has_function_instantiation(program) { features = vec.push(features, "generic-monomorph-metadata"); } else { () };
+    if has_expr_kind(program, "closure") { features = vec.push(features, "closure-lowering"); } else { () };
+    if has_async_function(program) || has_expr_kind(program, "await") { features = vec.push(features, "async-future-lowering"); } else { () };
+    if has_trait_or_impl_item(program) { features = vec.push(features, "trait-dispatch-metadata"); } else { () };
+    if string.contains(ir_program_to_json(program), "Handle") { features = vec.push(features, "resource-handle-metadata"); } else { () };
+    if has_alias_or_const_item(program) { features = vec.push(features, "const-global-metadata"); } else { () };
+    if vec.vec_len(options.native_links) > 0 { features = vec.push(features, "native-link-metadata"); } else { () };
+    features
+}
+
+fn llvm_param_list(program: IrProgram, params: Vec[IrParam]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(params) {
+        match vec.get(params, index) {
+            Some(param) => if true {
+                if index > 0 { parts = vec.push(parts, ", "); } else { () };
+                parts = vec.push(parts, llvm_type_for_id(program.types, param.type_id));
+                parts = vec.push(parts, " %");
+                parts = vec.push(parts, backend_mangle_symbol(param.name));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn binary_llvm_op(op: String) -> String {
+    if op == "+" {
+        "add"
+    } else if op == "-" {
+        "sub"
+    } else if op == "*" {
+        "mul"
+    } else {
+        ""
+    }
+}
+
+fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[IrExprNode]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < direct_expr_child_count(nodes) {
+        match direct_expr_child_at(nodes, index) {
+            Some(node) => if true {
+                if index > 0 {
+                    parts = vec.push(parts, ", ");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, simple_node_llvm_type(program, node, function_value));
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, simple_node_llvm_value(node, function_value));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    match expr.kind {
+        IrIntExpr => if true {
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, expr.text);
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrBoolExpr => if true {
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            parts = vec.push(parts, if expr.text == "true" { "1" } else { "0" });
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrUnitExpr => if true {
+            parts = vec.push(parts, "  ret void\n");
+            ()
+        } else { () },
+        IrNameExpr => if true {
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " %");
+            parts = vec.push(parts, backend_mangle_symbol(expr.text));
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrBinaryExpr => if true {
+            match direct_expr_child_at(expr.nodes, 0) {
+                Some(left) => match direct_expr_child_at(expr.nodes, 1) {
+                    Some(right) => if true {
+                        parts = vec.push(parts, "  %ret = ");
+                        parts = vec.push(parts, binary_llvm_op(expr.op));
+                        parts = vec.push(parts, " ");
+                        parts = vec.push(parts, ret);
+                        parts = vec.push(parts, " ");
+                        parts = vec.push(parts, simple_node_llvm_value(left, function_value));
+                        parts = vec.push(parts, ", ");
+                        parts = vec.push(parts, simple_node_llvm_value(right, function_value));
+                        parts = vec.push(parts, "\n  ret ");
+                        parts = vec.push(parts, ret);
+                        parts = vec.push(parts, " %ret\n");
+                        ()
+                    } else { () },
+                    None => (),
+                },
+                None => (),
+            };
+            ()
+        } else { () },
+        IrCallExpr => if true {
+            let call_ret = call_target_return_type(program, expr.name);
+            parts = vec.push(parts, "  %ret = call ");
+            parts = vec.push(parts, call_ret);
+            parts = vec.push(parts, " @");
+            parts = vec.push(parts, backend_mangle_symbol(expr.name));
+            parts = vec.push(parts, "(");
+            parts = vec.push(parts, emit_call_args(program, function_value, expr.nodes));
+            parts = vec.push(parts, ")\n  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " %ret\n");
+            ()
+        } else { () },
+        IrMatchExpr => if true {
+            let selected = static_match_body(expr);
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " ");
+            if selected == "true" {
+                parts = vec.push(parts, "1");
+            } else if selected == "false" {
+                parts = vec.push(parts, "0");
+            } else {
+                parts = vec.push(parts, selected);
+            };
+            parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        _ => (),
+    };
+    string.join(parts, "")
+}
+
+fn emit_function_llvm(program: IrProgram, function_value: IrFunctionDef) -> String {
+    let ret = llvm_type_for_id(program.types, function_value.return_type);
+    let name = backend_mangle_symbol(function_value.name);
+    let params = llvm_param_list(program, function_value.params);
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "define ");
+    parts = vec.push(parts, ret);
+    parts = vec.push(parts, " @");
+    parts = vec.push(parts, name);
+    parts = vec.push(parts, "(");
+    parts = vec.push(parts, params);
+    parts = vec.push(parts, ") {\nentry:\n");
+    if ret == "void" {
+        parts = vec.push(parts, "  ret void\n");
+    } else {
+        match function_value.body.tail_expr {
+            Some(expr) => if true {
+                parts = vec.push(parts, emit_return_expr(program, function_value, expr, ret));
+                ()
+            } else { () },
+            None => (),
+        };
+    };
+    parts = vec.push(parts, "}\n");
+    string.join(parts, "")
+}
+
+fn collect_backend_symbols(program: IrProgram) -> Vec[BackendSymbol] {
+    let mut symbols: Vec[BackendSymbol] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.runtime_visible {
+                    symbols = vec.push(symbols, backend_symbol(function_value.name, backend_mangle_symbol(function_value.name), "function", function_value.span));
+                } else {
+                    ()
+                },
+                IrStructItemValue(struct_value) => if true {
+                    symbols = vec.push(symbols, backend_symbol(struct_value.name, backend_mangle_symbol(struct_value.name), "struct", struct_value.span));
+                    ()
+                } else { () },
+                IrEnumItemValue(enum_value) => if true {
+                    symbols = vec.push(symbols, backend_symbol(enum_value.name, backend_mangle_symbol(enum_value.name), "enum", enum_value.span));
+                    ()
+                } else { () },
+                IrTraitItemValue(trait_value) => if true {
+                    symbols = vec.push(symbols, backend_symbol(trait_value.name, backend_mangle_symbol(trait_value.name), "trait", trait_value.span));
+                    ()
+                } else { () },
+                IrImplItemValue(impl_value) => if true {
+                    symbols = vec.push(symbols, backend_symbol(impl_value.head_text, backend_mangle_symbol(impl_value.head_text), "impl", impl_value.span));
+                    ()
+                } else { () },
+                IrTypeAliasItemValue(alias_value) => if true {
+                    symbols = vec.push(symbols, backend_symbol(alias_value.name, backend_mangle_symbol(alias_value.name), "type_alias", alias_value.span));
+                    ()
+                } else { () },
+                IrConstItemValue(const_value) => if true {
+                    symbols = vec.push(symbols, backend_symbol(const_value.name, backend_mangle_symbol(const_value.name), "const", const_value.span));
+                    ()
+                } else { () },
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    symbols
+}
+
+fn emit_item_metadata(program: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrStructItemValue(value) => if true {
+                    parts = vec.push(parts, "; struct ");
+                    parts = vec.push(parts, value.name);
+                    parts = vec.push(parts, " fields=");
+                    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.fields)));
+                    parts = vec.push(parts, "\n");
+                    ()
+                } else { () },
+                IrEnumItemValue(value) => if true {
+                    parts = vec.push(parts, "; enum ");
+                    parts = vec.push(parts, value.name);
+                    parts = vec.push(parts, " variants=");
+                    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.variants)));
+                    parts = vec.push(parts, "\n");
+                    ()
+                } else { () },
+                IrTraitItemValue(value) => if true {
+                    parts = vec.push(parts, "; trait ");
+                    parts = vec.push(parts, value.name);
+                    parts = vec.push(parts, " methods=");
+                    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.methods)));
+                    parts = vec.push(parts, "\n");
+                    ()
+                } else { () },
+                IrImplItemValue(value) => if true {
+                    parts = vec.push(parts, "; impl ");
+                    parts = vec.push(parts, value.head_text);
+                    parts = vec.push(parts, " methods=");
+                    parts = vec.push(parts, string.int_to_string(vec.vec_len(value.methods)));
+                    parts = vec.push(parts, "\n");
+                    ()
+                } else { () },
+                IrTypeAliasItemValue(value) => if true {
+                    parts = vec.push(parts, "; type_alias ");
+                    parts = vec.push(parts, value.name);
+                    parts = vec.push(parts, "\n");
+                    ()
+                } else { () },
+                IrConstItemValue(value) => if true {
+                    parts = vec.push(parts, "@");
+                    parts = vec.push(parts, backend_mangle_symbol(value.name));
+                    parts = vec.push(parts, " = internal constant i64 0\n");
+                    ()
+                } else { () },
+                IrFunctionItemValue(_) => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn emit_functions_llvm(program: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.runtime_visible {
+                    parts = vec.push(parts, emit_function_llvm(program, function_value));
+                    parts = vec.push(parts, "\n");
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn native_links_summary(links: Vec[BackendNativeLink]) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(links) {
+        match vec.get(links, index) {
+            Some(link) => if true {
+                parts = vec.push(parts, "; native_link ");
+                parts = vec.push(parts, backend_native_link_kind_name(link.kind));
+                parts = vec.push(parts, " ");
+                parts = vec.push(parts, link.name);
+                if link.path != "" {
+                    parts = vec.push(parts, " path=");
+                    parts = vec.push(parts, link.path);
+                } else {
+                    ()
+                };
+                if link.static_link {
+                    parts = vec.push(parts, " static=true");
+                } else {
+                    ()
+                };
+                parts = vec.push(parts, "\n");
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+pub fn emit_llvm_text(program: IrProgram, options: BackendOptions) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "; AICore self-host LLVM IR (deterministic)\n");
+    parts = vec.push(parts, "; format=aicore-selfhost-backend-llvm-v1\n");
+    parts = vec.push(parts, "; module=");
+    parts = vec.push(parts, program.module_path);
+    parts = vec.push(parts, "\n");
+    parts = vec.push(parts, "; artifact=");
+    parts = vec.push(parts, backend_artifact_file_name(options));
+    parts = vec.push(parts, "\n");
+    if options.target_triple == "" {
+        parts = vec.push(parts, "; target=native\n\n");
+    } else {
+        parts = vec.push(parts, "target triple = \"");
+        parts = vec.push(parts, options.target_triple);
+        parts = vec.push(parts, "\"\n\n");
+    };
+    parts = vec.push(parts, native_links_summary(options.native_links));
+    parts = vec.push(parts, emit_item_metadata(program));
+    parts = vec.push(parts, "\n");
+    parts = vec.push(parts, emit_functions_llvm(program));
+    string.join(parts, "")
+}
+
+pub fn backend_artifact_digest(program: IrProgram, options: BackendOptions, llvm_text: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, "backend-v1;module=");
+    parts = vec.push(parts, program.module_path);
+    parts = vec.push(parts, ";artifact=");
+    parts = vec.push(parts, backend_artifact_file_name(options));
+    parts = vec.push(parts, ";kind=");
+    parts = vec.push(parts, backend_artifact_kind_name(options.artifact_kind));
+    parts = vec.push(parts, ";items=");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(program.items)));
+    parts = vec.push(parts, ";symbols=");
+    parts = vec.push(parts, string.int_to_string(vec.vec_len(program.symbols)));
+    parts = vec.push(parts, ";features=");
+    parts = vec.push(parts, string.join(backend_program_features(program, options), ","));
+    parts = vec.push(parts, ";bytes=");
+    parts = vec.push(parts, string.int_to_string(string.len(llvm_text)));
+    string.join(parts, "")
+}
+
+pub fn emit_backend_artifact(program: IrProgram, options: BackendOptions, max_errors: Int) -> BackendArtifact {
+    let diagnostics = validate_backend_program(program, options, max_errors);
+    let llvm_text = if vec.vec_len(diagnostics) == 0 {
+        emit_llvm_text(program, options)
+    } else {
+        ""
+    };
+    BackendArtifact {
+        format: "aicore-selfhost-backend-llvm-v1",
+        schema_version: 1,
+        artifact_name: options.artifact_name,
+        file_name: backend_artifact_file_name(options),
+        artifact_kind: options.artifact_kind,
+        target_triple: options.target_triple,
+        llvm_ir: llvm_text,
+        symbols: collect_backend_symbols(program),
+        features: backend_program_features(program, options),
+        native_links: options.native_links,
+        digest: backend_artifact_digest(program, options, llvm_text),
+        diagnostics: diagnostics,
+    }
+}
+
+pub fn backend_artifact_ok(value: BackendArtifact) -> Bool {
+    vec.vec_len(value.diagnostics) == 0 && value.llvm_ir != ""
+}
+
+pub fn backend_diagnostic_count(value: BackendArtifact) -> Int {
+    vec.vec_len(value.diagnostics)
+}
+
+pub fn backend_has_diagnostic_code(value: BackendArtifact, code: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(value.diagnostics) {
+        match vec.get(value.diagnostics, index) {
+            Some(diagnostic_value) => if diagnostic_value.code.value == code {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}

@@ -1,0 +1,9 @@
+[package]
+name = "aic_compiler_backend_llvm"
+version = "0.1.0"
+main = "src/main.aic"
+
+[dependencies]
+aic_compiler_source = { path = "../source" }
+aic_compiler_diagnostics = { path = "../diagnostics" }
+aic_compiler_ir = { path = "../ir" }

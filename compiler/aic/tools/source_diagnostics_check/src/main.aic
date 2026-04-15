@@ -10,6 +10,7 @@ import compiler.ir;
 import compiler.frontend;
 import compiler.semantics;
 import compiler.typecheck;
+import compiler.backend_llvm;
 import std.io;
 import std.result;
 import std.string;
@@ -1697,6 +1698,174 @@ fn valid_ir_serialization_frontend() -> Bool {
     valid_ir_serialization_positive_cases() && valid_ir_serialization_negative_cases()
 }
 
+fn string_vec_contains(values: Vec[String], target: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(value) => if value == target {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn backend_positive_source() -> String {
+    "module app.main; fn add(x: Int, y: Int) -> Int { x + y } fn bool_id(flag: Bool) -> Bool { flag } fn bool_call() -> Bool { bool_id(true) } fn matched() -> Int { match true { true => 1, false => 0, } } fn loop_value() -> Int { while false { } 1 } fn generic_one[T]() -> Int { 1 } async fn future() -> Int { 1 } fn closure_tuple() -> Int { let closure = || -> Int { 1 }; let tuple = (1, true); 1 } fn main() -> Int { add(40, 2) } struct Pair { left: Int, right: Int, } struct FileHandle { raw: Int, } enum Choice { One, Two(Int), } type Count = Int; const BASE: Count = 40; trait Score[T]; impl Score[Pair];"
+}
+
+fn backend_positive_status_code() -> Int {
+    let result = lower_ir_text(source_id(90), backend_positive_source());
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            601
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_check"), 80);
+            let artifact_again = emit_backend_artifact(program, default_backend_options("backend_check"), 80);
+            let link_span = span(source_id(91), 0, 3);
+            let mut links: Vec[BackendNativeLink] = vec.new_vec();
+            links = vec.push(links, backend_native_link("m", NativeLibraryLink(), "", false, link_span));
+            let linked = emit_backend_artifact(program, backend_options("backend_check", "", LlvmIrArtifact(), true, links), 80);
+            if !backend_artifact_ok(artifact) {
+                if backend_has_diagnostic_code(artifact, "E5101") {
+                    630
+                } else if backend_has_diagnostic_code(artifact, "E5102") {
+                    631
+                } else if backend_has_diagnostic_code(artifact, "E5103") {
+                    632
+                } else if backend_has_diagnostic_code(artifact, "E5104") {
+                    633
+                } else if backend_has_diagnostic_code(artifact, "E5105") {
+                    634
+                } else if backend_has_diagnostic_code(artifact, "E5010") {
+                    635
+                } else if backend_has_diagnostic_code(artifact, "E5011") {
+                    637
+                } else if backend_has_diagnostic_code(artifact, "E5012") {
+                    638
+                } else if backend_has_diagnostic_code(artifact, "E5013") {
+                    639
+                } else if backend_diagnostic_count(artifact) == 0 {
+                    636
+                } else {
+                    602
+                }
+            } else if backend_diagnostic_count(artifact) != 0 {
+                603
+            } else if artifact.digest != artifact_again.digest || artifact.llvm_ir != artifact_again.llvm_ir {
+                604
+            } else if !string.contains(artifact.llvm_ir, "AICore self-host LLVM IR") {
+                605
+            } else if !string.contains(artifact.llvm_ir, "define i64 @main") {
+                606
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_add") {
+                607
+            } else if !string.contains(artifact.llvm_ir, "%ret = add i64 %aic_x, %aic_y") {
+                608
+            } else if !string.contains(artifact.llvm_ir, "%ret = call i64 @aic_add(i64 40, i64 2)") {
+                609
+            } else if !string.contains(artifact.llvm_ir, "define i1 @aic_bool_id(i1 %aic_flag)") {
+                628
+            } else if !string.contains(artifact.llvm_ir, "%ret = call i1 @aic_bool_id(i1 1)") {
+                629
+            } else if !string.contains(artifact.llvm_ir, "; struct Pair") {
+                610
+            } else if !string.contains(artifact.llvm_ir, "; enum Choice") {
+                611
+            } else if !string.contains(artifact.llvm_ir, "; trait Score") {
+                612
+            } else if !string.contains(artifact.llvm_ir, "; impl Score") {
+                613
+            } else if !string_vec_contains(artifact.features, "primitive-lowering") {
+                614
+            } else if !string_vec_contains(artifact.features, "function-lowering") {
+                615
+            } else if !string_vec_contains(artifact.features, "struct-lowering") {
+                616
+            } else if !string_vec_contains(artifact.features, "enum-lowering") {
+                617
+            } else if !string_vec_contains(artifact.features, "tuple-lowering") {
+                618
+            } else if !string_vec_contains(artifact.features, "closure-lowering") {
+                619
+            } else if !string_vec_contains(artifact.features, "generic-definition-metadata") {
+                627
+            } else if !string_vec_contains(artifact.features, "async-future-lowering") {
+                620
+            } else if !string_vec_contains(artifact.features, "trait-dispatch-metadata") {
+                621
+            } else if !string_vec_contains(artifact.features, "const-global-metadata") {
+                622
+            } else if !string_vec_contains(artifact.features, "resource-handle-metadata") {
+                623
+            } else if !backend_artifact_ok(linked) {
+                624
+            } else if !string_vec_contains(linked.features, "native-link-metadata") {
+                625
+            } else if !string.contains(linked.llvm_ir, "; native_link library m") {
+                626
+            } else {
+                0
+            }
+        },
+        None => 600,
+    }
+}
+
+fn valid_backend_positive_cases() -> Bool {
+    backend_positive_status_code() == 0
+}
+
+fn valid_backend_negative_cases() -> Bool {
+    let missing_hook = lower_ir_text(source_id(92), "module app.main; fn main() -> Int { unsafe { 1 } }");
+    let unsupported_type = lower_ir_text(source_id(93), "module app.main; struct Pair { left: Int, right: Int, } fn make() -> Pair { Pair { left: 1, right: 2 } } fn main() -> Int { 0 }");
+    let valid = lower_ir_text(source_id(94), "module app.main; fn main() -> Int { 0 }");
+    match missing_hook.program {
+        Some(missing_program) => match unsupported_type.program {
+            Some(type_program) => match valid.program {
+                Some(program) => if true {
+                    let span_value = span(source_id(95), 0, 3);
+                    let missing_artifact = emit_backend_artifact(missing_program, default_backend_options("missing_hook"), 80);
+                    let type_artifact = emit_backend_artifact(type_program, default_backend_options("unsupported_type"), 80);
+                    let bad_schema = emit_backend_artifact(program_with_schema(program, 99), default_backend_options("bad_schema"), 80);
+                    let empty_name = emit_backend_artifact(program, backend_options("", "", LlvmIrArtifact(), true, vec.new_vec()), 80);
+                    let native_object = emit_backend_artifact(program, backend_options("native_object", "", NativeObjectArtifact(), true, vec.new_vec()), 80);
+                    let mut bad_links: Vec[BackendNativeLink] = vec.new_vec();
+                    bad_links = vec.push(bad_links, backend_native_link("", NativeLibraryLink(), "", false, span_value));
+                    bad_links = vec.push(bad_links, backend_native_link("objects", NativeSearchPathLink(), "", false, span_value));
+                    let bad_link_artifact = emit_backend_artifact(program, backend_options("bad_links", "", LlvmIrArtifact(), true, bad_links), 80);
+                    backend_has_diagnostic_code(missing_artifact, "E5101")
+                        && !backend_artifact_ok(missing_artifact)
+                        && backend_has_diagnostic_code(type_artifact, "E5102")
+                        && !backend_artifact_ok(type_artifact)
+                        && backend_has_diagnostic_code(bad_link_artifact, "E5103")
+                        && !backend_artifact_ok(bad_link_artifact)
+                        && backend_has_diagnostic_code(bad_schema, "E5010")
+                        && !backend_artifact_ok(bad_schema)
+                        && backend_has_diagnostic_code(empty_name, "E5104")
+                        && !backend_artifact_ok(empty_name)
+                        && backend_has_diagnostic_code(native_object, "E5105")
+                        && !backend_artifact_ok(native_object)
+                } else {
+                    false
+                },
+                None => false,
+            },
+            None => false,
+        },
+        None => false,
+    }
+}
+
+fn valid_backend_frontend() -> Bool {
+    valid_backend_positive_cases() && valid_backend_negative_cases()
+}
+
 fn valid_typecheck_frontend() -> Bool {
     valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases() && valid_ownership_resource_positive_cases() && valid_ownership_resource_negative_cases()
 }
@@ -1736,13 +1905,22 @@ fn main() -> Int effects { io } capabilities { io } {
     let typecheck_ok = valid_typecheck_frontend();
     let ir_lowering_ok = valid_ir_lowering_frontend();
     let ir_serialization_ok = valid_ir_serialization_frontend();
+    let backend_status = backend_positive_status_code();
+    let backend_negative_ok = valid_backend_negative_cases();
+    let backend_ok = backend_status == 0 && backend_negative_ok;
     let ast_ir_ok = valid_name_result(name_result) && is_value_symbol(main_symbol.kind) && is_concrete_type(main_type.kind) && stats.function_count == 1;
 
-    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ir_serialization_ok && ast_ir_ok {
+    if diag_ok && token_ok && lexer_ok && cursor_ok && decl_ok && item_ok && signature_ok && struct_ok && enum_ok && alias_const_ok && trait_impl_ok && expression_block_ok && program_ok && resolver_ok && semantic_ok && typecheck_ok && ir_lowering_ok && ir_serialization_ok && backend_ok && ast_ir_ok {
         print_int(0);
         0
     } else {
-        print_int(1);
+        if backend_status != 0 {
+            print_int(backend_status);
+        } else if !backend_negative_ok {
+            print_int(650);
+        } else {
+            print_int(1);
+        };
         1
     }
 }
