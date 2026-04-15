@@ -134,6 +134,47 @@ struct EffectPath {
     found: Bool,
 }
 
+struct OwnershipBinding {
+    name: String,
+    type_text: String,
+    mutable: Bool,
+    span: SourceSpan,
+}
+
+struct ActiveBorrow {
+    target: String,
+    mutable: Bool,
+    owner: String,
+    span: SourceSpan,
+}
+
+struct MovedBinding {
+    name: String,
+    span: SourceSpan,
+}
+
+struct ResourceUse {
+    name: String,
+    kind: String,
+    closed_by: String,
+    span: SourceSpan,
+}
+
+struct ResourceProtocolOp {
+    kind: String,
+    terminal: Bool,
+    api: String,
+    first_param_base_type: String,
+}
+
+struct OwnershipState {
+    bindings: Vec[OwnershipBinding],
+    borrows: Vec[ActiveBorrow],
+    moved: Vec[MovedBinding],
+    resources: Vec[ResourceUse],
+    diagnostics: Vec[Diagnostic],
+}
+
 pub fn typecheck_type(kind: TypecheckTypeKind, text: String, name: String, arity: Int, span: SourceSpan) -> TypecheckType {
     TypecheckType {
         kind: kind,
@@ -263,6 +304,59 @@ fn effect_path(names: Vec[String], span: SourceSpan, found: Bool) -> EffectPath 
         names: names,
         span: span,
         found: found,
+    }
+}
+
+fn ownership_binding(name: String, type_text_value: String, mutable: Bool, span_value: SourceSpan) -> OwnershipBinding {
+    OwnershipBinding {
+        name: name,
+        type_text: type_text_value,
+        mutable: mutable,
+        span: span_value,
+    }
+}
+
+fn active_borrow(target: String, mutable: Bool, owner: String, span_value: SourceSpan) -> ActiveBorrow {
+    ActiveBorrow {
+        target: target,
+        mutable: mutable,
+        owner: owner,
+        span: span_value,
+    }
+}
+
+fn moved_binding(name: String, span_value: SourceSpan) -> MovedBinding {
+    MovedBinding {
+        name: name,
+        span: span_value,
+    }
+}
+
+fn resource_use(name: String, kind: String, closed_by: String, span_value: SourceSpan) -> ResourceUse {
+    ResourceUse {
+        name: name,
+        kind: kind,
+        closed_by: closed_by,
+        span: span_value,
+    }
+}
+
+fn resource_protocol_op(kind: String, terminal: Bool, api: String, first_param_base_type: String) -> ResourceProtocolOp {
+    ResourceProtocolOp {
+        kind: kind,
+        terminal: terminal,
+        api: api,
+        first_param_base_type: first_param_base_type,
+    }
+}
+
+fn ownership_state(bindings: Vec[OwnershipBinding], borrows: Vec[ActiveBorrow], moved: Vec[MovedBinding], resources: Vec[ResourceUse], diagnostics: Vec[Diagnostic]) -> OwnershipState {
+    OwnershipState {
+        bindings: bindings,
+        borrows: borrows,
+        moved: moved,
+        resources: resources,
+        diagnostics: diagnostics,
     }
 }
 
@@ -473,6 +567,14 @@ fn append_unique_strings(left: Vec[String], right: Vec[String]) -> Vec[String] {
         index = index + 1;
     };
     out
+}
+
+fn join3(left: String, middle: String, right: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, left);
+    parts = vec.push(parts, middle);
+    parts = vec.push(parts, right);
+    string.join(parts, "")
 }
 
 fn has_instantiation(items: Vec[TypecheckInstantiation], name: String, kind: String, type_args: Vec[String]) -> Bool {
@@ -1018,6 +1120,40 @@ fn find_struct_decl(units: Vec[ResolveUnit], name: String) -> Option[AstStructDe
                         Some(item) => match item.struct_item {
                             Some(struct_item) => if struct_item.name.value == name {
                                 out = Some(struct_item);
+                                found = true;
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    out
+}
+
+fn find_enum_decl(units: Vec[ResolveUnit], name: String) -> Option[AstEnumDecl] {
+    let mut out: Option[AstEnumDecl] = None();
+    let mut found = false;
+    let mut unit_index = 0;
+    while !found && unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while !found && item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => match item.enum_item {
+                            Some(enum_item) => if enum_item.name.value == name {
+                                out = Some(enum_item);
                                 found = true;
                             } else {
                                 ()
@@ -3218,6 +3354,848 @@ fn append_effect_capability_contract_diagnostics(output: TypecheckOutput, units:
     typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, diagnostics)
 }
 
+fn state_with_diagnostics(state: OwnershipState, diagnostics: Vec[Diagnostic]) -> OwnershipState {
+    ownership_state(state.bindings, state.borrows, state.moved, state.resources, diagnostics)
+}
+
+fn state_error(state: OwnershipState, max_errors: Int, code: String, span_value: SourceSpan, message: String, help: String) -> OwnershipState {
+    let diag = if help == "" {
+        error(diagnostic_code(code), span_value, message)
+    } else {
+        with_help(error(diagnostic_code(code), span_value, message), help)
+    };
+    state_with_diagnostics(state, append_diagnostic_if_room(state.diagnostics, max_errors, diag))
+}
+
+fn type_base_name(type_value: String) -> String {
+    let generic_parts = string.split(type_value, "[");
+    let head = match vec.get(generic_parts, 0) { Some(value) => value, None => type_value };
+    path_tail(head)
+}
+
+fn binding_root(target: String) -> String {
+    let parts = string.split(target, ".");
+    match vec.get(parts, 0) {
+        Some(value) => value,
+        None => target,
+    }
+}
+
+fn targets_overlap(left: String, right: String) -> Bool {
+    left == right || string.starts_with(left, join3(right, ".", "")) || string.starts_with(right, join3(left, ".", ""))
+}
+
+fn find_ownership_binding(bindings: Vec[OwnershipBinding], name: String) -> Option[OwnershipBinding] {
+    let mut out: Option[OwnershipBinding] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(bindings) {
+        match vec.get(bindings, index) {
+            Some(binding) => if binding.name == name {
+                out = Some(binding);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn replace_ownership_binding(bindings: Vec[OwnershipBinding], updated: OwnershipBinding) -> Vec[OwnershipBinding] {
+    let mut out: Vec[OwnershipBinding] = vec.new_vec();
+    let mut replaced = false;
+    let mut index = 0;
+    while index < vec.vec_len(bindings) {
+        match vec.get(bindings, index) {
+            Some(binding) => if binding.name == updated.name {
+                out = vec.push(out, updated);
+                replaced = true;
+                ()
+            } else {
+                out = vec.push(out, binding);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    if replaced {
+        out
+    } else {
+        vec.push(out, updated)
+    }
+}
+
+fn remove_moved_binding(moved: Vec[MovedBinding], name: String) -> Vec[MovedBinding] {
+    let mut out: Vec[MovedBinding] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(moved) {
+        match vec.get(moved, index) {
+            Some(item) => if item.name == name {
+                ()
+            } else {
+                out = vec.push(out, item);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn add_moved_binding(moved: Vec[MovedBinding], name: String, span_value: SourceSpan) -> Vec[MovedBinding] {
+    vec.push(remove_moved_binding(moved, name), moved_binding(name, span_value))
+}
+
+fn find_moved_binding(moved: Vec[MovedBinding], name: String) -> Option[MovedBinding] {
+    let root = binding_root(name);
+    let mut out: Option[MovedBinding] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(moved) {
+        match vec.get(moved, index) {
+            Some(item) => if item.name == root {
+                out = Some(item);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn remove_borrows_for_owner(borrows: Vec[ActiveBorrow], owner: String) -> Vec[ActiveBorrow] {
+    let mut out: Vec[ActiveBorrow] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(borrows) {
+        match vec.get(borrows, index) {
+            Some(item) => if item.owner == owner {
+                ()
+            } else {
+                out = vec.push(out, item);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn remove_matching_borrow(borrows: Vec[ActiveBorrow], target: String, mutable: Bool, owner: String, span_value: SourceSpan) -> Vec[ActiveBorrow] {
+    let mut out: Vec[ActiveBorrow] = vec.new_vec();
+    let mut removed = false;
+    let mut index = 0;
+    while index < vec.vec_len(borrows) {
+        match vec.get(borrows, index) {
+            Some(item) => if !removed && item.target == target && item.mutable == mutable && item.owner == owner && item.span.start == span_value.start && item.span.end == span_value.end {
+                removed = true;
+                ()
+            } else {
+                out = vec.push(out, item);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn find_overlapping_borrow(borrows: Vec[ActiveBorrow], target: String) -> Option[ActiveBorrow] {
+    let mut out: Option[ActiveBorrow] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(borrows) {
+        match vec.get(borrows, index) {
+            Some(item) => if targets_overlap(target, item.target) {
+                out = Some(item);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn find_overlapping_mutable_borrow(borrows: Vec[ActiveBorrow], target: String) -> Option[ActiveBorrow] {
+    let mut out: Option[ActiveBorrow] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(borrows) {
+        match vec.get(borrows, index) {
+            Some(item) => if item.mutable && targets_overlap(target, item.target) {
+                out = Some(item);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn check_use_after_move_state(state: OwnershipState, name: String, span_value: SourceSpan, max_errors: Int) -> OwnershipState {
+    match find_moved_binding(state.moved, name) {
+        Some(moved) => if true {
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, "use of moved value '");
+            parts = vec.push(parts, moved.name);
+            parts = vec.push(parts, "'");
+            state_error(state, max_errors, "E1277", span_value, string.join(parts, ""), "reinitialize the binding before using it again")
+        } else {
+            state
+        },
+        None => state,
+    }
+}
+
+fn borrow_target_path(expr: AstExpr) -> Option[String] {
+    match expr.kind {
+        AstNameExpr => Some(expr.name),
+        AstFieldAccessExpr => match direct_expr_at(expr, 0) {
+            Some(base) => match borrow_target_path(base) {
+                Some(base_path) => Some(join3(base_path, ".", expr.name)),
+                None => None(),
+            },
+            None => None(),
+        },
+        _ => None(),
+    }
+}
+
+fn acquire_borrow_state(state: OwnershipState, target: String, mutable: Bool, owner: String, span_value: SourceSpan, max_errors: Int) -> OwnershipState {
+    let root = binding_root(target);
+    let mut out = check_use_after_move_state(state, root, span_value, max_errors);
+    match find_moved_binding(out.moved, root) {
+        Some(_) => out,
+        None => match find_ownership_binding(out.bindings, root) {
+            Some(binding) => if mutable && !binding.mutable {
+                let mut parts: Vec[String] = vec.new_vec();
+                parts = vec.push(parts, "cannot take mutable borrow of immutable binding '");
+                parts = vec.push(parts, binding.name);
+                parts = vec.push(parts, "'");
+                state_error(out, max_errors, "E1267", span_value, string.join(parts, ""), join3("declare `", binding.name, "` as mutable"))
+            } else if mutable {
+                match find_overlapping_borrow(out.borrows, target) {
+                    Some(conflict) => if true {
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "cannot take mutable borrow of '");
+                        parts = vec.push(parts, target);
+                        parts = vec.push(parts, "' because it is already borrowed");
+                        state_error(out, max_errors, "E1263", span_value, string.join(parts, ""), "release the previous borrow before taking a mutable borrow")
+                    } else {
+                        out
+                    },
+                    None => ownership_state(out.bindings, vec.push(out.borrows, active_borrow(target, mutable, owner, span_value)), out.moved, out.resources, out.diagnostics),
+                }
+            } else {
+                match find_overlapping_mutable_borrow(out.borrows, target) {
+                    Some(conflict) => if true {
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "cannot take immutable borrow of '");
+                        parts = vec.push(parts, target);
+                        parts = vec.push(parts, "' while a mutable borrow is active");
+                        state_error(out, max_errors, "E1264", span_value, string.join(parts, ""), "end the mutable borrow before taking shared borrows")
+                    } else {
+                        out
+                    },
+                    None => ownership_state(out.bindings, vec.push(out.borrows, active_borrow(target, mutable, owner, span_value)), out.moved, out.resources, out.diagnostics),
+                }
+            },
+            None => out,
+        },
+    }
+}
+
+fn release_temp_borrow_state(state: OwnershipState, target: String, mutable: Bool, span_value: SourceSpan) -> OwnershipState {
+    ownership_state(state.bindings, remove_matching_borrow(state.borrows, target, mutable, "", span_value), state.moved, state.resources, state.diagnostics)
+}
+
+fn type_text_from_optional(value: Option[AstType]) -> String {
+    match value {
+        Some(ty) => type_text(ty),
+        None => "<unknown>",
+    }
+}
+
+fn is_let_statement_kind(kind: AstStatementKind) -> Bool {
+    match kind {
+        AstLetStatement => true,
+        AstAssignStatement => false,
+        AstExprStatement => false,
+        AstReturnStatement => false,
+    }
+}
+
+fn infer_ownership_type(expr: AstExpr, state: OwnershipState, declared_type: String) -> String {
+    if declared_type != "<unknown>" {
+        declared_type
+    } else {
+        match expr.kind {
+            AstNameExpr => match find_ownership_binding(state.bindings, expr.name) {
+                Some(binding) => binding.type_text,
+                None => "<unknown>",
+            },
+            AstStructLiteralExpr => expr.name,
+            AstIntExpr => "Int",
+            AstFloatExpr => "Float64",
+            AstBoolExpr => "Bool",
+            AstStringExpr => "String",
+            AstCharExpr => "Char",
+            AstUnitExpr => "()",
+            _ => "<unknown>",
+        }
+    }
+}
+
+fn is_movable_type(units: Vec[ResolveUnit], type_value: String) -> Bool {
+    let base = type_base_name(type_value);
+    match find_struct_decl(units, base) {
+        Some(_) => true,
+        None => match find_enum_decl(units, base) {
+            Some(_) => true,
+            None => false,
+        },
+    }
+}
+
+fn track_move_from_expr(state: OwnershipState, binding_name: String, expr: AstExpr, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    match expr.kind {
+        AstNameExpr => if expr.name == binding_name {
+            state
+        } else {
+            match find_ownership_binding(state.bindings, expr.name) {
+                Some(binding) => if is_movable_type(units, binding.type_text) {
+                    match find_overlapping_borrow(state.borrows, expr.name) {
+                        Some(conflict) => if true {
+                            let mut parts: Vec[String] = vec.new_vec();
+                            parts = vec.push(parts, "cannot move '");
+                            parts = vec.push(parts, expr.name);
+                            parts = vec.push(parts, "' while it is borrowed as '");
+                            parts = vec.push(parts, conflict.target);
+                            parts = vec.push(parts, "'");
+                            state_error(state, max_errors, "E1278", expr.span, string.join(parts, ""), "end the borrow before moving this value")
+                        } else {
+                            state
+                        },
+                        None => ownership_state(state.bindings, state.borrows, add_moved_binding(state.moved, expr.name, expr.span), state.resources, state.diagnostics),
+                    }
+                } else {
+                    state
+                },
+                None => state,
+            }
+        },
+        _ => state,
+    }
+}
+
+fn resource_protocol_op_for_name(raw_name: String) -> Option[ResourceProtocolOp] {
+    let name = path_tail(raw_name);
+    if name == "file_close" {
+        Some(resource_protocol_op("FileHandle", true, name, "FileHandle"))
+    } else if name == "file_read_line" || name == "file_write_str" {
+        Some(resource_protocol_op("FileHandle", false, name, "FileHandle"))
+    } else if name == "tcp_close" {
+        Some(resource_protocol_op("TcpHandle", true, name, "Int"))
+    } else if name == "tcp_send" || name == "tcp_recv" {
+        Some(resource_protocol_op("TcpHandle", false, name, "Int"))
+    } else if name == "udp_close" {
+        Some(resource_protocol_op("UdpHandle", true, name, "Int"))
+    } else if name == "udp_send_to" || name == "udp_recv_from" {
+        Some(resource_protocol_op("UdpHandle", false, name, "Int"))
+    } else if name == "tls_close" {
+        Some(resource_protocol_op("TlsStream", true, name, "TlsStream"))
+    } else if string.starts_with(name, "tls_send") || string.starts_with(name, "tls_recv") || name == "tls_version" || name == "tls_version_code" || name == "tls_peer_subject" || name == "tls_peer_issuer" || name == "tls_peer_fingerprint_sha256" || name == "tls_peer_san_entries" || name == "tls_peer_cn" {
+        Some(resource_protocol_op("TlsStream", false, name, "TlsStream"))
+    } else if name == "wait" || name == "kill" {
+        Some(resource_protocol_op("ProcessHandle", true, name, "Int"))
+    } else if name == "is_running" {
+        Some(resource_protocol_op("ProcessHandle", false, name, "Int"))
+    } else if name == "close_channel" {
+        Some(resource_protocol_op("IntChannel", true, name, "IntChannel"))
+    } else if name == "send_int" || name == "recv_int" {
+        Some(resource_protocol_op("IntChannel", false, name, "IntChannel"))
+    } else if name == "close_sender" {
+        Some(resource_protocol_op("Sender", true, name, "Sender"))
+    } else if name == "send" || name == "try_send" {
+        Some(resource_protocol_op("Sender", false, name, "Sender"))
+    } else if name == "close_receiver" {
+        Some(resource_protocol_op("Receiver", true, name, "Receiver"))
+    } else if name == "recv" || name == "try_recv" || name == "recv_timeout" {
+        Some(resource_protocol_op("Receiver", false, name, "Receiver"))
+    } else if name == "close_mutex" {
+        Some(resource_protocol_op("IntMutex", true, name, "IntMutex"))
+    } else if name == "lock_int" || name == "unlock_int" {
+        Some(resource_protocol_op("IntMutex", false, name, "IntMutex"))
+    } else if name == "close_rwlock" {
+        Some(resource_protocol_op("IntRwLock", true, name, "IntRwLock"))
+    } else if name == "read_lock_int" || name == "write_lock_int" || name == "write_unlock_int" {
+        Some(resource_protocol_op("IntRwLock", false, name, "IntRwLock"))
+    } else if name == "join_task" || name == "cancel_task" {
+        Some(resource_protocol_op("Task", true, name, "Task"))
+    } else if name == "async_wait_int" {
+        Some(resource_protocol_op("AsyncIntOp", true, name, "AsyncIntOp"))
+    } else if name == "async_wait_string" {
+        Some(resource_protocol_op("AsyncStringOp", true, name, "AsyncStringOp"))
+    } else {
+        None()
+    }
+}
+
+fn find_resource_use(resources: Vec[ResourceUse], name: String, kind: String) -> Option[ResourceUse] {
+    let mut out: Option[ResourceUse] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(resources) {
+        match vec.get(resources, index) {
+            Some(item) => if item.name == name && item.kind == kind {
+                out = Some(item);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn remove_resource_uses_for_name(resources: Vec[ResourceUse], name: String) -> Vec[ResourceUse] {
+    let mut out: Vec[ResourceUse] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(resources) {
+        match vec.get(resources, index) {
+            Some(item) => if item.name == name {
+                ()
+            } else {
+                out = vec.push(out, item);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn add_resource_use(resources: Vec[ResourceUse], name: String, kind: String, closed_by: String, span_value: SourceSpan) -> Vec[ResourceUse] {
+    vec.push(remove_resource_uses_for_name(resources, name), resource_use(name, kind, closed_by, span_value))
+}
+
+fn check_resource_protocol_call(state: OwnershipState, expr: AstExpr, max_errors: Int, allow_closed_use: Bool) -> OwnershipState {
+    match resource_protocol_op_for_name(expr.name) {
+        Some(op) => match call_arg_expr(expr, 0) {
+            Some(first_arg) => match first_arg.kind {
+                AstNameExpr => match find_ownership_binding(state.bindings, first_arg.name) {
+                    Some(binding) => if type_base_name(binding.type_text) == op.first_param_base_type {
+                        match find_resource_use(state.resources, first_arg.name, op.kind) {
+                            Some(previous) => if allow_closed_use {
+                                state
+                            } else {
+                                let mut parts: Vec[String] = vec.new_vec();
+                                parts = vec.push(parts, "resource protocol violation: '");
+                                parts = vec.push(parts, op.api);
+                                parts = vec.push(parts, "' called after terminal '");
+                                parts = vec.push(parts, previous.closed_by);
+                                parts = vec.push(parts, "' on closed ");
+                                parts = vec.push(parts, op.kind);
+                                parts = vec.push(parts, " '");
+                                parts = vec.push(parts, first_arg.name);
+                                parts = vec.push(parts, "'");
+                                state_error(state, max_errors, "E2006", expr.span, string.join(parts, ""), join3("create a new ", op.kind, " before calling this API again"))
+                            },
+                            None => if op.terminal {
+                                ownership_state(state.bindings, state.borrows, state.moved, add_resource_use(state.resources, first_arg.name, op.kind, op.api, expr.span), state.diagnostics)
+                            } else {
+                                state
+                            },
+                        }
+                    } else {
+                        state
+                    },
+                    None => state,
+                },
+                _ => state,
+            },
+            None => state,
+        },
+        None => state,
+    }
+}
+
+fn merge_moved_states(left: Vec[MovedBinding], right: Vec[MovedBinding]) -> Vec[MovedBinding] {
+    let mut out = left;
+    let mut index = 0;
+    while index < vec.vec_len(right) {
+        match vec.get(right, index) {
+            Some(item) => if true {
+                out = add_moved_binding(out, item.name, item.span);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn check_ownership_expr(expr: AstExpr, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int, allow_closed_use: Bool) -> OwnershipState {
+    let mut out = state;
+    match expr.kind {
+        AstNameExpr => if true {
+            out = check_use_after_move_state(out, expr.name, expr.span, max_errors);
+            ()
+        } else {
+            ()
+        },
+        AstBorrowExpr => match direct_expr_at(expr, 0) {
+            Some(inner) => match borrow_target_path(inner) {
+                Some(target) => if true {
+                    let mutable = expr.name == "mut";
+                    out = acquire_borrow_state(out, target, mutable, "", expr.span, max_errors);
+                    out = check_ownership_expr(inner, out, units, max_errors, false);
+                    out = release_temp_borrow_state(out, target, mutable, expr.span);
+                    ()
+                } else {
+                    ()
+                },
+                None => if true {
+                    out = state_error(out, max_errors, "E1268", expr.span, "borrow target must be a local variable or field path", "use `&name`, `&mut name`, or `&name.field` on a local binding");
+                    out = check_ownership_expr(inner, out, units, max_errors, false);
+                    ()
+                } else {
+                    ()
+                },
+            },
+            None => (),
+        },
+        AstCallExpr => if true {
+            let mut index = 0;
+            while index < expr.direct_child_count {
+                match direct_expr_at(expr, index) {
+                    Some(child) => if true {
+                        out = check_ownership_expr(child, out, units, max_errors, false);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            out = check_resource_protocol_call(out, expr, max_errors, allow_closed_use);
+            ()
+        } else {
+            ()
+        },
+        AstIfExpr => if true {
+            match direct_expr_at(expr, 0) {
+                Some(cond) => if true {
+                    out = check_ownership_expr(cond, out, units, max_errors, false);
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
+            let mut merged = out.moved;
+            let mut index = 1;
+            while index < expr.direct_child_count {
+                match direct_expr_at(expr, index) {
+                    Some(child) => if true {
+                        let branch_state = check_ownership_expr(child, ownership_state(out.bindings, out.borrows, out.moved, out.resources, out.diagnostics), units, max_errors, false);
+                        merged = merge_moved_states(merged, branch_state.moved);
+                        out = state_with_diagnostics(out, branch_state.diagnostics);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            out = ownership_state(out.bindings, out.borrows, merged, out.resources, out.diagnostics);
+            ()
+        } else {
+            ()
+        },
+        AstMatchExpr => if true {
+            match direct_expr_at(expr, 0) {
+                Some(scrutinee) => if true {
+                    out = check_ownership_expr(scrutinee, out, units, max_errors, true);
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
+            let mut merged = out.moved;
+            let mut index = 1;
+            while index < expr.direct_child_count {
+                match direct_expr_at(expr, index) {
+                    Some(child) => if true {
+                        let branch_state = check_ownership_expr(child, ownership_state(out.bindings, out.borrows, out.moved, out.resources, out.diagnostics), units, max_errors, false);
+                        merged = merge_moved_states(merged, branch_state.moved);
+                        out = state_with_diagnostics(out, branch_state.diagnostics);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            out = ownership_state(out.bindings, out.borrows, merged, out.resources, out.diagnostics);
+            ()
+        } else {
+            ()
+        },
+        _ => if true {
+            let mut index = 0;
+            while index < expr.direct_child_count {
+                match direct_expr_at(expr, index) {
+                    Some(child) => if true {
+                        out = check_ownership_expr(child, out, units, max_errors, false);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                index = index + 1;
+            };
+            ()
+        } else {
+            ()
+        },
+    };
+    out
+}
+
+fn check_ownership_statement(statement: AstStatement, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    match statement.kind {
+        AstLetStatement => match statement.expr {
+            Some(expr) => if true {
+                let mut out = state;
+                match expr.kind {
+                    AstBorrowExpr => match direct_expr_at(expr, 0) {
+                        Some(inner) => match borrow_target_path(inner) {
+                            Some(target) => if true {
+                                out = acquire_borrow_state(out, target, expr.name == "mut", statement.name, expr.span, max_errors);
+                                out = check_ownership_expr(inner, out, units, max_errors, false);
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => if true {
+                                out = state_error(out, max_errors, "E1268", expr.span, "borrow target must be a local variable or field path", "use `&name`, `&mut name`, or `&name.field` on a local binding");
+                                out = check_ownership_expr(inner, out, units, max_errors, false);
+                                ()
+                            } else {
+                                ()
+                            },
+                        },
+                        None => (),
+                    },
+                    _ => if true {
+                        out = check_ownership_expr(expr, out, units, max_errors, false);
+                        ()
+                    } else {
+                        ()
+                    },
+                };
+                out = track_move_from_expr(out, statement.name, expr, units, max_errors);
+                let declared = type_text_from_optional(statement.type_ref);
+                let binding_type = infer_ownership_type(expr, out, declared);
+                ownership_state(replace_ownership_binding(out.bindings, ownership_binding(statement.name, binding_type, statement.mutable, statement.span)), out.borrows, remove_moved_binding(out.moved, statement.name), remove_resource_uses_for_name(out.resources, statement.name), out.diagnostics)
+            } else {
+                state
+            },
+            None => state,
+        },
+        AstAssignStatement => match statement.expr {
+            Some(expr) => if true {
+                let mut out = check_ownership_expr(expr, state, units, max_errors, false);
+                match find_overlapping_borrow(out.borrows, statement.target) {
+                    Some(_) => if true {
+                        let mut parts: Vec[String] = vec.new_vec();
+                        parts = vec.push(parts, "cannot assign to '");
+                        parts = vec.push(parts, statement.target);
+                        parts = vec.push(parts, "' while it is actively borrowed");
+                        out = state_error(out, max_errors, "E1265", statement.span, string.join(parts, ""), "release or narrow the borrow scope before mutating this binding");
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
+                let binding_type = infer_ownership_type(expr, out, "<unknown>");
+                let bindings = match find_ownership_binding(out.bindings, statement.target) {
+                    Some(existing) => replace_ownership_binding(out.bindings, ownership_binding(statement.target, if binding_type == "<unknown>" { existing.type_text } else { binding_type }, existing.mutable, existing.span)),
+                    None => out.bindings,
+                };
+                ownership_state(bindings, out.borrows, remove_moved_binding(out.moved, statement.target), remove_resource_uses_for_name(out.resources, statement.target), out.diagnostics)
+            } else {
+                state
+            },
+            None => state,
+        },
+        AstReturnStatement => match statement.expr {
+            Some(expr) => check_ownership_expr(expr, state, units, max_errors, false),
+            None => state,
+        },
+        AstExprStatement => match statement.expr {
+            Some(expr) => check_ownership_expr(expr, state, units, max_errors, false),
+            None => state,
+        },
+    }
+}
+
+fn check_ownership_block(block: AstBlock, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    let mut out = state;
+    let mut introduced: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => if true {
+                if is_let_statement_kind(statement.kind) {
+                    introduced = vec.push(introduced, statement.name);
+                } else {
+                    ()
+                };
+                out = check_ownership_statement(statement, out, units, max_errors);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    match block.tail_expr {
+        Some(expr) => if true {
+            out = check_ownership_expr(expr, out, units, max_errors, false);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    let mut release_index = 0;
+    while release_index < vec.vec_len(introduced) {
+        match vec.get(introduced, release_index) {
+            Some(name) => if true {
+                out = ownership_state(out.bindings, remove_borrows_for_owner(out.borrows, name), out.moved, out.resources, out.diagnostics);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        release_index = release_index + 1;
+    };
+    out
+}
+
+fn ownership_state_for_signature(signature: AstFunctionSignature, diagnostics: Vec[Diagnostic]) -> OwnershipState {
+    let mut bindings: Vec[OwnershipBinding] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(signature.params) {
+        match vec.get(signature.params, index) {
+            Some(param) => if true {
+                bindings = vec.push(bindings, ownership_binding(param.name.value, type_text(param.type_ref), false, param.span));
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    ownership_state(bindings, vec.new_vec(), vec.new_vec(), vec.new_vec(), diagnostics)
+}
+
+fn append_ownership_diagnostics_for_function(diagnostics: Vec[Diagnostic], signature: AstFunctionSignature, body: AstBlock, units: Vec[ResolveUnit], max_errors: Int) -> Vec[Diagnostic] {
+    let state = ownership_state_for_signature(signature, diagnostics);
+    let checked = check_ownership_block(body, state, units, max_errors);
+    checked.diagnostics
+}
+
+fn append_ownership_diagnostics_for_item(diagnostics: Vec[Diagnostic], item: AstProgramItem, units: Vec[ResolveUnit], max_errors: Int) -> Vec[Diagnostic] {
+    match item.function_item {
+        Some(function_item) => append_ownership_diagnostics_for_function(diagnostics, function_item.signature, function_item.body, units, max_errors),
+        None => match item.impl_item {
+            Some(impl_item) => if true {
+                let mut out = diagnostics;
+                let mut index = 0;
+                while index < vec.vec_len(impl_item.methods) {
+                    match vec.get(impl_item.methods, index) {
+                        Some(method) => if true {
+                            out = append_ownership_diagnostics_for_function(out, method.signature, method.body, units, max_errors);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    index = index + 1;
+                };
+                out
+            } else {
+                diagnostics
+            },
+            None => diagnostics,
+        },
+    }
+}
+
+fn append_ownership_resource_diagnostics(output: TypecheckOutput, units: Vec[ResolveUnit], max_errors: Int) -> TypecheckOutput {
+    let mut diagnostics = output.diagnostics;
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => if true {
+                            diagnostics = append_ownership_diagnostics_for_item(diagnostics, item, units, max_errors);
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, diagnostics)
+}
+
 pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> TypecheckOutput {
     let semantics = analyze_resolved_units(units, resolver, max_errors);
     let mut out = typecheck_output(resolver.entry_module, vec.new_vec(), vec.new_vec(), vec.new_vec(), append_all_diagnostics(resolver.diagnostics, semantics.diagnostics, max_errors));
@@ -3246,7 +4224,7 @@ pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutpu
         };
         unit_index = unit_index + 1;
     };
-    append_effect_capability_contract_diagnostics(out, units, resolver, semantics, max_errors)
+    append_ownership_resource_diagnostics(append_effect_capability_contract_diagnostics(out, units, resolver, semantics, max_errors), units, max_errors)
 }
 
 pub fn typecheck_units(units: Vec[ResolveUnit], entry_module: String, max_errors: Int) -> TypecheckOutput {

@@ -54,6 +54,14 @@
       "actions": [
         "check"
       ],
+      "expected": "pass",
+      "name": "fs_protocol_ok",
+      "path": "examples/verify/fs_protocol_ok.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
       "expected": "fail",
       "name": "effects_reject",
       "path": "examples/effects_reject.aic"
@@ -73,6 +81,14 @@
       "expected": "fail",
       "name": "capability_missing_invalid",
       "path": "examples/verify/capability_missing_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "expected": "fail",
+      "name": "generic_channel_protocol_invalid",
+      "path": "examples/verify/generic_channel_protocol_invalid.aic"
     },
     {
       "actions": [

@@ -390,6 +390,17 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(typecheck.contains("E2009"));
     assert!(typecheck.contains("E4003"));
     assert!(typecheck.contains("E4005"));
+    assert!(typecheck.contains("struct OwnershipState"));
+    assert!(typecheck.contains("struct ActiveBorrow"));
+    assert!(typecheck.contains("struct ResourceProtocolOp"));
+    assert!(typecheck.contains("fn append_ownership_resource_diagnostics"));
+    assert!(typecheck.contains("fn check_ownership_expr"));
+    assert!(typecheck.contains("fn check_resource_protocol_call"));
+    assert!(typecheck.contains("E1263"));
+    assert!(typecheck.contains("E1265"));
+    assert!(typecheck.contains("E1277"));
+    assert!(typecheck.contains("E1278"));
+    assert!(typecheck.contains("E2006"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
@@ -402,6 +413,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
             .expect("read source diagnostics check tool");
     assert!(source_diagnostics_check.contains("fn valid_effect_contract_positive_cases"));
     assert!(source_diagnostics_check.contains("fn valid_effect_contract_negative_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_ownership_resource_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn valid_ownership_resource_negative_cases"));
 }
 
 #[test]

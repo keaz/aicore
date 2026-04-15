@@ -1409,8 +1409,37 @@ fn valid_effect_contract_negative_cases() -> Bool {
         && program_diagnostic_code_matches(trait_contract, 0, "E1089")
 }
 
+fn valid_ownership_resource_positive_cases() -> Bool {
+    let reinit_after_move = typecheck_single("module app.main; struct BoxedInt { value: Int } fn main() -> Int { let mut b = BoxedInt { value: 1 }; let moved = b; let first = moved.value; b = BoxedInt { value: first + 1 }; b.value }");
+    let branch_local_borrow = typecheck_single("module app.main; fn main() -> Int { let mut x = 1; if true { let r = &x; 0 } else { 0 }; x = 2; x }");
+    let resource_ok = typecheck_single("module app.main; struct FileHandle { handle: Int } fn file_read_line(h: FileHandle) -> Int effects { fs } capabilities { fs } { 1 } fn file_close(h: FileHandle) -> Bool effects { fs } capabilities { fs } { true } fn main() -> Int effects { fs } capabilities { fs } { let h = FileHandle { handle: 1 }; let first = file_read_line(h); let closed = file_close(h); first }");
+    let closed_match_ok = typecheck_single("module app.main; struct FileHandle { handle: Int } fn file_read_line(h: FileHandle) -> Int effects { fs } capabilities { fs } { 1 } fn file_close(h: FileHandle) -> Bool effects { fs } capabilities { fs } { true } fn main() -> Int effects { fs } capabilities { fs } { let h = FileHandle { handle: 1 }; let closed = file_close(h); match file_read_line(h) { 1 => 1, _ => 0, } }");
+    !typecheck_has_diagnostic_code(reinit_after_move, "E1277")
+        && !typecheck_has_diagnostic_code(reinit_after_move, "E1278")
+        && !typecheck_has_diagnostic_code(branch_local_borrow, "E1265")
+        && !typecheck_has_diagnostic_code(resource_ok, "E2006")
+        && !typecheck_has_diagnostic_code(closed_match_ok, "E2006")
+}
+
+fn valid_ownership_resource_negative_cases() -> Bool {
+    let use_after_move = typecheck_single("module app.main; struct BoxedInt { value: Int } fn main() -> Int { let b = BoxedInt { value: 1 }; let moved = b; b.value }");
+    let move_while_borrowed = typecheck_single("module app.main; struct BoxedInt { value: Int } fn main() -> Int { let b = BoxedInt { value: 1 }; let keep = &b; let moved = b; moved.value }");
+    let assignment_while_borrowed = typecheck_single("module app.main; fn main() -> Int { let mut x = 1; let r = &x; x = 2; x }");
+    let mutable_borrow_conflict = typecheck_single("module app.main; fn main() -> Int { let mut x = 1; let a = &mut x; let b = &mut x; x }");
+    let immutable_binding_mut_borrow = typecheck_single("module app.main; fn main() -> Int { let x = 1; let r = &mut x; x }");
+    let resource_after_close = typecheck_single("module app.main; struct FileHandle { handle: Int } fn file_read_line(h: FileHandle) -> Int effects { fs } capabilities { fs } { 1 } fn file_close(h: FileHandle) -> Bool effects { fs } capabilities { fs } { true } fn main() -> Int effects { fs } capabilities { fs } { let h = FileHandle { handle: 1 }; let closed = file_close(h); file_read_line(h) }");
+    let terminal_reuse = typecheck_single("module app.main; struct FileHandle { handle: Int } fn file_close(h: FileHandle) -> Bool effects { fs } capabilities { fs } { true } fn main() -> Bool effects { fs } capabilities { fs } { let h = FileHandle { handle: 1 }; let first = file_close(h); file_close(h) }");
+    typecheck_has_diagnostic_code(use_after_move, "E1277")
+        && typecheck_has_diagnostic_code(move_while_borrowed, "E1278")
+        && typecheck_has_diagnostic_code(assignment_while_borrowed, "E1265")
+        && typecheck_has_diagnostic_code(mutable_borrow_conflict, "E1263")
+        && typecheck_has_diagnostic_code(immutable_binding_mut_borrow, "E1267")
+        && typecheck_has_diagnostic_code(resource_after_close, "E2006")
+        && typecheck_has_diagnostic_code(terminal_reuse, "E2006")
+}
+
 fn valid_typecheck_frontend() -> Bool {
-    valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases()
+    valid_typecheck_positive_cases() && valid_typecheck_negative_cases() && valid_effect_contract_positive_cases() && valid_effect_contract_negative_cases() && valid_ownership_resource_positive_cases() && valid_ownership_resource_negative_cases()
 }
 
 fn main() -> Int effects { io } capabilities { io } {
