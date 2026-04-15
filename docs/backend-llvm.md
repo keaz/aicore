@@ -24,8 +24,9 @@ The package emits LLVM text directly. Requests for native object, static library
 
 The backend emits executable LLVM for the backend-covered primitive forms:
 
-- primitive function signatures using integer, boolean, and unit return forms
+- primitive function signatures using integer, boolean, unit, and `String` return forms
 - integer and boolean literal returns
+- string literal returns using deterministic module-level LLVM constants
 - parameter returns
 - integer `+`, `-`, and `*` over primitive operands
 - direct primitive function calls

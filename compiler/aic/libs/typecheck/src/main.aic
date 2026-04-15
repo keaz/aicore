@@ -134,6 +134,11 @@ struct EffectPath {
     found: Bool,
 }
 
+struct EffectKey {
+    module_path: String,
+    name: String,
+}
+
 struct OwnershipBinding {
     name: String,
     type_text: String,
@@ -455,6 +460,28 @@ fn append_binding(env: TypecheckEnv, item: TypecheckBinding) -> TypecheckEnv {
     typecheck_env(env.module_path, env.function_name, env.return_type, vec.push(env.bindings, item), env.generic_map, env.diagnostics, env.instantiations, env.in_loop)
 }
 
+fn clone_typecheck_bindings(bindings: Vec[TypecheckBinding]) -> Vec[TypecheckBinding] {
+    let mut out: Vec[TypecheckBinding] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(bindings) {
+        match vec.get(bindings, index) {
+            Some(binding) => if true {
+                out = vec.push(out, binding);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn env_with_bindings(env: TypecheckEnv, bindings: Vec[TypecheckBinding]) -> TypecheckEnv {
+    typecheck_env(env.module_path, env.function_name, env.return_type, bindings, env.generic_map, env.diagnostics, env.instantiations, env.in_loop)
+}
+
 fn append_instantiation(env: TypecheckEnv, item: TypecheckInstantiation) -> TypecheckEnv {
     if has_instantiation(env.instantiations, item.name, item.kind, item.type_args) {
         env
@@ -649,27 +676,52 @@ fn nominal_type_name(text: String) -> String {
     }
 }
 
+fn push_generic_arg(out: Vec[String], raw: String) -> Vec[String] {
+    let trimmed = string.trim(raw);
+    if trimmed == "" {
+        out
+    } else {
+        vec.push(out, trimmed)
+    }
+}
+
 fn generic_arg_texts(text: String) -> Vec[String] {
     let mut out: Vec[String] = vec.new_vec();
-    if source_contains_type_args(text) {
-        let open_parts = string.split(text, "[");
-        let tail = match vec.get(open_parts, 1) {
+    let mut in_args = false;
+    let mut done = false;
+    let mut depth = 0;
+    let mut arg_start = 0;
+    let mut index = 0;
+    while !done && index < string.len(text) {
+        let ch = match string.char_at(text, index) {
             Some(value) => value,
             None => "",
         };
-        let close_parts = string.split(tail, "]");
-        let args_text = match vec.get(close_parts, 0) {
-            Some(value) => value,
-            None => "",
-        };
-        if args_text == "" {
-            out
+        if ch == "[" {
+            if in_args {
+                depth = depth + 1;
+            } else {
+                in_args = true;
+                arg_start = index + 1;
+            }
+        } else if ch == "]" {
+            if in_args && depth == 0 {
+                out = push_generic_arg(out, string.substring(text, arg_start, index));
+                done = true;
+            } else if in_args {
+                depth = depth - 1;
+            } else {
+                ()
+            }
+        } else if ch == "," && in_args && depth == 0 {
+            out = push_generic_arg(out, string.substring(text, arg_start, index));
+            arg_start = index + 1;
         } else {
-            string.split(args_text, ",")
-        }
-    } else {
-        out
-    }
+            ()
+        };
+        index = index + 1;
+    };
+    out
 }
 
 fn type_from_text(text: String, span_value: SourceSpan) -> TypecheckType {
@@ -723,13 +775,24 @@ fn canonical_type_text(units: Vec[ResolveUnit], module_path: String, text: Strin
         "usize"
     } else {
         match find_type_alias(units, module_path, nominal_type_name(text)) {
-            Some(alias_item) => if vec.vec_len(alias_item.generic_params.params) == vec.vec_len(generic_arg_texts(text)) {
-                substitute_type_alias(alias_item, generic_arg_texts(text))
-            } else {
-                text
+            Some(alias_item) => expand_type_alias(alias_item, text),
+            None => match find_consistent_type_alias(units, nominal_type_name(text)) {
+                Some(alias_item) => expand_type_alias(alias_item, text),
+                None => text,
             },
-            None => text,
         }
+    }
+}
+
+fn type_alias_matches_arity(alias_item: AstTypeAliasDecl, text: String) -> Bool {
+    vec.vec_len(alias_item.generic_params.params) == vec.vec_len(generic_arg_texts(text))
+}
+
+fn expand_type_alias(alias_item: AstTypeAliasDecl, text: String) -> String {
+    if type_alias_matches_arity(alias_item, text) {
+        substitute_type_alias(alias_item, generic_arg_texts(text))
+    } else {
+        text
     }
 }
 
@@ -802,6 +865,61 @@ fn find_type_alias(units: Vec[ResolveUnit], module_path: String, name: String) -
     out
 }
 
+fn same_type_alias_shape(left: AstTypeAliasDecl, right: AstTypeAliasDecl) -> Bool {
+    type_text(left.target_type) == type_text(right.target_type) && vec.vec_len(left.generic_params.params) == vec.vec_len(right.generic_params.params)
+}
+
+fn find_consistent_type_alias(units: Vec[ResolveUnit], name: String) -> Option[AstTypeAliasDecl] {
+    let mut out: Option[AstTypeAliasDecl] = None();
+    let mut count = 0;
+    let mut consistent = true;
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => match item.type_alias_item {
+                            Some(alias_item) => if alias_item.name.value == name {
+                                if count == 0 {
+                                    out = Some(alias_item);
+                                    count = 1;
+                                } else {
+                                    match out {
+                                        Some(existing) => if same_type_alias_shape(existing, alias_item) {
+                                            count = count + 1;
+                                        } else {
+                                            consistent = false;
+                                            count = count + 1;
+                                        },
+                                        None => (),
+                                    }
+                                }
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    if count > 0 && consistent {
+        out
+    } else {
+        None()
+    }
+}
+
 fn find_binding(bindings: Vec[TypecheckBinding], name: String) -> Option[TypecheckBinding] {
     let mut out: Option[TypecheckBinding] = None();
     let mut found = false;
@@ -863,6 +981,45 @@ fn generic_value(map: GenericMap, name: String) -> Option[String] {
         index = index + 1;
     };
     out
+}
+
+fn add_generic_bindings_from_type(map: GenericMap, params: AstGenericParamList, pattern_text: String, found_text: String) -> GenericMap {
+    if found_text == "<unknown>" || found_text == "_" {
+        map
+    } else if is_generic_param(params, pattern_text) {
+        add_or_update_generic(map, pattern_text, found_text)
+    } else if nominal_type_name(pattern_text) == nominal_type_name(found_text) {
+        let pattern_args = generic_arg_texts(pattern_text);
+        let found_args = generic_arg_texts(found_text);
+        let mut out = map;
+        let mut index = 0;
+        while index < vec.vec_len(pattern_args) && index < vec.vec_len(found_args) {
+            match vec.get(pattern_args, index) {
+                Some(pattern_arg) => match vec.get(found_args, index) {
+                    Some(found_arg) => if true {
+                        out = add_generic_bindings_from_type(out, params, pattern_arg, found_arg);
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                },
+                None => (),
+            };
+            index = index + 1;
+        };
+        out
+    } else {
+        map
+    }
+}
+
+fn add_expected_return_generics(map: GenericMap, params: AstGenericParamList, return_text: String, expected: String) -> GenericMap {
+    if expected == "<unknown>" || expected == "_" {
+        map
+    } else {
+        add_generic_bindings_from_type(map, params, return_text, expected)
+    }
 }
 
 fn instantiate_type_text(text: String, map: GenericMap) -> String {
@@ -1305,7 +1462,7 @@ fn expr_from_node(node: AstExprNode) -> AstExpr {
 }
 
 fn expr_node_with_depth_offset(node: AstExprNode, depth_offset: Int) -> AstExprNode {
-    ast_expr_node(node.kind, node.role, node.op, node.name, node.direct_child_count, node.depth - depth_offset, node.span, node.text)
+    ast_expr_node(node.kind, node.role, node.op, node.name, node.direct_child_count, node.depth - depth_offset, node.patterns, node.match_arms, node.span, node.text)
 }
 
 fn expr_from_node_index(expr: AstExpr, node_index: Int) -> Option[AstExpr] {
@@ -1325,7 +1482,7 @@ fn expr_from_node_index(expr: AstExpr, node_index: Int) -> Option[AstExpr] {
                 };
                 index = index + 1;
             };
-            Some(ast_expr(root.kind, root.op, root.name, root.direct_child_count, nodes, vec.new_vec(), vec.new_vec(), root.span, root.text))
+            Some(ast_expr(root.kind, root.op, root.name, root.direct_child_count, nodes, root.patterns, root.match_arms, root.span, root.text))
         } else {
             None()
         },
@@ -1348,6 +1505,34 @@ fn role_tail(role: String, prefix: String) -> String {
     } else {
         ""
     }
+}
+
+fn role_part(role: String, index: Int) -> String {
+    let parts = string.split(role, ":");
+    match vec.get(parts, index) {
+        Some(value) => value,
+        None => "",
+    }
+}
+
+fn block_let_name(role: String) -> String {
+    if string.starts_with(role, "let:") {
+        role_part(role, 1)
+    } else {
+        ""
+    }
+}
+
+fn block_let_type(role: String) -> String {
+    if string.starts_with(role, "let:") {
+        role_part(role, 2)
+    } else {
+        "<unknown>"
+    }
+}
+
+fn block_let_mutable(role: String) -> Bool {
+    role_part(role, 3) == "mut"
 }
 
 fn call_arg_count(expr: AstExpr) -> Int {
@@ -1598,7 +1783,7 @@ fn check_generic_bounds(env: TypecheckEnv, params: AstGenericParamList, semantic
 
 fn infer_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
     match expr.kind {
-        AstIntExpr => infer_int_literal(expr, env, max_errors, expected),
+        AstIntExpr => infer_int_literal(expr, env, units, max_errors, expected),
         AstFloatExpr => infer_float_literal(expr, env, expected),
         AstBoolExpr => expr_check(env, "Bool"),
         AstStringExpr => expr_check(env, "String"),
@@ -1612,7 +1797,7 @@ fn infer_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolve
         AstBinaryExpr => infer_binary_expr(expr, env, units, resolver, semantics, max_errors),
         AstUnaryExpr => infer_unary_expr(expr, env, units, resolver, semantics, max_errors),
         AstTupleExpr => expr_check(infer_all_children(expr, env, units, resolver, semantics, max_errors).env, "Tuple"),
-        AstBlockExpr => expr_check(env, "()"),
+        AstBlockExpr => infer_block_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstIfExpr => infer_if_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstWhileExpr => infer_while_expr(expr, env, units, resolver, semantics, max_errors),
         AstForExpr => infer_for_expr(expr, env, units, resolver, semantics, max_errors),
@@ -1650,6 +1835,70 @@ fn infer_all_children(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit],
     expr_check(out_env, "<unknown>")
 }
 
+fn infer_block_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
+    let module_path = env.module_path;
+    let function_name = env.function_name;
+    let mut out_env = env;
+    let mut result_type = "()";
+    let mut index = 0;
+    while index < expr.direct_child_count {
+        match direct_expr_node_at(expr, index) {
+            Some(node) => match direct_expr_at(expr, index) {
+                Some(child_expr) => if string.starts_with(node.role, "let:") {
+                    let let_name = block_let_name(node.role);
+                    let declared = block_let_type(node.role);
+                    let child_expected = if declared == "<unknown>" { "<unknown>" } else { declared };
+                    let checked = infer_expr(child_expr, out_env, units, resolver, semantics, max_errors, child_expected);
+                    let final_type = if declared == "<unknown>" { checked.type_text } else { declared };
+                    out_env = checked.env;
+                    if declared != "<unknown>" {
+                        out_env = check_expected_type(out_env, units, module_path, node.span, "let binding", declared, checked.type_text, max_errors);
+                    } else {
+                        ()
+                    };
+                    out_env = append_binding(out_env, typecheck_binding(module_path, function_name, let_name, final_type, block_let_mutable(node.role), TypecheckLocalValue(), node.span));
+                    result_type = "()";
+                    ()
+                } else if string.starts_with(node.role, "assign:") {
+                    let target = role_tail(node.role, "assign:");
+                    match find_binding(out_env.bindings, target) {
+                        Some(binding) => if binding.mutable {
+                            let checked = infer_expr(child_expr, out_env, units, resolver, semantics, max_errors, binding.type_text);
+                            out_env = check_expected_type(checked.env, units, module_path, node.span, "assignment", binding.type_text, checked.type_text, max_errors);
+                            ()
+                        } else {
+                            out_env = env_error(out_env, max_errors, "E1266", node.span, "cannot assign to immutable binding", "declare the binding with `let mut` before assigning");
+                            ()
+                        },
+                        None => if true {
+                            out_env = env_error(out_env, max_errors, "E1208", node.span, "unknown assignment target", "assign only to a declared local binding");
+                            ()
+                        } else {
+                            ()
+                        },
+                    };
+                    result_type = "()";
+                    ()
+                } else {
+                    let child_expected = if node.role == "tail" || node.role == "return" { expected } else { "<unknown>" };
+                    let checked = infer_expr(child_expr, out_env, units, resolver, semantics, max_errors, child_expected);
+                    out_env = checked.env;
+                    if node.role == "tail" || node.role == "return" {
+                        result_type = checked.type_text;
+                    } else {
+                        result_type = "()";
+                    };
+                    ()
+                },
+                None => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    expr_check(out_env, result_type)
+}
+
 fn infer_first_child_or_unknown(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int) -> ExprCheck {
     match direct_expr_at(expr, 0) {
         Some(child_expr) => infer_expr(child_expr, env, units, resolver, semantics, max_errors, "<unknown>"),
@@ -1657,14 +1906,16 @@ fn infer_first_child_or_unknown(expr: AstExpr, env: TypecheckEnv, units: Vec[Res
     }
 }
 
-fn infer_int_literal(expr: AstExpr, env: TypecheckEnv, max_errors: Int, expected: String) -> ExprCheck {
-    let out_type = if is_integer_type(expected) { expected } else { "Int" };
-    let out_env = if literal_exceeds_small_width(expr.name, out_type) {
+fn infer_int_literal(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], max_errors: Int, expected: String) -> ExprCheck {
+    let expected_canonical = canonical_type_text(units, env.module_path, expected);
+    let out_type = if is_integer_type(expected_canonical) { expected } else { "Int" };
+    let range_type = if is_integer_type(expected_canonical) { expected_canonical } else { out_type };
+    let out_env = if literal_exceeds_small_width(expr.name, range_type) {
         let mut parts: Vec[String] = vec.new_vec();
         parts = vec.push(parts, "integer literal '");
         parts = vec.push(parts, expr.name);
         parts = vec.push(parts, "' is outside the range of '");
-        parts = vec.push(parts, out_type);
+        parts = vec.push(parts, range_type);
         parts = vec.push(parts, "'");
         env_error(env, max_errors, "E1204", expr.span, string.join(parts, ""), "choose a wider integer type or reduce the literal value")
     } else {
@@ -1725,11 +1976,11 @@ fn infer_call_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], re
     } else if expr.name == "Err" {
         infer_builtin_variant(expr, env, units, resolver, semantics, max_errors, expected, "Result", "Err", 1)
     } else if string.contains(expr.name, ".") {
-        infer_member_call(expr, env, units, resolver, semantics, max_errors)
+        infer_qualified_or_member_call(expr, env, units, resolver, semantics, max_errors, expected)
     } else {
         match lookup_value_symbol(units, resolver, env.module_path, expr.name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
             Some(symbol) => match find_function_signature(units, symbol.module_path, symbol.name) {
-                Some(signature) => check_function_call(expr, env, units, resolver, semantics, max_errors, signature, symbol.module_path, symbol.name),
+                Some(signature) => check_function_call(expr, env, units, resolver, semantics, max_errors, signature, symbol.module_path, symbol.name, expected),
                 None => expr_check(env, symbol.type_name),
             },
             None => match lookup_value_symbol(units, resolver, env.module_path, expr.name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
@@ -1771,7 +2022,7 @@ fn infer_builtin_variant(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUni
     }
 }
 
-fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, signature: AstFunctionSignature, module_path: String, symbol_name: String) -> ExprCheck {
+fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, signature: AstFunctionSignature, module_path: String, symbol_name: String, expected: String) -> ExprCheck {
     let requester_module = env.module_path;
     let mut out_env = env;
     let arg_count = call_arg_count(expr);
@@ -1789,17 +2040,20 @@ fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]
                 Some(arg_node) => match call_arg_expr(expr, index) {
                     Some(arg_expr) => match vec.get(signature.params, index) {
                     Some(param) => if true {
-                        let expected_type = type_text(param.type_ref);
+                        let param_type = type_text(param.type_ref);
+                        let expected_type = instantiate_type_text(param_type, generic_map_value);
                         let checked = infer_expr(arg_expr, out_env, units, resolver, semantics, max_errors, expected_type);
                         out_env = checked.env;
-                        if is_generic_param(signature.generic_params, expected_type) {
-                            match generic_value(generic_map_value, expected_type) {
+                        let next_generic_map = add_generic_bindings_from_type(generic_map_value, signature.generic_params, param_type, checked.type_text);
+                        let final_expected_type = instantiate_type_text(param_type, next_generic_map);
+                        if is_generic_param(signature.generic_params, param_type) {
+                            match generic_value(generic_map_value, param_type) {
                                 Some(existing) => if types_compatible(units, requester_module, existing, checked.type_text) {
                                     ()
                                 } else {
                                     let mut parts: Vec[String] = vec.new_vec();
                                     parts = vec.push(parts, "generic argument mismatch for '");
-                                    parts = vec.push(parts, expected_type);
+                                    parts = vec.push(parts, param_type);
                                     parts = vec.push(parts, "': expected '");
                                     parts = vec.push(parts, existing);
                                     parts = vec.push(parts, "', found '");
@@ -1808,20 +2062,20 @@ fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]
                                     out_env = env_error(out_env, max_errors, "E1214", arg_node.span, string.join(parts, ""), "pass values with the same inferred generic type");
                                 },
                                 None => if true {
-                                    generic_map_value = add_or_update_generic(generic_map_value, expected_type, checked.type_text);
+                                    generic_map_value = next_generic_map;
                                     ()
                                 } else {
                                     ()
                                 },
                             };
-                        } else if types_compatible(units, requester_module, instantiate_type_text(expected_type, generic_map_value), checked.type_text) {
-                            ()
+                        } else if types_compatible(units, requester_module, final_expected_type, checked.type_text) {
+                            generic_map_value = next_generic_map;
                         } else {
                             let mut parts: Vec[String] = vec.new_vec();
                             parts = vec.push(parts, "argument type mismatch for call to '");
                             parts = vec.push(parts, symbol_name);
                             parts = vec.push(parts, "': expected '");
-                            parts = vec.push(parts, instantiate_type_text(expected_type, generic_map_value));
+                            parts = vec.push(parts, final_expected_type);
                             parts = vec.push(parts, "', found '");
                             parts = vec.push(parts, checked.type_text);
                             parts = vec.push(parts, "'");
@@ -1851,6 +2105,7 @@ fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]
             };
             index = index + 1;
         };
+        generic_map_value = add_expected_return_generics(generic_map_value, signature.generic_params, type_text(signature.return_type), expected);
         out_env = typecheck_env(out_env.module_path, out_env.function_name, out_env.return_type, out_env.bindings, generic_map_value, out_env.diagnostics, out_env.instantiations, out_env.in_loop);
         out_env = check_generic_bounds(out_env, signature.generic_params, semantics, max_errors, expr.span);
         if vec.vec_len(generic_map_value.names) > 0 {
@@ -1958,6 +2213,16 @@ fn infer_member_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], 
                 expr_check(env_error(env, max_errors, "E1228", expr.span, string.join(parts, ""), "declare an impl method for the receiver type"), "<unknown>")
             }
         },
+    }
+}
+
+fn infer_qualified_or_member_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
+    match lookup_value_symbol(units, resolver, env.module_path, expr.name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+        Some(symbol) => match find_function_signature(units, symbol.module_path, symbol.name) {
+            Some(signature) => check_function_call(expr, env, units, resolver, semantics, max_errors, signature, symbol.module_path, symbol.name, expected),
+            None => expr_check(env, symbol.type_name),
+        },
+        None => infer_member_call(expr, env, units, resolver, semantics, max_errors),
     }
 }
 
@@ -2192,6 +2457,104 @@ fn infer_try_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], res
     }
 }
 
+fn simple_pattern_binding_name(text: String) -> String {
+    if text == "" || text == "_" || text == "true" || text == "false" || string.contains(text, "(") || string.contains(text, "{") || string.contains(text, "|") {
+        ""
+    } else {
+        text
+    }
+}
+
+fn variant_pattern_payload_name(text: String, variant: String) -> String {
+    let prefix = join3(variant, "(", "");
+    if string.starts_with(text, prefix) && string.ends_with(text, ")") {
+        simple_pattern_binding_name(string.substring(text, string.len(prefix), string.len(text) - 1))
+    } else {
+        ""
+    }
+}
+
+fn variant_pattern_name(text: String) -> String {
+    if string.contains(text, "(") && string.ends_with(text, ")") {
+        let parts = string.split(text, "(");
+        match vec.get(parts, 0) {
+            Some(name) => name,
+            None => "",
+        }
+    } else {
+        ""
+    }
+}
+
+fn variant_payload_binding_name(text: String) -> String {
+    let variant_name = variant_pattern_name(text);
+    if variant_name == "" {
+        ""
+    } else {
+        variant_pattern_payload_name(text, variant_name)
+    }
+}
+
+fn declared_variant_payload_type(units: Vec[ResolveUnit], variant_name: String) -> String {
+    match find_enum_variant(units, variant_name) {
+        Some(variant) => match variant.payload_type {
+            Some(payload_type) => type_text(payload_type),
+            None => "<unknown>",
+        },
+        None => "<unknown>",
+    }
+}
+
+fn option_payload_type(scrutinee_type: String) -> String {
+    let args = generic_arg_texts(scrutinee_type);
+    match vec.get(args, 0) {
+        Some(value) => value,
+        None => "<unknown>",
+    }
+}
+
+fn result_payload_type(scrutinee_type: String, index: Int) -> String {
+    let args = generic_arg_texts(scrutinee_type);
+    match vec.get(args, index) {
+        Some(value) => value,
+        None => "<unknown>",
+    }
+}
+
+fn bind_match_pattern(env: TypecheckEnv, units: Vec[ResolveUnit], scrutinee_type: String, pattern_text_value: String, span_value: SourceSpan) -> TypecheckEnv {
+    let arm_base = env_with_bindings(env, clone_typecheck_bindings(env.bindings));
+    let some_name = variant_pattern_payload_name(pattern_text_value, "Some");
+    if some_name != "" {
+        append_binding(arm_base, typecheck_binding(env.module_path, env.function_name, some_name, option_payload_type(scrutinee_type), false, TypecheckLocalValue(), span_value))
+    } else {
+        let ok_name = variant_pattern_payload_name(pattern_text_value, "Ok");
+        if ok_name != "" {
+            append_binding(arm_base, typecheck_binding(env.module_path, env.function_name, ok_name, result_payload_type(scrutinee_type, 0), false, TypecheckLocalValue(), span_value))
+        } else {
+            let err_name = variant_pattern_payload_name(pattern_text_value, "Err");
+            if err_name != "" {
+                append_binding(arm_base, typecheck_binding(env.module_path, env.function_name, err_name, result_payload_type(scrutinee_type, 1), false, TypecheckLocalValue(), span_value))
+            } else {
+                let payload_name = variant_payload_binding_name(pattern_text_value);
+                if payload_name != "" {
+                    append_binding(arm_base, typecheck_binding(env.module_path, env.function_name, payload_name, declared_variant_payload_type(units, variant_pattern_name(pattern_text_value)), false, TypecheckLocalValue(), span_value))
+                } else {
+                    let var_name = simple_pattern_binding_name(pattern_text_value);
+                    if var_name != "" {
+                        append_binding(arm_base, typecheck_binding(env.module_path, env.function_name, var_name, scrutinee_type, false, TypecheckLocalValue(), span_value))
+                    } else {
+                        arm_base
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn merge_arm_env(outer: TypecheckEnv, arm: TypecheckEnv) -> TypecheckEnv {
+    typecheck_env(outer.module_path, outer.function_name, outer.return_type, outer.bindings, arm.generic_map, arm.diagnostics, arm.instantiations, outer.in_loop)
+}
+
 fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
     let requester_module = env.module_path;
     let scrutinee_expr = match direct_expr_at(expr, 0) { Some(child_expr) => child_expr, None => simple_expr(AstUnitExpr(), "", "", expr.span, "()") };
@@ -2203,18 +2566,19 @@ fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], r
     while arm_index < vec.vec_len(expr.match_arms) {
         match vec.get(expr.match_arms, arm_index) {
             Some(arm) => if true {
+                let mut arm_env = bind_match_pattern(out_env, units, scrutinee.type_text, arm.pattern_text, arm.span);
                 if arm.guard_text != "" {
                     let mut guard_checked = false;
                     match direct_expr_node_at(expr, child_index) {
                         Some(guard_node) => match direct_expr_at(expr, child_index) {
                             Some(guard_expr) => if true {
-                                let guard_check = infer_expr(guard_expr, out_env, units, resolver, semantics, max_errors, "Bool");
-                                out_env = guard_check.env;
+                                let guard_check = infer_expr(guard_expr, arm_env, units, resolver, semantics, max_errors, "Bool");
+                                arm_env = guard_check.env;
                                 guard_checked = true;
                                 if guard_check.type_text == "Bool" {
                                     ()
                                 } else {
-                                    out_env = env_error(out_env, max_errors, "E1270", guard_node.span, "match guard must be Bool", "use a Bool expression as the guard");
+                                    arm_env = env_error(arm_env, max_errors, "E1270", guard_node.span, "match guard must be Bool", "use a Bool expression as the guard");
                                 };
                                 ()
                             } else {
@@ -2227,7 +2591,7 @@ fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], r
                     if guard_checked {
                         ()
                     } else {
-                        out_env = env_error(out_env, max_errors, "E1270", arm.span, "match guard must be Bool", "use a Bool expression as the guard");
+                        arm_env = env_error(arm_env, max_errors, "E1270", arm.span, "match guard must be Bool", "use a Bool expression as the guard");
                     };
                     child_index = child_index + 1;
                 } else {
@@ -2237,14 +2601,14 @@ fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], r
                     Some(body_node) => match direct_expr_at(expr, child_index) {
                         Some(body_expr) => if true {
                             let body_expected = if result_type == "<unknown>" { expected } else { result_type };
-                            let body_check = infer_expr(body_expr, out_env, units, resolver, semantics, max_errors, body_expected);
-                            out_env = body_check.env;
+                            let body_check = infer_expr(body_expr, arm_env, units, resolver, semantics, max_errors, body_expected);
+                            arm_env = body_check.env;
                             if result_type == "<unknown>" {
                                 result_type = body_check.type_text;
                             } else if types_compatible(units, requester_module, result_type, body_check.type_text) {
                                 ()
                             } else {
-                                out_env = env_error(out_env, max_errors, "E1204", body_node.span, "match arm body type mismatch", "make all match arms produce the same type");
+                                arm_env = env_error(arm_env, max_errors, "E1204", body_node.span, "match arm body type mismatch", "make all match arms produce the same type");
                             };
                             ()
                         } else {
@@ -2254,6 +2618,7 @@ fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], r
                     },
                     None => (),
                 };
+                out_env = merge_arm_env(out_env, arm_env);
                 child_index = child_index + 1;
                 ()
             } else {
@@ -2320,12 +2685,77 @@ fn check_match_exhaustiveness(expr: AstExpr, env: TypecheckEnv, scrutinee_type: 
 }
 
 fn match_has_pattern(expr: AstExpr, pattern_name: String) -> Bool {
+    if match_has_arm_text_pattern(expr, pattern_name) {
+        true
+    } else if match_has_pattern_node(expr, pattern_name) {
+        true
+    } else {
+        match_text_has_unguarded_pattern(expr.text, pattern_name)
+    }
+}
+
+fn match_has_arm_text_pattern(expr: AstExpr, pattern_name: String) -> Bool {
     let mut found = false;
     let mut index = 0;
     while !found && index < vec.vec_len(expr.match_arms) {
         match vec.get(expr.match_arms, index) {
             Some(arm) => if arm.guard_text == "" && string.contains(arm.pattern_text, pattern_name) {
                 found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn match_has_pattern_node(expr: AstExpr, pattern_name: String) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(expr.patterns) {
+        match vec.get(expr.patterns, index) {
+            Some(node) => if node.role == "arm" && node.name == pattern_name {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn last_text_part(text: String, separator: String) -> String {
+    let parts = string.split(text, separator);
+    let count = vec.vec_len(parts);
+    if count == 0 {
+        text
+    } else {
+        match vec.get(parts, count - 1) {
+            Some(value) => value,
+            None => text,
+        }
+    }
+}
+
+fn match_text_has_unguarded_pattern(text: String, pattern_name: String) -> Bool {
+    let arrow_parts = string.split(text, "=>");
+    let mut found = false;
+    let mut index = 0;
+    while !found && index + 1 < vec.vec_len(arrow_parts) {
+        match vec.get(arrow_parts, index) {
+            Some(part) => if true {
+                let after_comma = last_text_part(part, ",");
+                let header = last_text_part(after_comma, "{");
+                if string.contains(header, pattern_name) && !string.contains(header, "if") {
+                    found = true;
+                } else {
+                    ()
+                };
+                ()
             } else {
                 ()
             },
@@ -2636,6 +3066,61 @@ fn effect_entry_key(entry: EffectFunctionEntry) -> String {
 
 fn effect_call_callee_key(edge: EffectCallEdge) -> String {
     function_effect_key(edge.callee_module, edge.callee_name)
+}
+
+fn effect_key(module_path: String, name: String) -> EffectKey {
+    EffectKey {
+        module_path: module_path,
+        name: name,
+    }
+}
+
+fn effect_entry_struct_key(entry: EffectFunctionEntry) -> EffectKey {
+    effect_key(entry.module_path, entry.name)
+}
+
+fn effect_call_callee_struct_key(edge: EffectCallEdge) -> EffectKey {
+    effect_key(edge.callee_module, edge.callee_name)
+}
+
+fn same_effect_key(left: EffectKey, right: EffectKey) -> Bool {
+    left.module_path == right.module_path && left.name == right.name
+}
+
+fn effect_key_vec_contains(values: Vec[EffectKey], value: EffectKey) -> Bool {
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(values) {
+        match vec.get(values, index) {
+            Some(item) => if same_effect_key(item, value) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn find_effect_entry_by_struct_key(entries: Vec[EffectFunctionEntry], key: EffectKey) -> Option[EffectFunctionEntry] {
+    let mut out: Option[EffectFunctionEntry] = None();
+    let mut found = false;
+    let mut index = 0;
+    while !found && index < vec.vec_len(entries) {
+        match vec.get(entries, index) {
+            Some(entry) => if entry.module_path == key.module_path && entry.name == key.name {
+                out = Some(entry);
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
 }
 
 fn find_effect_entry(entries: Vec[EffectFunctionEntry], module_path: String, name: String) -> Option[EffectFunctionEntry] {
@@ -2978,35 +3463,52 @@ fn effect_entries_with_body_scans(entries: Vec[EffectFunctionEntry], units: Vec[
     effect_body_result(out_entries, out_diagnostics)
 }
 
-fn effect_closure_for_key(entries: Vec[EffectFunctionEntry], key: String, visiting: Vec[String]) -> Vec[String] {
-    if string_vec_contains(visiting, key) {
-        vec.new_vec()
-    } else {
-        match find_effect_entry_by_key(entries, key) {
-            Some(entry) => if true {
-                let mut out = entry.direct_effect_names;
-                let mut next_visiting = vec.push(visiting, key);
-                let mut index = 0;
-                while index < vec.vec_len(entry.call_edges) {
-                    match vec.get(entry.call_edges, index) {
-                        Some(edge) => if true {
-                            out = append_unique_strings(out, edge.effect_names);
-                            out = append_unique_strings(out, effect_closure_for_key(entries, effect_call_callee_key(edge), next_visiting));
-                            ()
-                        } else {
-                            ()
-                        },
-                        None => (),
-                    };
-                    index = index + 1;
-                };
-                out
+fn effect_closure_for_entry(entries: Vec[EffectFunctionEntry], entry: EffectFunctionEntry) -> Vec[String] {
+    let mut out: Vec[String] = vec.new_vec();
+    let mut visited: Vec[EffectKey] = vec.new_vec();
+    let mut work: Vec[EffectKey] = vec.new_vec();
+    work = vec.push(work, effect_entry_struct_key(entry));
+    let mut work_index = 0;
+    while work_index < vec.vec_len(work) {
+        match vec.get(work, work_index) {
+            Some(key_value) => if effect_key_vec_contains(visited, key_value) {
+                ()
             } else {
-                vec.new_vec()
+                visited = vec.push(visited, key_value);
+                match find_effect_entry_by_struct_key(entries, key_value) {
+                    Some(current) => if true {
+                        out = append_unique_strings(out, current.direct_effect_names);
+                        let mut edge_index = 0;
+                        while edge_index < vec.vec_len(current.call_edges) {
+                            match vec.get(current.call_edges, edge_index) {
+                                Some(edge) => if true {
+                                    let callee_key = effect_call_callee_struct_key(edge);
+                                    out = append_unique_strings(out, edge.effect_names);
+                                    if effect_key_vec_contains(visited, callee_key) || effect_key_vec_contains(work, callee_key) {
+                                        ()
+                                    } else {
+                                        work = vec.push(work, callee_key);
+                                    };
+                                    ()
+                                } else {
+                                    ()
+                                },
+                                None => (),
+                            };
+                            edge_index = edge_index + 1;
+                        };
+                        ()
+                    } else {
+                        ()
+                    },
+                    None => (),
+                };
             },
-            None => vec.new_vec(),
-        }
-    }
+            None => (),
+        };
+        work_index = work_index + 1;
+    };
+    out
 }
 
 fn find_effect_path_from_key(entries: Vec[EffectFunctionEntry], key: String, effect: String, visited: Vec[String], path: Vec[String], first_source: Int, first_start: Int, first_end: Int, has_first_span: Bool, fallback_source: Int, fallback_start: Int, fallback_end: Int) -> EffectPath {
@@ -3071,7 +3573,7 @@ fn append_transitive_effect_diagnostics(diagnostics: Vec[Diagnostic], entries: V
     while index < vec.vec_len(entries) {
         match vec.get(entries, index) {
             Some(entry) => if entry.has_body {
-                let closure = effect_closure_for_key(entries, effect_entry_key(entry), vec.new_vec());
+                let closure = effect_closure_for_entry(entries, entry);
                 let mut effect_index = 0;
                 while effect_index < vec.vec_len(closure) {
                     match vec.get(closure, effect_index) {
@@ -3116,7 +3618,7 @@ fn append_capability_authority_diagnostics(diagnostics: Vec[Diagnostic], entries
     while index < vec.vec_len(entries) {
         match vec.get(entries, index) {
             Some(entry) => if entry.has_body {
-                let mut required = append_unique_strings(entry.effect_names, effect_closure_for_key(entries, effect_entry_key(entry), vec.new_vec()));
+                let mut required = append_unique_strings(entry.effect_names, effect_closure_for_entry(entries, entry));
                 let mut effect_index = 0;
                 while effect_index < vec.vec_len(required) {
                     match vec.get(required, effect_index) {

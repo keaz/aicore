@@ -187,6 +187,8 @@ pub struct AstExprNode {
     pub name: String,
     pub direct_child_count: Int,
     pub depth: Int,
+    pub patterns: Vec[AstPatternNode],
+    pub match_arms: Vec[AstMatchArmNode],
     pub span: SourceSpan,
     pub text: String,
 }
@@ -704,6 +706,8 @@ pub fn ast_expr_node(
     name: String,
     direct_child_count: Int,
     depth: Int,
+    patterns: Vec[AstPatternNode],
+    match_arms: Vec[AstMatchArmNode],
     span: SourceSpan,
     text: String,
 ) -> AstExprNode {
@@ -714,6 +718,8 @@ pub fn ast_expr_node(
         name: name,
         direct_child_count: direct_child_count,
         depth: depth,
+        patterns: patterns,
+        match_arms: match_arms,
         span: span,
         text: text,
     }
@@ -777,11 +783,11 @@ pub fn ast_expr(
 }
 
 fn expr_node_from_expr(value: AstExpr, role: String, depth: Int) -> AstExprNode {
-    ast_expr_node(value.kind, role, value.op, value.name, value.direct_child_count, depth, value.span, value.text)
+    ast_expr_node(value.kind, role, value.op, value.name, value.direct_child_count, depth, value.patterns, value.match_arms, value.span, value.text)
 }
 
 fn nested_expr_node(value: AstExprNode, depth_offset: Int) -> AstExprNode {
-    ast_expr_node(value.kind, value.role, value.op, value.name, value.direct_child_count, value.depth + depth_offset, value.span, value.text)
+    ast_expr_node(value.kind, value.role, value.op, value.name, value.direct_child_count, value.depth + depth_offset, value.patterns, value.match_arms, value.span, value.text)
 }
 
 pub fn pattern_node_from_pattern(value: AstPattern, role: String, depth: Int) -> AstPatternNode {

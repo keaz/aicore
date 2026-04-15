@@ -1162,6 +1162,14 @@ const INTRINSIC_BINDING_EXPECTATIONS: &[IntrinsicBindingExpectation] = &[
         }],
     },
     IntrinsicBindingExpectation {
+        intrinsic: "aic_string_byte_substring_intrinsic",
+        runtime_symbol: "aic_rt_string_byte_substring",
+        signatures: &[IntrinsicSignatureShape {
+            params: &["String", "Int", "Int"],
+            ret: "String",
+        }],
+    },
+    IntrinsicBindingExpectation {
         intrinsic: "aic_buffer_new_intrinsic",
         runtime_symbol: "aic_rt_buffer_new",
         signatures: &[IntrinsicSignatureShape {

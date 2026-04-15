@@ -79,8 +79,22 @@ intrinsic fn aic_bytes_from_byte_values_intrinsic(values: Vec[UInt8]) -> String;
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_byte_substring_intrinsic(data: String, start: Int, end: Int) -> String {
-    ""
+intrinsic fn aic_string_byte_substring_intrinsic(data: String, start: Int, end: Int) -> String;
+
+/// `byte_substring` returns a byte-indexed string slice.
+///
+/// ## Example
+/// ```aic
+/// let part = bytes.byte_substring("abc", 0, 1);
+/// ```
+///
+/// ## Effects
+/// Pure byte-indexed string operation.
+///
+/// ## Errors
+/// Bounds are clamped by the runtime.
+fn byte_substring(data: String, start: Int, end: Int) -> String {
+    aic_string_byte_substring_intrinsic(data, start, end)
 }
 
 /// `aic_bytes_len_intrinsic` in `std.bytes`.

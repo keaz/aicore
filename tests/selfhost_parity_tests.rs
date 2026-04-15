@@ -438,6 +438,11 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(typecheck.contains("pub fn typecheck_has_binding"));
     assert!(typecheck.contains("pub fn typecheck_has_instantiation"));
     assert!(typecheck.contains("fn direct_expr_at"));
+    assert!(typecheck.contains("fn generic_arg_texts"));
+    assert!(typecheck.contains("fn find_consistent_type_alias"));
+    assert!(typecheck.contains(
+        "fn infer_int_literal(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]"
+    ));
     assert!(typecheck.contains("fn check_generic_bounds"));
     assert!(typecheck.contains("struct EffectFunctionEntry"));
     assert!(typecheck.contains("fn append_effect_capability_contract_diagnostics"));
@@ -476,6 +481,10 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(backend.contains("pub fn emit_backend_artifact"));
     assert!(backend.contains("pub fn backend_artifact_ok"));
     assert!(backend.contains("pub fn backend_has_diagnostic_code"));
+    assert!(backend.contains("\"String\""));
+    assert!(backend.contains("%aic.String = type { i8*, i64 }"));
+    assert!(backend.contains("fn llvm_escape_string_data"));
+    assert!(backend.contains("fn emit_string_literal_global"));
     assert!(backend.contains("generic-definition-metadata"));
     assert!(backend.contains("native-link-metadata"));
     assert!(backend.contains("E5101"));
@@ -500,6 +509,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(driver.contains("pub fn driver_run_source"));
     assert!(driver.contains("pub fn driver_manifest_main_path"));
     assert!(driver.contains("driver_sources_with_synthetic_imports_for_all"));
+    assert!(driver.contains("pub intrinsic fn trim(s: String) -> String"));
+    assert!(driver.contains("type ProcExitStatus = Int32;"));
+    assert!(!driver.contains("pub type ProcExitStatus = Int32;"));
     assert!(driver.contains("E5200"));
     assert!(driver.contains("E5201"));
     assert!(driver.contains("E5205"));
@@ -577,6 +589,12 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ir.contains("E5011"));
     assert!(ir.contains("E5012"));
     assert!(ir.contains("E5013"));
+
+    let ast =
+        fs::read_to_string(root.join("compiler/aic/libs/ast/src/main.aic")).expect("read ast lib");
+    assert!(ast.contains("pub patterns: Vec[AstPatternNode]"));
+    assert!(ast.contains("pub match_arms: Vec[AstMatchArmNode]"));
+    assert!(ast.contains("value.patterns, value.match_arms"));
 }
 
 #[test]
@@ -617,6 +635,7 @@ fn aic_selfhost_driver_tool_handles_supported_and_negative_commands() {
         .arg("compiler/aic/tools/aic_selfhost")
         .arg("-o")
         .arg(&bin)
+        .arg("--release")
         .current_dir(&root)
         .output()
         .expect("build aic_selfhost");
@@ -626,6 +645,20 @@ fn aic_selfhost_driver_tool_handles_supported_and_negative_commands() {
         String::from_utf8_lossy(&build.stdout),
         String::from_utf8_lossy(&build.stderr)
     );
+
+    let self_check = Command::new(&bin)
+        .arg("check")
+        .arg("compiler/aic/tools/aic_selfhost")
+        .current_dir(&root)
+        .output()
+        .expect("selfhost self check");
+    assert!(
+        self_check.status.success(),
+        "selfhost tool did not check its own source graph\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&self_check.stdout),
+        String::from_utf8_lossy(&self_check.stderr)
+    );
+    assert!(String::from_utf8_lossy(&self_check.stdout).contains("check: ok"));
 
     let check = Command::new(&bin)
         .arg("check")

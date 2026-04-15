@@ -3365,10 +3365,59 @@ fn parse_struct_literal_fields(cursor: ParserCursor, open_span: SourceSpan, name
     }
 }
 
+fn block_statement_type_text(statement: AstStatement) -> String {
+    match statement.type_ref {
+        Some(type_ref) => type_text(type_ref),
+        None => "<unknown>",
+    }
+}
+
+fn block_statement_role(statement: AstStatement) -> String {
+    match statement.kind {
+        AstLetStatement => if statement.mutable {
+            wrap_text("let:", statement.name, wrap_text(":", block_statement_type_text(statement), ":mut"))
+        } else {
+            wrap_text("let:", statement.name, wrap_text(":", block_statement_type_text(statement), ""))
+        },
+        AstAssignStatement => wrap_text("assign:", statement.target, ""),
+        AstReturnStatement => "return",
+        AstExprStatement => "expr",
+    }
+}
+
 fn block_value_expr(block: AstBlock) -> AstExpr {
+    let mut children: Vec[AstExpr] = vec.new_vec();
+    let mut roles: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(block.statements) {
+        match vec.get(block.statements, index) {
+            Some(statement) => match statement.expr {
+                Some(expr) => if true {
+                    children = vec.push(children, expr);
+                    roles = vec.push(roles, block_statement_role(statement));
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
     match block.tail_expr {
-        Some(expr) => expr,
-        None => simple_expr(AstUnitExpr(), "", "", block.span, block.text),
+        Some(expr) => if true {
+            children = vec.push(children, expr);
+            roles = vec.push(roles, "tail");
+            expr_with_child_roles(AstBlockExpr(), "", "", children, roles, vec.new_vec(), block.span, block.text)
+        } else {
+            expr_with_child_roles(AstBlockExpr(), "", "", children, roles, vec.new_vec(), block.span, block.text)
+        },
+        None => if vec.vec_len(children) == 0 {
+            simple_expr(AstUnitExpr(), "", "", block.span, block.text)
+        } else {
+            expr_with_child_roles(AstBlockExpr(), "", "", children, roles, vec.new_vec(), block.span, block.text)
+        },
     }
 }
 

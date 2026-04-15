@@ -2,6 +2,7 @@ module compiler.lexer;
 
 import compiler.source;
 import compiler.syntax;
+import std.bytes;
 import std.option;
 import std.string;
 import std.vec;
@@ -99,10 +100,7 @@ requires offset >= 0 {
 }
 
 pub fn char_or_empty(text: String, offset: Int) -> String {
-    match string.char_at(text, offset) {
-        Some(ch) => ch,
-        None => "",
-    }
+    bytes.byte_substring(text, offset, offset + 1)
 }
 
 pub fn is_whitespace_char(ch: String) -> Bool {
@@ -127,7 +125,7 @@ fn scan_word(source: SourceId, text: String, offset: Int) -> LexResult {
     while end < text_len && is_identifier_continue(char_or_empty(text, end)) {
         end = end + 1;
     };
-    let word = string.substring(text, offset, end);
+    let word = bytes.byte_substring(text, offset, end);
     LexResult {
         token: classify_word(word, span(source, offset, end)),
         next_offset: end,
@@ -351,7 +349,7 @@ fn scan_caret(source: SourceId, text: String, offset: Int) -> LexResult {
 fn fixed_token(source: SourceId, text: String, offset: Int, width: Int, kind: TokenKind) -> LexResult {
     let end = offset + width;
     LexResult {
-        token: token(kind, span(source, offset, end), string.substring(text, offset, end)),
+        token: token(kind, span(source, offset, end), bytes.byte_substring(text, offset, end)),
         next_offset: end,
     }
 }

@@ -96,6 +96,16 @@ struct LocalBinding {
     type_module: String,
 }
 
+struct ResolveStatementResult {
+    output: ResolverOutput,
+    locals: Vec[LocalBinding],
+}
+
+struct CallLookupResult {
+    references: Vec[ResolvedReference],
+    diagnostics: Vec[Diagnostic],
+}
+
 pub fn resolver_symbol_id(value: Int) -> ResolverSymbolId requires value >= 0 ensures result.value == value {
     ResolverSymbolId {
         value: value,
@@ -180,6 +190,20 @@ fn local_binding(name: String, type_name: String, type_module: String) -> LocalB
         name: name,
         type_name: type_name,
         type_module: type_module,
+    }
+}
+
+fn resolve_statement_result(output: ResolverOutput, locals: Vec[LocalBinding]) -> ResolveStatementResult {
+    ResolveStatementResult {
+        output: output,
+        locals: locals,
+    }
+}
+
+fn call_lookup_result(references: Vec[ResolvedReference], diagnostics: Vec[Diagnostic]) -> CallLookupResult {
+    CallLookupResult {
+        references: references,
+        diagnostics: diagnostics,
     }
 }
 
@@ -834,7 +858,7 @@ fn resolve_qualified_module(imports: Vec[ResolvedImport], units: Vec[ResolveUnit
     }
 }
 
-fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], units: Vec[ResolveUnit], requester_module: String, callee_name: String, span_value: SourceSpan, diagnostics: Vec[Diagnostic], max_errors: Int) -> ResolverOutput {
+fn lookup_call_result(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], units: Vec[ResolveUnit], requester_module: String, callee_name: String, span_value: SourceSpan, diagnostics: Vec[Diagnostic], max_errors: Int) -> CallLookupResult {
     let mut references: Vec[ResolvedReference] = vec.new_vec();
     let mut out_diagnostics = diagnostics;
     let module_text = path_prefix(callee_name);
@@ -847,26 +871,26 @@ fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport]
             amb_parts = vec.push(amb_parts, name);
             amb_parts = vec.push(amb_parts, "' from multiple modules");
             out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), span_value, string.join(amb_parts, "")), "qualify the call with the intended module"));
-            resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+            call_lookup_result(references, out_diagnostics)
         } else {
             match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
-                Some(symbol) => resolver_output(requester_module, symbols, imports, vec.push(references, resolved_reference(requester_module, name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics),
+                Some(symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics),
                 None => match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
-                    Some(variant_symbol) => resolver_output(requester_module, symbols, imports, vec.push(references, resolved_reference(requester_module, name, ResolverVariantReference(), Some(variant_symbol.id), span_value)), out_diagnostics),
+                    Some(variant_symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverVariantReference(), Some(variant_symbol.id), span_value)), out_diagnostics),
                     None => if symbol_exists_in_transitive_imports(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
                         let mut parts: Vec[String] = vec.new_vec();
                         parts = vec.push(parts, "symbol '");
                         parts = vec.push(parts, name);
                         parts = vec.push(parts, "' is not imported by this module");
                         out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(parts, "")), "import the module that declares the symbol or qualify through an existing import"));
-                        resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                        call_lookup_result(references, out_diagnostics)
                     } else {
                         let mut unknown_parts: Vec[String] = vec.new_vec();
                         unknown_parts = vec.push(unknown_parts, "unknown symbol '");
                         unknown_parts = vec.push(unknown_parts, name);
                         unknown_parts = vec.push(unknown_parts, "'");
                         out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E1208"), span_value, string.join(unknown_parts, "")));
-                        resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                        call_lookup_result(references, out_diagnostics)
                     },
                 },
             }
@@ -875,14 +899,14 @@ fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport]
         match resolve_qualified_module(imports, units, requester_module, module_text) {
             Some(target_module) => match find_symbol(symbols, target_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
                 Some(symbol) => if can_access_symbol(symbol, requester_module) {
-                    resolver_output(requester_module, symbols, imports, vec.push(references, resolved_reference(requester_module, callee_name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics)
+                    call_lookup_result(vec.push(references, resolved_reference(requester_module, callee_name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics)
                 } else {
                     let mut private_parts: Vec[String] = vec.new_vec();
                     private_parts = vec.push(private_parts, "symbol '");
                     private_parts = vec.push(private_parts, qualified_name(symbol.module_path, symbol.name));
                     private_parts = vec.push(private_parts, "' is private and not accessible from this module");
                     out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(private_parts, "")), "make the declaration public or call it only inside its declaring module"));
-                    resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                    call_lookup_result(references, out_diagnostics)
                 },
                 None => if module_exists(units, target_module) {
                     let mut unknown_parts: Vec[String] = vec.new_vec();
@@ -890,14 +914,14 @@ fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport]
                     unknown_parts = vec.push(unknown_parts, callee_name);
                     unknown_parts = vec.push(unknown_parts, "'");
                     out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E1208"), span_value, string.join(unknown_parts, "")));
-                    resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                    call_lookup_result(references, out_diagnostics)
                 } else {
                     let mut missing_parts: Vec[String] = vec.new_vec();
                     missing_parts = vec.push(missing_parts, "cannot resolve module '");
                     missing_parts = vec.push(missing_parts, target_module);
                     missing_parts = vec.push(missing_parts, "'");
                     out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E2100"), span_value, string.join(missing_parts, "")));
-                    resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                    call_lookup_result(references, out_diagnostics)
                 },
             },
             None => if import_alias_is_ambiguous(imports, requester_module, module_text) {
@@ -906,17 +930,22 @@ fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport]
                 amb_parts = vec.push(amb_parts, module_text);
                 amb_parts = vec.push(amb_parts, "'");
                 out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), span_value, string.join(amb_parts, "")), "use the full module path"));
-                resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                call_lookup_result(references, out_diagnostics)
             } else {
                 let mut missing_parts: Vec[String] = vec.new_vec();
                 missing_parts = vec.push(missing_parts, "cannot resolve module '");
                 missing_parts = vec.push(missing_parts, module_text);
                 missing_parts = vec.push(missing_parts, "'");
                 out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E2100"), span_value, string.join(missing_parts, "")));
-                resolver_output(requester_module, symbols, imports, references, out_diagnostics)
+                call_lookup_result(references, out_diagnostics)
             },
         }
     }
+}
+
+fn lookup_call_symbol(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport], units: Vec[ResolveUnit], requester_module: String, callee_name: String, span_value: SourceSpan, diagnostics: Vec[Diagnostic], max_errors: Int) -> ResolverOutput {
+    let result = lookup_call_result(symbols, imports, units, requester_module, callee_name, span_value, diagnostics, max_errors);
+    resolver_output(requester_module, symbols, imports, result.references, result.diagnostics)
 }
 
 fn local_type_module(symbols: Vec[ResolvedSymbol], module_path: String, type_name_value: String) -> String {
@@ -968,7 +997,7 @@ fn infer_expr_type(expr: AstExpr, module_path: String, output: ResolverOutput) -
         AstCallExpr => if expr.name == "" {
             ""
         } else {
-            let lookup = lookup_call_symbol(output.symbols, output.imports, vec.new_vec(), module_path, expr.name, expr.span, vec.new_vec(), 1);
+            let lookup = lookup_call_result(output.symbols, output.imports, vec.new_vec(), module_path, expr.name, expr.span, vec.new_vec(), 1);
             match vec.get(lookup.references, 0) {
                 Some(reference) => match reference.target {
                     Some(id) => symbol_type_name_by_id(output.symbols, id),
@@ -1018,34 +1047,33 @@ fn append_references(left: Vec[ResolvedReference], right: Vec[ResolvedReference]
     out
 }
 
-fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+fn resolve_expr_head(kind: AstExprKind, name: String, span_value: SourceSpan, base_name: String, module_path: String, locals: Vec[LocalBinding], units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
     let mut out = output;
-    match expr.kind {
-        AstCallExpr => if expr.name != "" {
-            let receiver_name = path_prefix(expr.name);
+    match kind {
+        AstCallExpr => if name != "" {
+            let receiver_name = path_prefix(name);
             if receiver_name != "" && local_exists(locals, receiver_name) {
                 ()
             } else {
-                let lookup = lookup_call_symbol(out.symbols, out.imports, units, module_path, expr.name, expr.span, out.diagnostics, max_errors);
+                let lookup = lookup_call_result(out.symbols, out.imports, units, module_path, name, span_value, out.diagnostics, max_errors);
                 out = resolver_output(out.entry_module, out.symbols, out.imports, append_references(out.references, lookup.references), lookup.diagnostics);
             };
         } else {
             ()
         },
         AstFieldAccessExpr => if true {
-            let base_name = expr_base_name(expr);
             match find_local(locals, base_name) {
-                Some(local) => match find_member_symbol(out.symbols, local.type_name, expr.name, ResolverFieldSymbol()) {
+                Some(local) => match find_member_symbol(out.symbols, local.type_name, name, ResolverFieldSymbol()) {
                     Some(field_symbol) => if can_access_symbol(field_symbol, module_path) {
-                        out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, expr.name, ResolverFieldReference(), Some(field_symbol.id), expr.span)), out.diagnostics);
+                        out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, name, ResolverFieldReference(), Some(field_symbol.id), span_value)), out.diagnostics);
                     } else {
                         let mut private_parts: Vec[String] = vec.new_vec();
                         private_parts = vec.push(private_parts, "field '");
                         private_parts = vec.push(private_parts, local.type_name);
                         private_parts = vec.push(private_parts, ".");
-                        private_parts = vec.push(private_parts, expr.name);
+                        private_parts = vec.push(private_parts, name);
                         private_parts = vec.push(private_parts, "' is private and not accessible from this module");
-                        out = resolver_output(out.entry_module, out.symbols, out.imports, out.references, append_diagnostic_if_room(out.diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), expr.span, string.join(private_parts, "")), "make the field public or access it only from its declaring module")));
+                        out = resolver_output(out.entry_module, out.symbols, out.imports, out.references, append_diagnostic_if_room(out.diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(private_parts, "")), "make the field public or access it only from its declaring module")));
                     },
                     None => (),
                 },
@@ -1054,9 +1082,9 @@ fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], u
         } else {
             ()
         },
-        AstStructLiteralExpr => match lookup_unqualified_symbol(out.symbols, out.imports, module_path, expr.name, ResolverStructSymbol(), ResolverTypeNamespace()) {
+        AstStructLiteralExpr => match lookup_unqualified_symbol(out.symbols, out.imports, module_path, name, ResolverStructSymbol(), ResolverTypeNamespace()) {
             Some(symbol) => if true {
-                out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, expr.name, ResolverTypeReference(), Some(symbol.id), expr.span)), out.diagnostics);
+                out = resolver_output(out.entry_module, out.symbols, out.imports, vec.push(out.references, resolved_reference(module_path, name, ResolverTypeReference(), Some(symbol.id), span_value)), out.diagnostics);
                 ()
             } else {
                 ()
@@ -1065,11 +1093,16 @@ fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], u
         },
         _ => (),
     };
+    out
+}
+
+fn resolve_expr(expr: AstExpr, module_path: String, locals: Vec[LocalBinding], units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
+    let mut out = resolve_expr_head(expr.kind, expr.name, expr.span, expr_base_name(expr), module_path, locals, units, output, max_errors);
     let mut index = 0;
     while index < vec.vec_len(expr.nodes) {
         match vec.get(expr.nodes, index) {
             Some(node) => if true {
-                out = resolve_expr(simple_expr(node.kind, node.op, node.name, node.span, node.text), module_path, locals, units, out, max_errors);
+                out = resolve_expr_head(node.kind, node.name, node.span, "", module_path, locals, units, out, max_errors);
                 ()
             } else {
                 ()
@@ -1127,6 +1160,34 @@ fn add_param_locals(signature: AstFunctionSignature, module_path: String, symbol
     out
 }
 
+fn resolve_block_statement(statement: AstStatement, module_path: String, units: Vec[ResolveUnit], output: ResolverOutput, locals: Vec[LocalBinding], max_errors: Int) -> ResolveStatementResult {
+    let mut out = output;
+    let mut next_locals = locals;
+    match statement.expr {
+        Some(expr) => if true {
+            out = resolve_expr(expr, module_path, next_locals, units, out, max_errors);
+            match statement.kind {
+                AstLetStatement => if statement.name != "" {
+                    let inferred = infer_expr_type(expr, module_path, out);
+                    if inferred != "" {
+                        next_locals = vec.push(next_locals, local_binding(statement.name, inferred, local_type_module(out.symbols, module_path, inferred)));
+                    } else {
+                        ()
+                    }
+                } else {
+                    ()
+                },
+                _ => (),
+            };
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    resolve_statement_result(out, next_locals)
+}
+
 fn resolve_block(block: AstBlock, signature: AstFunctionSignature, module_path: String, units: Vec[ResolveUnit], output: ResolverOutput, max_errors: Int) -> ResolverOutput {
     let mut out = output;
     let mut locals: Vec[LocalBinding] = vec.new_vec();
@@ -1135,27 +1196,9 @@ fn resolve_block(block: AstBlock, signature: AstFunctionSignature, module_path: 
     while index < vec.vec_len(block.statements) {
         match vec.get(block.statements, index) {
             Some(statement) => if true {
-                match statement.expr {
-                    Some(expr) => if true {
-                        out = resolve_expr(expr, module_path, locals, units, out, max_errors);
-                        match statement.kind {
-                            AstLetStatement => if statement.name != "" {
-                                let inferred = infer_expr_type(expr, module_path, out);
-                                if inferred != "" {
-                                    locals = vec.push(locals, local_binding(statement.name, inferred, local_type_module(out.symbols, module_path, inferred)));
-                                } else {
-                                    ()
-                                }
-                            } else {
-                                ()
-                            },
-                            _ => (),
-                        };
-                    } else {
-                        ()
-                    },
-                    None => (),
-                };
+                let result = resolve_block_statement(statement, module_path, units, out, locals, max_errors);
+                out = result.output;
+                locals = result.locals;
                 ()
             } else {
                 ()

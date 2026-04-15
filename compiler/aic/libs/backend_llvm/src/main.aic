@@ -244,7 +244,7 @@ fn type_name_for_id(types: Vec[IrTypeDef], id: IrTypeId) -> String {
 fn llvm_type_for_repr(repr: String) -> String {
     if repr == "Int" || repr == "Int64" || repr == "UInt" || repr == "usize" || repr == "isize" {
         "i64"
-    } else if repr == "Int32" || repr == "UInt32" {
+    } else if repr == "Int32" || repr == "UInt32" || repr == "ProcExitStatus" {
         "i32"
     } else if repr == "Int16" || repr == "UInt16" {
         "i16"
@@ -252,6 +252,8 @@ fn llvm_type_for_repr(repr: String) -> String {
         "i8"
     } else if repr == "Bool" {
         "i1"
+    } else if repr == "String" {
+        "%aic.String"
     } else if repr == "()" {
         "void"
     } else {
@@ -638,6 +640,7 @@ fn return_expr_can_emit(program: IrProgram, value: IrExpr, function_value: IrFun
     match value.kind {
         IrIntExpr => is_decimal_integer_text(value.text),
         IrBoolExpr => value.text == "true" || value.text == "false",
+        IrStringExpr => llvm_type_for_id(program.types, function_value.return_type) == "%aic.String",
         IrUnitExpr => true,
         IrNameExpr => function_has_param_named(function_value, value.text),
         IrBinaryExpr => binary_expr_can_emit(value, function_value),
@@ -1088,6 +1091,106 @@ fn emit_call_args(program: IrProgram, function_value: IrFunctionDef, nodes: Vec[
     string.join(parts, "")
 }
 
+fn llvm_string_global_name(function_name: String) -> String {
+    concat2("@.aic.str.", backend_mangle_symbol(function_name))
+}
+
+fn string_literal_payload(value: String) -> String {
+    if string.len(value) >= 2 && string.starts_with(value, "\"") && string.ends_with(value, "\"") {
+        string.substring(value, 1, string.len(value) - 1)
+    } else {
+        value
+    }
+}
+
+fn llvm_escape_string_data(value: String) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < string.len(value) {
+        let ch = string.substring(value, index, index + 1);
+        if ch == "\n" {
+            parts = vec.push(parts, "\\0A");
+        } else if ch == "\t" {
+            parts = vec.push(parts, "\\09");
+        } else if ch == "\"" {
+            parts = vec.push(parts, "\\22");
+        } else if ch == "\\" {
+            parts = vec.push(parts, "\\5C");
+        } else {
+            parts = vec.push(parts, ch);
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn emit_string_literal_global(function_value: IrFunctionDef, value: String) -> String {
+    let payload = string_literal_payload(value);
+    let mut parts: Vec[String] = vec.new_vec();
+    parts = vec.push(parts, llvm_string_global_name(function_value.name));
+    parts = vec.push(parts, " = private unnamed_addr constant [");
+    parts = vec.push(parts, string.int_to_string(string.len(payload)));
+    parts = vec.push(parts, " x i8] c\"");
+    parts = vec.push(parts, llvm_escape_string_data(payload));
+    parts = vec.push(parts, "\"\n");
+    string.join(parts, "")
+}
+
+fn emit_string_globals_for_function(function_value: IrFunctionDef) -> String {
+    match function_value.body.tail_expr {
+        Some(expr) => match expr.kind {
+            IrStringExpr => emit_string_literal_global(function_value, expr.text),
+            _ => "",
+        },
+        None => "",
+    }
+}
+
+fn emit_string_globals(program: IrProgram) -> String {
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(program.items) {
+        match vec.get(program.items, index) {
+            Some(item) => match item {
+                IrFunctionItemValue(function_value) => if function_value.runtime_visible {
+                    parts = vec.push(parts, emit_string_globals_for_function(function_value));
+                } else {
+                    ()
+                },
+                _ => (),
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    string.join(parts, "")
+}
+
+fn program_uses_string_type(program: IrProgram) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(program.types) {
+        match vec.get(program.types, index) {
+            Some(type_value) => if type_value.name == "String" {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn emit_type_declarations(program: IrProgram) -> String {
+    if program_uses_string_type(program) {
+        "%aic.String = type { i8*, i64 }\n"
+    } else {
+        ""
+    }
+}
+
 fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrExpr, ret: String) -> String {
     let mut parts: Vec[String] = vec.new_vec();
     match expr.kind {
@@ -1105,6 +1208,24 @@ fn emit_return_expr(program: IrProgram, function_value: IrFunctionDef, expr: IrE
             parts = vec.push(parts, " ");
             parts = vec.push(parts, if expr.text == "true" { "1" } else { "0" });
             parts = vec.push(parts, "\n");
+            ()
+        } else { () },
+        IrStringExpr => if true {
+            let payload = string_literal_payload(expr.text);
+            parts = vec.push(parts, "  %str.ptr = getelementptr inbounds [");
+            parts = vec.push(parts, string.int_to_string(string.len(payload)));
+            parts = vec.push(parts, " x i8], [");
+            parts = vec.push(parts, string.int_to_string(string.len(payload)));
+            parts = vec.push(parts, " x i8]* ");
+            parts = vec.push(parts, llvm_string_global_name(function_value.name));
+            parts = vec.push(parts, ", i64 0, i64 0\n");
+            parts = vec.push(parts, "  %str.0 = insertvalue %aic.String undef, i8* %str.ptr, 0\n");
+            parts = vec.push(parts, "  %str.1 = insertvalue %aic.String %str.0, i64 ");
+            parts = vec.push(parts, string.int_to_string(string.len(payload)));
+            parts = vec.push(parts, ", 1\n");
+            parts = vec.push(parts, "  ret ");
+            parts = vec.push(parts, ret);
+            parts = vec.push(parts, " %str.1\n");
             ()
         } else { () },
         IrUnitExpr => if true {
@@ -1376,6 +1497,8 @@ pub fn emit_llvm_text(program: IrProgram, options: BackendOptions) -> String {
         parts = vec.push(parts, "\"\n\n");
     };
     parts = vec.push(parts, native_links_summary(options.native_links));
+    parts = vec.push(parts, emit_type_declarations(program));
+    parts = vec.push(parts, emit_string_globals(program));
     parts = vec.push(parts, emit_item_metadata(program));
     parts = vec.push(parts, "\n");
     parts = vec.push(parts, emit_functions_llvm(program));

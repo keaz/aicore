@@ -251,13 +251,15 @@ pub fn driver_synthetic_source_for_import(import_path: String, source: SourceId)
     } else if import_path == "std.vec" {
         Some(driver_source("std/vec.aic", "module std.vec; import std.option; pub struct Vec[T] { ptr: Int, len: Int, cap: Int, } pub intrinsic fn new_vec[T]() -> Vec[T]; pub intrinsic fn push[T](values: Vec[T], value: T) -> Vec[T]; pub intrinsic fn get[T](values: Vec[T], index: Int) -> Option[T]; pub intrinsic fn vec_len[T](values: Vec[T]) -> Int;", source))
     } else if import_path == "std.string" {
-        Some(driver_source("std/string.aic", "module std.string; import std.option; import std.vec; pub intrinsic fn len(s: String) -> Int; pub intrinsic fn contains(haystack: String, needle: String) -> Bool; pub intrinsic fn starts_with(s: String, prefix: String) -> Bool; pub intrinsic fn ends_with(s: String, suffix: String) -> Bool; pub intrinsic fn substring(s: String, start: Int, end: Int) -> String; pub intrinsic fn replace(s: String, from: String, to: String) -> String; pub intrinsic fn split(s: String, delimiter: String) -> Vec[String]; pub intrinsic fn char_at(s: String, index: Int) -> Option[String]; pub intrinsic fn join(values: Vec[String], sep: String) -> String; pub intrinsic fn int_to_string(value: Int) -> String;", source))
+        Some(driver_source("std/string.aic", "module std.string; import std.option; import std.vec; pub intrinsic fn len(s: String) -> Int; pub intrinsic fn contains(haystack: String, needle: String) -> Bool; pub intrinsic fn starts_with(s: String, prefix: String) -> Bool; pub intrinsic fn ends_with(s: String, suffix: String) -> Bool; pub intrinsic fn substring(s: String, start: Int, end: Int) -> String; pub intrinsic fn replace(s: String, from: String, to: String) -> String; pub intrinsic fn split(s: String, delimiter: String) -> Vec[String]; pub intrinsic fn char_at(s: String, index: Int) -> Option[String]; pub intrinsic fn join(values: Vec[String], sep: String) -> String; pub intrinsic fn trim(s: String) -> String; pub intrinsic fn int_to_string(value: Int) -> String;", source))
+    } else if import_path == "std.bytes" {
+        Some(driver_source("std/bytes.aic", "module std.bytes; pub intrinsic fn byte_substring(data: String, start: Int, end: Int) -> String;", source))
     } else if import_path == "std.env" {
         Some(driver_source("std/env.aic", "module std.env; import std.option; pub intrinsic fn arg_at(index: Int) -> Option[String] effects { env };", source))
     } else if import_path == "std.fs" {
         Some(driver_source("std/fs.aic", "module std.fs; import std.result; pub enum FsError { NotFound, PermissionDenied, AlreadyExists, InvalidInput, Timeout, Cancelled, Io, } pub intrinsic fn read_text(path: String) -> Result[String, FsError] effects { fs }; pub intrinsic fn write_text(path: String, content: String) -> Result[Bool, FsError] effects { fs }; pub intrinsic fn delete(path: String) -> Result[Bool, FsError] effects { fs }; pub intrinsic fn temp_file(prefix: String) -> Result[String, FsError] effects { fs };", source))
     } else if import_path == "std.proc" {
-        Some(driver_source("std/proc.aic", "module std.proc; import std.result; pub enum ProcError { NotFound, PermissionDenied, InvalidInput, Io, UnknownProcess, } pub type ProcExitStatus = Int32; pub struct ProcOutput { status: ProcExitStatus, stdout: String, stderr: String, } pub intrinsic fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env };", source))
+        Some(driver_source("std/proc.aic", "module std.proc; import std.result; pub enum ProcError { NotFound, PermissionDenied, InvalidInput, Io, UnknownProcess, } type ProcExitStatus = Int32; pub struct ProcOutput { status: ProcExitStatus, stdout: String, stderr: String, } pub intrinsic fn run(command: String) -> Result[ProcOutput, ProcError] effects { proc, env };", source))
     } else {
         None()
     }
@@ -376,7 +378,7 @@ pub fn driver_compile_source(path: String, text: String, max_errors: Int) -> Dri
 fn driver_compile_attach_backend(compiled: DriverCompileResult, program: IrProgram, max_errors: Int) -> DriverCompileResult {
     let artifact = emit_backend_artifact(program, default_backend_options("aic_selfhost"), max_errors);
     let diagnostics = append_all_diagnostics(compiled.diagnostics, artifact.diagnostics, max_errors);
-    let backend_artifact = if backend_artifact_ok(artifact) {
+    let backend_artifact: Option[BackendArtifact] = if backend_artifact_ok(artifact) {
         Some(artifact)
     } else {
         empty_backend_artifact()

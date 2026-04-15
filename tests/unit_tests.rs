@@ -588,6 +588,86 @@ fn unit_typecheck_unknown_symbol() {
 }
 
 #[test]
+fn unit_module_qualified_function_call_infers_return_type_for_let_binding() {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(
+        &source_path,
+        r#"
+import std.string;
+import std.vec;
+
+fn empty_len() -> Int {
+    let values: Vec[String] = vec.new_vec();
+    vec.vec_len(values)
+}
+
+fn f(text: String, offset: Int) -> Int {
+    let text_len = string.len(text);
+    if offset >= text_len {
+        0
+    } else {
+        let ch = string.substring(text, offset, offset + 1);
+        if ch == "f" { 1 } else { 2 }
+    }
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&source_path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        !out.diagnostics
+            .iter()
+            .any(|d| d.code == "E1232" || d.code == "E1208"),
+        "qualified std.string calls should not degrade to unknown types: {:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
+fn unit_exhaustive_option_match_with_vec_get_is_accepted() {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(
+        &source_path,
+        r#"
+import std.vec;
+
+fn last_or_zero(values: Vec[Int]) -> Int {
+    let count = vec.vec_len(values);
+    if count == 0 {
+        0
+    } else {
+        match vec.get(values, count - 1) {
+            Some(value) => value,
+            None => 0,
+        }
+    }
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&source_path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+    assert!(
+        !out.diagnostics.iter().any(|d| d.code == "E1246"),
+        "exhaustive Option matches must satisfy exhaustiveness: {:#?}",
+        out.diagnostics
+    );
+}
+
+#[test]
 fn unit_typecheck_rejects_implicit_int_float_coercion() {
     let src = "fn bad() -> Float { 1 + 2.0 }";
     let ir = lower(src);
@@ -10083,12 +10163,22 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
         "std/bytes.aic must declare from_byte_values runtime intrinsic binding"
     );
     assert!(
+        bytes_source.contains(
+            "intrinsic fn aic_string_byte_substring_intrinsic(data: String, start: Int, end: Int) -> String;"
+        ),
+        "std/bytes.aic must declare byte substring runtime intrinsic binding"
+    );
+    assert!(
         bytes_source.contains("aic_bytes_byte_at_intrinsic(data.data, index)"),
         "std/bytes.aic byte_at must bridge Bytes.data into runtime intrinsic"
     );
     assert!(
         bytes_source.contains("aic_string_byte_substring_intrinsic(data.data, start, end)"),
         "std/bytes.aic byte_slice must use byte substring intrinsic on byte indices"
+    );
+    assert!(
+        bytes_source.contains("fn byte_substring(data: String, start: Int, end: Int) -> String"),
+        "std/bytes.aic must expose a public byte substring helper for byte-indexed scanners"
     );
     assert!(
         bytes_source.contains("aic_bytes_from_byte_values_intrinsic(values)"),
