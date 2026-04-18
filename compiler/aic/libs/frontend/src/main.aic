@@ -864,36 +864,43 @@ fn lookup_call_result(symbols: Vec[ResolvedSymbol], imports: Vec[ResolvedImport]
     let module_text = path_prefix(callee_name);
     let name = path_tail(callee_name);
     if module_text == "" {
-        let imported_count = count_imported_matches(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace());
-        if imported_count > 1 {
-            let mut amb_parts: Vec[String] = vec.new_vec();
-            amb_parts = vec.push(amb_parts, "ambiguous callable '");
-            amb_parts = vec.push(amb_parts, name);
-            amb_parts = vec.push(amb_parts, "' from multiple modules");
-            out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), span_value, string.join(amb_parts, "")), "qualify the call with the intended module"));
-            call_lookup_result(references, out_diagnostics)
-        } else {
-            match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
-                Some(symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics),
-                None => match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
-                    Some(variant_symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverVariantReference(), Some(variant_symbol.id), span_value)), out_diagnostics),
-                    None => if symbol_exists_in_transitive_imports(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
-                        let mut parts: Vec[String] = vec.new_vec();
-                        parts = vec.push(parts, "symbol '");
-                        parts = vec.push(parts, name);
-                        parts = vec.push(parts, "' is not imported by this module");
-                        out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(parts, "")), "import the module that declares the symbol or qualify through an existing import"));
-                        call_lookup_result(references, out_diagnostics)
-                    } else {
-                        let mut unknown_parts: Vec[String] = vec.new_vec();
-                        unknown_parts = vec.push(unknown_parts, "unknown symbol '");
-                        unknown_parts = vec.push(unknown_parts, name);
-                        unknown_parts = vec.push(unknown_parts, "'");
-                        out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E1208"), span_value, string.join(unknown_parts, "")));
-                        call_lookup_result(references, out_diagnostics)
-                    },
-                },
-            }
+        match find_symbol(symbols, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+            Some(local_symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverCallReference(), Some(local_symbol.id), span_value)), out_diagnostics),
+            None => if true {
+                let imported_count = count_imported_matches(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace());
+                if imported_count > 1 {
+                    let mut amb_parts: Vec[String] = vec.new_vec();
+                    amb_parts = vec.push(amb_parts, "ambiguous callable '");
+                    amb_parts = vec.push(amb_parts, name);
+                    amb_parts = vec.push(amb_parts, "' from multiple modules");
+                    out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2104"), span_value, string.join(amb_parts, "")), "qualify the call with the intended module"));
+                    call_lookup_result(references, out_diagnostics)
+                } else {
+                    match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+                        Some(symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverCallReference(), Some(symbol.id), span_value)), out_diagnostics),
+                        None => match lookup_unqualified_symbol(symbols, imports, requester_module, name, ResolverVariantSymbol(), ResolverMemberNamespace()) {
+                            Some(variant_symbol) => call_lookup_result(vec.push(references, resolved_reference(requester_module, name, ResolverVariantReference(), Some(variant_symbol.id), span_value)), out_diagnostics),
+                            None => if symbol_exists_in_transitive_imports(symbols, imports, requester_module, name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
+                                let mut parts: Vec[String] = vec.new_vec();
+                                parts = vec.push(parts, "symbol '");
+                                parts = vec.push(parts, name);
+                                parts = vec.push(parts, "' is not imported by this module");
+                                out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, with_help(error(diagnostic_code("E2102"), span_value, string.join(parts, "")), "import the module that declares the symbol or qualify through an existing import"));
+                                call_lookup_result(references, out_diagnostics)
+                            } else {
+                                let mut unknown_parts: Vec[String] = vec.new_vec();
+                                unknown_parts = vec.push(unknown_parts, "unknown symbol '");
+                                unknown_parts = vec.push(unknown_parts, name);
+                                unknown_parts = vec.push(unknown_parts, "'");
+                                out_diagnostics = append_diagnostic_if_room(out_diagnostics, max_errors, error(diagnostic_code("E1208"), span_value, string.join(unknown_parts, "")));
+                                call_lookup_result(references, out_diagnostics)
+                            },
+                        },
+                    }
+                }
+            } else {
+                call_lookup_result(references, out_diagnostics)
+            },
         }
     } else {
         match resolve_qualified_module(imports, units, requester_module, module_text) {

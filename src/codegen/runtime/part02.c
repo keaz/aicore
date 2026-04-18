@@ -991,6 +991,31 @@ void aic_rt_env_set_args(int argc, char** argv) {
 #endif
 }
 
+void aic_rt_stack_ensure_min(long min_bytes) {
+#if defined(_WIN32)
+    (void)min_bytes;
+#else
+    if (min_bytes <= 0) {
+        return;
+    }
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_STACK, &limit) != 0) {
+        return;
+    }
+    rlim_t desired = (rlim_t)min_bytes;
+    if (limit.rlim_cur == RLIM_INFINITY || limit.rlim_cur >= desired) {
+        return;
+    }
+    if (limit.rlim_max != RLIM_INFINITY && limit.rlim_max < desired) {
+        desired = limit.rlim_max;
+    }
+    if (desired > limit.rlim_cur) {
+        limit.rlim_cur = desired;
+        (void)setrlimit(RLIMIT_STACK, &limit);
+    }
+#endif
+}
+
 static char* aic_rt_env_copy_bytes(const char* src, size_t len) {
     char* out = (char*)malloc(len + 1);
     if (out == NULL) {
@@ -1759,6 +1784,10 @@ static uint32_t aic_rt_unicode_simple_to_lower(uint32_t codepoint) {
 
 static int aic_rt_string_slice_valid(const char* ptr, long len) {
     return len >= 0 && (len == 0 || ptr != NULL);
+}
+
+static int aic_rt_string_slice_valid_cap(const char* ptr, long len, long cap) {
+    return cap >= 0 && len <= cap && aic_rt_string_slice_valid(ptr, len);
 }
 
 static size_t aic_rt_string_utf8_valid_prefix(const unsigned char* bytes, size_t remaining) {
@@ -5184,16 +5213,14 @@ double aic_rt_math_cos(double x) {
 }
 
 long aic_rt_string_is_valid_utf8(const char* data_ptr, long data_len, long data_cap) {
-    (void)data_cap;
-    if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
+    if (!aic_rt_string_slice_valid_cap(data_ptr, data_len, data_cap)) {
         return 0;
     }
     return aic_rt_string_utf8_is_valid(data_ptr, (size_t)data_len) ? 1 : 0;
 }
 
 long aic_rt_string_is_ascii(const char* data_ptr, long data_len, long data_cap) {
-    (void)data_cap;
-    if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
+    if (!aic_rt_string_slice_valid_cap(data_ptr, data_len, data_cap)) {
         return 0;
     }
     size_t n = (size_t)data_len;
@@ -5212,14 +5239,13 @@ void aic_rt_string_bytes_to_string_lossy(
     char** out_ptr,
     long* out_len
 ) {
-    (void)data_cap;
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (!aic_rt_string_slice_valid(data_ptr, data_len)) {
+    if (!aic_rt_string_slice_valid_cap(data_ptr, data_len, data_cap)) {
         aic_rt_string_runtime_panic("bytes_to_string_lossy", "INVALID_INPUT", "invalid-byte-slice");
         return;
     }
@@ -5279,10 +5305,8 @@ long aic_rt_string_contains(
     long needle_len,
     long needle_cap
 ) {
-    (void)haystack_cap;
-    (void)needle_cap;
-    if (!aic_rt_string_slice_valid(haystack_ptr, haystack_len) ||
-        !aic_rt_string_slice_valid(needle_ptr, needle_len)) {
+    if (!aic_rt_string_slice_valid_cap(haystack_ptr, haystack_len, haystack_cap) ||
+        !aic_rt_string_slice_valid_cap(needle_ptr, needle_len, needle_cap)) {
         return 0;
     }
     size_t h_n = (size_t)haystack_len;
@@ -5298,10 +5322,8 @@ long aic_rt_string_starts_with(
     long prefix_len,
     long prefix_cap
 ) {
-    (void)s_cap;
-    (void)prefix_cap;
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
-        !aic_rt_string_slice_valid(prefix_ptr, prefix_len)) {
+    if (!aic_rt_string_slice_valid_cap(s_ptr, s_len, s_cap) ||
+        !aic_rt_string_slice_valid_cap(prefix_ptr, prefix_len, prefix_cap)) {
         return 0;
     }
     if (prefix_len > s_len) {
@@ -5321,10 +5343,8 @@ long aic_rt_string_ends_with(
     long suffix_len,
     long suffix_cap
 ) {
-    (void)s_cap;
-    (void)suffix_cap;
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
-        !aic_rt_string_slice_valid(suffix_ptr, suffix_len)) {
+    if (!aic_rt_string_slice_valid_cap(s_ptr, s_len, s_cap) ||
+        !aic_rt_string_slice_valid_cap(suffix_ptr, suffix_len, suffix_cap)) {
         return 0;
     }
     if (suffix_len > s_len) {

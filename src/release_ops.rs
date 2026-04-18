@@ -946,7 +946,20 @@ fn collect_files_from(
 }
 
 fn should_skip_path(path: &Path) -> bool {
-    let skip_names = [".git", "target", "dist", "node_modules", ".idea", ".vscode"];
+    let skip_names = [
+        ".aic",
+        ".aic-cache",
+        ".aic-replay",
+        ".ci-local-bin",
+        ".git",
+        ".idea",
+        ".vscode",
+        ".vscode-test",
+        "dist",
+        "node_modules",
+        "target",
+        "target-linux",
+    ];
     path.components().any(|c| match c {
         Component::Normal(segment) => {
             let seg = segment.to_string_lossy();
@@ -1374,12 +1387,34 @@ mod tests {
         let root = dir.path();
 
         fs::create_dir_all(root.join("src")).expect("mkdir");
+        fs::create_dir_all(root.join("target-linux/tmp")).expect("mkdir target-linux");
+        fs::create_dir_all(root.join(".aic-cache/generated")).expect("mkdir cache");
+        fs::create_dir_all(root.join("tools/vscode-aic/.vscode-test")).expect("mkdir vscode test");
         fs::write(root.join("src/main.aic"), "fn main() -> Int { 0 }\n").expect("write");
         fs::write(root.join("README.md"), "hello\n").expect("write");
+        fs::write(root.join("target-linux/tmp/stage2"), b"generated").expect("write target");
+        fs::write(root.join(".aic-cache/generated/cache.bin"), b"cache").expect("write cache");
+        fs::write(
+            root.join("tools/vscode-aic/.vscode-test/electron"),
+            b"generated",
+        )
+        .expect("write vscode test");
 
         let a = generate_repro_manifest(root, 42).expect("manifest");
         let b = generate_repro_manifest(root, 42).expect("manifest");
         assert_eq!(a, b);
+        assert_eq!(a.file_count, 2);
+        assert!(a.files.iter().any(|file| file.path == "README.md"));
+        assert!(a.files.iter().any(|file| file.path == "src/main.aic"));
+        assert!(!a
+            .files
+            .iter()
+            .any(|file| file.path.contains("target-linux")));
+        assert!(!a.files.iter().any(|file| file.path.contains(".aic-cache")));
+        assert!(!a
+            .files
+            .iter()
+            .any(|file| file.path.contains(".vscode-test")));
     }
 
     #[test]

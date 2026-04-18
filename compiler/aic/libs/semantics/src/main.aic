@@ -555,9 +555,12 @@ fn visible_type_arity(units: Vec[ResolveUnit], resolver: ResolverOutput, module_
     } else {
         match builtin_type_arity(name) {
             Some(arity) => Some(arity),
-            None => match lookup_visible_nominal_type(resolver, module_path, name) {
-                Some(symbol) => declared_type_arity(units, symbol.module_path, symbol.name),
-                None => None(),
+            None => match declared_type_arity(units, module_path, name) {
+                Some(arity) => Some(arity),
+                None => match lookup_visible_nominal_type(resolver, module_path, name) {
+                    Some(symbol) => declared_type_arity(units, symbol.module_path, symbol.name),
+                    None => None(),
+                },
             },
         }
     }

@@ -356,6 +356,7 @@ impl<'a> Generator<'a> {
         text.push_str("declare void @aic_rt_env_args(i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_env_arg_count()\n");
         text.push_str("declare i64 @aic_rt_env_arg_at(i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_stack_ensure_min(i64)\n");
         text.push_str("declare void @aic_rt_exit(i64)\n");
         text.push_str("declare void @aic_rt_env_all_vars(i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_env_home_dir(i8**, i64*)\n");
@@ -2015,6 +2016,8 @@ impl<'a> Generator<'a> {
         self.out
             .push("define i32 @main(i32 %argc, i8** %argv) {".to_string());
         self.out.push("entry:".to_string());
+        self.out
+            .push("  call void @aic_rt_stack_ensure_min(i64 67108864)".to_string());
         self.out
             .push("  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)".to_string());
         match main_sig.ret {

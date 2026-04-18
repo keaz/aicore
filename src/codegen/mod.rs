@@ -2268,6 +2268,12 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
                 if target_is_windows(options.target_triple.as_deref()) {
                     command.arg("-lws2_32");
                 }
+                if target_is_macos(options.target_triple.as_deref()) {
+                    command.arg("-Wl,-stack_size,0x4000000");
+                }
+                if target_is_linux(options.target_triple.as_deref()) {
+                    command.arg("-Wl,-z,stack-size=67108864");
+                }
                 for flag in &tls_flags.link_flags {
                     command.arg(flag);
                 }
@@ -2487,10 +2493,12 @@ fn instrument_llvm_for_leak_tracking(llvm_ir: &str) -> String {
 }
 
 fn rewrite_wasm_entry_wrapper(llvm_ir: &str) -> String {
-    llvm_ir.replace(
-        "  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)\n",
-        "",
-    )
+    llvm_ir
+        .replace("  call void @aic_rt_stack_ensure_min(i64 67108864)\n", "")
+        .replace(
+            "  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)\n",
+            "",
+        )
 }
 
 fn ensure_parent_dir(path: &Path) -> anyhow::Result<()> {
@@ -2692,6 +2700,13 @@ fn target_is_macos(target_triple: Option<&str>) -> bool {
     match target_triple {
         Some(target) => target.contains("apple-darwin"),
         None => cfg!(target_os = "macos"),
+    }
+}
+
+fn target_is_linux(target_triple: Option<&str>) -> bool {
+    match target_triple {
+        Some(target) => target.contains("linux"),
+        None => cfg!(target_os = "linux"),
     }
 }
 

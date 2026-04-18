@@ -25,7 +25,7 @@ aic_selfhost run <path>
 
 `<path>` may be a `.aic` file or a package directory. Package directories read `aic.toml` and use `main = "..."` when present, otherwise `src/main.aic`.
 
-`build` emits deterministic self-host LLVM text through `compiler.backend_llvm`, writes it to a temporary artifact, and invokes `clang` to materialize the requested native executable. `run` uses the same materialization path and then executes the generated program, returning its exit status for backend-covered programs.
+`build` emits deterministic self-host LLVM text through `compiler.backend_llvm`, writes it to a temporary artifact, and invokes `clang` to materialize the requested native executable. The self-host driver links the runtime C source parts directly, uses portable `-pthread -lm` POSIX link flags, applies the macOS stack-size linker flag when `uname -s` reports `Darwin`, ad-hoc signs macOS Mach-O outputs with `${AIC_CODESIGN:-/usr/bin/codesign}`, applies the ELF stack-size linker flag when `uname -s` reports `Linux`, and relies on the runtime startup stack guard to raise Linux `RLIMIT_STACK` when the host permits it. `run` uses the same materialization path and then executes the generated program, returning its exit status for backend-covered programs.
 
 ## Diagnostics
 

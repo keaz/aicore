@@ -323,7 +323,7 @@ pub fn driver_sources_with_synthetic_imports_for_all(entries: Vec[DriverSource],
     out
 }
 
-pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
+fn driver_compile_sources_with_lowering_mode(values: Vec[DriverSource], max_errors: Int, emit_imported_units: Bool) -> DriverCompileResult {
     let parsed = parse_sources(driver_sources_with_synthetic_imports_for_all(values, max_errors), max_errors);
     let mut diagnostics = collect_parse_diagnostics(parsed, max_errors);
     let entry = first_program(parsed);
@@ -352,7 +352,11 @@ pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> Dri
                     backend_artifact: empty_backend_artifact(),
                 }
             } else {
-                let lowered = lower_checked_program(entry_program, checked, max_errors);
+                let lowered: IrLoweringResult = if emit_imported_units {
+                    lower_resolved_units(units, resolver, checked, max_errors)
+                } else {
+                    lower_checked_program(entry_program, checked, max_errors)
+                };
                 diagnostics = append_all_diagnostics(diagnostics, lowered.diagnostics, max_errors);
                 match lowered.program {
                     Some(program) => driver_compile_result(entry_module, diagnostics, Some(program), empty_backend_artifact()),
@@ -367,6 +371,14 @@ pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> Dri
             backend_artifact: empty_backend_artifact(),
         },
     }
+}
+
+pub fn driver_compile_sources(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
+    driver_compile_sources_with_lowering_mode(values, max_errors, false)
+}
+
+pub fn driver_compile_sources_with_imported_units(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
+    driver_compile_sources_with_lowering_mode(values, max_errors, true)
 }
 
 pub fn driver_compile_source(path: String, text: String, max_errors: Int) -> DriverCompileResult {
@@ -388,6 +400,18 @@ fn driver_compile_attach_backend(compiled: DriverCompileResult, program: IrProgr
 
 fn driver_compile_sources_with_backend(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
     let compiled: DriverCompileResult = driver_compile_sources(values, max_errors);
+    if driver_has_error(compiled.diagnostics) {
+        compiled
+    } else {
+        match compiled.program {
+            Some(program) => driver_compile_attach_backend(compiled, program, max_errors),
+            None => compiled,
+        }
+    }
+}
+
+fn driver_compile_sources_with_imported_backend(values: Vec[DriverSource], max_errors: Int) -> DriverCompileResult {
+    let compiled: DriverCompileResult = driver_compile_sources_with_imported_units(values, max_errors);
     if driver_has_error(compiled.diagnostics) {
         compiled
     } else {
@@ -494,6 +518,11 @@ pub fn driver_build_source(path: String, text: String, output_path: String, max_
 
 pub fn driver_build_sources(values: Vec[DriverSource], output_path: String, max_errors: Int) -> DriverCommandResult {
     let compiled = driver_compile_sources_with_backend(values, max_errors);
+    driver_build_compiled(compiled, output_path)
+}
+
+pub fn driver_build_sources_with_imported_units(values: Vec[DriverSource], output_path: String, max_errors: Int) -> DriverCommandResult {
+    let compiled = driver_compile_sources_with_imported_backend(values, max_errors);
     driver_build_compiled(compiled, output_path)
 }
 

@@ -89,8 +89,14 @@ jobs:
       - name: Intrinsic placeholder guard
         run: make intrinsic-placeholder-guard
 
+      - name: Test command style guard
+        run: make test-command-style-guard
+
       - name: Verify intrinsic bindings
         run: make verify-intrinsics
+
+      - name: Standard library documentation check
+        run: make std-doc-check
 
       - name: Example checks
         run: make examples-check
@@ -100,6 +106,9 @@ jobs:
 
       - name: Integration harness offline replay gate
         run: make integration-harness-offline
+
+      - name: No null semantics lint
+        run: make no-null-lint
 
       - name: Integration harness live smoke (opt-in)
         if: vars.AIC_ENABLE_INTEGRATION_LIVE == '1'

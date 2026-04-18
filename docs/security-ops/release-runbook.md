@@ -18,6 +18,8 @@ Each target produces:
 - SBOM
 - provenance statement
 
+Self-host compiler bootstrap artifacts are checked separately from the source reproducibility manifest. Linux bootstrap normalization uses `strip --strip-all`; macOS bootstrap normalization uses `strip -S -x` and requires ad-hoc signed Mach-O outputs from the self-host materializer. The bootstrap report must also pass its resource budgets (`performance.ok == true`) for duration, artifact size, and child peak RSS.
+
 ## Local Dry-Run Commands
 
 ```bash
@@ -27,6 +29,8 @@ aic release policy --check
 aic release lts --check
 aic release security-audit --json
 ```
+
+Reproducibility manifests include source inputs and intentionally exclude local/generated paths such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules`.
 
 ## Signing and Verification
 

@@ -5,7 +5,7 @@ AIC ?= cargo run --quiet --bin aic --
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-bootstrap selfhost-bootstrap-report intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -28,6 +28,7 @@ help:
 	@echo "  make test-selfhost Run self-hosting parity harness tests"
 	@echo "  make selfhost-parity Run reference/candidate compiler parity comparisons"
 	@echo "  make selfhost-parity-candidate Build aic_selfhost and compare it against the Rust reference"
+	@echo "  make selfhost-stage-matrix Validate latest stage compiler on core packages/examples"
 	@echo "  make selfhost-bootstrap Run required stage0/stage1/stage2 self-host bootstrap gate"
 	@echo "  make selfhost-bootstrap-report Generate bounded bootstrap readiness report without claiming readiness"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
@@ -126,6 +127,10 @@ selfhost-parity:
 selfhost-parity-candidate:
 	$(AIC) build compiler/aic/tools/aic_selfhost -o target/aic_selfhost_candidate
 	SELFHOST_PARITY_MANIFEST=tests/selfhost/rust_vs_selfhost_manifest.json SELFHOST_CANDIDATE=target/aic_selfhost_candidate SELFHOST_ARTIFACT_DIR=target/selfhost-parity-candidate SELFHOST_PARITY_REPORT=target/selfhost-parity-candidate/report.json $(MAKE) selfhost-parity
+
+selfhost-stage-matrix:
+	@args=(--stage-compiler "$${SELFHOST_STAGE_COMPILER:-target/selfhost-bootstrap/stage2/aic_selfhost}" --manifest "$${SELFHOST_STAGE_MATRIX_MANIFEST:-tests/selfhost/stage_matrix_manifest.json}" --artifact-dir "$${SELFHOST_STAGE_MATRIX_ARTIFACT_DIR:-target/selfhost-stage-matrix}" --report "$${SELFHOST_STAGE_MATRIX_REPORT:-target/selfhost-stage-matrix/report.json}" --timeout "$${SELFHOST_STAGE_MATRIX_TIMEOUT:-90}"); \
+	python3 scripts/selfhost/stage_matrix.py "$${args[@]}"
 
 selfhost-bootstrap:
 	python3 scripts/selfhost/bootstrap.py --mode supported
@@ -242,10 +247,12 @@ docs-check:
 	@test -f docs/security-ops/incident-response.md
 	@test -f docs/security-threat-model.md
 	@test -f docs/selfhost/README.md
+	@test -f docs/selfhost/stage-matrix.md
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/errors/secure-networking-error-contract.v1.json
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool tests/selfhost/parity_manifest.json >/dev/null
+	@python3 -m json.tool tests/selfhost/stage_matrix_manifest.json >/dev/null
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/parse-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null

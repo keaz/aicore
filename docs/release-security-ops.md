@@ -24,6 +24,8 @@ Generate deterministic source manifest:
 aic release manifest --root . --output target/release/repro-manifest.json --source-date-epoch 1700000000
 ```
 
+The manifest records source inputs only. Local/generated directories such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules` are excluded so release verification is not affected by self-host bootstrap artifacts, editor test downloads, or local build output. Self-host native reproducibility uses platform artifact normalization outside this source manifest: Linux uses `strip --strip-all`, and macOS uses `strip -S -x` after Mach-O outputs are ad-hoc signed. The self-host bootstrap report also records resource budgets and observed duration, artifact-size, and child peak-RSS values; release readiness requires `performance.ok` to be `true`.
+
 Verify against checked-in/output manifest:
 
 ```bash

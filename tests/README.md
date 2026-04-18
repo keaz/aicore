@@ -10,6 +10,7 @@ This directory groups the repository's executable checks by stable category rath
 - `e7_cli_tests.rs` and `suggest_contracts_cli_tests.rs` - CLI contract and workflow coverage
 - `lsp_smoke_tests.rs` - LSP request/response smoke coverage
 - `e8_*` - verification, fuzz, and performance gates
+- `selfhost_parity_tests.rs` - self-hosting parity harness coverage
 - `fuzz/` - regression corpus and fuzz seeds
 
 ## Run the right slice
@@ -19,9 +20,11 @@ This directory groups the repository's executable checks by stable category rath
 - `cargo test --locked --test execution_tests`
 - `cargo test --locked --test e7_cli_tests`
 - `cargo test --locked --test lsp_smoke_tests`
+- `cargo test --locked --test selfhost_parity_tests`
 - `cargo test --locked --test e8_conformance_tests`
 - `make test-e7`
 - `make test-e8`
+- `make selfhost-parity`
 - `make ci` for the full local gate
 
 ## Related docs

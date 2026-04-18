@@ -75,6 +75,14 @@ fn source_load_state(sources: Vec[DriverSource], next_source: Int) -> SourceLoad
     }
 }
 
+fn append_compiler_source_if_missing(sources: Vec[DriverSource], path: String, text: String, source_value: Int) -> Vec[DriverSource] {
+    if driver_has_source_path(sources, path) {
+        sources
+    } else {
+        vec.push(sources, driver_source(path, text, source_id(source_value)))
+    }
+}
+
 fn compiler_source_path_for_import(import_path: String) -> String {
     if import_path == "compiler.source" {
         "compiler/aic/libs/source/src/main.aic"
@@ -105,6 +113,162 @@ fn compiler_source_path_for_import(import_path: String) -> String {
     }
 }
 
+fn read_compiler_driver_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/driver/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 13);
+            Ok(next)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_backend_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/backend_llvm/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 12);
+            read_compiler_driver_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_ir_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/ir/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 11);
+            read_compiler_backend_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_typecheck_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/typecheck/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 10);
+            read_compiler_ir_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_semantics_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/semantics/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 9);
+            read_compiler_typecheck_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_frontend_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/frontend/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 8);
+            read_compiler_semantics_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_parser_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/parser/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 7);
+            read_compiler_frontend_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_ast_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/ast/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 6);
+            read_compiler_parser_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_lexer_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/lexer/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 5);
+            read_compiler_ast_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_syntax_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/syntax/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 4);
+            read_compiler_lexer_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_diagnostics_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/diagnostics/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 3);
+            read_compiler_syntax_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn read_compiler_source_source(sources: Vec[DriverSource], max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
+    let path = "compiler/aic/libs/source/src/main.aic";
+    match read_text(path) {
+        Ok(text) => if true {
+            let next = append_compiler_source_if_missing(sources, path, text, 2);
+            read_compiler_diagnostics_source(next, max_errors)
+        } else {
+            Ok(sources)
+        },
+        Err(error) => Err(error),
+    }
+}
+
 fn load_mapped_import(state: SourceLoadState, import_path: String) -> Result[SourceLoadState, FsError] effects { fs } capabilities { fs } {
     let path = compiler_source_path_for_import(import_path);
     if path == "" || driver_has_source_path(state.sources, path) {
@@ -124,55 +288,17 @@ fn load_mapped_import(state: SourceLoadState, import_path: String) -> Result[Sou
 
 fn read_source_bundle(input_path: String, max_errors: Int) -> Result[Vec[DriverSource], FsError] effects { fs } capabilities { fs } {
     let source_path = source_path_for_input(input_path);
-    match read_source_text(source_path) {
+    match read_text(source_path) {
         Ok(text) => if true {
             let mut sources: Vec[DriverSource] = vec.new_vec();
-            sources = vec.push(sources, driver_source(source_path, text, source_id(1)));
-            let mut state = source_load_state(sources, 2);
-            let mut failed: Option[FsError] = None();
-            let mut scan = 0;
-            while scan < vec.vec_len(state.sources) {
-                match failed {
-                    Some(_) => (),
-                    None => match vec.get(state.sources, scan) {
-                        Some(source_value) => if true {
-                            let imports = driver_import_paths_from_source(source_value, max_errors);
-                            let mut import_index = 0;
-                            while import_index < vec.vec_len(imports) {
-                                match failed {
-                                    Some(_) => (),
-                                    None => match vec.get(imports, import_index) {
-                                        Some(import_path) => match load_mapped_import(state, import_path) {
-                                            Ok(next_state) => if true {
-                                                state = next_state;
-                                                ()
-                                            } else {
-                                                ()
-                                            },
-                                            Err(error) => if true {
-                                                failed = Some(error);
-                                                ()
-                                            } else {
-                                                ()
-                                            },
-                                        },
-                                        None => (),
-                                    },
-                                };
-                                import_index = import_index + 1;
-                            };
-                            ()
-                        } else {
-                            ()
-                        },
-                        None => (),
-                    },
-                };
-                scan = scan + 1;
-            };
-            match failed {
-                Some(error) => Err(error),
-                None => Ok(driver_sources_with_synthetic_imports_for_all(state.sources, max_errors)),
+            let entry_sources = vec.push(sources, driver_source(source_path, text, source_id(1)));
+            if string.contains(text, "import compiler.") {
+                match read_compiler_source_source(entry_sources, max_errors) {
+                    Ok(all_sources) => Ok(driver_sources_with_synthetic_imports_for_all(all_sources, max_errors)),
+                    Err(error) => Err(error),
+                }
+            } else {
+                Ok(driver_sources_with_synthetic_imports_for_all(entry_sources, max_errors))
             }
         } else {
             Ok(vec.new_vec())
@@ -221,8 +347,12 @@ fn runtime_c_command(runtime_path: String) -> String {
     concat3("cat src/codegen/runtime/part01.c src/codegen/runtime/part02.c src/codegen/runtime/part03.c src/codegen/runtime/part04.c src/codegen/runtime/part05.c > ", shell_quote(runtime_path), "")
 }
 
+fn macos_codesign_command(output_path: String) -> String {
+    concat3(" && if [ \"$AIC_SELFHOST_OS\" = 'Darwin' ]; then AIC_SELFHOST_CODESIGN=${AIC_CODESIGN:-/usr/bin/codesign}; \"$AIC_SELFHOST_CODESIGN\" --force --sign - ", shell_quote(output_path), "; fi")
+}
+
 fn clang_command(llvm_path: String, runtime_path: String, output_path: String) -> String {
-    concat5(runtime_c_command(runtime_path), " && clang -x ir -Wno-override-module ", shell_quote(llvm_path), concat5(" -x c ", shell_quote(runtime_path), " -DAIC_RT_TLS_OPENSSL=0 -pthread -lm -o ", shell_quote(output_path), ""), "")
+    concat5(runtime_c_command(runtime_path), " && AIC_SELFHOST_OS=$(uname -s) && AIC_SELFHOST_STACK_FLAG='' && if [ \"$AIC_SELFHOST_OS\" = 'Darwin' ]; then AIC_SELFHOST_STACK_FLAG=' -Wl,-stack_size,0x4000000'; elif [ \"$AIC_SELFHOST_OS\" = 'Linux' ]; then AIC_SELFHOST_STACK_FLAG=' -Wl,-z,stack-size=67108864'; fi && clang -x ir -Wno-override-module ", shell_quote(llvm_path), concat5(" -x c ", shell_quote(runtime_path), " -DAIC_RT_TLS_OPENSSL=0${AIC_SELFHOST_STACK_FLAG} -pthread -lm -o ", shell_quote(output_path), macos_codesign_command(output_path)), "")
 }
 
 fn materialize_native(result: DriverCommandResult, output_path: String, emit_built: Bool) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
@@ -235,8 +365,8 @@ fn materialize_native(result: DriverCommandResult, output_path: String, emit_bui
                 Ok(runtime_path) => match write_text(llvm_path, result.artifact_text) {
                     Ok(_) => match proc.run(clang_command(llvm_path, runtime_path, output_path)) {
                         Ok(out) => if out.status == 0 {
-                            let _cleanup_llvm = delete(llvm_path);
-                            let _cleanup_runtime = delete(runtime_path);
+                            delete(llvm_path);
+                            delete(runtime_path);
                             if emit_built {
                                 write_stdout(concat3("built ", output_path, "\n"))
                             } else {
@@ -244,22 +374,22 @@ fn materialize_native(result: DriverCommandResult, output_path: String, emit_bui
                             };
                             0
                         } else {
-                            let _cleanup_llvm = delete(llvm_path);
-                            let _cleanup_runtime = delete(runtime_path);
+                            delete(llvm_path);
+                            delete(runtime_path);
                             write_stderr(out.stderr);
                             native_materialization_error("clang returned a nonzero exit status")
                         },
                         Err(_) => if true {
-                            let _cleanup_llvm = delete(llvm_path);
-                            let _cleanup_runtime = delete(runtime_path);
+                            delete(llvm_path);
+                            delete(runtime_path);
                             native_materialization_error("failed to launch clang")
                         } else {
                             1
                         },
                     },
                     Err(_) => if true {
-                        let _cleanup_llvm = delete(llvm_path);
-                        let _cleanup_runtime = delete(runtime_path);
+                        delete(llvm_path);
+                        delete(runtime_path);
                         write_stderr("error[E5203]: self-host driver could not write temporary LLVM artifact\n");
                         1
                     } else {
@@ -267,7 +397,7 @@ fn materialize_native(result: DriverCommandResult, output_path: String, emit_bui
                     },
                 },
                 Err(_) => if true {
-                    let _cleanup = delete(llvm_path);
+                    delete(llvm_path);
                     native_materialization_error("failed to allocate a temporary runtime source path")
                 } else {
                     1
@@ -315,7 +445,7 @@ fn run_build(input_path: String, output_flag: String, output_path: String) -> In
         flush_result(driver_unsupported_command("build requires -o <path>", 20), false)
     } else {
         match read_source_bundle(input_path, 120) {
-            Ok(sources) => materialize_native(driver_build_sources(sources, output_path, 120), output_path, true),
+            Ok(sources) => materialize_native(driver_build_sources_with_imported_units(sources, output_path, 120), output_path, true),
             Err(_) => if true {
                 write_stderr("error[E5202]: self-host driver could not read source input\n");
                 1
@@ -329,10 +459,10 @@ fn run_build(input_path: String, output_flag: String, output_path: String) -> In
 fn run_run(input_path: String) -> Int effects { io, fs, proc, env } capabilities { io, fs, proc, env } {
     match read_source_bundle(input_path, 120) {
         Ok(sources) => match temp_file("aic_selfhost_run_") {
-            Ok(exe_path) => if materialize_native(driver_build_sources(sources, exe_path, 120), exe_path, false) == 0 {
+            Ok(exe_path) => if materialize_native(driver_build_sources_with_imported_units(sources, exe_path, 120), exe_path, false) == 0 {
                 match proc.run(shell_quote(exe_path)) {
                     Ok(out) => if true {
-                        let _cleanup = delete(exe_path);
+                        delete(exe_path);
                         write_stdout(out.stdout);
                         write_stderr(out.stderr);
                         proc_status_to_int(out.status)
@@ -340,14 +470,14 @@ fn run_run(input_path: String) -> Int effects { io, fs, proc, env } capabilities
                         1
                     },
                     Err(_) => if true {
-                        let _cleanup = delete(exe_path);
+                        delete(exe_path);
                         native_materialization_error("failed to launch generated executable")
                     } else {
                         1
                     },
                 }
             } else {
-                let _cleanup = delete(exe_path);
+                delete(exe_path);
                 1
             },
             Err(_) => native_materialization_error("failed to allocate a temporary executable path"),

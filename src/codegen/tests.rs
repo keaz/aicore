@@ -14,7 +14,7 @@ use super::{
     emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
     ensure_supported_toolchain_with_pin, instrument_llvm_for_leak_tracking, normalize_macos_uuid,
     parse_llvm_major, rewrite_wasm_entry_wrapper, runtime_c_source, runtime_compile_flags,
-    target_is_wasm, CodegenOptions, CompileOptions, OptimizationLevel,
+    target_is_linux, target_is_wasm, CodegenOptions, CompileOptions, OptimizationLevel,
     RuntimeInstrumentationOptions, ToolchainInfo,
 };
 
@@ -39,6 +39,12 @@ fn emits_basic_llvm() {
     let lowered = lower_runtime_asserts(&ir);
     let output = emit_llvm(&lowered, "test.aic").expect("llvm");
     assert!(output.llvm_ir.contains("define i64 @aic_main()"));
+    assert!(output
+        .llvm_ir
+        .contains("declare void @aic_rt_stack_ensure_min(i64)"));
+    assert!(output
+        .llvm_ir
+        .contains("call void @aic_rt_stack_ensure_min(i64 67108864)"));
 }
 
 #[test]
@@ -356,11 +362,13 @@ fn wasm_entry_wrapper_removes_env_args_bridge() {
     let llvm = concat!(
         "define i32 @main(i32 %argc, i8** %argv) {\n",
         "entry:\n",
+        "  call void @aic_rt_stack_ensure_min(i64 67108864)\n",
         "  call void @aic_rt_env_set_args(i32 %argc, i8** %argv)\n",
         "  ret i32 0\n",
         "}\n",
     );
     let rewritten = rewrite_wasm_entry_wrapper(llvm);
+    assert!(!rewritten.contains("@aic_rt_stack_ensure_min"));
     assert!(!rewritten.contains("@aic_rt_env_set_args"));
     assert!(rewritten.contains("ret i32 0"));
 }
@@ -371,6 +379,14 @@ fn detects_wasm_target_triple() {
     assert!(target_is_wasm(Some("wasm32-wasi")));
     assert!(!target_is_wasm(Some("x86_64-unknown-linux-gnu")));
     assert!(!target_is_wasm(None));
+}
+
+#[test]
+fn detects_linux_target_triple_for_native_stack_policy() {
+    assert!(target_is_linux(Some("x86_64-unknown-linux-gnu")));
+    assert!(target_is_linux(Some("aarch64-unknown-linux-gnu")));
+    assert!(!target_is_linux(Some("aarch64-apple-darwin")));
+    assert!(!target_is_linux(Some("x86_64-pc-windows-msvc")));
 }
 
 #[test]
@@ -2481,6 +2497,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("void aic_rt_log_set_json(long enabled)"));
     assert!(runtime_c_source().contains("long aic_rt_fs_read_text("));
     assert!(runtime_c_source().contains("long aic_rt_string_contains("));
+    assert!(runtime_c_source().contains("aic_rt_string_slice_valid_cap"));
     assert!(runtime_c_source().contains("long aic_rt_string_parse_int("));
     assert!(runtime_c_source().contains("void aic_rt_string_join("));
     assert!(runtime_c_source().contains("void aic_rt_vec_new("));

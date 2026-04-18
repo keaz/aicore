@@ -1,0 +1,87 @@
+{
+  "cases": [
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "expected": "pass",
+      "kind": "single-file",
+      "name": "core_loop_control_single_file",
+      "path": "examples/core/loop_control.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json",
+        "build",
+        "run"
+      ],
+      "expected": "pass",
+      "kind": "single-file",
+      "name": "backend_loop_break_tail_executable",
+      "path": "tests/selfhost/cases/backend_loop_break_tail.aic",
+      "timeouts": {
+        "build": 90,
+        "run": 90
+      }
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json",
+        "build",
+        "run"
+      ],
+      "expected": "pass",
+      "kind": "package",
+      "name": "selfhost_driver_package",
+      "path": "examples/selfhost/driver_package",
+      "timeouts": {
+        "build": 90,
+        "run": 90
+      }
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "expected": "pass",
+      "kind": "package-member",
+      "name": "compiler_source_package_member",
+      "path": "compiler/aic/libs/source"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "diagnostic_codes": {
+        "check": [
+          "E1258"
+        ]
+      },
+      "expected": "fail",
+      "kind": "single-file",
+      "name": "trait_bound_negative_diagnostic",
+      "path": "tests/selfhost/cases/trait_bound_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "diagnostic_codes": {
+        "check": [
+          "E5202"
+        ]
+      },
+      "expected": "unsupported",
+      "kind": "workspace",
+      "name": "workspace_root_currently_unsupported",
+      "path": "compiler/aic",
+      "readiness": false
+    }
+  ],
+  "name": "selfhost-stage-compiler-matrix",
+  "schema_version": 1
+}

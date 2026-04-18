@@ -14,6 +14,10 @@ fn parity_script() -> PathBuf {
     repo_root().join("scripts/selfhost/parity.py")
 }
 
+fn stage_matrix_script() -> PathBuf {
+    repo_root().join("scripts/selfhost/stage_matrix.py")
+}
+
 fn run_parity(args: &[String]) -> std::process::Output {
     Command::new("python3")
         .arg(parity_script())
@@ -21,6 +25,15 @@ fn run_parity(args: &[String]) -> std::process::Output {
         .current_dir(repo_root())
         .output()
         .expect("run parity script")
+}
+
+fn run_stage_matrix(args: &[String]) -> std::process::Output {
+    Command::new("python3")
+        .arg(stage_matrix_script())
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("run stage matrix script")
 }
 
 fn write_fake_compiler(path: &Path, variant: &str) {
@@ -56,6 +69,45 @@ sys.exit(0)
         ),
     )
     .expect("write fake compiler");
+}
+
+fn write_fake_stage_compiler(path: &Path) {
+    fs::write(
+        path,
+        r#"#!/usr/bin/env python3
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+action = args[0]
+source = args[1] if len(args) > 1 else ""
+name = os.path.basename(source)
+
+if "unsupported_workspace" in source:
+    print("error[E5202]: self-host driver could not read source input", file=sys.stderr)
+    sys.exit(1)
+
+if "fail" in name:
+    print("error[E1258]: type 'Bool' does not satisfy trait bound 'Order'", file=sys.stderr)
+    sys.exit(1)
+
+if action == "build":
+    out = args[args.index("-o") + 1]
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as handle:
+        handle.write("stage-matrix-artifact:" + name)
+    print("built " + out)
+elif action == "ir":
+    print(json.dumps({"format": "aicore-selfhost-ir-v1", "source": name}, sort_keys=True))
+elif action == "run":
+    print("ran " + name)
+else:
+    print("check: ok")
+sys.exit(0)
+"#,
+    )
+    .expect("write fake stage compiler");
 }
 
 fn write_manifest(path: &Path) {
@@ -145,6 +197,32 @@ fn selfhost_parity_manifest_lists_cases() {
     assert!(candidate_stdout.contains("type_arithmetic_mismatch fail check"));
     assert!(candidate_stdout.contains("trait_bound_invalid fail check"));
     assert!(candidate_stdout.contains("resource_use_after_close fail check"));
+}
+
+#[test]
+fn selfhost_stage_matrix_manifest_lists_cases() {
+    let output = run_stage_matrix(&[
+        "--manifest".into(),
+        "tests/selfhost/stage_matrix_manifest.json".into(),
+        "--list".into(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("core_loop_control_single_file single-file pass check,ir-json"));
+    assert!(stdout
+        .contains("backend_loop_break_tail_executable single-file pass check,ir-json,build,run"));
+    assert!(stdout.contains("selfhost_driver_package package pass check,ir-json,build,run"));
+    assert!(stdout.contains("compiler_source_package_member package-member pass check,ir-json"));
+    assert!(stdout.contains("trait_bound_negative_diagnostic single-file fail check"));
+    assert!(stdout.contains(
+        "workspace_root_currently_unsupported workspace unsupported check non-readiness"
+    ));
 }
 
 #[test]
@@ -270,6 +348,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "compiler/aic/tools/source_diagnostics_check/aic.toml",
         "compiler/aic/tools/source_diagnostics_check/src/main.aic",
         "tests/selfhost/rust_vs_selfhost_manifest.json",
+        "tests/selfhost/stage_matrix_manifest.json",
+        "scripts/selfhost/stage_matrix.py",
+        "docs/selfhost/stage-matrix.md",
         "tests/selfhost/cases/borrow_invalid.aic",
         "tests/selfhost/cases/resource_invalid.aic",
     ] {
@@ -658,6 +739,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
 
     let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
     assert!(makefile.contains("selfhost-parity-candidate"));
+    assert!(makefile.contains("selfhost-stage-matrix"));
     assert!(makefile.contains("selfhost-bootstrap"));
     assert!(makefile.contains("selfhost-bootstrap-report"));
 
@@ -667,6 +749,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("stage0"));
     assert!(bootstrap.contains("stage1"));
     assert!(bootstrap.contains("stage2"));
+    assert!(bootstrap.contains("stage-matrix"));
+    assert!(bootstrap.contains("stage_matrix_report"));
+    assert!(bootstrap.contains("SELFHOST_STAGE_MATRIX_REPORT"));
     assert!(bootstrap.contains("allow-incomplete"));
     assert!(bootstrap.contains("host-preflight"));
     assert!(bootstrap.contains("Developer Mode is disabled"));
@@ -684,10 +769,20 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("AIC_SELFHOST_MAX_STEP_MS"));
     assert!(bootstrap.contains("AIC_SELFHOST_MAX_ARTIFACT_BYTES"));
 
+    let stage_matrix = fs::read_to_string(root.join("scripts/selfhost/stage_matrix.py"))
+        .expect("read stage matrix");
+    assert!(stage_matrix.contains("aicore-selfhost-stage-matrix-v1"));
+    assert!(stage_matrix.contains("diagnostic_codes"));
+    assert!(stage_matrix.contains("unsupported"));
+    assert!(stage_matrix.contains("artifact_sha256"));
+    assert!(stage_matrix.contains("stdout_json_sha256"));
+
     let selfhost_docs =
         fs::read_to_string(root.join("docs/selfhost/README.md")).expect("read selfhost docs");
     assert!(selfhost_docs.contains("make selfhost-bootstrap-report"));
     assert!(selfhost_docs.contains("make selfhost-bootstrap"));
+    assert!(selfhost_docs.contains("make selfhost-stage-matrix"));
+    assert!(selfhost_docs.contains("docs/selfhost/stage-matrix.md"));
     assert!(selfhost_docs.contains("experimental"));
     assert!(selfhost_docs.contains("supported"));
     assert!(selfhost_docs.contains("default"));
@@ -883,6 +978,7 @@ steps = [
     step("stage1", 200, 300, 400),
     step("stage2", 10, 20, 30),
     step("parity", 10, 20, 30),
+    step("stage-matrix", 10, 20, 30),
 ]
 passing = module.resource_budget_report(
     steps,
@@ -1142,6 +1238,49 @@ fn aic_selfhost_driver_tool_handles_supported_and_negative_commands() {
         .expect("results")
         .iter()
         .any(|result| result["comparison_mode"] == "diagnostic-code"));
+
+    let stage_report = tmp.path().join("selfhost-stage-matrix-report.json");
+    let stage_artifacts = tmp.path().join("selfhost-stage-matrix-artifacts");
+    let stage_matrix = run_stage_matrix(&[
+        "--manifest".into(),
+        "tests/selfhost/stage_matrix_manifest.json".into(),
+        "--stage-compiler".into(),
+        bin.to_string_lossy().to_string(),
+        "--artifact-dir".into(),
+        stage_artifacts.to_string_lossy().to_string(),
+        "--report".into(),
+        stage_report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "90".into(),
+    ]);
+    assert!(
+        stage_matrix.status.success(),
+        "selfhost stage matrix failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&stage_matrix.stdout),
+        String::from_utf8_lossy(&stage_matrix.stderr)
+    );
+    let stage_json: Value =
+        serde_json::from_str(&fs::read_to_string(stage_report).expect("read stage matrix report"))
+            .expect("stage matrix json");
+    assert_eq!(stage_json["ok"], true);
+    assert_eq!(stage_json["summary"]["failed"], 0);
+    assert!(stage_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["kind"] == "package" && result["action"] == "run"));
+    assert!(stage_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["expected"] == "fail" && result["status"] == "passed"));
+    assert!(stage_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["expected"] == "unsupported"
+            && result["status"] == "unsupported"
+            && result["readiness"] == false));
 }
 
 #[test]
@@ -1188,6 +1327,158 @@ fn selfhost_parity_fake_compilers_match_and_write_report() {
     assert_eq!(report_json["format"], "aicore-selfhost-parity-v1");
     assert_eq!(report_json["ok"], true);
     assert_eq!(report_json["results"].as_array().expect("results").len(), 4);
+}
+
+#[test]
+fn selfhost_stage_matrix_fake_compiler_writes_report() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    fs::write(
+        tmp.path().join("fail.aic"),
+        "fn main() -> Int { missing_symbol() }\n",
+    )
+    .expect("write fail");
+    fs::create_dir(tmp.path().join("unsupported_workspace")).expect("create unsupported workspace");
+    let manifest = tmp.path().join("stage-matrix.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-stage-matrix",
+  "cases": [
+    {
+      "name": "pass_case",
+      "kind": "single-file",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["check", "ir-json", "build", "run"]
+    },
+    {
+      "name": "fail_case",
+      "kind": "single-file",
+      "path": "fail.aic",
+      "expected": "fail",
+      "actions": ["check"],
+      "diagnostic_codes": {
+        "check": ["E1258"]
+      }
+    },
+    {
+      "name": "unsupported_workspace",
+      "kind": "workspace",
+      "path": "unsupported_workspace",
+      "expected": "unsupported",
+      "readiness": false,
+      "actions": ["check"],
+      "diagnostic_codes": {
+        "check": ["E5202"]
+      }
+    }
+  ]
+}
+"#,
+    )
+    .expect("write stage matrix manifest");
+    let compiler = tmp.path().join("fake_stage_compiler.py");
+    write_fake_stage_compiler(&compiler);
+    let report = tmp.path().join("stage-report.json");
+    let artifact_dir = tmp.path().join("stage-artifacts");
+
+    let output = run_stage_matrix(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--stage-compiler".into(),
+        format!("python3 {}", compiler.to_string_lossy()),
+        "--artifact-dir".into(),
+        artifact_dir.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "5".into(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read stage report"))
+            .expect("stage report json");
+    assert_eq!(report_json["format"], "aicore-selfhost-stage-matrix-v1");
+    assert_eq!(report_json["ok"], true);
+    assert_eq!(report_json["summary"]["result_count"], 6);
+    assert_eq!(report_json["summary"]["passed"], 5);
+    assert_eq!(report_json["summary"]["unsupported"], 1);
+    assert_eq!(report_json["summary"]["failed"], 0);
+    assert_eq!(report_json["summary"]["readiness_passed"], 5);
+    assert_eq!(report_json["summary"]["readiness_failed"], 0);
+    assert!(report_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["action"] == "build"
+            && result["artifact_exists"] == true
+            && result["artifact_sha256"]
+                .as_str()
+                .expect("artifact digest")
+                .starts_with("sha256:")));
+    assert!(report_json["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .any(|result| result["status"] == "unsupported"
+            && result["readiness"] == false
+            && result["diagnostic_codes"]
+                .as_array()
+                .expect("diagnostic codes")
+                .iter()
+                .any(|code| code == "E5202")));
+}
+
+#[test]
+fn selfhost_stage_matrix_rejects_unsupported_readiness_cases() {
+    let tmp = tempdir().expect("tempdir");
+    let manifest = tmp.path().join("bad-stage-matrix.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "bad-stage-matrix",
+  "cases": [
+    {
+      "name": "bad_workspace",
+      "kind": "workspace",
+      "path": "workspace",
+      "expected": "unsupported",
+      "readiness": true,
+      "actions": ["check"]
+    }
+  ]
+}
+"#,
+    )
+    .expect("write bad stage matrix manifest");
+
+    let output = run_stage_matrix(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--list".into(),
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("unsupported cases cannot count as readiness coverage"));
 }
 
 #[test]

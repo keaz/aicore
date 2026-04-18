@@ -3,13 +3,11 @@
     long needle_cap,
     long* out_index
 ) {
-    (void)s_cap;
-    (void)needle_cap;
     if (out_index != NULL) {
         *out_index = 0;
     }
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
-        !aic_rt_string_slice_valid(needle_ptr, needle_len)) {
+    if (!aic_rt_string_slice_valid_cap(s_ptr, s_len, s_cap) ||
+        !aic_rt_string_slice_valid_cap(needle_ptr, needle_len, needle_cap)) {
         return 0;
     }
     long found = aic_rt_string_find_first_raw(
@@ -37,13 +35,11 @@ long aic_rt_string_last_index_of(
     long needle_cap,
     long* out_index
 ) {
-    (void)s_cap;
-    (void)needle_cap;
     if (out_index != NULL) {
         *out_index = 0;
     }
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
-        !aic_rt_string_slice_valid(needle_ptr, needle_len)) {
+    if (!aic_rt_string_slice_valid_cap(s_ptr, s_len, s_cap) ||
+        !aic_rt_string_slice_valid_cap(needle_ptr, needle_len, needle_cap)) {
         return 0;
     }
     long found = aic_rt_string_find_last_raw(
@@ -70,14 +66,13 @@ void aic_rt_string_substring(
     char** out_ptr,
     long* out_len
 ) {
-    (void)s_cap;
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (!aic_rt_string_slice_valid(s_ptr, s_len) ||
+    if (!aic_rt_string_slice_valid_cap(s_ptr, s_len, s_cap) ||
         !aic_rt_string_utf8_is_valid(s_ptr, (size_t)s_len)) {
         aic_rt_string_runtime_panic("substring", "INVALID_INPUT", "invalid-utf8-input");
         return;
@@ -142,14 +137,13 @@ void aic_rt_string_byte_substring(
     char** out_ptr,
     long* out_len
 ) {
-    (void)s_cap;
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
     if (out_len != NULL) {
         *out_len = 0;
     }
-    if (!aic_rt_string_slice_valid(s_ptr, s_len)) {
+    if (!aic_rt_string_slice_valid_cap(s_ptr, s_len, s_cap)) {
         aic_rt_string_runtime_panic("byte_substring", "INVALID_INPUT", "invalid-byte-slice");
         return;
     }
