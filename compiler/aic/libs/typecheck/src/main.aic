@@ -80,15 +80,26 @@ struct GenericMap {
     values: Vec[String],
 }
 
+struct TypeAliasEntry {
+    module_path: String,
+    alias_item: AstTypeAliasDecl,
+}
+
+struct TypeAliasIndex {
+    entries: Vec[TypeAliasEntry],
+}
+
 struct TypecheckEnv {
     module_path: String,
     function_name: String,
     return_type: String,
     bindings: Vec[TypecheckBinding],
     generic_map: GenericMap,
+    aliases: TypeAliasIndex,
     diagnostics: Vec[Diagnostic],
     instantiations: Vec[TypecheckInstantiation],
     in_loop: Bool,
+    loop_break_types: Vec[String],
 }
 
 struct ExprCheck {
@@ -244,16 +255,35 @@ fn empty_generic_map() -> GenericMap {
     generic_map(vec.new_vec(), vec.new_vec())
 }
 
-fn typecheck_env(module_path: String, function_name: String, return_type: String, bindings: Vec[TypecheckBinding], generic_map_value: GenericMap, diagnostics: Vec[Diagnostic], instantiations: Vec[TypecheckInstantiation], in_loop: Bool) -> TypecheckEnv {
+fn type_alias_entry(module_path: String, alias_item: AstTypeAliasDecl) -> TypeAliasEntry {
+    TypeAliasEntry {
+        module_path: module_path,
+        alias_item: alias_item,
+    }
+}
+
+fn type_alias_index(entries: Vec[TypeAliasEntry]) -> TypeAliasIndex {
+    TypeAliasIndex {
+        entries: entries,
+    }
+}
+
+fn empty_type_alias_index() -> TypeAliasIndex {
+    type_alias_index(vec.new_vec())
+}
+
+fn typecheck_env(module_path: String, function_name: String, return_type: String, bindings: Vec[TypecheckBinding], generic_map_value: GenericMap, aliases: TypeAliasIndex, diagnostics: Vec[Diagnostic], instantiations: Vec[TypecheckInstantiation], in_loop: Bool, loop_break_types: Vec[String]) -> TypecheckEnv {
     TypecheckEnv {
         module_path: module_path,
         function_name: function_name,
         return_type: return_type,
         bindings: bindings,
         generic_map: generic_map_value,
+        aliases: aliases,
         diagnostics: diagnostics,
         instantiations: instantiations,
         in_loop: in_loop,
+        loop_break_types: loop_break_types,
     }
 }
 
@@ -449,15 +479,63 @@ fn env_error(env: TypecheckEnv, max_errors: Int, code: String, span_value: Sourc
     } else {
         with_help(error(diagnostic_code(code), span_value, message), help)
     };
-    typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, append_diagnostic_if_room(env.diagnostics, max_errors, diag), env.instantiations, env.in_loop)
+    typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, env.aliases, append_diagnostic_if_room(env.diagnostics, max_errors, diag), env.instantiations, env.in_loop, env.loop_break_types)
+}
+
+fn env_with_loop_state(env: TypecheckEnv, in_loop: Bool, loop_break_types: Vec[String]) -> TypecheckEnv {
+    typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, env.aliases, env.diagnostics, env.instantiations, in_loop, loop_break_types)
 }
 
 fn env_with_loop(env: TypecheckEnv, in_loop: Bool) -> TypecheckEnv {
-    typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, env.diagnostics, env.instantiations, in_loop)
+    typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, env.aliases, env.diagnostics, env.instantiations, in_loop, env.loop_break_types)
+}
+
+fn loop_break_type_stack_push(stack: Vec[String], value: String) -> Vec[String] {
+    vec.push(stack, value)
+}
+
+fn loop_break_type_stack_top(stack: Vec[String]) -> String {
+    let len = vec.vec_len(stack);
+    if len == 0 {
+        ""
+    } else {
+        match vec.get(stack, len - 1) {
+            Some(value) => value,
+            None => "",
+        }
+    }
+}
+
+fn loop_break_type_stack_set_top(stack: Vec[String], value: String) -> Vec[String] {
+    let mut out: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    let last = vec.vec_len(stack) - 1;
+    while index < vec.vec_len(stack) {
+        match vec.get(stack, index) {
+            Some(item) => if index == last {
+                out = vec.push(out, value);
+                ()
+            } else {
+                out = vec.push(out, item);
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    out
+}
+
+fn env_push_loop(env: TypecheckEnv, break_type: String) -> TypecheckEnv {
+    env_with_loop_state(env, true, loop_break_type_stack_push(env.loop_break_types, break_type))
+}
+
+fn env_restore_loop_state(env: TypecheckEnv, outer: TypecheckEnv) -> TypecheckEnv {
+    env_with_loop_state(env, outer.in_loop, outer.loop_break_types)
 }
 
 fn append_binding(env: TypecheckEnv, item: TypecheckBinding) -> TypecheckEnv {
-    typecheck_env(env.module_path, env.function_name, env.return_type, vec.push(env.bindings, item), env.generic_map, env.diagnostics, env.instantiations, env.in_loop)
+    typecheck_env(env.module_path, env.function_name, env.return_type, vec.push(env.bindings, item), env.generic_map, env.aliases, env.diagnostics, env.instantiations, env.in_loop, env.loop_break_types)
 }
 
 fn clone_typecheck_bindings(bindings: Vec[TypecheckBinding]) -> Vec[TypecheckBinding] {
@@ -479,14 +557,14 @@ fn clone_typecheck_bindings(bindings: Vec[TypecheckBinding]) -> Vec[TypecheckBin
 }
 
 fn env_with_bindings(env: TypecheckEnv, bindings: Vec[TypecheckBinding]) -> TypecheckEnv {
-    typecheck_env(env.module_path, env.function_name, env.return_type, bindings, env.generic_map, env.diagnostics, env.instantiations, env.in_loop)
+    typecheck_env(env.module_path, env.function_name, env.return_type, bindings, env.generic_map, env.aliases, env.diagnostics, env.instantiations, env.in_loop, env.loop_break_types)
 }
 
 fn append_instantiation(env: TypecheckEnv, item: TypecheckInstantiation) -> TypecheckEnv {
     if has_instantiation(env.instantiations, item.name, item.kind, item.type_args) {
         env
     } else {
-        typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, env.diagnostics, vec.push(env.instantiations, item), env.in_loop)
+        typecheck_env(env.module_path, env.function_name, env.return_type, env.bindings, env.generic_map, env.aliases, env.diagnostics, vec.push(env.instantiations, item), env.in_loop, env.loop_break_types)
     }
 }
 
@@ -806,15 +884,48 @@ fn is_float_type(text: String) -> Bool {
     text == "Float" || text == "Float32" || text == "Float64"
 }
 
-fn canonical_type_text(units: Vec[ResolveUnit], module_path: String, text: String) -> String {
+fn collect_type_aliases(units: Vec[ResolveUnit]) -> TypeAliasIndex {
+    let mut entries: Vec[TypeAliasEntry] = vec.new_vec();
+    let mut unit_index = 0;
+    while unit_index < vec.vec_len(units) {
+        match vec.get(units, unit_index) {
+            Some(unit) => if true {
+                let mut item_index = 0;
+                while item_index < vec.vec_len(unit.program.items) {
+                    match vec.get(unit.program.items, item_index) {
+                        Some(item) => match item.type_alias_item {
+                            Some(alias_item) => if true {
+                                entries = vec.push(entries, type_alias_entry(unit.module_path, alias_item));
+                                ()
+                            } else {
+                                ()
+                            },
+                            None => (),
+                        },
+                        None => (),
+                    };
+                    item_index = item_index + 1;
+                };
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        unit_index = unit_index + 1;
+    };
+    type_alias_index(entries)
+}
+
+fn canonical_type_text(aliases: TypeAliasIndex, module_path: String, text: String) -> String {
     if text == "Float" {
         "Float64"
     } else if text == "UInt" {
         "usize"
     } else {
-        match find_type_alias(units, module_path, nominal_type_name(text)) {
+        match find_type_alias(aliases, module_path, nominal_type_name(text)) {
             Some(alias_item) => expand_type_alias(alias_item, text),
-            None => match find_consistent_type_alias(units, nominal_type_name(text)) {
+            None => match find_consistent_type_alias(aliases, nominal_type_name(text)) {
                 Some(alias_item) => expand_type_alias(alias_item, text),
                 None => text,
             },
@@ -855,9 +966,9 @@ fn substitute_type_alias(alias_item: AstTypeAliasDecl, args: Vec[String]) -> Str
     out
 }
 
-fn types_compatible(units: Vec[ResolveUnit], module_path: String, expected: String, found: String) -> Bool {
-    let expected_canonical = canonical_type_text(units, module_path, expected);
-    let found_canonical = canonical_type_text(units, module_path, found);
+fn types_compatible(aliases: TypeAliasIndex, module_path: String, expected: String, found: String) -> Bool {
+    let expected_canonical = canonical_type_text(aliases, module_path, expected);
+    let found_canonical = canonical_type_text(aliases, module_path, found);
     if expected == "<unknown>" || found == "<unknown>" || expected == "_" || found == "_" {
         true
     } else if expected == found || expected_canonical == found_canonical {
@@ -873,36 +984,21 @@ fn types_compatible(units: Vec[ResolveUnit], module_path: String, expected: Stri
     }
 }
 
-fn find_type_alias(units: Vec[ResolveUnit], module_path: String, name: String) -> Option[AstTypeAliasDecl] {
+fn find_type_alias(aliases: TypeAliasIndex, module_path: String, name: String) -> Option[AstTypeAliasDecl] {
     let mut out: Option[AstTypeAliasDecl] = None();
     let mut found = false;
-    let mut unit_index = 0;
-    while !found && unit_index < vec.vec_len(units) {
-        match vec.get(units, unit_index) {
-            Some(unit) => if unit.module_path == module_path {
-                let mut item_index = 0;
-                while !found && item_index < vec.vec_len(unit.program.items) {
-                    match vec.get(unit.program.items, item_index) {
-                        Some(item) => match item.type_alias_item {
-                            Some(alias_item) => if alias_item.name.value == name {
-                                out = Some(alias_item);
-                                found = true;
-                            } else {
-                                ()
-                            },
-                            None => (),
-                        },
-                        None => (),
-                    };
-                    item_index = item_index + 1;
-                };
-                ()
+    let mut index = 0;
+    while !found && index < vec.vec_len(aliases.entries) {
+        match vec.get(aliases.entries, index) {
+            Some(entry) => if entry.module_path == module_path && entry.alias_item.name.value == name {
+                out = Some(entry.alias_item);
+                found = true;
             } else {
                 ()
             },
             None => (),
         };
-        unit_index = unit_index + 1;
+        index = index + 1;
     };
     out
 }
@@ -911,49 +1007,34 @@ fn same_type_alias_shape(left: AstTypeAliasDecl, right: AstTypeAliasDecl) -> Boo
     type_text(left.target_type) == type_text(right.target_type) && vec.vec_len(left.generic_params.params) == vec.vec_len(right.generic_params.params)
 }
 
-fn find_consistent_type_alias(units: Vec[ResolveUnit], name: String) -> Option[AstTypeAliasDecl] {
+fn find_consistent_type_alias(aliases: TypeAliasIndex, name: String) -> Option[AstTypeAliasDecl] {
     let mut out: Option[AstTypeAliasDecl] = None();
     let mut count = 0;
     let mut consistent = true;
-    let mut unit_index = 0;
-    while unit_index < vec.vec_len(units) {
-        match vec.get(units, unit_index) {
-            Some(unit) => if true {
-                let mut item_index = 0;
-                while item_index < vec.vec_len(unit.program.items) {
-                    match vec.get(unit.program.items, item_index) {
-                        Some(item) => match item.type_alias_item {
-                            Some(alias_item) => if alias_item.name.value == name {
-                                if count == 0 {
-                                    out = Some(alias_item);
-                                    count = 1;
-                                } else {
-                                    match out {
-                                        Some(existing) => if same_type_alias_shape(existing, alias_item) {
-                                            count = count + 1;
-                                        } else {
-                                            consistent = false;
-                                            count = count + 1;
-                                        },
-                                        None => (),
-                                    }
-                                }
-                            } else {
-                                ()
-                            },
-                            None => (),
+    let mut index = 0;
+    while index < vec.vec_len(aliases.entries) {
+        match vec.get(aliases.entries, index) {
+            Some(entry) => if entry.alias_item.name.value == name {
+                if count == 0 {
+                    out = Some(entry.alias_item);
+                    count = 1;
+                } else {
+                    match out {
+                        Some(existing) => if same_type_alias_shape(existing, entry.alias_item) {
+                            count = count + 1;
+                        } else {
+                            consistent = false;
+                            count = count + 1;
                         },
                         None => (),
-                    };
-                    item_index = item_index + 1;
-                };
-                ()
+                    }
+                }
             } else {
                 ()
             },
             None => (),
         };
-        unit_index = unit_index + 1;
+        index = index + 1;
     };
     if count > 0 && consistent {
         out
@@ -1843,7 +1924,7 @@ fn infer_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolve
         AstIfExpr => infer_if_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstWhileExpr => infer_while_expr(expr, env, units, resolver, semantics, max_errors),
         AstForExpr => infer_for_expr(expr, env, units, resolver, semantics, max_errors),
-        AstLoopExpr => expr_check(env, "()"),
+        AstLoopExpr => infer_loop_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstBreakExpr => infer_break_expr(expr, env, units, resolver, semantics, max_errors),
         AstContinueExpr => if env.in_loop {
             expr_check(env, "()")
@@ -1949,7 +2030,7 @@ fn infer_first_child_or_unknown(expr: AstExpr, env: TypecheckEnv, units: Vec[Res
 }
 
 fn infer_int_literal(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], max_errors: Int, expected: String) -> ExprCheck {
-    let expected_canonical = canonical_type_text(units, env.module_path, expected);
+    let expected_canonical = canonical_type_text(env.aliases, env.module_path, expected);
     let out_type = if is_integer_type(expected_canonical) { expected } else { "Int" };
     let range_type = if is_integer_type(expected_canonical) { expected_canonical } else { out_type };
     let out_env = if literal_exceeds_small_width(expr.name, range_type) {
@@ -2090,7 +2171,7 @@ fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]
                         let final_expected_type = instantiate_type_text(param_type, next_generic_map);
                         if is_generic_param(signature.generic_params, param_type) {
                             match generic_value(generic_map_value, param_type) {
-                                Some(existing) => if types_compatible(units, requester_module, existing, checked.type_text) {
+                                Some(existing) => if types_compatible(out_env.aliases, requester_module, existing, checked.type_text) {
                                     ()
                                 } else {
                                     let mut parts: Vec[String] = vec.new_vec();
@@ -2110,7 +2191,7 @@ fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]
                                     ()
                                 },
                             };
-                        } else if types_compatible(units, requester_module, final_expected_type, checked.type_text) {
+                        } else if types_compatible(out_env.aliases, requester_module, final_expected_type, checked.type_text) {
                             generic_map_value = next_generic_map;
                         } else {
                             let mut parts: Vec[String] = vec.new_vec();
@@ -2148,7 +2229,7 @@ fn check_function_call(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]
             index = index + 1;
         };
         generic_map_value = add_expected_return_generics(generic_map_value, signature.generic_params, type_text(signature.return_type), expected);
-        out_env = typecheck_env(out_env.module_path, out_env.function_name, out_env.return_type, out_env.bindings, generic_map_value, out_env.diagnostics, out_env.instantiations, out_env.in_loop);
+        out_env = typecheck_env(out_env.module_path, out_env.function_name, out_env.return_type, out_env.bindings, generic_map_value, out_env.aliases, out_env.diagnostics, out_env.instantiations, out_env.in_loop, out_env.loop_break_types);
         out_env = check_generic_bounds(out_env, signature.generic_params, semantics, max_errors, expr.span);
         if vec.vec_len(generic_map_value.names) > 0 {
             out_env = append_instantiation(out_env, typecheck_instantiation(module_path, symbol_name, "function", generic_map_value.values, expr.span));
@@ -2192,7 +2273,7 @@ fn check_declared_variant_call(expr: AstExpr, env: TypecheckEnv, units: Vec[Reso
                             Some(arg_expr) => if true {
                             let checked = infer_expr(arg_expr, out_env, units, resolver, semantics, max_errors, type_text(payload_type));
                             out_env = checked.env;
-                            if types_compatible(units, requester_module, type_text(payload_type), checked.type_text) {
+                            if types_compatible(out_env.aliases, requester_module, type_text(payload_type), checked.type_text) {
                                 ()
                             } else {
                                 out_env = env_error(out_env, max_errors, "E1216", arg_node.span, "variant payload type mismatch", "pass a payload with the declared variant type");
@@ -2297,7 +2378,7 @@ fn infer_struct_literal(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit
                         } else {
                             let checked = infer_expr(field_expr, out_env, units, resolver, semantics, max_errors, expected_type);
                             out_env = checked.env;
-                            if types_compatible(units, requester_module, expected_type, checked.type_text) {
+                            if types_compatible(out_env.aliases, requester_module, expected_type, checked.type_text) {
                                 ()
                             } else {
                                 out_env = env_error(out_env, max_errors, "E1204", node.span, "struct field initializer type mismatch", "change the initializer to match the field type");
@@ -2360,8 +2441,8 @@ fn infer_binary_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], 
     let right_checked = infer_expr(right, left_checked.env, units, resolver, semantics, max_errors, left_checked.type_text);
     let left_type = left_checked.type_text;
     let right_type = right_checked.type_text;
-    let left_canonical = canonical_type_text(units, requester_module, left_type);
-    let right_canonical = canonical_type_text(units, requester_module, right_type);
+    let left_canonical = canonical_type_text(env.aliases, requester_module, left_type);
+    let right_canonical = canonical_type_text(env.aliases, requester_module, right_type);
     if expr.op == "&&" || expr.op == "||" {
         let out_env = if left_type == "Bool" && right_type == "Bool" {
             right_checked.env
@@ -2370,20 +2451,20 @@ fn infer_binary_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], 
         };
         expr_check(out_env, "Bool")
     } else if expr.op == "==" || expr.op == "!=" {
-        let out_env = if types_compatible(units, requester_module, left_type, right_type) {
+        let out_env = if types_compatible(right_checked.env.aliases, requester_module, left_type, right_type) {
             right_checked.env
         } else {
             env_error(right_checked.env, max_errors, "E1231", expr.span, "equality operands must have matching types", "compare values of the same type")
         };
         expr_check(out_env, "Bool")
     } else if is_ordering_op(expr.op) {
-        if types_compatible(units, requester_module, left_type, right_type) && (is_integer_type(left_canonical) || is_float_type(left_canonical) || left_canonical == "Char") && (is_integer_type(right_canonical) || is_float_type(right_canonical) || right_canonical == "Char") {
+        if types_compatible(right_checked.env.aliases, requester_module, left_type, right_type) && (is_integer_type(left_canonical) || is_float_type(left_canonical) || left_canonical == "Char") && (is_integer_type(right_canonical) || is_float_type(right_canonical) || right_canonical == "Char") {
             expr_check(right_checked.env, "Bool")
         } else {
             expr_check(env_error(right_checked.env, max_errors, "E1232", expr.span, "comparison operators require matching integer, float, or Char operands", "use matching comparable operand types"), "Bool")
         }
     } else if is_arithmetic_op(expr.op) {
-        if types_compatible(units, requester_module, left_type, right_type) && (is_integer_type(left_canonical) || is_float_type(left_canonical)) && (is_integer_type(right_canonical) || is_float_type(right_canonical)) {
+        if types_compatible(right_checked.env.aliases, requester_module, left_type, right_type) && (is_integer_type(left_canonical) || is_float_type(left_canonical)) && (is_integer_type(right_canonical) || is_float_type(right_canonical)) {
             expr_check(right_checked.env, left_type)
         } else {
             expr_check(env_error(right_checked.env, max_errors, "E1230", expr.span, "arithmetic operators require matching numeric operand types", "use matching integer or float operand types"), left_type)
@@ -2427,7 +2508,7 @@ fn infer_if_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], reso
                     let checked_then = infer_expr(then_expr, out_env, units, resolver, semantics, max_errors, expected);
                     let checked_else = infer_expr(else_expr, checked_then.env, units, resolver, semantics, max_errors, checked_then.type_text);
                     out_env = checked_else.env;
-                    if types_compatible(units, env.module_path, checked_then.type_text, checked_else.type_text) {
+                    if types_compatible(checked_else.env.aliases, env.module_path, checked_then.type_text, checked_else.type_text) {
                         expr_check(out_env, checked_then.type_text)
                     } else {
                         expr_check(env_error(out_env, max_errors, "E1204", expr.span, "if branches must have matching types", "make both branches return the same type"), checked_then.type_text)
@@ -2457,11 +2538,36 @@ fn infer_while_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], r
     match direct_expr_at(expr, 0) {
         Some(cond_expr) => if true {
             let checked = infer_expr(cond_expr, env, units, resolver, semantics, max_errors, "Bool");
-            if checked.type_text == "Bool" {
-                expr_check(checked.env, "()")
+            let out_env = if checked.type_text == "Bool" {
+                checked.env
             } else {
-                expr_check(env_error(checked.env, max_errors, "E1273", cond_expr.span, "while condition must be Bool", "use a Bool expression as the loop condition"), "()")
+                env_error(checked.env, max_errors, "E1273", cond_expr.span, "while condition must be Bool", "use a Bool expression as the loop condition")
+            };
+            let loop_env = env_push_loop(out_env, "()");
+            match direct_expr_at(expr, 1) {
+                Some(body_expr) => if true {
+                    let checked_body = infer_expr(body_expr, loop_env, units, resolver, semantics, max_errors, env.return_type);
+                    expr_check(env_restore_loop_state(checked_body.env, env), "()")
+                } else {
+                    expr_check(out_env, "()")
+                },
+                None => expr_check(out_env, "()"),
             }
+        } else {
+            expr_check(env, "()")
+        },
+        None => expr_check(env, "()"),
+    }
+}
+
+fn infer_loop_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
+    let loop_env = env_push_loop(env, "");
+    match direct_expr_at(expr, 0) {
+        Some(body_expr) => if true {
+            let checked_body = infer_expr(body_expr, loop_env, units, resolver, semantics, max_errors, expected);
+            let break_type = loop_break_type_stack_top(checked_body.env.loop_break_types);
+            let result_type = if break_type == "" { checked_body.type_text } else { break_type };
+            expr_check(env_restore_loop_state(checked_body.env, env), result_type)
         } else {
             expr_check(env, "()")
         },
@@ -2474,14 +2580,41 @@ fn infer_for_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], res
     let function_name = env.function_name;
     let checked = infer_first_child_or_unknown(expr, env, units, resolver, semantics, max_errors);
     let loop_binding = typecheck_binding(module_path, function_name, expr.name, "Int", true, TypecheckLocalValue(), expr.span);
-    expr_check(append_binding(checked.env, loop_binding), "()")
+    let loop_env = env_push_loop(append_binding(checked.env, loop_binding), "()");
+    match direct_expr_at(expr, 1) {
+        Some(body_expr) => if true {
+            let checked_body = infer_expr(body_expr, loop_env, units, resolver, semantics, max_errors, env.return_type);
+            expr_check(env_restore_loop_state(env_with_bindings(checked_body.env, clone_typecheck_bindings(checked.env.bindings)), env), "()")
+        } else {
+            expr_check(checked.env, "()")
+        },
+        None => expr_check(checked.env, "()"),
+    }
 }
 
 fn infer_break_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int) -> ExprCheck {
     if !env.in_loop {
         expr_check(env_error(env, max_errors, "E1275", expr.span, "break outside loop", "move break into a loop body"), "()")
     } else {
-        infer_first_child_or_unknown(expr, env, units, resolver, semantics, max_errors)
+        let checked = match direct_expr_at(expr, 0) {
+            Some(child_expr) => infer_expr(child_expr, env, units, resolver, semantics, max_errors, "<unknown>"),
+            None => expr_check(env, "()"),
+        };
+        let current = loop_break_type_stack_top(checked.env.loop_break_types);
+        if current == "" {
+            let updated_stack = loop_break_type_stack_set_top(checked.env.loop_break_types, checked.type_text);
+            expr_check(env_with_loop_state(checked.env, checked.env.in_loop, updated_stack), checked.type_text)
+        } else if types_compatible(checked.env.aliases, checked.env.module_path, current, checked.type_text) {
+            expr_check(checked.env, current)
+        } else {
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, "break type '");
+            parts = vec.push(parts, checked.type_text);
+            parts = vec.push(parts, "' does not match loop break type '");
+            parts = vec.push(parts, current);
+            parts = vec.push(parts, "'");
+            expr_check(env_error(checked.env, max_errors, "E1274", expr.span, string.join(parts, ""), "ensure every break in the loop has the same type"), current)
+        }
     }
 }
 
@@ -2594,7 +2727,7 @@ fn bind_match_pattern(env: TypecheckEnv, units: Vec[ResolveUnit], scrutinee_type
 }
 
 fn merge_arm_env(outer: TypecheckEnv, arm: TypecheckEnv) -> TypecheckEnv {
-    typecheck_env(outer.module_path, outer.function_name, outer.return_type, outer.bindings, arm.generic_map, arm.diagnostics, arm.instantiations, outer.in_loop)
+    typecheck_env(outer.module_path, outer.function_name, outer.return_type, outer.bindings, arm.generic_map, outer.aliases, arm.diagnostics, arm.instantiations, outer.in_loop, outer.loop_break_types)
 }
 
 fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
@@ -2647,7 +2780,7 @@ fn infer_match_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], r
                             arm_env = body_check.env;
                             if result_type == "<unknown>" {
                                 result_type = body_check.type_text;
-                            } else if types_compatible(units, requester_module, result_type, body_check.type_text) {
+                            } else if types_compatible(arm_env.aliases, requester_module, result_type, body_check.type_text) {
                                 ()
                             } else {
                                 arm_env = env_error(arm_env, max_errors, "E1204", body_node.span, "match arm body type mismatch", "make all match arms produce the same type");
@@ -2809,7 +2942,7 @@ fn match_text_has_unguarded_pattern(text: String, pattern_name: String) -> Bool 
 }
 
 fn check_expected_type(env: TypecheckEnv, units: Vec[ResolveUnit], module_path: String, span_value: SourceSpan, context: String, expected: String, found: String, max_errors: Int) -> TypecheckEnv {
-    if types_compatible(units, module_path, expected, found) {
+    if types_compatible(env.aliases, module_path, expected, found) {
         env
     } else {
         let mut parts: Vec[String] = vec.new_vec();
@@ -2904,7 +3037,7 @@ fn check_block(block: AstBlock, env: TypecheckEnv, units: Vec[ResolveUnit], reso
     out_env
 }
 
-fn initial_env_for_signature(module_path: String, signature: AstFunctionSignature, diagnostics: Vec[Diagnostic]) -> TypecheckEnv {
+fn initial_env_for_signature(module_path: String, signature: AstFunctionSignature, diagnostics: Vec[Diagnostic], aliases: TypeAliasIndex) -> TypecheckEnv {
     let mut bindings: Vec[TypecheckBinding] = vec.new_vec();
     let mut index = 0;
     while index < vec.vec_len(signature.params) {
@@ -2919,11 +3052,11 @@ fn initial_env_for_signature(module_path: String, signature: AstFunctionSignatur
         };
         index = index + 1;
     };
-    typecheck_env(module_path, signature.name.value, type_text(signature.return_type), bindings, empty_generic_map(), diagnostics, vec.new_vec(), false)
+    typecheck_env(module_path, signature.name.value, type_text(signature.return_type), bindings, empty_generic_map(), aliases, diagnostics, vec.new_vec(), false, vec.new_vec())
 }
 
-fn check_function_item(function_item: AstFunctionDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
-    let env = initial_env_for_signature(module_path, function_item.signature, output.diagnostics);
+fn check_function_item(function_item: AstFunctionDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
+    let env = initial_env_for_signature(module_path, function_item.signature, output.diagnostics, aliases);
     let checked = check_block(function_item.body, env, units, resolver, semantics, max_errors);
     let mut out = typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, checked.diagnostics);
     out = append_function(out, typecheck_function(module_path, function_item.signature.name.value, type_text(function_item.signature.return_type), vec.vec_len(function_item.signature.params), true, function_item.span));
@@ -2931,8 +3064,8 @@ fn check_function_item(function_item: AstFunctionDecl, module_path: String, unit
     append_instantiations(out, checked.instantiations)
 }
 
-fn check_impl_method(method: AstImplMethod, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
-    let env = initial_env_for_signature(module_path, method.signature, output.diagnostics);
+fn check_impl_method(method: AstImplMethod, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
+    let env = initial_env_for_signature(module_path, method.signature, output.diagnostics, aliases);
     let checked = check_block(method.body, env, units, resolver, semantics, max_errors);
     let mut out = typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, checked.diagnostics);
     out = append_function(out, typecheck_function(module_path, method.signature.name.value, type_text(method.signature.return_type), vec.vec_len(method.signature.params), true, method.span));
@@ -2940,10 +3073,10 @@ fn check_impl_method(method: AstImplMethod, module_path: String, units: Vec[Reso
     append_instantiations(out, checked.instantiations)
 }
 
-fn check_const_item(const_item: AstConstDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
+fn check_const_item(const_item: AstConstDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
     match const_item.initializer_expr {
         Some(expr) => if true {
-            let env = typecheck_env(module_path, const_item.name.value, type_text(const_item.type_ref), vec.new_vec(), empty_generic_map(), output.diagnostics, vec.new_vec(), false);
+            let env = typecheck_env(module_path, const_item.name.value, type_text(const_item.type_ref), vec.new_vec(), empty_generic_map(), aliases, output.diagnostics, vec.new_vec(), false, vec.new_vec());
             let checked = infer_expr(expr, env, units, resolver, semantics, max_errors, type_text(const_item.type_ref));
             let checked_env = check_expected_type(checked.env, units, module_path, const_item.span, "const initializer", type_text(const_item.type_ref), checked.type_text, max_errors);
             typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, checked_env.diagnostics)
@@ -2954,14 +3087,14 @@ fn check_const_item(const_item: AstConstDecl, module_path: String, units: Vec[Re
     }
 }
 
-fn check_struct_defaults(struct_item: AstStructDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
+fn check_struct_defaults(struct_item: AstStructDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
     let mut out = output;
     let mut index = 0;
     while index < vec.vec_len(struct_item.fields) {
         match vec.get(struct_item.fields, index) {
             Some(field) => match field.default_expr {
                 Some(expr) => if true {
-                    let env = typecheck_env(module_path, struct_item.name.value, type_text(field.type_ref), vec.new_vec(), empty_generic_map(), out.diagnostics, vec.new_vec(), false);
+                    let env = typecheck_env(module_path, struct_item.name.value, type_text(field.type_ref), vec.new_vec(), empty_generic_map(), aliases, out.diagnostics, vec.new_vec(), false, vec.new_vec());
                     let checked = infer_expr(expr, env, units, resolver, semantics, max_errors, type_text(field.type_ref));
                     let checked_env = check_expected_type(checked.env, units, module_path, field.span, "field default", type_text(field.type_ref), checked.type_text, max_errors);
                     out = typecheck_output(out.entry_module, out.functions, out.bindings, out.instantiations, checked_env.diagnostics);
@@ -2978,13 +3111,13 @@ fn check_struct_defaults(struct_item: AstStructDecl, module_path: String, units:
     out
 }
 
-fn check_item(item: AstProgramItem, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
+fn check_item(item: AstProgramItem, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, output: TypecheckOutput, max_errors: Int) -> TypecheckOutput {
     match item.function_item {
-        Some(function_item) => check_function_item(function_item, module_path, units, resolver, semantics, output, max_errors),
+        Some(function_item) => check_function_item(function_item, module_path, units, resolver, semantics, aliases, output, max_errors),
         None => match item.const_item {
-            Some(const_item) => check_const_item(const_item, module_path, units, resolver, semantics, output, max_errors),
+            Some(const_item) => check_const_item(const_item, module_path, units, resolver, semantics, aliases, output, max_errors),
             None => match item.struct_item {
-                Some(struct_item) => check_struct_defaults(struct_item, module_path, units, resolver, semantics, output, max_errors),
+                Some(struct_item) => check_struct_defaults(struct_item, module_path, units, resolver, semantics, aliases, output, max_errors),
                 None => match item.impl_item {
                     Some(impl_item) => if true {
                         let mut out = output;
@@ -2992,7 +3125,7 @@ fn check_item(item: AstProgramItem, module_path: String, units: Vec[ResolveUnit]
                         while index < vec.vec_len(impl_item.methods) {
                             match vec.get(impl_item.methods, index) {
                                 Some(method) => if true {
-                                    out = check_impl_method(method, module_path, units, resolver, semantics, out, max_errors);
+                                    out = check_impl_method(method, module_path, units, resolver, semantics, aliases, out, max_errors);
                                     ()
                                 } else {
                                     ()
@@ -3306,18 +3439,27 @@ fn collect_effect_entries(units: Vec[ResolveUnit]) -> Vec[EffectFunctionEntry] {
     entries
 }
 
-fn resolve_call_effect_entry(expr: AstExpr, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, module_path: String) -> Option[EffectFunctionEntry] {
-    match lookup_value_symbol(units, resolver, module_path, expr.name, ResolverFunctionSymbol(), ResolverValueNamespace()) {
-        Some(symbol) => match find_effect_entry(entries, symbol.module_path, symbol.name) {
+fn resolve_call_effect_entry_by_name(name: String, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, module_path: String) -> Option[EffectFunctionEntry] {
+    let module_text = path_prefix(name);
+    let item_name = path_tail(name);
+    if module_text == "" {
+        match find_effect_entry(entries, module_path, item_name) {
             Some(entry) => Some(entry),
-            None => find_effect_entry_by_name(entries, symbol.name),
-        },
-        None => if string.contains(expr.name, ".") {
-            find_effect_entry_by_name(entries, path_tail(expr.name))
-        } else {
-            find_effect_entry_by_name(entries, expr.name)
-        },
+            None => find_effect_entry_by_name(entries, item_name),
+        }
+    } else {
+        match resolve_qualified_module(resolver.imports, units, module_path, module_text) {
+            Some(target_module) => match find_effect_entry(entries, target_module, item_name) {
+                Some(entry) => Some(entry),
+                None => find_effect_entry_by_name(entries, item_name),
+            },
+            None => find_effect_entry_by_name(entries, item_name),
+        }
     }
+}
+
+fn resolve_call_effect_entry(expr: AstExpr, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, module_path: String) -> Option[EffectFunctionEntry] {
+    resolve_call_effect_entry_by_name(expr.name, entries, units, resolver, module_path)
 }
 
 fn append_call_effect_diagnostics(diagnostics: Vec[Diagnostic], caller: EffectFunctionEntry, callee: EffectFunctionEntry, span_value: SourceSpan, max_errors: Int) -> Vec[Diagnostic] {
@@ -3369,12 +3511,12 @@ fn append_effect_calls(left: Vec[EffectCallEdge], right: Vec[EffectCallEdge]) ->
     out
 }
 
-fn scan_expr_effects(expr: AstExpr, caller: EffectFunctionEntry, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectScan {
-    let mut out = effect_scan(diagnostics, vec.new_vec(), vec.new_vec());
-    match expr.kind {
-        AstCallExpr => match resolve_call_effect_entry(expr, entries, units, resolver, caller.module_path) {
-            Some(callee) => if vec.vec_len(callee.effect_names) > 0 || callee.has_body {
-                out = effect_scan(append_call_effect_diagnostics(out.diagnostics, caller, callee, expr.span, max_errors), append_unique_strings(out.effect_names, callee.effect_names), vec.push(out.call_edges, effect_call_edge(caller.module_path, caller.name, callee.module_path, callee.name, callee.effect_names, expr.span)));
+fn scan_call_effects(out: EffectScan, kind: AstExprKind, name: String, span_value: SourceSpan, caller: EffectFunctionEntry, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> EffectScan {
+    let mut next = out;
+    match kind {
+        AstCallExpr => match resolve_call_effect_entry_by_name(name, entries, units, resolver, caller.module_path) {
+            Some(callee) => if vec.vec_len(callee.effect_names) > 0 || vec.vec_len(callee.direct_effect_names) > 0 {
+                next = effect_scan(append_call_effect_diagnostics(next.diagnostics, caller, callee, span_value, max_errors), append_unique_strings(next.effect_names, callee.effect_names), vec.push(next.call_edges, effect_call_edge(caller.module_path, caller.name, callee.module_path, callee.name, callee.effect_names, span_value)));
                 ()
             } else {
                 ()
@@ -3383,11 +3525,16 @@ fn scan_expr_effects(expr: AstExpr, caller: EffectFunctionEntry, entries: Vec[Ef
         },
         _ => (),
     };
+    next
+}
+
+fn scan_expr_effects(expr: AstExpr, caller: EffectFunctionEntry, entries: Vec[EffectFunctionEntry], units: Vec[ResolveUnit], resolver: ResolverOutput, diagnostics: Vec[Diagnostic], max_errors: Int) -> EffectScan {
+    let mut out = scan_call_effects(effect_scan(diagnostics, vec.new_vec(), vec.new_vec()), expr.kind, expr.name, expr.span, caller, entries, units, resolver, max_errors);
     let mut index = 0;
-    while index < expr.direct_child_count {
-        match direct_expr_at(expr, index) {
-            Some(child) => if true {
-                out = merge_scan(out, scan_expr_effects(child, caller, entries, units, resolver, vec.new_vec(), max_errors));
+    while index < vec.vec_len(expr.nodes) {
+        match vec.get(expr.nodes, index) {
+            Some(node) => if true {
+                out = scan_call_effects(out, node.kind, node.name, node.span, caller, entries, units, resolver, max_errors);
                 ()
             } else {
                 ()
@@ -3508,49 +3655,61 @@ fn effect_entries_with_body_scans(entries: Vec[EffectFunctionEntry], units: Vec[
 fn effect_closure_for_entry(entries: Vec[EffectFunctionEntry], entry: EffectFunctionEntry) -> Vec[String] {
     let mut out: Vec[String] = vec.new_vec();
     let mut visited: Vec[EffectKey] = vec.new_vec();
-    let mut work: Vec[EffectKey] = vec.new_vec();
-    work = vec.push(work, effect_entry_struct_key(entry));
+    let mut work: Vec[EffectFunctionEntry] = vec.new_vec();
+    let mut work_keys: Vec[EffectKey] = vec.new_vec();
+    work = vec.push(work, entry);
+    work_keys = vec.push(work_keys, effect_entry_struct_key(entry));
     let mut work_index = 0;
     while work_index < vec.vec_len(work) {
         match vec.get(work, work_index) {
-            Some(key_value) => if effect_key_vec_contains(visited, key_value) {
+            Some(current) => if effect_key_vec_contains(visited, effect_entry_struct_key(current)) {
                 ()
             } else {
-                visited = vec.push(visited, key_value);
-                match find_effect_entry_by_struct_key(entries, key_value) {
-                    Some(current) => if true {
-                        out = append_unique_strings(out, current.direct_effect_names);
-                        let mut edge_index = 0;
-                        while edge_index < vec.vec_len(current.call_edges) {
-                            match vec.get(current.call_edges, edge_index) {
-                                Some(edge) => if true {
-                                    let callee_key = effect_call_callee_struct_key(edge);
-                                    out = append_unique_strings(out, edge.effect_names);
-                                    if effect_key_vec_contains(visited, callee_key) || effect_key_vec_contains(work, callee_key) {
+                visited = vec.push(visited, effect_entry_struct_key(current));
+                out = append_unique_strings(out, current.direct_effect_names);
+                let mut edge_index = 0;
+                while edge_index < vec.vec_len(current.call_edges) {
+                    match vec.get(current.call_edges, edge_index) {
+                        Some(edge) => if true {
+                            let callee_key = effect_call_callee_struct_key(edge);
+                            out = append_unique_strings(out, edge.effect_names);
+                            if effect_key_vec_contains(visited, callee_key) || effect_key_vec_contains(work_keys, callee_key) {
+                                ()
+                            } else {
+                                match find_effect_entry_by_struct_key(entries, callee_key) {
+                                    Some(callee) => if true {
+                                        work = vec.push(work, callee);
+                                        work_keys = vec.push(work_keys, callee_key);
                                         ()
                                     } else {
-                                        work = vec.push(work, callee_key);
-                                    };
-                                    ()
-                                } else {
-                                    ()
-                                },
-                                None => (),
+                                        ()
+                                    },
+                                    None => (),
+                                };
                             };
-                            edge_index = edge_index + 1;
-                        };
-                        ()
-                    } else {
-                        ()
-                    },
-                    None => (),
+                            ()
+                        } else {
+                            ()
+                        },
+                        None => (),
+                    };
+                    edge_index = edge_index + 1;
                 };
+                ()
             },
             None => (),
         };
         work_index = work_index + 1;
     };
     out
+}
+
+fn entry_needs_transitive_effect_diagnostics(entry: EffectFunctionEntry) -> Bool {
+    entry.has_body && vec.vec_len(entry.call_edges) > 0
+}
+
+fn entry_needs_capability_authority_diagnostics(entry: EffectFunctionEntry) -> Bool {
+    entry.has_body && (vec.vec_len(entry.effect_names) > 0 || vec.vec_len(entry.call_edges) > 0)
 }
 
 fn find_effect_path_from_key(entries: Vec[EffectFunctionEntry], key: String, effect: String, visited: Vec[String], path: Vec[String], first_source: Int, first_start: Int, first_end: Int, has_first_span: Bool, fallback_source: Int, fallback_start: Int, fallback_end: Int) -> EffectPath {
@@ -3614,7 +3773,7 @@ fn append_transitive_effect_diagnostics(diagnostics: Vec[Diagnostic], entries: V
     let mut index = 0;
     while index < vec.vec_len(entries) {
         match vec.get(entries, index) {
-            Some(entry) => if entry.has_body {
+            Some(entry) => if entry_needs_transitive_effect_diagnostics(entry) {
                 let closure = effect_closure_for_entry(entries, entry);
                 let mut effect_index = 0;
                 while effect_index < vec.vec_len(closure) {
@@ -3659,7 +3818,7 @@ fn append_capability_authority_diagnostics(diagnostics: Vec[Diagnostic], entries
     let mut index = 0;
     while index < vec.vec_len(entries) {
         match vec.get(entries, index) {
-            Some(entry) => if entry.has_body {
+            Some(entry) => if entry_needs_capability_authority_diagnostics(entry) {
                 let mut required = append_unique_strings(entry.effect_names, effect_closure_for_entry(entries, entry));
                 let mut effect_index = 0;
                 while effect_index < vec.vec_len(required) {
@@ -3785,7 +3944,7 @@ fn append_contract_purity_diagnostics(diagnostics: Vec[Diagnostic], expr: AstExp
 
 fn append_contract_type_diagnostic(env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, expr: AstExpr, expected_code: String, message: String, max_errors: Int) -> TypecheckEnv {
     let checked = infer_expr(expr, env, units, resolver, semantics, max_errors, "Bool");
-    if types_compatible(units, checked.env.module_path, "Bool", checked.type_text) {
+    if types_compatible(checked.env.aliases, checked.env.module_path, "Bool", checked.type_text) {
         checked.env
     } else {
         env_error(checked.env, max_errors, expected_code, expr.span, message, "found a non-Bool contract expression")
@@ -3796,11 +3955,11 @@ fn append_result_binding(env: TypecheckEnv, signature: AstFunctionSignature) -> 
     append_binding(env, typecheck_binding(env.module_path, signature.name.value, "result", type_text(signature.return_type), false, TypecheckTemporaryValue(), signature.span))
 }
 
-fn check_function_contracts(function_item: AstFunctionDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+fn check_function_contracts(function_item: AstFunctionDecl, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
     let mut out = diagnostics;
     match function_item.requires_expr {
         Some(expr) => if true {
-            let env = initial_env_for_signature(module_path, function_item.signature, out);
+            let env = initial_env_for_signature(module_path, function_item.signature, out, aliases);
             let checked_env = append_contract_type_diagnostic(env, units, resolver, semantics, expr, "E1200", "requires contract must have type Bool", max_errors);
             out = checked_env.diagnostics;
             out = append_contract_purity_diagnostics(out, expr, entries, units, resolver, module_path, max_errors);
@@ -3813,7 +3972,7 @@ fn check_function_contracts(function_item: AstFunctionDecl, module_path: String,
     };
     match function_item.ensures_expr {
         Some(expr) => if true {
-            let env = append_result_binding(initial_env_for_signature(module_path, function_item.signature, out), function_item.signature);
+            let env = append_result_binding(initial_env_for_signature(module_path, function_item.signature, out, aliases), function_item.signature);
             let checked_env = append_contract_type_diagnostic(env, units, resolver, semantics, expr, "E1201", "ensures contract must have type Bool", max_errors);
             out = checked_env.diagnostics;
             out = append_contract_purity_diagnostics(out, expr, entries, units, resolver, module_path, max_errors);
@@ -3827,14 +3986,14 @@ fn check_function_contracts(function_item: AstFunctionDecl, module_path: String,
     out
 }
 
-fn check_impl_method_contracts(method: AstImplMethod, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
+fn check_impl_method_contracts(method: AstImplMethod, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, entries: Vec[EffectFunctionEntry], diagnostics: Vec[Diagnostic], max_errors: Int) -> Vec[Diagnostic] {
     let fake_function = function_decl(method.signature, method.requires_expr, method.ensures_expr, method.body, method.span);
-    check_function_contracts(fake_function, module_path, units, resolver, semantics, entries, diagnostics, max_errors)
+    check_function_contracts(fake_function, module_path, units, resolver, semantics, aliases, entries, diagnostics, max_errors)
 }
 
-fn append_contract_diagnostics_for_item(diagnostics: Vec[Diagnostic], item: AstProgramItem, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+fn append_contract_diagnostics_for_item(diagnostics: Vec[Diagnostic], item: AstProgramItem, module_path: String, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
     match item.function_item {
-        Some(function_item) => check_function_contracts(function_item, module_path, units, resolver, semantics, entries, diagnostics, max_errors),
+        Some(function_item) => check_function_contracts(function_item, module_path, units, resolver, semantics, aliases, entries, diagnostics, max_errors),
         None => match item.impl_item {
             Some(impl_item) => if true {
                 let mut out = diagnostics;
@@ -3842,7 +4001,7 @@ fn append_contract_diagnostics_for_item(diagnostics: Vec[Diagnostic], item: AstP
                 while index < vec.vec_len(impl_item.methods) {
                     match vec.get(impl_item.methods, index) {
                         Some(method) => if true {
-                            out = check_impl_method_contracts(method, module_path, units, resolver, semantics, entries, out, max_errors);
+                            out = check_impl_method_contracts(method, module_path, units, resolver, semantics, aliases, entries, out, max_errors);
                             ()
                         } else {
                             ()
@@ -3860,7 +4019,7 @@ fn append_contract_diagnostics_for_item(diagnostics: Vec[Diagnostic], item: AstP
     }
 }
 
-fn append_contract_diagnostics(diagnostics: Vec[Diagnostic], units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
+fn append_contract_diagnostics(diagnostics: Vec[Diagnostic], units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, entries: Vec[EffectFunctionEntry], max_errors: Int) -> Vec[Diagnostic] {
     let mut out = diagnostics;
     let mut unit_index = 0;
     while unit_index < vec.vec_len(units) {
@@ -3870,7 +4029,7 @@ fn append_contract_diagnostics(diagnostics: Vec[Diagnostic], units: Vec[ResolveU
                 while item_index < vec.vec_len(unit.program.items) {
                     match vec.get(unit.program.items, item_index) {
                         Some(item) => if true {
-                            out = append_contract_diagnostics_for_item(out, item, unit.module_path, units, resolver, semantics, entries, max_errors);
+                            out = append_contract_diagnostics_for_item(out, item, unit.module_path, units, resolver, semantics, aliases, entries, max_errors);
                             ()
                         } else {
                             ()
@@ -3909,14 +4068,18 @@ fn append_effect_declaration_diagnostics_for_entries(diagnostics: Vec[Diagnostic
     out
 }
 
-fn append_effect_capability_contract_diagnostics(output: TypecheckOutput, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int) -> TypecheckOutput {
+fn append_effect_capability_contract_diagnostics(output: TypecheckOutput, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, aliases: TypeAliasIndex, max_errors: Int) -> TypecheckOutput {
     let entries = collect_effect_entries(units);
     let mut diagnostics = append_effect_declaration_diagnostics_for_entries(output.diagnostics, entries, max_errors);
-    diagnostics = append_contract_diagnostics(diagnostics, units, resolver, semantics, entries, max_errors);
-    let body_result = effect_entries_with_body_scans(entries, units, resolver, diagnostics, max_errors);
-    diagnostics = append_transitive_effect_diagnostics(body_result.diagnostics, body_result.entries, max_errors);
-    diagnostics = append_capability_authority_diagnostics(diagnostics, body_result.entries, max_errors);
-    typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, diagnostics)
+    diagnostics = append_contract_diagnostics(diagnostics, units, resolver, semantics, aliases, entries, max_errors);
+    if vec.vec_len(diagnostics) >= max_errors {
+        typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, diagnostics)
+    } else {
+        let body_result = effect_entries_with_body_scans(entries, units, resolver, diagnostics, max_errors);
+        diagnostics = append_transitive_effect_diagnostics(body_result.diagnostics, body_result.entries, max_errors);
+        diagnostics = append_capability_authority_diagnostics(diagnostics, body_result.entries, max_errors);
+        typecheck_output(output.entry_module, output.functions, output.bindings, output.instantiations, diagnostics)
+    }
 }
 
 fn state_with_diagnostics(state: OwnershipState, diagnostics: Vec[Diagnostic]) -> OwnershipState {
@@ -4200,6 +4363,15 @@ fn is_let_statement_kind(kind: AstStatementKind) -> Bool {
     match kind {
         AstLetStatement => true,
         AstAssignStatement => false,
+        AstExprStatement => false,
+        AstReturnStatement => false,
+    }
+}
+
+fn is_assign_statement_kind(kind: AstStatementKind) -> Bool {
+    match kind {
+        AstLetStatement => false,
+        AstAssignStatement => true,
         AstExprStatement => false,
         AstReturnStatement => false,
     }
@@ -4554,82 +4726,123 @@ fn check_ownership_expr(expr: AstExpr, state: OwnershipState, units: Vec[Resolve
     out
 }
 
-fn check_ownership_statement(statement: AstStatement, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
-    match statement.kind {
-        AstLetStatement => match statement.expr {
-            Some(expr) => if true {
-                let mut out = state;
-                match expr.kind {
-                    AstBorrowExpr => match direct_expr_at(expr, 0) {
-                        Some(inner) => match borrow_target_path(inner) {
-                            Some(target) => if true {
-                                out = acquire_borrow_state(out, target, expr.name == "mut", statement.name, expr.span, max_errors);
-                                out = check_ownership_expr(inner, out, units, max_errors, false);
-                                ()
-                            } else {
-                                ()
-                            },
-                            None => if true {
-                                out = state_error(out, max_errors, "E1268", expr.span, "borrow target must be a local variable or field path", "use `&name`, `&mut name`, or `&name.field` on a local binding");
-                                out = check_ownership_expr(inner, out, units, max_errors, false);
-                                ()
-                            } else {
-                                ()
-                            },
+fn check_ownership_let_statement(statement: AstStatement, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    let mut result = state;
+    match statement.expr {
+        Some(expr) => if true {
+            let mut out = result;
+            match expr.kind {
+                AstBorrowExpr => match direct_expr_at(expr, 0) {
+                    Some(inner) => match borrow_target_path(inner) {
+                        Some(target) => if true {
+                            out = acquire_borrow_state(out, target, expr.name == "mut", statement.name, expr.span, max_errors);
+                            out = check_ownership_expr(inner, out, units, max_errors, false);
+                            ()
+                        } else {
+                            ()
                         },
-                        None => (),
-                    },
-                    _ => if true {
-                        out = check_ownership_expr(expr, out, units, max_errors, false);
-                        ()
-                    } else {
-                        ()
-                    },
-                };
-                out = track_move_from_expr(out, statement.name, expr, units, max_errors);
-                let declared = type_text_from_optional(statement.type_ref);
-                let binding_type = infer_ownership_type(expr, out, declared);
-                ownership_state(replace_ownership_binding(out.bindings, ownership_binding(statement.name, binding_type, statement.mutable, statement.span)), out.borrows, remove_moved_binding(out.moved, statement.name), remove_resource_uses_for_name(out.resources, statement.name), out.diagnostics)
-            } else {
-                state
-            },
-            None => state,
-        },
-        AstAssignStatement => match statement.expr {
-            Some(expr) => if true {
-                let mut out = check_ownership_expr(expr, state, units, max_errors, false);
-                match find_overlapping_borrow(out.borrows, statement.target) {
-                    Some(_) => if true {
-                        let mut parts: Vec[String] = vec.new_vec();
-                        parts = vec.push(parts, "cannot assign to '");
-                        parts = vec.push(parts, statement.target);
-                        parts = vec.push(parts, "' while it is actively borrowed");
-                        out = state_error(out, max_errors, "E1265", statement.span, string.join(parts, ""), "release or narrow the borrow scope before mutating this binding");
-                        ()
-                    } else {
-                        ()
+                        None => if true {
+                            out = state_error(out, max_errors, "E1268", expr.span, "borrow target must be a local variable or field path", "use `&name`, `&mut name`, or `&name.field` on a local binding");
+                            out = check_ownership_expr(inner, out, units, max_errors, false);
+                            ()
+                        } else {
+                            ()
+                        },
                     },
                     None => (),
-                };
-                let binding_type = infer_ownership_type(expr, out, "<unknown>");
-                let bindings = match find_ownership_binding(out.bindings, statement.target) {
-                    Some(existing) => replace_ownership_binding(out.bindings, ownership_binding(statement.target, if binding_type == "<unknown>" { existing.type_text } else { binding_type }, existing.mutable, existing.span)),
-                    None => out.bindings,
-                };
-                ownership_state(bindings, out.borrows, remove_moved_binding(out.moved, statement.target), remove_resource_uses_for_name(out.resources, statement.target), out.diagnostics)
+                },
+                _ => if true {
+                    out = check_ownership_expr(expr, out, units, max_errors, false);
+                    ()
+                } else {
+                    ()
+                },
+            };
+            out = track_move_from_expr(out, statement.name, expr, units, max_errors);
+            let declared = type_text_from_optional(statement.type_ref);
+            let binding_type = infer_ownership_type(expr, out, declared);
+            result = ownership_state(replace_ownership_binding(out.bindings, ownership_binding(statement.name, binding_type, statement.mutable, statement.span)), out.borrows, remove_moved_binding(out.moved, statement.name), remove_resource_uses_for_name(out.resources, statement.name), out.diagnostics);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    result
+}
+
+fn check_ownership_assign_statement(statement: AstStatement, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    let mut result = state;
+    match statement.expr {
+        Some(expr) => if true {
+            result = check_ownership_assign_expr(statement, expr, result, units, max_errors);
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    result
+}
+
+fn check_ownership_assign_expr(statement: AstStatement, expr: AstExpr, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    let mut out = check_ownership_expr(expr, state, units, max_errors, false);
+    match find_overlapping_borrow(out.borrows, statement.target) {
+        Some(_) => if true {
+            let mut parts: Vec[String] = vec.new_vec();
+            parts = vec.push(parts, "cannot assign to '");
+            parts = vec.push(parts, statement.target);
+            parts = vec.push(parts, "' while it is actively borrowed");
+            out = state_error(out, max_errors, "E1265", statement.span, string.join(parts, ""), "release or narrow the borrow scope before mutating this binding");
+            ()
+        } else {
+            ()
+        },
+        None => (),
+    };
+    let binding_type = infer_ownership_type(expr, out, "<unknown>");
+    let mut bindings = out.bindings;
+    match find_ownership_binding(out.bindings, statement.target) {
+        Some(existing) => if true {
+            let mut assigned_type = binding_type;
+            if binding_type == "<unknown>" {
+                assigned_type = existing.type_text;
             } else {
-                state
-            },
-            None => state,
+                ()
+            };
+            bindings = replace_ownership_binding(out.bindings, ownership_binding(statement.target, assigned_type, existing.mutable, existing.span));
+            ()
+        } else {
+            ()
         },
-        AstReturnStatement => match statement.expr {
-            Some(expr) => check_ownership_expr(expr, state, units, max_errors, false),
-            None => state,
+        None => (),
+    };
+    ownership_state(bindings, out.borrows, remove_moved_binding(out.moved, statement.target), remove_resource_uses_for_name(out.resources, statement.target), out.diagnostics)
+}
+
+fn check_ownership_optional_expr_statement(statement: AstStatement, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    let mut result = state;
+    match statement.expr {
+        Some(expr) => if true {
+            result = check_ownership_expr(expr, result, units, max_errors, false);
+            ()
+        } else {
+            ()
         },
-        AstExprStatement => match statement.expr {
-            Some(expr) => check_ownership_expr(expr, state, units, max_errors, false),
-            None => state,
-        },
+        None => (),
+    };
+    result
+}
+
+fn check_ownership_statement(statement: AstStatement, state: OwnershipState, units: Vec[ResolveUnit], max_errors: Int) -> OwnershipState {
+    if is_let_statement_kind(statement.kind) {
+        check_ownership_let_statement(statement, state, units, max_errors)
+    } else {
+        if is_assign_statement_kind(statement.kind) {
+            check_ownership_assign_statement(statement, state, units, max_errors)
+        } else {
+            check_ownership_optional_expr_statement(statement, state, units, max_errors)
+        }
     }
 }
 
@@ -4763,6 +4976,7 @@ fn append_ownership_resource_diagnostics(output: TypecheckOutput, units: Vec[Res
 
 pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutput, max_errors: Int) -> TypecheckOutput {
     let semantics = analyze_resolved_units(units, resolver, max_errors);
+    let aliases = collect_type_aliases(units);
     let mut out = typecheck_output(resolver.entry_module, vec.new_vec(), vec.new_vec(), vec.new_vec(), append_all_diagnostics(resolver.diagnostics, semantics.diagnostics, max_errors));
     let mut unit_index = 0;
     while unit_index < vec.vec_len(units) {
@@ -4772,7 +4986,7 @@ pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutpu
                 while item_index < vec.vec_len(unit.program.items) {
                     match vec.get(unit.program.items, item_index) {
                         Some(item) => if true {
-                            out = check_item(item, unit.module_path, units, resolver, semantics, out, max_errors);
+                            out = check_item(item, unit.module_path, units, resolver, semantics, aliases, out, max_errors);
                             ()
                         } else {
                             ()
@@ -4789,7 +5003,7 @@ pub fn typecheck_resolved_units(units: Vec[ResolveUnit], resolver: ResolverOutpu
         };
         unit_index = unit_index + 1;
     };
-    append_ownership_resource_diagnostics(append_effect_capability_contract_diagnostics(out, units, resolver, semantics, max_errors), units, max_errors)
+    append_ownership_resource_diagnostics(append_effect_capability_contract_diagnostics(out, units, resolver, semantics, aliases, max_errors), units, max_errors)
 }
 
 pub fn typecheck_units(units: Vec[ResolveUnit], entry_module: String, max_errors: Int) -> TypecheckOutput {

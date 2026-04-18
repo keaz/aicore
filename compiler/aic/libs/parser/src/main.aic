@@ -3518,8 +3518,10 @@ fn parse_while_expr(cursor: ParserCursor) -> ParseExpr {
                     } else {
                         match body.block {
                             Some(block) => if true {
+                                let body_expr = block_value_expr(block);
                                 let mut children: Vec[AstExpr] = vec.new_vec();
                                 children = vec.push(children, cond_expr);
+                                children = vec.push(children, body_expr);
                                 expr_ok(body.cursor, expr_with_children(AstWhileExpr(), "", "", children, vec.new_vec(), merge(keyword.token.span, block.span), wrap_text("while ", cond_expr.text, block.text)))
                             } else {
                                 expr_error(body.cursor, cond_expr.span, "E1334", "expected while body")
@@ -3551,7 +3553,15 @@ fn parse_loop_expr(cursor: ParserCursor) -> ParseExpr {
             }
         } else {
             match body.block {
-                Some(block) => expr_ok(body.cursor, simple_expr(AstLoopExpr(), "", "", merge(keyword.token.span, block.span), wrap_text("loop", block.text, ""))),
+                Some(block) => if true {
+                    let mut children: Vec[AstExpr] = vec.new_vec();
+                    children = vec.push(children, block_value_expr(block));
+                    let mut roles: Vec[String] = vec.new_vec();
+                    roles = vec.push(roles, "body");
+                    expr_ok(body.cursor, expr_with_child_roles(AstLoopExpr(), "", "", children, roles, vec.new_vec(), merge(keyword.token.span, block.span), wrap_text("loop", block.text, "")))
+                } else {
+                    expr_error(body.cursor, keyword.token.span, "E1337", "expected loop body")
+                },
                 None => expr_error(body.cursor, keyword.token.span, "E1337", "expected loop body"),
             }
         }
@@ -3590,7 +3600,11 @@ fn parse_for_expr(cursor: ParserCursor) -> ParseExpr {
                                     Some(block) => if true {
                                         let mut children: Vec[AstExpr] = vec.new_vec();
                                         children = vec.push(children, value);
-                                        expr_ok(body.cursor, expr_with_children(AstForExpr(), "in", binding.token.lexeme, children, vec.new_vec(), merge(keyword.token.span, block.span), wrap_text("for ", binding.token.lexeme, wrap_text(" in ", value.text, block.text))))
+                                        children = vec.push(children, block_value_expr(block));
+                                        let mut roles: Vec[String] = vec.new_vec();
+                                        roles = vec.push(roles, "iterable");
+                                        roles = vec.push(roles, "body");
+                                        expr_ok(body.cursor, expr_with_child_roles(AstForExpr(), "in", binding.token.lexeme, children, roles, vec.new_vec(), merge(keyword.token.span, block.span), wrap_text("for ", binding.token.lexeme, wrap_text(" in ", value.text, block.text))))
                                     } else {
                                         expr_error(body.cursor, value.span, "E1339", "expected for body")
                                     },
@@ -5551,12 +5565,19 @@ pub fn parse_trait_method_signature(cursor: ParserCursor) -> ParseTraitMethodSig
                 diagnostic: semi_result.diagnostic,
             }
         } else {
+            let mut signature_value: Option[AstFunctionSignature] = None();
+            match signature_result.signature {
+                Some(signature) => if true {
+                    signature_value = Some(function_signature_with_new_attrs(signature, attrs_result.attrs));
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
             ParseTraitMethodSignature {
                 cursor: semi_result.cursor,
-                signature: match signature_result.signature {
-                    Some(signature) => Some(function_signature_with_new_attrs(signature, attrs_result.attrs)),
-                    None => None(),
-                },
+                signature: signature_value,
                 diagnostic: None(),
             }
         }
@@ -6118,9 +6139,14 @@ fn parse_attribute_arg_result(cursor: ParserCursor, name: String, value: ParseAt
             diagnostic: value.diagnostic,
         }
     } else {
+        let arg_text = if named {
+            wrap_text(name, "=", value.text)
+        } else {
+            value.text
+        };
         ParseAttributeArg {
             cursor: value.cursor,
-            arg: Some(ast_attribute_arg(name, value.value, value.kind, named, merge(start_span, value.span), if named { wrap_text(name, "=", value.text) } else { value.text })),
+            arg: Some(ast_attribute_arg(name, value.value, value.kind, named, merge(start_span, value.span), arg_text)),
             diagnostic: None(),
         }
     }

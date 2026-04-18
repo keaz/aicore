@@ -908,6 +908,7 @@ fn valid_parser_expression_and_block_declarations() -> Bool {
     let expression_precedence_ok = expr_parse_matches("1 + 2 * 3", "1+2*3", 2);
     let call_field_try_ok = expr_parse_matches("call(1, name: value).field?", "call(1,name:value).field?", 1);
     let tuple_expr_ok = expr_parse_matches("(x, y, 3)", "(x,y,3)", 3);
+    let loop_expr_ok = expr_parse_matches("loop { break 1 }", "loop{break 1}", 1);
     let match_arm_ok = expr_parse_match_arm_count("match input { Some(v) if ready => v, None | Failed => 0, }", 2);
     let simple_ok = function_body_matches(simple_fn, "add", 0, true, "{x+y}");
     let if_ok = function_body_matches(if_fn, "clamp", 0, true, "{if x>0{x}else{-x}}");
@@ -933,6 +934,7 @@ fn valid_parser_expression_and_block_declarations() -> Bool {
     expression_precedence_ok
         && call_field_try_ok
         && tuple_expr_ok
+        && loop_expr_ok
         && match_arm_ok
         && simple_ok
         && if_ok
@@ -1330,7 +1332,9 @@ fn typecheck_positive_units() -> Vec[ResolveUnit] {
 
 fn valid_typecheck_positive_cases() -> Bool {
     let out = typecheck_units(typecheck_positive_units(), "app.main", 80);
+    let loop_break_tail = typecheck_single("module app.main; fn ok() -> Int { let value = loop { break 7; () }; value }");
     typecheck_diagnostic_count(out) == 0
+        && typecheck_diagnostic_count(loop_break_tail) == 0
         && typecheck_function_count(out) >= 6
         && typecheck_binding_count(out) >= 10
         && typecheck_instantiation_count(out) >= 1
@@ -1350,6 +1354,10 @@ fn typecheck_single(text: String) -> TypecheckOutput {
     units = push_driver_synthetic_unit(units, "std.option", source_id(38));
     units = push_driver_synthetic_unit(units, "std.vec", source_id(39));
     units = push_driver_synthetic_unit(units, "std.string", source_id(40));
+    units = push_driver_synthetic_unit(units, "std.result", source_id(41));
+    units = push_driver_synthetic_unit(units, "std.fs", source_id(42));
+    units = push_driver_synthetic_unit(units, "std.io", source_id(43));
+    units = push_driver_synthetic_unit(units, "std.proc", source_id(44));
     typecheck_units(units, "app.main", 80)
 }
 
@@ -1365,6 +1373,7 @@ fn valid_typecheck_negative_cases() -> Bool {
     let implicit_int_float = typecheck_single("module app.main; fn bad() -> Float { 1 + 2.0 }");
     let fixed_width_range = typecheck_single("module app.main; fn bad() -> Int { let x: Int8 = 9999; 0 }");
     let trait_bound_failure = typecheck_single("module app.main; trait Order[T]; impl Order[Int]; fn id[T: Order](value: T) -> T { value } fn bad() -> Bool { id(true) }");
+    let loop_break_mismatch = typecheck_single("module app.main; fn bad() -> Int { loop { if true { break 1 } else { break false } } }");
     typecheck_has_diagnostic_code(unknown_symbol, "E1208")
         && typecheck_has_diagnostic_code(type_mismatch, "E1204")
         && typecheck_has_diagnostic_code(wrong_generic_arity, "E1250")
@@ -1376,6 +1385,7 @@ fn valid_typecheck_negative_cases() -> Bool {
         && typecheck_has_diagnostic_code(implicit_int_float, "E1230")
         && typecheck_has_diagnostic_code(fixed_width_range, "E1204")
         && typecheck_has_diagnostic_code(trait_bound_failure, "E1258")
+        && typecheck_has_diagnostic_code(loop_break_mismatch, "E1274")
 }
 
 fn valid_effect_contract_positive_cases() -> Bool {
@@ -1772,8 +1782,18 @@ fn backend_positive_status_code() -> Int {
                 604
             } else if !string.contains(artifact.llvm_ir, "AICore self-host LLVM IR") {
                 605
-            } else if !string.contains(artifact.llvm_ir, "define i64 @main") {
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_main") {
                 606
+            } else if !string.contains(artifact.llvm_ir, "define i32 @main(i32 %argc, i8** %argv)") {
+                645
+            } else if !string.contains(artifact.llvm_ir, "declare void @aic_rt_stack_ensure_min(i64)") {
+                647
+            } else if !string.contains(artifact.llvm_ir, "call void @aic_rt_stack_ensure_min(i64 67108864)") {
+                646
+            } else if !string.contains(artifact.llvm_ir, "declare void @aic_rt_env_set_args(i32, i8**)") {
+                678
+            } else if !string.contains(artifact.llvm_ir, "call void @aic_rt_env_set_args(i32 %argc, i8** %argv)") {
+                679
             } else if !string.contains(artifact.llvm_ir, "define i64 @aic_add") {
                 607
             } else if !string.contains(artifact.llvm_ir, "%ret = add i64 %aic_x, %aic_y") {
@@ -1920,49 +1940,549 @@ fn backend_fs_positive_status_code() -> Int {
     }
 }
 
-fn valid_backend_positive_cases() -> Bool {
-    backend_positive_status_code() == 0 && backend_fs_positive_status_code() == 0
+fn backend_result_vec_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.vec; import std.fs; import std.result; struct SourceId { value: Int, } struct DriverSource { path: String, text: String, source: SourceId, } struct SourceLoadState { sources: Vec[DriverSource], next_source: Int, } fn source_id(value: Int) -> SourceId { SourceId { value: value } } fn driver_source(path: String, text: String, source: SourceId) -> DriverSource { DriverSource { path: path, text: text, source: source } } fn source_load_state(sources: Vec[DriverSource], next_source: Int) -> SourceLoadState { SourceLoadState { sources: sources, next_source: next_source } } fn state_source_count(state: SourceLoadState) -> Int { vec.vec_len(state.sources) } fn driver_has_source_path(sources: Vec[DriverSource], path: String) -> Bool { false } fn compiler_source_path_for_import(import_path: String) -> String { \"compiler/aic/libs/source/src/main.aic\" } fn load_mapped_import(state: SourceLoadState, import_path: String) -> Result[SourceLoadState, FsError] effects { fs } capabilities { fs } { let path = compiler_source_path_for_import(import_path); if path == \"\" || driver_has_source_path(state.sources, path) { Ok(state) } else { match read_text(path) { Ok(contents) => if true { let next_sources = vec.push(state.sources, driver_source(path, contents, source_id(state.next_source))); Ok(source_load_state(next_sources, state.next_source + 1)) } else { Ok(state) }, Err(cause) => Err(cause), } } } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(97), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            678
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_result_vec_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                679
+            } else if !string.contains(artifact.llvm_ir, "declare i64 @aic_rt_vec_push") {
+                680
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_vec_push") {
+                681
+            } else if !string.contains(artifact.llvm_ir, "define { i32, { { i64, i64, i64 }, i64 }, { i32, i8, i8, i8, i8, i8, i8, i8 } } @aic_load_mapped_import") {
+                682
+            } else if !string.contains(artifact.llvm_ir, "insertvalue { i32, { { i64, i64, i64 }, i64 }, { i32, i8, i8, i8, i8, i8, i8, i8 } } undef, i32 0, 0") {
+                683
+            } else if !string.contains(artifact.llvm_ir, "insertvalue { i32, { { i64, i64, i64 }, i64 }, { i32, i8, i8, i8, i8, i8, i8, i8 } } undef, i32 1, 0") {
+                684
+            } else if !string.contains(artifact.llvm_ir, " = or i1 ") {
+                685
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_state_source_count({ { i64, i64, i64 }, i64 } %aic_state)") {
+                687
+            } else if !string.contains(artifact.llvm_ir, " = extractvalue { { i64, i64, i64 }, i64 } %aic_state, 0") {
+                688
+            } else if !string.contains(artifact.llvm_ir, " = extractvalue { i64, i64, i64 } ") {
+                689
+            } else {
+                0
+            }
+        },
+        None => 686,
+    }
 }
 
-fn valid_backend_negative_cases() -> Bool {
+fn backend_string_join_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.string; import std.vec; fn join_direct(parts: Vec[String]) -> String { string.join(parts, \"\") } fn join_two() -> String { let mut parts: Vec[String] = vec.new_vec(); parts = vec.push(parts, \"a\"); parts = vec.push(parts, \"b\"); string.join(parts, \",\") } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(98), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            690
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_string_join_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                691
+            } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_join_direct({ i64, i64, i64 } %aic_parts)") {
+                692
+            } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_join_two()") {
+                693
+            } else if !string.contains(artifact.llvm_ir, "declare void @aic_rt_string_join") {
+                694
+            } else if !string.contains(artifact.llvm_ir, "call void @aic_rt_string_join") {
+                695
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_vec_push") {
+                696
+            } else {
+                0
+            }
+        },
+        None => 697,
+    }
+}
+
+fn backend_vec_get_option_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.vec; import std.option; struct SourceId { value: Int, } struct SourceSpan { source: SourceId, start: Int, end: Int, } enum MiniTokenKind { Identifier, EndOfFile, } struct MiniToken { kind: MiniTokenKind, span: SourceSpan, lexeme: String, } enum AstStatementKind { AstReturnStatement, AstLetStatement, AstAssignStatement, AstExprStatement, } struct AstStatement { kind: AstStatementKind, } struct AstBlock { statements: Vec[AstStatement], } fn source_id(value: Int) -> SourceId { SourceId { value: value } } fn empty_span(source: SourceId, offset: Int) -> SourceSpan { SourceSpan { source: source, start: offset, end: offset } } fn eof(source: SourceId, offset: Int) -> MiniToken { MiniToken { kind: EndOfFile(), span: empty_span(source, offset), lexeme: \"\" } } fn current_token(source: SourceId, tokens: Vec[MiniToken], index: Int) -> MiniToken { match vec.get(tokens, index) { Some(tok) => tok, None => eof(source, index), } } fn has_return_statement(value: AstBlock) -> Bool { let count = vec.vec_len(value.statements); if count == 0 { false } else { match vec.get(value.statements, count - 1) { Some(statement) => match statement.kind { AstReturnStatement => true, AstLetStatement => false, AstAssignStatement => false, AstExprStatement => false, }, None => false, } } } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(99), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            698
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_vec_get_option_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                699
+            } else if !string.contains(artifact.llvm_ir, "declare i64 @aic_rt_vec_get") {
+                700
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_vec_get") {
+                701
+            } else if !string.contains(artifact.llvm_ir, "option.match.some.") {
+                702
+            } else if !string.contains(artifact.llvm_ir, "option.match.none.") {
+                703
+            } else if !string.contains(artifact.llvm_ir, "@aic_current_token") {
+                704
+            } else if !string.contains(artifact.llvm_ir, "define i1 @aic_has_return_statement") {
+                706
+            } else if !string.contains(artifact.llvm_ir, "ret i1") {
+                707
+            } else {
+                0
+            }
+        },
+        None => 705,
+    }
+}
+
+fn backend_payload_enum_struct_positive_status_code() -> Int {
+    let source_text = "module app.main; struct SourceId { value: Int, } struct SourceSpan { source: SourceId, start: Int, end: Int, } struct DiagnosticCode { value: String, } enum Severity { Error, Warning, Note, } enum DiagnosticHelp { NoHelp, Help(String), } struct Diagnostic { code: DiagnosticCode, severity: Severity, span: SourceSpan, message: String, help: DiagnosticHelp, } struct IrTypeId { value: Int, } enum IrTypeKind { IrUnitType, IrBoolType, IrIntType, IrUIntType, IrFloatType, IrStringType, IrCharType, IrNamedType(String), IrTupleType(String), IrFunctionType(String), IrDynTraitType(String), IrUnknownType, } struct IrTypeDef { id: IrTypeId, name: String, kind: IrTypeKind, span: SourceSpan, } fn diagnostic(severity: Severity, code: DiagnosticCode, span: SourceSpan, message: String, help: DiagnosticHelp) -> Diagnostic { Diagnostic { code: code, severity: severity, span: span, message: message, help: help } } fn with_help(value: Diagnostic, help: String) -> Diagnostic { Diagnostic { code: value.code, severity: value.severity, span: value.span, message: value.message, help: Help(help) } } fn type_def(id: IrTypeId, name: String, kind: IrTypeKind, span: SourceSpan) -> IrTypeDef { IrTypeDef { id: id, name: name, kind: kind, span: span } } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(100), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            708
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_payload_enum_struct_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                709
+            } else if !string.contains(artifact.llvm_ir, "define { { %aic.String }, { i32, i8, i8, i8 }, { { i64 }, i64, i64 }, %aic.String, { i32, i8, %aic.String } } @aic_diagnostic") {
+                710
+            } else if !string.contains(artifact.llvm_ir, "define { { i64 }, %aic.String, { i32, i8, i8, i8, i8, i8, i8, i8, %aic.String, %aic.String, %aic.String, %aic.String, i8 }, { { i64 }, i64, i64 } } @aic_type_def") {
+                711
+            } else if !string.contains(artifact.llvm_ir, "insertvalue { i32, i8, %aic.String }") {
+                712
+            } else {
+                0
+            }
+        },
+        None => 713,
+    }
+}
+
+fn backend_proc_output_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.io; import std.proc; import std.result; import std.string; fn write_stdout(value: String) -> () effects { io } capabilities { io } { print_str(value) } fn write_stderr(value: String) -> () effects { io } capabilities { io } { eprint_str(value) } fn command() -> String { \"true\" } fn run_probe() -> Int effects { io, proc, env } capabilities { io, proc, env } { match proc.run(command()) { Ok(out) => if out.status == 0 { write_stdout(out.stdout); write_stderr(out.stderr); 0 } else { 1 }, Err(_) => 2, } } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(101), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            714
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_proc_output_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                715
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_proc_run") {
+                716
+            } else if !string.contains(artifact.llvm_ir, "insertvalue { i32, %aic.String, %aic.String } undef, i32") {
+                717
+            } else if !string.contains(artifact.llvm_ir, "extractvalue { i32, %aic.String, %aic.String }") {
+                718
+            } else if !string.contains(artifact.llvm_ir, " = icmp eq i32 ") {
+                719
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_run_probe()") {
+                720
+            } else {
+                0
+            }
+        },
+        None => 721,
+    }
+}
+
+fn backend_empty_vec_return_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.string; import std.vec; fn effect_or_capability_names(text: String) -> Vec[String] { if text == \"\" { vec.new_vec() } else { string.split(text, \",\") } } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(102), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            722
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_empty_vec_return_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                723
+            } else if !string.contains(artifact.llvm_ir, "define { i64, i64, i64 } @aic_effect_or_capability_names") {
+                724
+            } else if !string.contains(artifact.llvm_ir, "call void @aic_rt_string_split") {
+                725
+            } else if string.contains(artifact.llvm_ir, "insertvalue  undef") {
+                726
+            } else if !string.contains(artifact.llvm_ir, "insertvalue { i64, i64, i64 } undef, i64 0, 0") {
+                727
+            } else {
+                0
+            }
+        },
+        None => 728,
+    }
+}
+
+fn backend_negative_int_return_positive_status_code() -> Int {
+    let source_text = "module app.main; fn missing_index() -> Int { -1 } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(103), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            729
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_negative_int_return_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                730
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_missing_index()") {
+                731
+            } else if !string.contains(artifact.llvm_ir, " = sub i64 0, 1") {
+                732
+            } else {
+                0
+            }
+        },
+        None => 733,
+    }
+}
+
+fn backend_string_bool_return_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.string; fn false_loop_marker(text: String) -> Bool { string.starts_with(text, \"while false\") } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(104), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            734
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_string_bool_return_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                735
+            } else if !string.contains(artifact.llvm_ir, "define i1 @aic_false_loop_marker") {
+                736
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_string_starts_with") {
+                737
+            } else if !string.contains(artifact.llvm_ir, "ret i1 ") {
+                738
+            } else if string.contains(artifact.llvm_ir, "call  @aic_string_starts_with") {
+                739
+            } else {
+                0
+            }
+        },
+        None => 740,
+    }
+}
+
+fn backend_string_escape_positive_status_code() -> Int {
+    let source_text = "module app.main; fn newline() -> String { \"\\n\" } fn main() -> Int { 0 }";
+    let result = lower_ir_text(source_id(105), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            741
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_string_escape_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                742
+            } else if !string.contains(artifact.llvm_ir, "define %aic.String @aic_newline()") {
+                743
+            } else if !string.contains(artifact.llvm_ir, "[1 x i8] c\"\\0A\"") {
+                744
+            } else if string.contains(artifact.llvm_ir, "[2 x i8] c\"\\5Cn\"") {
+                745
+            } else {
+                0
+            }
+        },
+        None => 746,
+    }
+}
+
+fn backend_explicit_return_positive_status_code() -> Int {
+    let source_text = "module app.main; fn explicit(value: Int) -> Int { return value; } fn early() -> Int { return 7; 99 } fn done() -> () { return; } fn main() -> Int { explicit(0) + early() }";
+    let result = lower_ir_text(source_id(106), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            747
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_explicit_return_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                748
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_explicit") {
+                749
+            } else if !string.contains(artifact.llvm_ir, "ret i64") {
+                750
+            } else if !string.contains(artifact.llvm_ir, "define void @aic_done()") {
+                751
+            } else if !string.contains(artifact.llvm_ir, "ret void") {
+                752
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_early") {
+                753
+            } else if !string.contains(artifact.llvm_ir, "ret i64 7") {
+                754
+            } else if string.contains(artifact.llvm_ir, "ret i64 99") {
+                755
+            } else if backend_has_diagnostic_code(artifact, "E5101") {
+                756
+            } else {
+                0
+            }
+        },
+        None => 757,
+    }
+}
+
+fn backend_branch_return_positive_status_code() -> Int {
+    let source_text = "module app.main; fn branch(flag: Bool) -> Int { if flag { return 1; 99 } else { return 2; 98 } } fn main() -> Int { branch(true) }";
+    let result = lower_ir_text(source_id(108), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            755
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_branch_return_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                756
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_branch") {
+                757
+            } else if !string.contains(artifact.llvm_ir, "ret i64 1") {
+                758
+            } else if !string.contains(artifact.llvm_ir, "ret i64 2") {
+                759
+            } else if string.contains(artifact.llvm_ir, "ret i64 99") {
+                775
+            } else if string.contains(artifact.llvm_ir, "ret i64 98") {
+                776
+            } else if backend_has_diagnostic_code(artifact, "E5101") {
+                760
+            } else {
+                0
+            }
+        },
+        None => 761,
+    }
+}
+
+fn backend_range_for_positive_status_code() -> Int {
+    let source_text = "module app.main; fn range_loop(limit: Int) -> Int { let mut total = 0; for value in 0..limit { total = total + value; }; total } fn main() -> Int { range_loop(4) }";
+    let result = lower_ir_text(source_id(109), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            762
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_range_for_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                763
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_range_loop") {
+                764
+            } else if !string.contains(artifact.llvm_ir, "for.cond.") {
+                765
+            } else if !string.contains(artifact.llvm_ir, "icmp slt i64") {
+                766
+            } else if !string.contains(artifact.llvm_ir, "add i64") {
+                767
+            } else if !string.contains(artifact.llvm_ir, "store i64") {
+                768
+            } else if backend_has_diagnostic_code(artifact, "E5101") {
+                769
+            } else {
+                0
+            }
+        },
+        None => 770,
+    }
+}
+
+fn backend_loop_control_positive_status_code() -> Int {
+    let source_text = "module app.main; fn loop_control(limit: Int) -> Int { let mut total = 0; for value in 0..limit { if value == 2 { continue; (); } else { () }; if value == 4 { break; (); } else { () }; total = total + value; }; total } fn main() -> Int { loop_control(6) }";
+    let result = lower_ir_text(source_id(111), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            793
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_loop_control_check"), 80);
+            if !backend_artifact_ok(artifact) {
+                794
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_loop_control") {
+                795
+            } else if !string.contains(artifact.llvm_ir, "br label %for.inc.") {
+                796
+            } else if !string.contains(artifact.llvm_ir, "br label %for.end.") {
+                797
+            } else if !string.contains(artifact.llvm_ir, "if.stmt.then.") {
+                798
+            } else if backend_has_diagnostic_code(artifact, "E5101") {
+                799
+            } else {
+                0
+            }
+        },
+        None => 800,
+    }
+}
+
+fn backend_vec_iter_for_positive_status_code() -> Int {
+    let source_text = "module app.main; import std.vec; fn iter_sum(values: Vec[Int]) -> Int { let mut total = 0; for value in values { if value == 2 { continue; } else { () }; total = total + value; }; total } fn main() -> Int { let mut values: Vec[Int] = vec.new_vec(); values = vec.push(values, 1); values = vec.push(values, 2); values = vec.push(values, 3); iter_sum(values) }";
+    let result = lower_ir_text(source_id(112), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            801
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_vec_iter_for_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                802
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_iter_sum") {
+                803
+            } else if !string.contains(artifact.llvm_ir, "for.iter.cond.") {
+                804
+            } else if !string.contains(artifact.llvm_ir, "call i64 @aic_rt_vec_get") {
+                805
+            } else if !string.contains(artifact.llvm_ir, "br label %for.iter.inc.") {
+                806
+            } else if !string.contains(artifact.llvm_ir, "declare i64 @aic_rt_vec_get") {
+                807
+            } else if backend_has_diagnostic_code(artifact, "E5101") {
+                808
+            } else {
+                0
+            }
+        },
+        None => 809,
+    }
+}
+
+fn backend_loop_value_positive_status_code() -> Int {
+    let source_text = "module app.main; fn loop_pick(flag: Bool) -> Int { loop { if flag { break 7; () } else { break 5; () } } } fn loop_unit() -> Int { loop { break; (); }; 3 } fn main() -> Int { loop_pick(true) + loop_unit() }";
+    let result = lower_ir_text(source_id(113), source_text);
+    match result.program {
+        Some(program) => if ir_lowering_diagnostic_count(result) != 0 {
+            810
+        } else {
+            let artifact = emit_backend_artifact(program, default_backend_options("backend_loop_value_check"), 120);
+            if !backend_artifact_ok(artifact) {
+                811
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_loop_pick") {
+                812
+            } else if !string.contains(artifact.llvm_ir, "define i64 @aic_loop_unit") {
+                813
+            } else if !string.contains(artifact.llvm_ir, "loop.body.") {
+                814
+            } else if !string.contains(artifact.llvm_ir, "loop.end.") {
+                815
+            } else if !string.contains(artifact.llvm_ir, ".break.slot") {
+                816
+            } else if !string.contains(artifact.llvm_ir, "store i64 7") {
+                817
+            } else if !string.contains(artifact.llvm_ir, "store i64 5") {
+                818
+            } else if backend_has_diagnostic_code(artifact, "E5101") {
+                819
+            } else {
+                0
+            }
+        },
+        None => 820,
+    }
+}
+
+fn backend_positive_cases_status_code() -> Int {
+    let mut status = backend_positive_status_code();
+    if status == 0 { status = backend_fs_positive_status_code(); } else { () };
+    if status == 0 { status = backend_result_vec_positive_status_code(); } else { () };
+    if status == 0 { status = backend_string_join_positive_status_code(); } else { () };
+    if status == 0 { status = backend_vec_get_option_positive_status_code(); } else { () };
+    if status == 0 { status = backend_payload_enum_struct_positive_status_code(); } else { () };
+    if status == 0 { status = backend_proc_output_positive_status_code(); } else { () };
+    if status == 0 { status = backend_empty_vec_return_positive_status_code(); } else { () };
+    if status == 0 { status = backend_negative_int_return_positive_status_code(); } else { () };
+    if status == 0 { status = backend_string_bool_return_positive_status_code(); } else { () };
+    if status == 0 { status = backend_string_escape_positive_status_code(); } else { () };
+    if status == 0 { status = backend_explicit_return_positive_status_code(); } else { () };
+    if status == 0 { status = backend_branch_return_positive_status_code(); } else { () };
+    if status == 0 { status = backend_range_for_positive_status_code(); } else { () };
+    if status == 0 { status = backend_loop_control_positive_status_code(); } else { () };
+    if status == 0 { status = backend_vec_iter_for_positive_status_code(); } else { () };
+    if status == 0 { status = backend_loop_value_positive_status_code(); } else { () };
+    status
+}
+
+fn valid_backend_positive_cases() -> Bool {
+    backend_positive_cases_status_code() == 0
+}
+
+fn backend_has_diagnostic_message(value: BackendArtifact, fragment: String) -> Bool {
+    let mut index = 0;
+    let mut found = false;
+    while !found && index < vec.vec_len(value.diagnostics) {
+        match vec.get(value.diagnostics, index) {
+            Some(diagnostic_value) => if string.contains(diagnostic_value.message, fragment) {
+                found = true;
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    found
+}
+
+fn backend_negative_status_code() -> Int {
     let missing_hook = lower_ir_text(source_id(92), "module app.main; fn main() -> Int { unsafe { 1 } }");
     let unsupported_type = lower_ir_text(source_id(93), "module app.main; fn unsupported(f: Fn[Int]) -> Fn[Int] { f } fn main() -> Int { 0 }");
     let valid = lower_ir_text(source_id(94), "module app.main; fn main() -> Int { 0 }");
+    let unsupported_for = lower_ir_text(source_id(110), "module app.main; fn main() -> Int { let count = 1; for value in (count) { }; 0 }");
     match missing_hook.program {
         Some(missing_program) => match unsupported_type.program {
             Some(type_program) => match valid.program {
-                Some(program) => if true {
-                    let span_value = span(source_id(95), 0, 3);
-                    let missing_artifact = emit_backend_artifact(missing_program, default_backend_options("missing_hook"), 80);
-                    let type_artifact = emit_backend_artifact(type_program, default_backend_options("unsupported_type"), 80);
-                    let bad_schema = emit_backend_artifact(program_with_schema(program, 99), default_backend_options("bad_schema"), 80);
-                    let empty_name = emit_backend_artifact(program, backend_options("", "", LlvmIrArtifact(), true, vec.new_vec()), 80);
-                    let native_object = emit_backend_artifact(program, backend_options("native_object", "", NativeObjectArtifact(), true, vec.new_vec()), 80);
-                    let mut bad_links: Vec[BackendNativeLink] = vec.new_vec();
-                    bad_links = vec.push(bad_links, backend_native_link("", NativeLibraryLink(), "", false, span_value));
-                    bad_links = vec.push(bad_links, backend_native_link("objects", NativeSearchPathLink(), "", false, span_value));
-                    let bad_link_artifact = emit_backend_artifact(program, backend_options("bad_links", "", LlvmIrArtifact(), true, bad_links), 80);
-                    backend_has_diagnostic_code(missing_artifact, "E5101")
-                        && !backend_artifact_ok(missing_artifact)
-                        && backend_has_diagnostic_code(type_artifact, "E5102")
-                        && !backend_artifact_ok(type_artifact)
-                        && backend_has_diagnostic_code(bad_link_artifact, "E5103")
-                        && !backend_artifact_ok(bad_link_artifact)
-                        && backend_has_diagnostic_code(bad_schema, "E5010")
-                        && !backend_artifact_ok(bad_schema)
-                        && backend_has_diagnostic_code(empty_name, "E5104")
-                        && !backend_artifact_ok(empty_name)
-                        && backend_has_diagnostic_code(native_object, "E5105")
-                        && !backend_artifact_ok(native_object)
-                } else {
-                    false
+                Some(program) => match unsupported_for.program {
+                    Some(unsupported_for_program) => if true {
+                        let span_value = span(source_id(95), 0, 3);
+                        let missing_artifact = emit_backend_artifact(missing_program, default_backend_options("missing_hook"), 80);
+                        let type_artifact = emit_backend_artifact(type_program, default_backend_options("unsupported_type"), 80);
+                        let bad_schema = emit_backend_artifact(program_with_schema(program, 99), default_backend_options("bad_schema"), 80);
+                        let empty_name = emit_backend_artifact(program, backend_options("", "", LlvmIrArtifact(), true, vec.new_vec()), 80);
+                        let native_object = emit_backend_artifact(program, backend_options("native_object", "", NativeObjectArtifact(), true, vec.new_vec()), 80);
+                        let unsupported_for_artifact = emit_backend_artifact(unsupported_for_program, default_backend_options("unsupported_for"), 80);
+                        let mut bad_links: Vec[BackendNativeLink] = vec.new_vec();
+                        bad_links = vec.push(bad_links, backend_native_link("", NativeLibraryLink(), "", false, span_value));
+                        bad_links = vec.push(bad_links, backend_native_link("objects", NativeSearchPathLink(), "", false, span_value));
+                        let bad_link_artifact = emit_backend_artifact(program, backend_options("bad_links", "", LlvmIrArtifact(), true, bad_links), 80);
+                        if !backend_has_diagnostic_code(missing_artifact, "E5101") {
+                            771
+                        } else if backend_artifact_ok(missing_artifact) {
+                            772
+                        } else if !backend_has_diagnostic_code(type_artifact, "E5102") {
+                            773
+                        } else if backend_artifact_ok(type_artifact) {
+                            774
+                        } else if !backend_has_diagnostic_code(bad_link_artifact, "E5103") {
+                            775
+                        } else if backend_artifact_ok(bad_link_artifact) {
+                            776
+                        } else if !backend_has_diagnostic_code(bad_schema, "E5010") {
+                            777
+                        } else if backend_artifact_ok(bad_schema) {
+                            778
+                        } else if !backend_has_diagnostic_code(empty_name, "E5104") {
+                            779
+                        } else if backend_artifact_ok(empty_name) {
+                            780
+                        } else if !backend_has_diagnostic_code(native_object, "E5105") {
+                            781
+                        } else if backend_artifact_ok(native_object) {
+                            782
+                        } else if !backend_has_diagnostic_code(unsupported_for_artifact, "E5101") {
+                            785
+                        } else if backend_artifact_ok(unsupported_for_artifact) {
+                            786
+                        } else if !backend_has_diagnostic_message(unsupported_for_artifact, "range-for and Vec[Int]") {
+                            784
+                        } else {
+                            0
+                        }
+                    } else {
+                        787
+                    },
+                    None => 788,
                 },
-                None => false,
+                None => 789,
             },
-            None => false,
+            None => 790,
         },
-        None => false,
+        None => 791,
     }
+}
+
+fn valid_backend_negative_cases() -> Bool {
+    backend_negative_status_code() == 0
 }
 
 fn valid_backend_frontend() -> Bool {
@@ -1990,8 +2510,10 @@ fn driver_positive_status_code() -> Int {
         665
     } else if build.artifact_path != "smoke.ll" {
         666
-    } else if !string.contains(build.artifact_text, "define i64 @main") {
+    } else if !string.contains(build.artifact_text, "define i64 @aic_main") {
         667
+    } else if !string.contains(build.artifact_text, "define i32 @main(i32 %argc, i8** %argv)") {
+        678
     } else if !string.contains(build.artifact_text, "%ret = call i64 @aic_add(i64 40, i64 2)") {
         668
     } else if !string.contains(build.artifact_text, "declare void @aic_rt_string_replace") {
@@ -2019,7 +2541,7 @@ fn valid_driver_positive_cases() -> Bool {
 
 fn driver_negative_status_code() -> Int {
     let missing = driver_check_source("bad.aic", "module smoke.main; fn main() -> Int { missing }", 80);
-    let unsupported_backend = driver_build_source("bad_backend.aic", "module smoke.main; fn main() -> Int { let x = 1; x }", "bad.ll", 80);
+    let unsupported_backend = driver_build_source("bad_backend.aic", "module smoke.main; fn main() -> Int { let count = 1; for value in (count) { }; 0 }", "bad.ll", 80);
     let run_result = driver_run_source("smoke.aic", driver_positive_source(), 80);
     let bad_command = driver_unsupported_command("fmt", 20);
     if missing.exit_code != 1 {
@@ -2090,8 +2612,9 @@ fn main() -> Int effects { io } capabilities { io } {
     let typecheck_ok = valid_typecheck_frontend();
     let ir_lowering_ok = valid_ir_lowering_frontend();
     let ir_serialization_ok = valid_ir_serialization_frontend();
-    let backend_status = backend_positive_status_code();
-    let backend_negative_ok = valid_backend_negative_cases();
+    let backend_status = backend_positive_cases_status_code();
+    let backend_negative_status = backend_negative_status_code();
+    let backend_negative_ok = backend_negative_status == 0;
     let backend_ok = backend_status == 0 && backend_negative_ok;
     let driver_positive_status = driver_positive_status_code();
     let driver_negative_status = driver_negative_status_code();
@@ -2105,7 +2628,7 @@ fn main() -> Int effects { io } capabilities { io } {
         if backend_status != 0 {
             print_int(backend_status);
         } else if !backend_negative_ok {
-            print_int(650);
+            print_int(backend_negative_status);
         } else if !driver_ok {
             if driver_positive_status != 0 {
                 print_int(driver_positive_status);

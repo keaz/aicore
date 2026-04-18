@@ -460,6 +460,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(typecheck.contains("fn append_ownership_resource_diagnostics"));
     assert!(typecheck.contains("fn check_ownership_expr"));
     assert!(typecheck.contains("fn check_resource_protocol_call"));
+    assert!(typecheck.contains("loop_break_types: Vec[String]"));
+    assert!(typecheck.contains("fn loop_break_type_stack_set_top"));
+    assert!(typecheck.contains("E1274"));
     assert!(typecheck.contains("E1263"));
     assert!(typecheck.contains("E1265"));
     assert!(typecheck.contains("E1277"));
@@ -539,6 +542,14 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_tool.contains("src/codegen/runtime/part01.c"));
     assert!(selfhost_tool.contains("src/codegen/runtime/part05.c"));
     assert!(selfhost_tool.contains("-DAIC_RT_TLS_OPENSSL=0"));
+    assert!(selfhost_tool.contains("AIC_SELFHOST_OS"));
+    assert!(selfhost_tool.contains("AIC_SELFHOST_STACK_FLAG"));
+    assert!(selfhost_tool.contains("uname -s"));
+    assert!(selfhost_tool.contains("[ \\\"$AIC_SELFHOST_OS\\\" = 'Darwin' ]"));
+    assert!(selfhost_tool.contains("AIC_SELFHOST_CODESIGN"));
+    assert!(selfhost_tool.contains("AIC_CODESIGN"));
+    assert!(selfhost_tool.contains("--force --sign -"));
+    assert!(selfhost_tool.contains("-Wl,-z,stack-size=67108864"));
     assert!(selfhost_tool.contains("-pthread -lm"));
     assert!(selfhost_tool.contains("proc.run"));
     assert!(selfhost_tool
@@ -557,6 +568,21 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("stage1"));
     assert!(bootstrap.contains("stage2"));
     assert!(bootstrap.contains("allow-incomplete"));
+    assert!(bootstrap.contains("host-preflight"));
+    assert!(bootstrap.contains("Developer Mode is disabled"));
+    assert!(bootstrap.contains("ad-hoc signs"));
+    assert!(bootstrap.contains("\"--strip-all\""));
+    assert!(bootstrap.contains("strip\", \"-S\", \"-x"));
+    assert!(bootstrap.contains("strip_command"));
+    assert!(bootstrap.contains("default=900"));
+    assert!(bootstrap.contains("stripped_matches"));
+    assert!(bootstrap.contains("AIC_SELFHOST_STAGE0"));
+    assert!(bootstrap.contains("resource_budget_report"));
+    assert!(bootstrap.contains("performance"));
+    assert!(bootstrap.contains("artifact_size_bytes"));
+    assert!(bootstrap.contains("child_peak_rss_bytes"));
+    assert!(bootstrap.contains("AIC_SELFHOST_MAX_STEP_MS"));
+    assert!(bootstrap.contains("AIC_SELFHOST_MAX_ARTIFACT_BYTES"));
 
     let selfhost_docs =
         fs::read_to_string(root.join("docs/selfhost/README.md")).expect("read selfhost docs");
@@ -565,6 +591,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("experimental"));
     assert!(selfhost_docs.contains("supported"));
     assert!(selfhost_docs.contains("default"));
+    assert!(selfhost_docs.contains("host-preflight"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
@@ -584,6 +611,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(source_diagnostics_check.contains("fn valid_ir_serialization_positive_cases"));
     assert!(source_diagnostics_check.contains("fn valid_ir_serialization_negative_cases"));
     assert!(source_diagnostics_check.contains("fn valid_backend_positive_cases"));
+    assert!(source_diagnostics_check.contains("fn backend_negative_status_code"));
     assert!(source_diagnostics_check.contains("fn valid_backend_negative_cases"));
     assert!(source_diagnostics_check.contains("fn valid_backend_frontend"));
     assert!(source_diagnostics_check.contains("fn valid_driver_positive_cases"));
@@ -592,6 +620,82 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(source_diagnostics_check.contains("emit_backend_artifact"));
     assert!(source_diagnostics_check.contains("backend_has_diagnostic_code"));
     assert!(source_diagnostics_check.contains("driver_build_source"));
+    assert!(source_diagnostics_check.contains("vec.vec_len(state.sources)"));
+    assert!(source_diagnostics_check.contains("aic_state_source_count"));
+    assert!(source_diagnostics_check.contains("Ok(contents)"));
+    assert!(source_diagnostics_check.contains("Err(cause)"));
+    assert!(source_diagnostics_check.contains("fn backend_string_join_positive_status_code"));
+    assert!(source_diagnostics_check.contains("string.join(parts"));
+    assert!(source_diagnostics_check.contains("aic_rt_string_join"));
+    assert!(source_diagnostics_check.contains("fn backend_explicit_return_positive_status_code"));
+    assert!(source_diagnostics_check.contains("return value;"));
+    assert!(source_diagnostics_check.contains("fn early() -> Int { return 7; 99 }"));
+    assert!(source_diagnostics_check.contains("fn backend_branch_return_positive_status_code"));
+    assert!(source_diagnostics_check.contains("if flag { return 1; 99 } else { return 2; 98 }"));
+    assert!(source_diagnostics_check.contains("fn backend_range_for_positive_status_code"));
+    assert!(source_diagnostics_check.contains("for value in 0..limit"));
+    assert!(source_diagnostics_check.contains("fn backend_loop_control_positive_status_code"));
+    assert!(source_diagnostics_check.contains("continue; ();"));
+    assert!(source_diagnostics_check.contains("break; ();"));
+    assert!(source_diagnostics_check.contains("fn backend_vec_iter_for_positive_status_code"));
+    assert!(source_diagnostics_check.contains("for value in values"));
+    assert!(source_diagnostics_check.contains("fn backend_loop_value_positive_status_code"));
+    assert!(
+        source_diagnostics_check.contains("loop { if flag { break 7; () } else { break 5; () } }")
+    );
+    assert!(source_diagnostics_check.contains("let value = loop { break 7; () }; value"));
+    assert!(source_diagnostics_check.contains("loop_break_mismatch"));
+    assert!(source_diagnostics_check.contains("backend_positive_cases_status_code"));
+    assert!(source_diagnostics_check.contains("unsupported_for"));
+    assert!(source_diagnostics_check.contains("backend_has_diagnostic_message"));
+    assert!(source_diagnostics_check.contains("range-for and Vec[Int]"));
+    assert!(source_diagnostics_check.contains("fn backend_vec_get_option_positive_status_code"));
+    assert!(source_diagnostics_check.contains("match vec.get(tokens, index)"));
+    assert!(source_diagnostics_check.contains("aic_rt_vec_get"));
+    assert!(source_diagnostics_check.contains("aic_rt_stack_ensure_min"));
+
+    let backend = fs::read_to_string(root.join("compiler/aic/libs/backend_llvm/src/main.aic"))
+        .expect("read backend llvm lib");
+    assert!(!backend.contains("type BackendLocal = String"));
+    assert!(backend.contains("struct BackendLocals"));
+    assert!(backend.contains("names: Vec[String]"));
+    assert!(backend.contains("type_names: Vec[String]"));
+    assert!(backend.contains("llvm_types: Vec[String]"));
+    assert!(backend.contains("value_names: Vec[String]"));
+    assert!(backend.contains("fn backend_local_named_index(locals: BackendLocals"));
+    assert!(backend.contains("match vec.get(locals.names, index)"));
+    assert!(backend.contains("fn vec_len_expr_can_emit"));
+    assert!(backend.contains("emit_vec_len_expr_value"));
+    assert!(backend.contains("fn string_join_expr_can_emit"));
+    assert!(backend.contains("fn emit_string_join_call"));
+    assert!(backend.contains("declare void @aic_rt_string_join"));
+    assert!(backend.contains("fn vec_get_expr_can_emit"));
+    assert!(backend.contains("fn emit_vec_get_probe"));
+    assert!(backend.contains("fn option_vec_get_match_expr_can_emit_return"));
+    assert!(backend.contains("declare i64 @aic_rt_vec_get"));
+    assert!(backend.contains("fn for_expr_can_emit_with_locals"));
+    assert!(backend.contains("fn for_iter_node_can_emit_with_locals"));
+    assert!(backend.contains("fn emit_for_iter_statement"));
+    assert!(backend.contains("program_uses_iterator_for(program)"));
+    assert!(backend.contains("fn emit_for_expr_statement"));
+    assert!(backend.contains("fn emit_unit_loop_statement_branch_node"));
+    assert!(backend.contains("fn emit_if_node_loop_statement"));
+    assert!(backend.contains("fn node_is_unit_loop_control"));
+    assert!(backend.contains("fn loop_expr_can_emit_value_with_type"));
+    assert!(backend.contains("fn emit_loop_expr_value"));
+    assert!(backend.contains("fn emit_loop_expr_statement"));
+    assert!(backend.contains("unsupported_backend_expr_message"));
+    assert!(backend.contains("unsupported_backend_statement_message"));
+    assert!(backend.contains("unsafe blocks"));
+    assert!(backend.contains("template literals"));
+    assert!(backend.contains("range-for and Vec[Int]"));
+    assert!(backend.contains(".break.slot"));
+    assert!(backend.contains("loop.body."));
+    assert!(backend.contains("for.iter.cond."));
+    assert!(backend.contains("icmp slt i64"));
+    assert!(backend.contains("br label %"));
+    assert!(backend.contains("declare void @aic_rt_stack_ensure_min"));
+    assert!(backend.contains("call void @aic_rt_stack_ensure_min(i64 67108864)"));
 
     let ir =
         fs::read_to_string(root.join("compiler/aic/libs/ir/src/main.aic")).expect("read ir lib");
@@ -611,6 +715,114 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub patterns: Vec[AstPatternNode]"));
     assert!(ast.contains("pub match_arms: Vec[AstMatchArmNode]"));
     assert!(ast.contains("value.patterns, value.match_arms"));
+}
+
+#[test]
+fn selfhost_bootstrap_uses_platform_artifact_normalization() {
+    let root = repo_root();
+    let script = root.join("scripts/selfhost/bootstrap.py");
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            r#"
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("bootstrap", {script:?})
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+assert module.strip_command_for_platform("darwin") == ["strip", "-S", "-x"]
+assert module.strip_command_for_platform("linux") == ["strip", "--strip-all"]
+assert module.strip_command_for_platform("freebsd") == ["strip", "--strip-all"]
+"#,
+            script = script.to_string_lossy()
+        ))
+        .output()
+        .expect("run bootstrap normalization probe");
+    assert!(
+        output.status.success(),
+        "bootstrap normalization probe failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn selfhost_bootstrap_reports_resource_budget_violations() {
+    let root = repo_root();
+    let script = root.join("scripts/selfhost/bootstrap.py");
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            r#"
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("bootstrap", {script:?})
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+def step(name, duration_ms, artifact_size_bytes, child_peak_rss_bytes):
+    return module.StepResult(
+        name=name,
+        command=["true"],
+        exit_code=0,
+        duration_ms=duration_ms,
+        stdout="",
+        stderr="",
+        timed_out=False,
+        artifact=name,
+        artifact_exists=True,
+        artifact_sha256="sha256:" + name,
+        artifact_size_bytes=artifact_size_bytes,
+        child_peak_rss_bytes=child_peak_rss_bytes,
+    )
+
+steps = [
+    step("stage0", 10, 20, 30),
+    step("stage1", 200, 300, 400),
+    step("stage2", 10, 20, 30),
+    step("parity", 10, 20, 30),
+]
+passing = module.resource_budget_report(
+    steps,
+    module.ResourceBudgets(
+        max_step_ms=500,
+        max_total_ms=500,
+        max_artifact_bytes=500,
+        max_peak_rss_bytes=500,
+    ),
+)
+assert passing["ok"] is True
+assert passing["observed"]["max_step_duration_ms"] == 200
+assert passing["observed"]["max_artifact_size_bytes"] == 300
+assert passing["observed"]["max_child_peak_rss_bytes"] == 400
+
+failing = module.resource_budget_report(
+    steps,
+    module.ResourceBudgets(
+        max_step_ms=100,
+        max_total_ms=100,
+        max_artifact_bytes=100,
+        max_peak_rss_bytes=100,
+    ),
+)
+assert failing["ok"] is False
+assert len(failing["violations"]) == 4
+status, reasons = module.readiness_status("supported", steps, {{"matches": True}}, failing)
+assert status == "experimental"
+assert any("resource budget violation" in reason for reason in reasons)
+"#,
+            script = script.to_string_lossy()
+        ))
+        .output()
+        .expect("run bootstrap budget probe");
+    assert!(
+        output.status.success(),
+        "bootstrap budget probe failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
