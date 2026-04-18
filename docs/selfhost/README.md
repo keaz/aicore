@@ -119,7 +119,7 @@ make selfhost-bootstrap-report
 
 This bounded report command builds `stage0` with the Rust reference compiler, attempts to build `stage1` with `stage0`, attempts to build `stage2` with `stage1` when `stage1` exists, runs the expanded Rust-vs-self-host parity manifest with the latest available stage compiler, runs the stage compiler matrix, and writes `target/selfhost-bootstrap/report.json`. By default stage0 uses `cargo run --quiet --bin aic --`; set `AIC_SELFHOST_STAGE0` or `AIC` to point at an already-built reference compiler when the host environment runs the bootstrap gate from a prebuilt toolchain.
 
-On macOS the report starts with a `host-preflight` step that records Developer Mode state. The self-host materializer ad-hoc signs Mach-O outputs after `clang` links them, so disabled Developer Mode is not an automatic bootstrap failure for AICore-built artifacts. If an externally produced unsigned artifact hangs in `_dyld_start`, enable Terminal as a developer tool with `spctl developer-mode enable-terminal`, approve it in System Settings > Privacy & Security > Developer Tools, restart the terminal/Codex session, and rerun the bootstrap gate.
+The report starts with a `host-preflight` step on every host. It records the required toolchain surface before any stage compiler is built: `cargo`, `clang`, `strip`, and, on macOS, `codesign`. On macOS the same step also records Developer Mode state. The self-host materializer ad-hoc signs Mach-O outputs after `clang` links them, so disabled Developer Mode is not an automatic bootstrap failure for AICore-built artifacts. If an externally produced unsigned artifact hangs in `_dyld_start`, enable Terminal as a developer tool with `spctl developer-mode enable-terminal`, approve it in System Settings > Privacy & Security > Developer Tools, restart the terminal/Codex session, and rerun the bootstrap gate.
 
 The report distinguishes compiler modes:
 
@@ -145,6 +145,42 @@ make selfhost-bootstrap
 That command exits nonzero until the supported criteria are met. It must not be bypassed by copying stage artifacts, reusing the Rust compiler for later stages, or treating missing stage1/stage2 artifacts as success.
 
 The current Linux/macOS bootstrap status is supported-ready when the gate is run with a working reference compiler, `clang`, `strip`, and macOS `codesign` where applicable. `aic build compiler/aic/tools/aic_selfhost` produces a real stage0 compiler, stage0 emits a runnable stage1 compiler, stage1 emits a runnable stage2 compiler, the latest stage compiler passes the expanded Rust-vs-self-host parity manifest, the latest stage compiler passes the package/workspace/core-example matrix, stage1/stage2 runtime artifacts match exactly or after stripping non-loadable symbol/debug tables, and the resource-budget report passes. The backend-covered executable surface includes primitive functions, backend-covered aggregate signatures, return-position struct literals, lossless fixed-width integer widening at return boundaries, runtime-backed string replacement and `string.join`, escaped string-literal emission, vector construction/push/length/get support for backend-covered values, direct parser-shaped `Some`/`None` match returns over `vec.get`, runtime-backed filesystem result construction for direct `read_text`/`temp_file`/`write_text`/`delete` returns, runtime-backed process execution and argument lookup for the self-host driver, return-position primitive/string conditionals, match/loop lowering for the compiler package graph, field/local value lowering, and stdout/stderr string printing.
+
+## CI and Release Gates
+
+GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.yml` as `Self-Host Bootstrap (${{ matrix.os }})` on `ubuntu-latest` and `macos-latest`. The job installs `clang` on Linux, runs the host tool preflight, then runs the same supported-mode command used locally:
+
+```bash
+make selfhost-bootstrap
+```
+
+The CI job uses the release budget environment shown below so workflow timeouts and the bootstrap report agree:
+
+```bash
+AIC_SELFHOST_BOOTSTRAP_TIMEOUT=1200 \
+AIC_SELFHOST_MAX_STEP_MS=1200000 \
+AIC_SELFHOST_MAX_TOTAL_MS=5400000 \
+AIC_SELFHOST_MAX_ARTIFACT_BYTES=536870912 \
+AIC_SELFHOST_MAX_PEAK_RSS_BYTES=17179869184 \
+make selfhost-bootstrap
+```
+
+The release workflow has a separate `Release Self-Host Bootstrap (${{ matrix.os }})` matrix for `ubuntu-latest` and `macos-latest`; release builds depend on that matrix succeeding. Local release validation uses the same host command contract through:
+
+```bash
+make release-preflight
+```
+
+`make release-preflight` runs the full local CI gate plus the supported self-host bootstrap gate for the current host before reproducibility and security checks.
+
+Both CI and release workflows upload self-host artifacts even when the gate fails. Inspect these artifact names first:
+
+- `selfhost-bootstrap-ubuntu-latest`
+- `selfhost-bootstrap-macos-latest`
+- `release-selfhost-bootstrap-ubuntu-latest`
+- `release-selfhost-bootstrap-macos-latest`
+
+Each artifact contains `target/selfhost-bootstrap/report.json`, `target/selfhost-bootstrap/parity-report.json`, `target/selfhost-bootstrap/stage-matrix-report.json`, stage compiler outputs, parity artifacts, and stage-matrix artifacts when those files were produced. The report `host`, `steps`, `reproducibility`, and `performance` fields are the primary evidence for platform details, stage exit codes, strip normalization, resource budgets, and readiness status.
 
 For troubleshooting:
 

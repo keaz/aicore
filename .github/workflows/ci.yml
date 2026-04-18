@@ -211,6 +211,71 @@ jobs:
             target/e8/rest-runtime-soak-report-*.json
           if-no-files-found: ignore
 
+  selfhost-bootstrap:
+    name: Self-Host Bootstrap (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: quality
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      AIC_SELFHOST_BOOTSTRAP_TIMEOUT: "1200"
+      AIC_SELFHOST_MAX_STEP_MS: "1200000"
+      AIC_SELFHOST_MAX_TOTAL_MS: "5400000"
+      AIC_SELFHOST_MAX_ARTIFACT_BYTES: "536870912"
+      AIC_SELFHOST_MAX_PEAK_RSS_BYTES: "17179869184"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install clang (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Host tool preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v cargo
+          cargo --version
+          command -v clang
+          clang --version
+          command -v strip
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            command -v codesign
+            codesign -h >/dev/null 2>&1 || true
+            echo "codesign: available"
+          fi
+
+      - name: Supported self-host bootstrap gate
+        run: make selfhost-bootstrap
+
+      - name: Upload self-host bootstrap reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selfhost-bootstrap-${{ matrix.os }}
+          path: |
+            target/selfhost-bootstrap/report.json
+            target/selfhost-bootstrap/parity-report.json
+            target/selfhost-bootstrap/stage-matrix-report.json
+            target/selfhost-bootstrap/parity-artifacts/**
+            target/selfhost-bootstrap/stage-matrix-artifacts/**
+            target/selfhost-bootstrap/stage0/aic_selfhost
+            target/selfhost-bootstrap/stage1/aic_selfhost
+            target/selfhost-bootstrap/stage2/aic_selfhost
+          if-no-files-found: ignore
+
   execution-windows-smoke:
     name: Windows Runtime Smoke
     runs-on: windows-latest
@@ -374,6 +439,7 @@ jobs:
       - quality
       - tests-linux-full
       - execution-matrix
+      - selfhost-bootstrap
       - cross-platform-build
       - vscode-extension
     steps:
@@ -383,11 +449,13 @@ jobs:
           echo "quality=${{ needs.quality.result }}"
           echo "tests-linux-full=${{ needs.tests-linux-full.result }}"
           echo "execution-matrix=${{ needs.execution-matrix.result }}"
+          echo "selfhost-bootstrap=${{ needs.selfhost-bootstrap.result }}"
           echo "cross-platform-build=${{ needs.cross-platform-build.result }}"
           echo "vscode-extension=${{ needs.vscode-extension.result }}"
 
           [[ "${{ needs.quality.result }}" == "success" ]]
           [[ "${{ needs.tests-linux-full.result }}" == "success" ]]
           [[ "${{ needs.execution-matrix.result }}" == "success" ]]
+          [[ "${{ needs.selfhost-bootstrap.result }}" == "success" ]]
           [[ "${{ needs.cross-platform-build.result }}" == "success" ]]
           [[ "${{ needs.vscode-extension.result }}" == "success" ]]

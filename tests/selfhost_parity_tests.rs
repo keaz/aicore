@@ -754,6 +754,12 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("SELFHOST_STAGE_MATRIX_REPORT"));
     assert!(bootstrap.contains("allow-incomplete"));
     assert!(bootstrap.contains("host-preflight"));
+    assert!(bootstrap.contains("host_report"));
+    assert!(bootstrap.contains("host_preflight_command"));
+    assert!(bootstrap.contains("command -v cargo"));
+    assert!(bootstrap.contains("command -v clang"));
+    assert!(bootstrap.contains("command -v strip"));
+    assert!(bootstrap.contains("command -v codesign"));
     assert!(bootstrap.contains("Developer Mode is disabled"));
     assert!(bootstrap.contains("ad-hoc signs"));
     assert!(bootstrap.contains("\"--strip-all\""));
@@ -787,6 +793,10 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("supported"));
     assert!(selfhost_docs.contains("default"));
     assert!(selfhost_docs.contains("host-preflight"));
+    assert!(selfhost_docs.contains("CI and Release Gates"));
+    assert!(selfhost_docs.contains("Self-Host Bootstrap (${{ matrix.os }})"));
+    assert!(selfhost_docs.contains("Release Self-Host Bootstrap (${{ matrix.os }})"));
+    assert!(selfhost_docs.contains("AIC_SELFHOST_BOOTSTRAP_TIMEOUT=1200"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
@@ -910,6 +920,125 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(ast.contains("pub patterns: Vec[AstPatternNode]"));
     assert!(ast.contains("pub match_arms: Vec[AstMatchArmNode]"));
     assert!(ast.contains("value.patterns, value.match_arms"));
+}
+
+#[test]
+fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
+    let root = repo_root();
+
+    let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
+    for token in [
+        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900",
+        "selfhost-bootstrap:",
+        "scripts/selfhost/bootstrap.py --mode supported --timeout \"$(AIC_SELFHOST_BOOTSTRAP_TIMEOUT)\"",
+        "release-preflight: ci selfhost-bootstrap repro-check security-audit",
+    ] {
+        assert!(makefile.contains(token), "Makefile missing token: {token}");
+    }
+
+    let ci = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read ci workflow");
+    for token in [
+        "selfhost-bootstrap:",
+        "Self-Host Bootstrap (${{ matrix.os }})",
+        "os: [ubuntu-latest, macos-latest]",
+        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"1200\"",
+        "AIC_SELFHOST_MAX_STEP_MS: \"1200000\"",
+        "AIC_SELFHOST_MAX_TOTAL_MS: \"5400000\"",
+        "AIC_SELFHOST_MAX_ARTIFACT_BYTES: \"536870912\"",
+        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES: \"17179869184\"",
+        "Host tool preflight",
+        "command -v cargo",
+        "command -v clang",
+        "command -v strip",
+        "command -v codesign",
+        "codesign: available",
+        "Supported self-host bootstrap gate",
+        "make selfhost-bootstrap",
+        "Upload self-host bootstrap reports",
+        "actions/upload-artifact@v4",
+        "if: always()",
+        "selfhost-bootstrap-${{ matrix.os }}",
+        "target/selfhost-bootstrap/report.json",
+        "target/selfhost-bootstrap/parity-report.json",
+        "target/selfhost-bootstrap/stage-matrix-report.json",
+    ] {
+        assert!(ci.contains(token), "ci workflow missing token: {token}");
+    }
+
+    let release = fs::read_to_string(root.join(".github/workflows/release.yml"))
+        .expect("read release workflow");
+    for token in [
+        "release-selfhost-bootstrap:",
+        "Release Self-Host Bootstrap (${{ matrix.os }})",
+        "os: [ubuntu-latest, macos-latest]",
+        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"1200\"",
+        "AIC_SELFHOST_MAX_STEP_MS: \"1200000\"",
+        "AIC_SELFHOST_MAX_TOTAL_MS: \"5400000\"",
+        "AIC_SELFHOST_MAX_ARTIFACT_BYTES: \"536870912\"",
+        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES: \"17179869184\"",
+        "Host tool preflight",
+        "command -v cargo",
+        "command -v clang",
+        "command -v strip",
+        "command -v codesign",
+        "codesign: available",
+        "make selfhost-bootstrap",
+        "release-selfhost-bootstrap-${{ matrix.os }}",
+        "target/selfhost-bootstrap/report.json",
+        "target/selfhost-bootstrap/parity-report.json",
+        "target/selfhost-bootstrap/stage-matrix-report.json",
+        "- release-selfhost-bootstrap",
+    ] {
+        assert!(
+            release.contains(token),
+            "release workflow missing token: {token}"
+        );
+    }
+}
+
+#[test]
+fn selfhost_bootstrap_host_preflight_command_lists_required_tools() {
+    let root = repo_root();
+    let script = root.join("scripts/selfhost/bootstrap.py");
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            r#"
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("bootstrap", {script:?})
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+command = module.host_preflight_command()
+assert command[0:2] == ["sh", "-c"]
+body = command[2]
+for token in [
+    "command -v cargo",
+    "cargo --version",
+    "command -v clang",
+    "clang --version",
+    "command -v strip",
+    "command -v codesign",
+    "codesign: available",
+    "DevToolsSecurity -status",
+]:
+    assert token in body, token
+host = module.host_report()
+assert host["platform"]
+assert host["system"]
+assert host["python_version"]
+"#,
+            script = script.to_string_lossy()
+        ))
+        .output()
+        .expect("run bootstrap host preflight probe");
+    assert!(
+        output.status.success(),
+        "bootstrap host preflight probe failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

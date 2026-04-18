@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import shlex
 import subprocess
@@ -194,10 +195,41 @@ def run_step(
     )
 
 
-def macos_host_preflight(cwd: Path) -> StepResult | None:
-    if sys.platform != "darwin":
-        return None
-    command = ["DevToolsSecurity", "-status"]
+def host_report() -> dict[str, object]:
+    return {
+        "platform": sys.platform,
+        "system": platform.system(),
+        "machine": platform.machine(),
+        "python_version": platform.python_version(),
+    }
+
+
+def host_preflight_command() -> list[str]:
+    script = "\n".join(
+        [
+            "set -eu",
+            "command -v cargo",
+            "cargo --version",
+            "command -v clang",
+            "clang --version",
+            "command -v strip",
+            'if [ "$(uname -s)" = "Darwin" ]; then',
+            "  command -v codesign",
+            "  codesign -h >/dev/null 2>&1 || true",
+            '  echo "codesign: available"',
+            "  if command -v DevToolsSecurity >/dev/null 2>&1; then",
+            "    DevToolsSecurity -status || true",
+            "  else",
+            '    echo "DevToolsSecurity was not found; skipping macOS developer-mode preflight" >&2',
+            "  fi",
+            "fi",
+        ]
+    )
+    return ["sh", "-c", script]
+
+
+def host_preflight(cwd: Path) -> StepResult:
+    command = host_preflight_command()
     started = time.monotonic()
     try:
         completed = subprocess.run(
@@ -206,7 +238,7 @@ def macos_host_preflight(cwd: Path) -> StepResult | None:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=5,
+            timeout=15,
             check=False,
         )
         stdout = completed.stdout
@@ -214,8 +246,8 @@ def macos_host_preflight(cwd: Path) -> StepResult | None:
         exit_code = completed.returncode
     except FileNotFoundError:
         stdout = ""
-        stderr = "DevToolsSecurity was not found; skipping macOS developer-mode preflight"
-        exit_code = 0
+        stderr = "host preflight shell was not found"
+        exit_code = 127
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout if isinstance(exc.stdout, str) else ""
         stderr = exc.stderr if isinstance(exc.stderr, str) else ""
@@ -411,11 +443,10 @@ def run_bootstrap(args: argparse.Namespace) -> int:
         parent.mkdir(parents=True, exist_ok=True)
 
     steps: list[StepResult] = []
-    preflight = macos_host_preflight(root)
-    if preflight is not None:
-        steps.append(preflight)
+    preflight = host_preflight(root)
+    steps.append(preflight)
 
-    host_ready = preflight is None or preflight.exit_code == 0
+    host_ready = preflight.exit_code == 0
     if host_ready:
         steps.append(
             run_step(
@@ -485,6 +516,7 @@ def run_bootstrap(args: argparse.Namespace) -> int:
         "status": status,
         "ready": not reasons,
         "reasons": reasons,
+        "host": host_report(),
         "stage0": str(stage0),
         "stage1": str(stage1),
         "stage2": str(stage2),

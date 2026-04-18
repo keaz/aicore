@@ -270,6 +270,8 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
         "Verify archive checksum (Unix)",
         "Verify archive checksum (Windows)",
         "Verify provenance signature",
+        "Release Self-Host Bootstrap",
+        "make selfhost-bootstrap",
         "release lts --check",
         "release-metadata.md",
     ] {
@@ -313,6 +315,9 @@ fn ops_workflows_enforce_release_preflight_and_security_gates() {
     for token in [
         "release-preflight",
         "make ci",
+        "release-selfhost-bootstrap",
+        "make selfhost-bootstrap",
+        "target/selfhost-bootstrap/report.json",
         "release policy --check",
         "release lts --check",
         "release security-audit --json",

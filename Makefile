@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 
 CARGO ?= cargo
 AIC ?= cargo run --quiet --bin aic --
+AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
@@ -44,7 +45,7 @@ help:
 	@echo "  make docs-check    Validate docs and schema artifacts"
 	@echo "  make repro-check   Verify deterministic reproducibility manifest pipeline"
 	@echo "  make security-audit Run release security audit checks"
-	@echo "  make release-preflight Run all release readiness checks"
+	@echo "  make release-preflight Run all release readiness checks, including self-host bootstrap"
 
 init: hooks-install
 	@echo "hooks installed"
@@ -133,10 +134,10 @@ selfhost-stage-matrix:
 	python3 scripts/selfhost/stage_matrix.py "$${args[@]}"
 
 selfhost-bootstrap:
-	python3 scripts/selfhost/bootstrap.py --mode supported
+	python3 scripts/selfhost/bootstrap.py --mode supported --timeout "$(AIC_SELFHOST_BOOTSTRAP_TIMEOUT)"
 
 selfhost-bootstrap-report:
-	python3 scripts/selfhost/bootstrap.py --mode experimental --allow-incomplete
+	python3 scripts/selfhost/bootstrap.py --mode experimental --allow-incomplete --timeout "$(AIC_SELFHOST_BOOTSTRAP_TIMEOUT)"
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
@@ -172,7 +173,7 @@ repro-check:
 security-audit:
 	./scripts/ci/security-audit.sh
 
-release-preflight: ci repro-check security-audit
+release-preflight: ci selfhost-bootstrap repro-check security-audit
 
 docs-check:
 	@test -f docs/spec.md

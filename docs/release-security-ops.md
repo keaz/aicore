@@ -197,16 +197,18 @@ Use these targets before publishing:
 make security-audit
 make repro-check
 make test-e9
+make selfhost-bootstrap
 make release-preflight
 aic release lts --check
 ```
 
-`make ci` also runs E9 checks.
+`make ci` also runs E9 checks. `make release-preflight` is the local release-readiness target and includes the supported self-host bootstrap gate for the current host.
 
 ## GitHub Actions
 
 - `.github/workflows/ci.yml` runs `make test-e9`, `make security-audit`, and `make repro-check`.
-- `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata, with `release policy` and `release lts` gates.
+- `.github/workflows/ci.yml` also runs `Self-Host Bootstrap (${{ matrix.os }})` on Linux and macOS and uploads `target/selfhost-bootstrap/report.json`, parity, and stage-matrix artifacts.
+- `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata, with `release policy`, `release lts`, and `Release Self-Host Bootstrap (${{ matrix.os }})` Linux/macOS gates.
 - `.github/workflows/security.yml` runs scheduled and on-demand security audit checks, and the LTS policy gate.
 - `docs/release/matrix.md` documents the cross-platform release matrix and verification workflow.
 - `docs/release/lts-policy.md` and `docs/release/compatibility-matrix.json` define branch support windows and SLA compatibility expectations.
