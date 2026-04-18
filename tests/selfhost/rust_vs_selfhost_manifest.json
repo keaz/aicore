@@ -21,6 +21,18 @@
         "ir-json": "selfhost-ir-json"
       },
       "expected": "pass",
+      "name": "core_borrow_call_move_reinit",
+      "path": "examples/core/borrow_call_move_reinit.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
       "name": "core_borrow_checker_completeness",
       "path": "examples/core/borrow_checker_completeness.aic"
     },
@@ -33,8 +45,92 @@
         "ir-json": "selfhost-ir-json"
       },
       "expected": "pass",
-      "name": "core_traits_and_dispatch",
-      "path": "examples/core/traits_and_dispatch_tour.aic"
+      "name": "core_borrow_move_join_reinit",
+      "path": "examples/core/borrow_move_join_reinit.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_cross_compile_targets",
+      "path": "examples/core/cross_compile_targets.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_intrinsic_declaration_demo",
+      "path": "examples/core/intrinsic_declaration_demo.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_loop_control",
+      "path": "examples/core/loop_control.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_mut_vec",
+      "path": "examples/core/mut_vec.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_opt_levels_demo",
+      "path": "examples/core/opt_levels_demo.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_tail_call_optimization",
+      "path": "examples/core/tail_call_optimization.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_trait_methods",
+      "path": "examples/core/trait_methods.aic"
     },
     {
       "actions": [
@@ -57,8 +153,83 @@
         "ir-json": "selfhost-ir-json"
       },
       "expected": "pass",
-      "name": "core_cross_compile_targets",
-      "path": "examples/core/cross_compile_targets.aic"
+      "name": "core_traits_and_dispatch",
+      "path": "examples/core/traits_and_dispatch_tour.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json",
+        "build",
+        "run"
+      ],
+      "comparisons": {
+        "build": "artifact-exists",
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "selfhost_backend_loop_break_tail",
+      "path": "tests/selfhost/cases/backend_loop_break_tail.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "e8_syntax_module_import_match",
+      "path": "examples/e8/conformance_pack/syntax/module_import_match.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "e8_typing_generics_inference",
+      "path": "examples/e8/conformance_pack/typing/generics_inference.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_closure_signature",
+      "path": "tests/selfhost/cases/closure_signature.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_option_result_flow",
+      "path": "tests/selfhost/cases/option_result_flow.aic"
+    },
+    {
+      "actions": [
+        "check",
+        "ir-json"
+      ],
+      "comparisons": {
+        "ir-json": "selfhost-ir-json"
+      },
+      "expected": "pass",
+      "name": "core_tuple_field_access",
+      "path": "tests/selfhost/cases/tuple_field_access.aic"
     },
     {
       "actions": [
@@ -129,6 +300,72 @@
         "check": "diagnostic-code"
       },
       "expected": "fail",
+      "name": "generic_arity_invalid",
+      "path": "tests/selfhost/cases/generic_arity_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "trait_bound_invalid",
+      "path": "tests/selfhost/cases/trait_bound_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "variant_payload_invalid",
+      "path": "tests/selfhost/cases/variant_payload_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "named_arg_invalid",
+      "path": "tests/selfhost/cases/named_arg_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "match_guard_invalid",
+      "path": "tests/selfhost/cases/match_guard_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "nonexhaustive_bool_invalid",
+      "path": "tests/selfhost/cases/nonexhaustive_bool_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
       "name": "effect_missing_declaration",
       "path": "tests/selfhost/cases/effect_invalid.aic"
     },
@@ -162,6 +399,17 @@
         "check": "diagnostic-code"
       },
       "expected": "fail",
+      "name": "effectful_contract_invalid",
+      "path": "tests/selfhost/cases/effectful_contract_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
       "name": "borrow_use_after_move",
       "path": "tests/selfhost/cases/borrow_invalid.aic"
     },
@@ -175,6 +423,28 @@
       "expected": "fail",
       "name": "resource_use_after_close",
       "path": "tests/selfhost/cases/resource_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "loop_break_mismatch_invalid",
+      "path": "tests/selfhost/cases/loop_break_mismatch_invalid.aic"
+    },
+    {
+      "actions": [
+        "check"
+      ],
+      "comparisons": {
+        "check": "diagnostic-code"
+      },
+      "expected": "fail",
+      "name": "continue_outside_loop_invalid",
+      "path": "tests/selfhost/cases/continue_outside_loop_invalid.aic"
     }
   ],
   "name": "rust-vs-aic-selfhost-core",

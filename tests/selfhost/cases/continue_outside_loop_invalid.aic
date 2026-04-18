@@ -1,0 +1,6 @@
+module tests.selfhost.continue_outside_loop_invalid;
+
+fn main() -> Int {
+    continue;
+    0
+}

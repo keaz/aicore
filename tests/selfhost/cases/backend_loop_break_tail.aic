@@ -1,0 +1,17 @@
+module tests.selfhost.backend_loop_break_tail;
+
+fn pick(flag: Bool) -> Int {
+    loop {
+        if flag {
+            break 7;
+            ()
+        } else {
+            break 5;
+            ()
+        }
+    }
+}
+
+fn main() -> Int {
+    pick(true) - 7
+}

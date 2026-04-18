@@ -1,0 +1,10 @@
+module tests.selfhost.variant_payload_invalid;
+
+enum Response {
+    Success(Int),
+}
+
+fn main() -> Int {
+    let r = Success(true);
+    0
+}

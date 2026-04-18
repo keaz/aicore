@@ -1,0 +1,9 @@
+module tests.selfhost.effectful_contract_invalid;
+
+fn leaf() -> Bool effects { io } capabilities { io } {
+    true
+}
+
+fn main() -> Int effects { io } capabilities { io } requires leaf() {
+    0
+}

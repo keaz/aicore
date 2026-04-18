@@ -802,6 +802,77 @@ fn generic_arg_texts(text: String) -> Vec[String] {
     out
 }
 
+fn tuple_arg_texts(text: String) -> Vec[String] {
+    let mut out: Vec[String] = vec.new_vec();
+    if !string.starts_with(text, "(") || !string.ends_with(text, ")") || string.len(text) < 2 {
+        out
+    } else {
+        let mut depth = 0;
+        let mut arg_start = 1;
+        let mut index = 1;
+        let end = string.len(text) - 1;
+        while index < end {
+            let ch = match string.char_at(text, index) {
+                Some(value) => value,
+                None => "",
+            };
+            if ch == "[" || ch == "(" {
+                depth = depth + 1;
+            } else if ch == "]" || ch == ")" {
+                depth = depth - 1;
+            } else if ch == "," && depth == 0 {
+                out = push_generic_arg(out, string.substring(text, arg_start, index));
+                arg_start = index + 1;
+            } else {
+                ()
+            };
+            index = index + 1;
+        };
+        push_generic_arg(out, string.substring(text, arg_start, end))
+    }
+}
+
+fn tuple_type_text(parts: Vec[String]) -> String {
+    let mut out_parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < vec.vec_len(parts) {
+        match vec.get(parts, index) {
+            Some(part) => if true {
+                out_parts = vec.push(out_parts, part);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    join3("(", string.join(out_parts, ","), ")")
+}
+
+fn tuple_field_type(base_type: String, field_name: String) -> String {
+    let args = tuple_arg_texts(base_type);
+    let mut out = "<unknown>";
+    let mut index = 0;
+    while index < vec.vec_len(args) {
+        if field_name == string.int_to_string(index) {
+            match vec.get(args, index) {
+                Some(value) => if true {
+                    out = value;
+                    ()
+                } else {
+                    ()
+                },
+                None => (),
+            };
+        } else {
+            ()
+        };
+        index = index + 1;
+    };
+    out
+}
+
 fn type_from_text(text: String, span_value: SourceSpan) -> TypecheckType {
     if text == "()" {
         typecheck_type(TypecheckUnitType(), text, text, 0, span_value)
@@ -1919,7 +1990,7 @@ fn infer_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolve
         AstFieldAccessExpr => infer_field_access(expr, env, units, resolver, semantics, max_errors),
         AstBinaryExpr => infer_binary_expr(expr, env, units, resolver, semantics, max_errors),
         AstUnaryExpr => infer_unary_expr(expr, env, units, resolver, semantics, max_errors),
-        AstTupleExpr => expr_check(infer_all_children(expr, env, units, resolver, semantics, max_errors).env, "Tuple"),
+        AstTupleExpr => infer_tuple_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstBlockExpr => infer_block_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstIfExpr => infer_if_expr(expr, env, units, resolver, semantics, max_errors, expected),
         AstWhileExpr => infer_while_expr(expr, env, units, resolver, semantics, max_errors),
@@ -1956,6 +2027,32 @@ fn infer_all_children(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit],
         index = index + 1;
     };
     expr_check(out_env, "<unknown>")
+}
+
+fn infer_tuple_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
+    let expected_parts = tuple_arg_texts(expected);
+    let mut out_env = env;
+    let mut parts: Vec[String] = vec.new_vec();
+    let mut index = 0;
+    while index < expr.direct_child_count {
+        match direct_expr_at(expr, index) {
+            Some(child_expr) => if true {
+                let child_expected = match vec.get(expected_parts, index) {
+                    Some(value) => value,
+                    None => "<unknown>",
+                };
+                let checked = infer_expr(child_expr, out_env, units, resolver, semantics, max_errors, child_expected);
+                out_env = checked.env;
+                parts = vec.push(parts, checked.type_text);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        index = index + 1;
+    };
+    expr_check(out_env, tuple_type_text(parts))
 }
 
 fn infer_block_expr(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit], resolver: ResolverOutput, semantics: SemanticOutput, max_errors: Int, expected: String) -> ExprCheck {
@@ -2407,24 +2504,29 @@ fn infer_field_access(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit],
         Some(base_expr) => if true {
             let checked = infer_expr(base_expr, env, units, resolver, semantics, max_errors, "<unknown>");
             let base_type = checked.type_text;
-            match find_struct_decl(units, nominal_type_name(base_type)) {
-                Some(struct_item) => if true {
-                    let field_type = struct_field_type(struct_item, base_type, expr.name);
-                    if field_type == "<unknown>" {
-                        let mut parts: Vec[String] = vec.new_vec();
-                        parts = vec.push(parts, "unknown field '");
-                        parts = vec.push(parts, expr.name);
-                        parts = vec.push(parts, "' for type '");
-                        parts = vec.push(parts, base_type);
-                        parts = vec.push(parts, "'");
-                        expr_check(env_error(checked.env, max_errors, "E1228", expr.span, string.join(parts, ""), "use a field declared by the receiver type"), "<unknown>")
+            let tuple_type = tuple_field_type(base_type, expr.name);
+            if tuple_type != "<unknown>" {
+                expr_check(checked.env, tuple_type)
+            } else {
+                match find_struct_decl(units, nominal_type_name(base_type)) {
+                    Some(struct_item) => if true {
+                        let field_type = struct_field_type(struct_item, base_type, expr.name);
+                        if field_type == "<unknown>" {
+                            let mut parts: Vec[String] = vec.new_vec();
+                            parts = vec.push(parts, "unknown field '");
+                            parts = vec.push(parts, expr.name);
+                            parts = vec.push(parts, "' for type '");
+                            parts = vec.push(parts, base_type);
+                            parts = vec.push(parts, "'");
+                            expr_check(env_error(checked.env, max_errors, "E1228", expr.span, string.join(parts, ""), "use a field declared by the receiver type"), "<unknown>")
+                        } else {
+                            expr_check(checked.env, field_type)
+                        }
                     } else {
-                        expr_check(checked.env, field_type)
-                    }
-                } else {
-                    expr_check(checked.env, "<unknown>")
-                },
-                None => expr_check(checked.env, "<unknown>"),
+                        expr_check(checked.env, "<unknown>")
+                    },
+                    None => expr_check(checked.env, "<unknown>"),
+                }
             }
         } else {
             expr_check(env, "<unknown>")

@@ -1,0 +1,7 @@
+module tests.selfhost.nonexhaustive_bool_invalid;
+
+fn main() -> Int {
+    match true {
+        true => 1,
+    }
+}

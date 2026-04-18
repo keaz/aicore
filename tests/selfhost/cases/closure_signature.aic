@@ -1,0 +1,9 @@
+module tests.selfhost.closure_signature;
+
+fn apply(f: Fn() -> Int) -> Int {
+    1
+}
+
+fn main() -> Int {
+    apply(|| -> Int { 42 })
+}

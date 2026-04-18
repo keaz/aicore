@@ -1,0 +1,128 @@
+{
+  "areas": [
+    {
+      "cases": [
+        "parser_intrinsic_body_invalid",
+        "e8_syntax_module_import_match"
+      ],
+      "id": "parser_syntax",
+      "summary": "Modules, imports, declarations, intrinsic syntax, expressions, statements, and block parsing."
+    },
+    {
+      "cases": [
+        "resolver_unknown_symbol",
+        "core_cross_compile_targets",
+        "e8_syntax_module_import_match"
+      ],
+      "id": "resolver_visibility",
+      "summary": "Module/import resolution, value lookup, missing symbols, and deterministic symbol surfaces."
+    },
+    {
+      "cases": [
+        "generic_arity_invalid",
+        "trait_bound_invalid",
+        "core_trait_methods",
+        "core_trait_sort",
+        "core_traits_and_dispatch",
+        "e8_typing_generics_inference"
+      ],
+      "id": "semantics_generics_traits",
+      "summary": "Generic arity, trait bounds, impl discovery, trait dispatch, and generic instantiation metadata."
+    },
+    {
+      "cases": [
+        "type_arithmetic_mismatch",
+        "variant_payload_invalid",
+        "named_arg_invalid",
+        "match_guard_invalid",
+        "nonexhaustive_bool_invalid",
+        "loop_break_mismatch_invalid",
+        "continue_outside_loop_invalid",
+        "core_closure_signature",
+        "core_option_result_flow",
+        "core_tuple_field_access",
+        "core_loop_control",
+        "core_mut_vec",
+        "core_tail_call_optimization"
+      ],
+      "id": "typecheck_core",
+      "summary": "Primitive operators, calls, named arguments, variants, matches, loops, vectors, and return typing."
+    },
+    {
+      "cases": [
+        "effect_missing_declaration",
+        "capability_missing_authority",
+        "contract_static_failure",
+        "effectful_contract_invalid",
+        "core_async_ping"
+      ],
+      "id": "effects_capabilities_contracts",
+      "summary": "Declared effects, capability authority, static contract failure, effectful contract rejection, and async signatures."
+    },
+    {
+      "cases": [
+        "borrow_use_after_move",
+        "resource_use_after_close",
+        "core_borrow_call_move_reinit",
+        "core_borrow_checker_completeness",
+        "core_borrow_move_join_reinit"
+      ],
+      "id": "borrow_resource",
+      "summary": "Move/use tracking, branch reinitialization, borrow/resource diagnostics, and terminal resource protocol reuse."
+    },
+    {
+      "cases": [
+        "core_async_ping",
+        "core_borrow_call_move_reinit",
+        "core_borrow_checker_completeness",
+        "core_borrow_move_join_reinit",
+        "core_cross_compile_targets",
+        "core_intrinsic_declaration_demo",
+        "core_loop_control",
+        "core_mut_vec",
+        "core_opt_levels_demo",
+        "core_tail_call_optimization",
+        "core_trait_methods",
+        "core_trait_sort",
+        "core_traits_and_dispatch",
+        "e8_syntax_module_import_match",
+        "e8_typing_generics_inference",
+        "core_closure_signature",
+        "core_option_result_flow",
+        "core_tuple_field_access",
+        "selfhost_backend_loop_break_tail",
+        "selfhost_driver_basic"
+      ],
+      "id": "ir_lowering",
+      "summary": "Canonical self-host IR JSON for accepted core-language forms."
+    },
+    {
+      "cases": [
+        "selfhost_backend_loop_break_tail",
+        "selfhost_driver_basic",
+        "selfhost_driver_package"
+      ],
+      "id": "backend_build_run",
+      "summary": "Backend build/run materialization for representative executable self-host cases."
+    },
+    {
+      "cases": [
+        "selfhost_backend_loop_break_tail",
+        "selfhost_driver_basic",
+        "selfhost_driver_package",
+        "parser_intrinsic_body_invalid",
+        "resolver_unknown_symbol",
+        "type_arithmetic_mismatch",
+        "effect_missing_declaration",
+        "capability_missing_authority",
+        "contract_static_failure",
+        "borrow_use_after_move",
+        "resource_use_after_close"
+      ],
+      "id": "deterministic_output",
+      "summary": "Stable comparison modes for artifacts, self-host IR JSON, and primary diagnostic codes."
+    }
+  ],
+  "manifest": "tests/selfhost/rust_vs_selfhost_manifest.json",
+  "schema_version": 1
+}

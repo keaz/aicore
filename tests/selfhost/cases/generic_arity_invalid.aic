@@ -1,0 +1,10 @@
+module tests.selfhost.generic_arity_invalid;
+
+struct Box[T] {
+    value: T,
+}
+
+fn main() -> Int {
+    let b: Box = Box { value: 1 };
+    0
+}

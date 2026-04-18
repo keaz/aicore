@@ -1,0 +1,9 @@
+module tests.selfhost.named_arg_invalid;
+
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+fn main() -> Int {
+    add(z: 1, y: 2)
+}

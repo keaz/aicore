@@ -1,0 +1,24 @@
+module tests.selfhost.option_result_flow;
+
+import std.option;
+import std.result;
+
+fn option_score(value: Option[Int]) -> Int {
+    match value {
+        Some(v) => v,
+        None => 0,
+    }
+}
+
+fn result_score(value: Result[Int, Int]) -> Int {
+    match value {
+        Ok(v) => v,
+        Err(e) => e,
+    }
+}
+
+fn main() -> Int {
+    let option_value: Option[Int] = Some(20);
+    let result_value: Result[Int, Int] = Ok(22);
+    option_score(option_value) + result_score(result_value)
+}

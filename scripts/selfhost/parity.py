@@ -42,6 +42,7 @@ DIAGNOSTIC_CODE_RE = re.compile(r"\bE\d{4}\b")
 class CommandResult:
     role: str
     command: list[str]
+    timeout_seconds: float
     exit_code: int | None
     timed_out: bool
     duration_ms: int
@@ -95,11 +96,13 @@ class CaseResult:
             "reason": self.reason,
             "reference": {
                 "command": self.reference.command,
+                "timeout_seconds": self.reference.timeout_seconds,
                 "duration_ms": self.reference.duration_ms,
                 **self.reference.fingerprint(self.action),
             },
             "candidate": {
                 "command": self.candidate.command,
+                "timeout_seconds": self.candidate.timeout_seconds,
                 "duration_ms": self.candidate.duration_ms,
                 **self.candidate.fingerprint(self.action),
             },
@@ -209,7 +212,37 @@ def load_manifest(path: Path) -> dict[str, Any]:
                 raise SystemExit(
                     f"{path}: case {name} action {action} has unsupported comparison mode {mode!r}"
                 )
+        case_timeout = case.get("timeout")
+        if case_timeout is not None and not valid_timeout(case_timeout):
+            raise SystemExit(f"{path}: case {name} timeout must be a positive number")
+        action_timeouts = case.get("timeouts", {})
+        if not isinstance(action_timeouts, dict):
+            raise SystemExit(f"{path}: case {name} timeouts must be an object when present")
+        for action, timeout in action_timeouts.items():
+            if action not in actions:
+                raise SystemExit(f"{path}: case {name} timeout for non-case action {action!r}")
+            if not valid_timeout(timeout):
+                raise SystemExit(
+                    f"{path}: case {name} action {action} timeout must be a positive number"
+                )
     return manifest
+
+
+def valid_timeout(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if not isinstance(value, (int, float)):
+        return False
+    return value > 0
+
+
+def timeout_for_action(case: dict[str, Any], action: str, default_timeout: float) -> float:
+    action_timeouts = case.get("timeouts", {})
+    if action in action_timeouts:
+        return float(action_timeouts[action])
+    if "timeout" in case:
+        return float(case["timeout"])
+    return default_timeout
 
 
 def expand_action_args(
@@ -291,6 +324,7 @@ def run_command(
     return CommandResult(
         role=role,
         command=command,
+        timeout_seconds=timeout_seconds,
         exit_code=exit_code,
         timed_out=timed_out,
         duration_ms=duration_ms,
@@ -550,6 +584,7 @@ def run_manifest(args: argparse.Namespace, manifest: dict[str, Any]) -> list[Cas
         comparisons = case.get("comparisons", {})
         for action in case["actions"]:
             comparison_mode = comparisons.get(action, "fingerprint")
+            timeout_seconds = timeout_for_action(case, action, args.timeout)
             reference = run_command(
                 "reference",
                 args.reference,
@@ -558,7 +593,7 @@ def run_manifest(args: argparse.Namespace, manifest: dict[str, Any]) -> list[Cas
                 args.artifact_dir,
                 case["name"],
                 cwd,
-                args.timeout,
+                timeout_seconds,
             )
             candidate = run_command(
                 "candidate",
@@ -568,7 +603,7 @@ def run_manifest(args: argparse.Namespace, manifest: dict[str, Any]) -> list[Cas
                 args.artifact_dir,
                 case["name"],
                 cwd,
-                args.timeout,
+                timeout_seconds,
             )
             results.append(
                 compare_results(

@@ -1,0 +1,11 @@
+module tests.selfhost.loop_break_mismatch_invalid;
+
+fn main() -> Int {
+    loop {
+        if true {
+            break 1
+        } else {
+            break false
+        }
+    }
+}

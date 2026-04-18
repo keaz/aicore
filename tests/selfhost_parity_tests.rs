@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -135,8 +136,104 @@ fn selfhost_parity_manifest_lists_cases() {
     );
     let candidate_stdout = String::from_utf8_lossy(&candidate_output.stdout);
     assert!(candidate_stdout.contains("core_async_ping pass check,ir-json"));
+    assert!(candidate_stdout.contains("core_loop_control pass check,ir-json"));
+    assert!(candidate_stdout.contains("core_tuple_field_access pass check,ir-json"));
+    assert!(candidate_stdout.contains("core_option_result_flow pass check,ir-json"));
+    assert!(
+        candidate_stdout.contains("selfhost_backend_loop_break_tail pass check,ir-json,build,run")
+    );
     assert!(candidate_stdout.contains("type_arithmetic_mismatch fail check"));
+    assert!(candidate_stdout.contains("trait_bound_invalid fail check"));
     assert!(candidate_stdout.contains("resource_use_after_close fail check"));
+}
+
+#[test]
+fn selfhost_conformance_coverage_maps_manifest_cases() {
+    let root = repo_root();
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("tests/selfhost/rust_vs_selfhost_manifest.json"))
+            .expect("read rust-vs-selfhost manifest"),
+    )
+    .expect("manifest json");
+    let coverage: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("tests/selfhost/conformance_coverage.json"))
+            .expect("read conformance coverage"),
+    )
+    .expect("coverage json");
+
+    assert_eq!(coverage["schema_version"], 1);
+    assert_eq!(
+        coverage["manifest"],
+        "tests/selfhost/rust_vs_selfhost_manifest.json"
+    );
+
+    let cases = manifest["cases"].as_array().expect("manifest cases");
+    assert!(
+        cases.len() >= 30,
+        "expanded conformance manifest should contain at least 30 cases"
+    );
+    let mut manifest_names = BTreeSet::new();
+    let mut pass_count = 0;
+    let mut fail_count = 0;
+    for case in cases {
+        let name = case["name"].as_str().expect("case name").to_string();
+        assert!(manifest_names.insert(name), "duplicate manifest case name");
+        match case["expected"].as_str().expect("expected") {
+            "pass" => pass_count += 1,
+            "fail" => fail_count += 1,
+            other => panic!("unexpected expected value {other}"),
+        }
+    }
+    assert!(
+        pass_count >= 15,
+        "expected broad positive conformance coverage"
+    );
+    assert!(
+        fail_count >= 15,
+        "expected broad negative conformance coverage"
+    );
+
+    let required_areas: BTreeSet<&str> = [
+        "parser_syntax",
+        "resolver_visibility",
+        "semantics_generics_traits",
+        "typecheck_core",
+        "effects_capabilities_contracts",
+        "borrow_resource",
+        "ir_lowering",
+        "backend_build_run",
+        "deterministic_output",
+    ]
+    .into_iter()
+    .collect();
+    let mut seen_areas = BTreeSet::new();
+    let mut covered_cases = BTreeSet::new();
+    for area in coverage["areas"].as_array().expect("coverage areas") {
+        let id = area["id"].as_str().expect("area id");
+        assert!(seen_areas.insert(id.to_string()), "duplicate area id");
+        let area_cases = area["cases"].as_array().expect("area cases");
+        assert!(!area_cases.is_empty(), "coverage area {id} has no cases");
+        for value in area_cases {
+            let case_name = value.as_str().expect("coverage case").to_string();
+            assert!(
+                manifest_names.contains(&case_name),
+                "coverage references unknown case {case_name}"
+            );
+            covered_cases.insert(case_name);
+        }
+    }
+    for required in required_areas {
+        assert!(
+            seen_areas.contains(required),
+            "missing required conformance coverage area {required}"
+        );
+    }
+    for case_name in manifest_names {
+        assert!(
+            covered_cases.contains(&case_name),
+            "manifest case {case_name} is missing from coverage map"
+        );
+    }
 }
 
 #[test]
@@ -439,6 +536,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(typecheck.contains("pub fn typecheck_has_instantiation"));
     assert!(typecheck.contains("fn direct_expr_at"));
     assert!(typecheck.contains("fn generic_arg_texts"));
+    assert!(typecheck.contains("fn tuple_arg_texts"));
+    assert!(typecheck.contains("fn infer_tuple_expr"));
+    assert!(typecheck.contains("fn tuple_field_type"));
     assert!(typecheck.contains("fn find_consistent_type_alias"));
     assert!(typecheck.contains(
         "fn infer_int_literal(expr: AstExpr, env: TypecheckEnv, units: Vec[ResolveUnit]"
@@ -1336,4 +1436,118 @@ time.sleep(20)
         serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
     assert_eq!(report_json["ok"], false);
     assert_eq!(report_json["results"][0]["reason"], "timeout");
+}
+
+#[test]
+fn selfhost_parity_honors_action_specific_timeout() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    let manifest = tmp.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-action-timeout",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["check"],
+      "timeouts": {
+        "check": 1
+      }
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+    let compiler = tmp.path().join("sleep_then_ok.py");
+    fs::write(
+        &compiler,
+        r#"#!/usr/bin/env python3
+import time
+time.sleep(0.3)
+print("ok")
+"#,
+    )
+    .expect("write sleeping compiler");
+    let report = tmp.path().join("action-timeout-report.json");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--reference".into(),
+        format!("python3 {}", compiler.to_string_lossy()),
+        "--candidate".into(),
+        format!("python3 {}", compiler.to_string_lossy()),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+        "--timeout".into(),
+        "0.1".into(),
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_json: Value =
+        serde_json::from_str(&fs::read_to_string(report).expect("read report")).expect("json");
+    assert_eq!(report_json["ok"], true);
+    assert_eq!(
+        report_json["results"][0]["reference"]["timeout_seconds"].as_f64(),
+        Some(1.0)
+    );
+    assert_eq!(
+        report_json["results"][0]["candidate"]["timeout_seconds"].as_f64(),
+        Some(1.0)
+    );
+}
+
+#[test]
+fn selfhost_parity_rejects_invalid_manifest_timeout() {
+    let tmp = tempdir().expect("tempdir");
+    fs::write(tmp.path().join("pass.aic"), "fn main() -> Int { 0 }\n").expect("write pass");
+    let manifest = tmp.path().join("manifest.json");
+    fs::write(
+        &manifest,
+        r#"{
+  "schema_version": 1,
+  "name": "test-selfhost-invalid-timeout",
+  "cases": [
+    {
+      "name": "pass_case",
+      "path": "pass.aic",
+      "expected": "pass",
+      "actions": ["check"],
+      "timeouts": {
+        "run": 1
+      }
+    }
+  ]
+}
+"#,
+    )
+    .expect("write manifest");
+
+    let output = run_parity(&[
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--root".into(),
+        tmp.path().to_string_lossy().to_string(),
+        "--list".into(),
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("timeout for non-case action"));
 }

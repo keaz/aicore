@@ -1,0 +1,12 @@
+module tests.selfhost.trait_bound_invalid;
+
+trait Order[T];
+impl Order[Int];
+
+fn id[T: Order](value: T) -> T {
+    value
+}
+
+fn main() -> Int {
+    if id(true) { 1 } else { 0 }
+}

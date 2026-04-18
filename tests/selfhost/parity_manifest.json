@@ -105,7 +105,10 @@
       ],
       "expected": "pass",
       "name": "source_diagnostics_check",
-      "path": "compiler/aic/tools/source_diagnostics_check"
+      "path": "compiler/aic/tools/source_diagnostics_check",
+      "timeouts": {
+        "run": 90
+      }
     }
   ],
   "name": "selfhost-core-parity-smoke",
