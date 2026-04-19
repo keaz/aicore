@@ -256,6 +256,7 @@ docs-check:
 	@test -f docs/selfhost/stage-matrix.md
 	@test -f docs/selfhost/performance.md
 	@test -f docs/selfhost/release-provenance.md
+	@test -f docs/selfhost/supported-operation-runbook.md
 	@test -f docs/selfhost/bootstrap-budgets.v1.json
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/errors/secure-networking-error-contract.v1.json
@@ -272,6 +273,17 @@ docs-check:
 	@python3 -m json.tool docs/release/compatibility-matrix.json >/dev/null
 	@python3 -m json.tool docs/security-ops/tls-policy.v1.json >/dev/null
 	@python3 -m json.tool docs/errors/secure-networking-error-contract.v1.json >/dev/null
+	@grep -Fq "supported-operation-runbook.md" docs/index.md
+	@grep -Fq "supported-operation-runbook.md" docs/selfhost/README.md
+	@grep -Fq "## Operating Modes" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "## Host Setup" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "## Failure Triage" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "## Fallback And Rollback" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "## Issue Closure Policy" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "## Evidence Comment Template" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "AIC_MARKER_PATTERN" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "_dyld_start" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "core compiler" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md

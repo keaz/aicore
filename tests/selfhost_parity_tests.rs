@@ -633,6 +633,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "tests/selfhost/stage_matrix_manifest.json",
         "scripts/selfhost/stage_matrix.py",
         "docs/selfhost/stage-matrix.md",
+        "docs/selfhost/supported-operation-runbook.md",
         "tests/selfhost/cases/borrow_invalid.aic",
         "tests/selfhost/cases/resource_invalid.aic",
     ] {
@@ -1100,6 +1101,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("performance-trend.json"));
     assert!(selfhost_docs.contains("make selfhost-release-provenance"));
     assert!(selfhost_docs.contains("aicore-selfhost-release-provenance-v1"));
+    assert!(selfhost_docs.contains("docs/selfhost/supported-operation-runbook.md"));
     let performance_docs =
         fs::read_to_string(root.join("docs/selfhost/performance.md")).expect("read perf docs");
     assert!(performance_docs.contains("Release gates use the checked-in manifest defaults"));
@@ -1112,6 +1114,44 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         release_provenance_docs.contains("python3 scripts/selfhost/release_provenance.py verify")
     );
     assert!(release_provenance_docs.contains("aicore-selfhost-compiler-<platform>-<arch>"));
+    let operation_runbook =
+        fs::read_to_string(root.join("docs/selfhost/supported-operation-runbook.md"))
+            .expect("read self-host operation runbook");
+    for token in [
+        "## Operating Modes",
+        "experimental",
+        "supported",
+        "default",
+        "fallback",
+        "rollback",
+        "make selfhost-bootstrap",
+        "make selfhost-release-provenance",
+        "make release-preflight",
+        "make ci",
+        "AIC_MARKER_PATTERN",
+        "Linux prerequisites",
+        "macOS prerequisites",
+        "codesign --force --sign -",
+        "_dyld_start",
+        "strip --strip-all",
+        "strip -S -x",
+        "target/selfhost-bootstrap/report.json",
+        "target/selfhost-release/provenance.json",
+        "## Failure Triage",
+        "## Fallback And Rollback",
+        "## Issue Closure Policy",
+        "## Evidence Comment Template",
+        "fake success path",
+        "core compiler",
+        "Default compiler status changed",
+    ] {
+        assert!(
+            operation_runbook.contains(token),
+            "self-host operation runbook missing token: {token}"
+        );
+    }
+    let docs_index = fs::read_to_string(root.join("docs/index.md")).expect("read docs index");
+    assert!(docs_index.contains("selfhost/supported-operation-runbook.md"));
     assert!(selfhost_docs.contains("docs/selfhost/stage-matrix.md"));
     assert!(selfhost_docs.contains("experimental"));
     assert!(selfhost_docs.contains("supported"));

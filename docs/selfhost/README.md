@@ -12,6 +12,8 @@ The self-hosting path is compiler work only:
 - no new core-language semantics are introduced by the self-hosting work
 - runtime, protocol, service, and application helpers stay in separate libraries
 
+Supported operation, failure triage, rollback, and GitHub evidence rules are maintained in `docs/selfhost/supported-operation-runbook.md`. Use that runbook before declaring a self-hosting issue complete.
+
 Suggested package boundaries:
 
 - `compiler/aic/libs/source`
@@ -126,6 +128,8 @@ The report distinguishes compiler modes:
 - `experimental`: stage0, parity, and the stage compiler matrix can be exercised, but stage1/stage2 failures, reproducibility failures, stage matrix regressions, or resource-budget violations keep the self-host compiler unsupported.
 - `supported`: stage0, stage1, stage2, parity, the stage compiler matrix, stage1/stage2 reproducibility, and resource budgets must pass. Native artifacts may match exactly, or may match after platform strip normalization when the only recorded difference is non-loadable symbol/debug table data. Linux uses `strip --strip-all`; macOS uses `strip -S -x`.
 - `default`: the supported gate must pass, followed by explicit release approval.
+
+The supported gate does not by itself make the self-host compiler the default compiler path. Default-mode selection remains blocked until the explicit cutover issue is implemented and closed with evidence.
 
 The bootstrap report includes a `performance` object with total duration, per-step duration, maximum produced artifact size, reproducibility comparison duration, and the maximum child-process peak RSS observed by the gate. Production budgets come from the checked-in manifest at `docs/selfhost/bootstrap-budgets.v1.json`; the report records the manifest path, schema version, platform entry, baseline values, active budgets, and local overrides under `performance.budget_source`.
 
