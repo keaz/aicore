@@ -95,6 +95,12 @@ jobs:
       - name: Self-host compiler mode gate
         run: make selfhost-mode-check
 
+      - name: Self-host default mode gate
+        run: make selfhost-default-mode-check
+
+      - name: Self-host default compiler source build gate
+        run: make selfhost-default-build-check
+
       - name: Upload self-host bootstrap reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -6,7 +6,7 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -34,6 +34,8 @@ help:
 	@echo "  make selfhost-bootstrap-report Generate bounded bootstrap readiness report without claiming readiness"
 	@echo "  make selfhost-release-provenance Generate and verify release-grade self-host provenance"
 	@echo "  make selfhost-mode-check Verify supported self-host compiler mode evidence"
+	@echo "  make selfhost-default-mode-check Verify approved default self-host compiler mode evidence"
+	@echo "  make selfhost-default-build-check Verify default AICore compiler source build uses self-host"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -128,7 +130,7 @@ selfhost-parity:
 	python3 scripts/selfhost/parity.py "$${args[@]}"
 
 selfhost-parity-candidate:
-	$(AIC) build compiler/aic/tools/aic_selfhost -o target/aic_selfhost_candidate
+	$(AIC) build compiler/aic/tools/aic_selfhost -o target/aic_selfhost_candidate --compiler-mode reference
 	SELFHOST_PARITY_MANIFEST=tests/selfhost/rust_vs_selfhost_manifest.json SELFHOST_CANDIDATE=target/aic_selfhost_candidate SELFHOST_ARTIFACT_DIR=target/selfhost-parity-candidate SELFHOST_PARITY_REPORT=target/selfhost-parity-candidate/report.json $(MAKE) selfhost-parity
 
 selfhost-stage-matrix:
@@ -147,6 +149,13 @@ selfhost-release-provenance:
 
 selfhost-mode-check:
 	$(AIC) release selfhost-mode --mode supported --check
+
+selfhost-default-mode-check:
+	$(AIC) release selfhost-mode --mode default --check --approve-default
+
+selfhost-default-build-check:
+	@mkdir -p target/selfhost-default
+	$(AIC) build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
@@ -182,7 +191,7 @@ repro-check:
 security-audit:
 	./scripts/ci/security-audit.sh
 
-release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check repro-check security-audit
+release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check repro-check security-audit
 
 docs-check:
 	@test -f docs/spec.md
@@ -289,7 +298,10 @@ docs-check:
 	@grep -Fq "_dyld_start" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "core compiler" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "aic release selfhost-mode --mode supported --check" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "aic release selfhost-mode --mode default --check --approve-default" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "AIC_COMPILER_MODE=fallback" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "selfhost-default-build-check" Makefile
+	@grep -Fq "selfhost-default-mode-check" Makefile
 	@grep -Fq "selfhost-mode-check" Makefile
 	@grep -Fq "selfhost-mode" docs/cli-contract.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md

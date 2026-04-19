@@ -131,7 +131,7 @@ The report distinguishes compiler modes:
 
 The supported gate does not by itself make the self-host compiler the default compiler path. Default-mode selection remains blocked until the explicit cutover issue is implemented and closed with evidence.
 
-Compiler implementation selection is explicit. Use `aic release selfhost-mode --mode supported --check` to verify supported self-host evidence, `aic release selfhost-mode --mode default --check --approve-default` only after default approval, and `AIC_COMPILER_MODE=fallback aic build <input> -o <artifact>` to force the Rust reference fallback.
+Compiler implementation selection is explicit except for the controlled AICore compiler source cutover. Use `aic release selfhost-mode --mode supported --check` to verify supported self-host evidence, `aic release selfhost-mode --mode default --check --approve-default` after default approval, `aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost` to validate the unmodified default compiler source path, and `AIC_COMPILER_MODE=fallback aic build <input> -o <artifact>` to force the Rust reference fallback. Compiler-source builds with target, release, optimization, artifact, link, debug, offline, verify-hash, or manifest modifiers remain on the reference path unless a self-host compiler mode is explicit.
 
 The bootstrap report includes a `performance` object with total duration, per-step duration, maximum produced artifact size, reproducibility comparison duration, and the maximum child-process peak RSS observed by the gate. Production budgets come from the checked-in manifest at `docs/selfhost/bootstrap-budgets.v1.json`; the report records the manifest path, schema version, platform entry, baseline values, active budgets, and local overrides under `performance.budget_source`.
 
@@ -186,7 +186,7 @@ make release-preflight
 
 `make release-preflight` runs the full local CI gate plus the supported self-host bootstrap gate for the current host before reproducibility and security checks.
 It also runs `make selfhost-release-provenance` so local release dry runs produce the same self-host artifact metadata that CI uploads.
-Release preflight then runs `make selfhost-mode-check`, which reports supported self-host mode and blocks unsupported self-host readiness claims.
+Release preflight then runs `make selfhost-mode-check`, `make selfhost-default-mode-check`, and `make selfhost-default-build-check`, which report supported/default self-host mode, block unsupported self-host readiness claims, and validate that the controlled AICore compiler source build uses the self-host compiler by default.
 
 Both CI and release workflows upload self-host artifacts even when the gate fails. Inspect these artifact names first:
 

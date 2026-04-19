@@ -10,11 +10,11 @@ Runtime libraries, protocol adapters, editor extensions, service integrations, a
 |---|---|---|---|
 | `experimental` | Stage0 or later self-host compiler artifacts can be built for investigation, but readiness gaps are still allowed. | Local diagnosis, report generation, and issue investigation. | `make selfhost-bootstrap-report` |
 | `supported` | The self-host compiler is a supported compiler path on the current Linux or macOS host. | Maintainer validation, CI release evidence, and release artifact review. | `make selfhost-bootstrap` and `make selfhost-release-provenance` |
-| `default` | The self-host compiler is selected as the normal compiler path. | Only after the explicit default-mode cutover issue is complete. | Supported gate plus the cutover issue acceptance criteria |
+| `default` | The self-host compiler is selected as the normal compiler path for the controlled AICore compiler source build. | Building `compiler/aic/tools/aic_selfhost` after default-mode cutover evidence exists. | Supported gate plus the cutover issue acceptance criteria |
 | `fallback` | Maintainers intentionally use the Rust reference compiler because a self-host gate failed or a platform is outside the supported matrix. | Triage, release blocking, or keeping existing Rust-reference behavior available. | Failing self-host evidence is attached to the issue or release review |
 | `rollback` | A previous self-host promotion is backed out to the last known passing compiler path. | Production incident response or release candidate rejection. | Rollback evidence, failing report links, and a new follow-up issue |
 
-Do not describe self-hosting as the default compiler path until the default-mode cutover issue is implemented, verified, committed, pushed, and closed with evidence. A supported Linux/macOS gate means the self-host compiler can be validated and shipped as a supported artifact; it does not by itself change default compiler selection.
+Self-hosting is the controlled default for `aic build compiler/aic/tools/aic_selfhost -o <artifact>` after the default-mode cutover evidence is present. That implicit default is intentionally limited to the unmodified executable build shape; compiler-source builds with target, artifact, link, debug, release, optimization, offline, verify-hash, or manifest modifiers keep the documented reference behavior unless maintainers pass an explicit compiler mode. Other `.aic` inputs also keep the documented reference behavior unless maintainers pass an explicit compiler mode. A supported Linux/macOS gate means the self-host compiler can be validated and shipped as a supported artifact; the default build gate proves the cutover path separately.
 
 ## Clean Checkout Readiness Path
 
@@ -29,6 +29,8 @@ make examples-run
 make selfhost-parity-candidate
 make selfhost-bootstrap
 make selfhost-release-provenance
+make selfhost-default-mode-check
+make selfhost-default-build-check
 make release-preflight
 make ci
 ```
@@ -49,7 +51,7 @@ aic release selfhost-mode --mode supported --check
 aic release selfhost-mode --mode default --check --approve-default
 ```
 
-`reference` and `fallback` use the Rust reference compiler path and do not require self-host evidence. `supported` requires the supported bootstrap report, parity report, package/workspace matrix report, performance evidence, and release provenance to pass. `default` requires the same evidence plus explicit default approval; do not use `--approve-default` until all production-readiness issues and the parent readiness gate have evidence.
+`reference` and `fallback` use the Rust reference compiler path and do not require self-host evidence. `supported` requires the supported bootstrap report, parity report, package/workspace matrix report, performance evidence, and release provenance to pass. `default` requires the same evidence plus explicit default approval. The release and preflight gates use `--approve-default` only after the controlled default cutover is approved.
 
 Use the compiler-mode selector only when the build path needs an explicit implementation choice:
 
@@ -57,9 +59,10 @@ Use the compiler-mode selector only when the build path needs an explicit implem
 AIC_COMPILER_MODE=fallback aic build examples/e5/hello_int.aic -o target/fallback-hello
 AIC_SELFHOST_COMPILER=target/selfhost-release/aicore-selfhost-compiler-<platform>-<arch> \
   aic build examples/e5/hello_int.aic -o target/selfhost-hello --compiler-mode supported
+aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
 ```
 
-The `experimental` mode can route through a local self-host compiler for investigation without claiming supported or default readiness. Fallback validation must use `reference` or `fallback` mode, not an absent mode selector.
+The `experimental` mode can route through a local self-host compiler for investigation without claiming supported or default readiness. The absent mode selector intentionally defaults to self-host only for the unmodified `compiler/aic/tools/aic_selfhost` executable build after default evidence exists. Fallback validation must use `reference` or `fallback` mode.
 
 Use this scanner before closing a self-hosting issue. It intentionally builds the pattern from adjacent shell strings so the runbook does not match itself:
 
@@ -201,6 +204,13 @@ AIC_COMPILER_MODE=fallback aic build examples/e5/hello_int.aic -o target/selfhos
 aic release selfhost-mode --mode fallback --check --json
 ```
 
+Default compiler source validation command:
+
+```bash
+aic release selfhost-mode --mode default --check --approve-default
+aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
+```
+
 ## Issue Closure Policy
 
 Self-hosting issues remain open when any acceptance criterion is not fully implemented, when a placeholder path remains, when a scaffold-only implementation stands in for real behavior, when a fake success path is present, when a readiness case is skipped, or when production behavior is unsupported on the claimed platform.
@@ -244,7 +254,7 @@ Readiness decision:
 - Remaining work: `<none, or linked follow-up issues>`
 ```
 
-Only use `default` when the explicit default-mode cutover issue is complete. For all other self-hosting issues, set `Default compiler status changed` to `no`.
+Use `default` only for the controlled AICore compiler source cutover and include the default build command evidence. For unrelated self-hosting issues, set `Default compiler status changed` to `no`.
 
 Rust-reference retirement is not part of default-mode operation. Removal requires a separate issue with its own approval, tests, rollback plan, release notes, and verification evidence.
 

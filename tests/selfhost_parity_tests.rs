@@ -1027,6 +1027,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(makefile.contains("selfhost-bootstrap-report"));
     assert!(makefile.contains("selfhost-release-provenance"));
     assert!(makefile.contains("selfhost-mode-check"));
+    assert!(makefile.contains("selfhost-default-mode-check"));
+    assert!(makefile.contains("selfhost-default-build-check"));
 
     let bootstrap = fs::read_to_string(root.join("scripts/selfhost/bootstrap.py"))
         .expect("read bootstrap script");
@@ -1034,6 +1036,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("stage0"));
     assert!(bootstrap.contains("stage1"));
     assert!(bootstrap.contains("stage2"));
+    assert!(bootstrap.contains("--compiler-mode"));
+    assert!(bootstrap.contains("reference"));
     assert!(bootstrap.contains("stage-matrix"));
     assert!(bootstrap.contains("stage_matrix_report"));
     assert!(bootstrap.contains("SELFHOST_STAGE_MATRIX_REPORT"));
@@ -1102,7 +1106,11 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("performance-trend.json"));
     assert!(selfhost_docs.contains("make selfhost-release-provenance"));
     assert!(selfhost_docs.contains("make selfhost-mode-check"));
+    assert!(selfhost_docs.contains("make selfhost-default-mode-check"));
+    assert!(selfhost_docs.contains("make selfhost-default-build-check"));
     assert!(selfhost_docs.contains("aic release selfhost-mode --mode supported --check"));
+    assert!(selfhost_docs
+        .contains("aic release selfhost-mode --mode default --check --approve-default"));
     assert!(selfhost_docs.contains("AIC_COMPILER_MODE=fallback"));
     assert!(selfhost_docs.contains("aicore-selfhost-release-provenance-v1"));
     assert!(selfhost_docs.contains("docs/selfhost/supported-operation-runbook.md"));
@@ -1132,7 +1140,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "make selfhost-release-provenance",
         "make release-preflight",
         "aic release selfhost-mode --mode supported --check",
+        "aic release selfhost-mode --mode default --check --approve-default",
         "AIC_COMPILER_MODE=fallback",
+        "compiler/aic/tools/aic_selfhost",
         "--compiler-mode supported",
         "make ci",
         "AIC_MARKER_PATTERN",
@@ -1307,7 +1317,11 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "scripts/selfhost/release_provenance.py verify",
         "selfhost-mode-check:",
         "release selfhost-mode --mode supported --check",
-        "release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check repro-check security-audit",
+        "selfhost-default-mode-check:",
+        "release selfhost-mode --mode default --check --approve-default",
+        "selfhost-default-build-check:",
+        "build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost",
+        "release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check repro-check security-audit",
     ] {
         assert!(makefile.contains(token), "Makefile missing token: {token}");
     }
@@ -1331,6 +1345,10 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "make selfhost-release-provenance",
         "Self-host compiler mode gate",
         "make selfhost-mode-check",
+        "Self-host default mode gate",
+        "make selfhost-default-mode-check",
+        "Self-host default compiler source build gate",
+        "make selfhost-default-build-check",
         "Upload self-host bootstrap reports",
         "actions/upload-artifact@v4",
         "if: always()",
@@ -1375,6 +1393,10 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "make selfhost-release-provenance",
         "Self-host compiler mode gate",
         "make selfhost-mode-check",
+        "Self-host default mode gate",
+        "make selfhost-default-mode-check",
+        "Self-host default compiler source build gate",
+        "make selfhost-default-build-check",
         "release-selfhost-bootstrap-${{ matrix.os }}",
         "target/selfhost-bootstrap/report.json",
         "target/selfhost-bootstrap/performance-report.json",

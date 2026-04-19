@@ -31,6 +31,8 @@ aic release security-audit --json
 make selfhost-bootstrap
 make selfhost-release-provenance
 aic release selfhost-mode --mode supported --check
+aic release selfhost-mode --mode default --check --approve-default
+aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
 ```
 
 Reproducibility manifests include source inputs and intentionally exclude local/generated paths such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules`.
@@ -72,7 +74,9 @@ python3 scripts/selfhost/release_provenance.py verify --provenance target/selfho
   - compare `target/selfhost-release/selfhost-release-checksums.sha256` with the stage and report paths in `target/selfhost-release/provenance.json`
 - self-host mode failure:
   - run `aic release selfhost-mode --mode supported --check --json`
+  - run `aic release selfhost-mode --mode default --check --approve-default --json` after default cutover approval
   - verify `target/selfhost-bootstrap/report.json` is `supported-ready`
+  - validate the controlled default build with `aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost`
   - force fallback with `AIC_COMPILER_MODE=fallback aic build <input> -o <artifact>`
 - policy gate failure:
   - run `aic release policy --check --json` and `aic release lts --check --json`

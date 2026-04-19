@@ -2275,15 +2275,28 @@ fn run_cli() -> anyhow::Result<i32> {
             manifest,
             compiler_mode,
         } => {
-            let effective_compiler_mode = match resolve_build_compiler_mode(compiler_mode) {
-                Ok(mode) => mode,
-                Err(message) => {
-                    eprintln!("{message}");
-                    return Ok(EXIT_USAGE_ERROR);
-                }
-            };
+            let allow_controlled_default = build_request_supports_controlled_selfhost_default(
+                &input,
+                artifact,
+                target,
+                static_link,
+                debug_info,
+                release,
+                opt_level,
+                offline,
+                &verify_hash,
+                &manifest,
+            );
+            let effective_compiler_mode =
+                match resolve_build_compiler_mode(compiler_mode, allow_controlled_default) {
+                    Ok(mode) => mode,
+                    Err(message) => {
+                        eprintln!("{message}");
+                        return Ok(EXIT_USAGE_ERROR);
+                    }
+                };
             if build_mode_uses_selfhost(effective_compiler_mode) {
-                return Ok(run_selfhost_build(
+                return run_selfhost_build(
                     effective_compiler_mode,
                     input,
                     output,
@@ -2296,7 +2309,7 @@ fn run_cli() -> anyhow::Result<i32> {
                     offline,
                     verify_hash,
                     manifest,
-                )?);
+                );
             }
 
             let resolved_target = target.or_else(host_build_target);
@@ -5142,11 +5155,15 @@ fn fresh_work_dir(tag: &str) -> PathBuf {
 
 fn resolve_build_compiler_mode(
     explicit: Option<BuildCompilerModeArg>,
+    allow_controlled_default: bool,
 ) -> Result<BuildCompilerModeArg, String> {
     if let Some(mode) = explicit {
         return Ok(mode);
     }
     let Ok(raw) = std::env::var("AIC_COMPILER_MODE") else {
+        if allow_controlled_default {
+            return Ok(BuildCompilerModeArg::Default);
+        }
         return Ok(BuildCompilerModeArg::Reference);
     };
     match normalize_selfhost_mode(&raw).as_deref() {
@@ -5159,6 +5176,45 @@ fn resolve_build_compiler_mode(
             "unsupported AIC_COMPILER_MODE `{raw}`; expected reference, experimental, supported, default, or fallback"
         )),
     }
+}
+
+fn build_request_supports_controlled_selfhost_default(
+    input: &Path,
+    artifact: BuildArtifact,
+    target: Option<BuildTarget>,
+    static_link: bool,
+    debug_info: bool,
+    release: bool,
+    opt_level: Option<OptimizationLevel>,
+    offline: bool,
+    verify_hash: &Option<String>,
+    manifest: &Option<PathBuf>,
+) -> bool {
+    artifact == BuildArtifact::Exe
+        && target.is_none()
+        && !static_link
+        && !debug_info
+        && !release
+        && opt_level.is_none()
+        && !offline
+        && verify_hash.is_none()
+        && manifest.is_none()
+        && is_controlled_selfhost_default_input(input)
+}
+
+fn is_controlled_selfhost_default_input(input: &Path) -> bool {
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let compiler_source = cwd.join("compiler/aic/tools/aic_selfhost");
+    let input_abs = if input.is_absolute() {
+        input.to_path_buf()
+    } else {
+        cwd.join(input)
+    };
+    let input_path = input_abs.canonicalize().unwrap_or(input_abs);
+    let compiler_path = compiler_source.canonicalize().unwrap_or(compiler_source);
+    input_path == compiler_path || input_path.starts_with(&compiler_path)
 }
 
 fn resolve_release_selfhost_mode(explicit: Option<SelfHostModeArg>) -> String {
@@ -5225,14 +5281,15 @@ fn run_selfhost_build(
         } else {
             "supported"
         };
-        let approved = std::env::var("AIC_SELFHOST_DEFAULT_APPROVED")
-            .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
-            .unwrap_or(false);
+        let approved = mode == BuildCompilerModeArg::Default
+            || std::env::var("AIC_SELFHOST_DEFAULT_APPROVED")
+                .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+                .unwrap_or(false);
         let report = evaluate_selfhost_compiler_mode(
             Path::new("."),
             requested_mode,
-            Path::new("target/selfhost-bootstrap/report.json"),
-            Path::new("target/selfhost-release/provenance.json"),
+            &selfhost_bootstrap_report_path(),
+            &selfhost_provenance_path(),
             approved,
         );
         if !report.ok {
@@ -5240,6 +5297,9 @@ fn run_selfhost_build(
             for problem in &report.problems {
                 eprintln!("  - {problem}");
             }
+            eprintln!(
+                "run make selfhost-bootstrap && make selfhost-release-provenance, or force the Rust reference with AIC_COMPILER_MODE=fallback"
+            );
             return Ok(EXIT_DIAGNOSTIC_ERROR);
         }
     }
@@ -5269,6 +5329,18 @@ fn run_selfhost_build(
     } else {
         Ok(result.status.code().unwrap_or(EXIT_DIAGNOSTIC_ERROR))
     }
+}
+
+fn selfhost_bootstrap_report_path() -> PathBuf {
+    std::env::var("AIC_SELFHOST_BOOTSTRAP_REPORT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("target/selfhost-bootstrap/report.json"))
+}
+
+fn selfhost_provenance_path() -> PathBuf {
+    std::env::var("AIC_SELFHOST_PROVENANCE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("target/selfhost-release/provenance.json"))
 }
 
 fn resolve_selfhost_compiler_path() -> Option<PathBuf> {

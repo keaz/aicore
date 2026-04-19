@@ -211,11 +211,13 @@ make test-e9
 make selfhost-bootstrap
 make selfhost-release-provenance
 aic release selfhost-mode --mode supported --check
+aic release selfhost-mode --mode default --check --approve-default
+aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
 make release-preflight
 aic release lts --check
 ```
 
-`make ci` also runs E9 checks. `make release-preflight` is the local release-readiness target and includes the supported self-host bootstrap gate, self-host release provenance, and self-host compiler mode check for the current host.
+`make ci` also runs E9 checks. `make release-preflight` is the local release-readiness target and includes the supported self-host bootstrap gate, self-host release provenance, supported/default self-host compiler mode checks, and the controlled default AICore compiler source build for the current host.
 
 ## GitHub Actions
 

@@ -97,6 +97,40 @@ fn write_selfhost_mode_fixture(root: &std::path::Path) -> (PathBuf, PathBuf) {
     (bootstrap, provenance)
 }
 
+#[cfg(unix)]
+fn write_fake_selfhost_compiler(root: &std::path::Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let compiler = root.join("fake-aic-selfhost");
+    fs::write(
+        &compiler,
+        r#"#!/usr/bin/env sh
+set -eu
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+if [ -z "$out" ]; then
+  echo "missing -o" >&2
+  exit 64
+fi
+mkdir -p "$(dirname "$out")"
+printf 'fake self-host compiler artifact\n' > "$out"
+"#,
+    )
+    .expect("write fake compiler");
+    let mut permissions = fs::metadata(&compiler)
+        .expect("fake compiler metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&compiler, permissions).expect("chmod fake compiler");
+    compiler
+}
+
 #[test]
 fn release_manifest_generation_and_verification_are_deterministic() {
     let dir = tempdir().expect("tempdir");
@@ -263,6 +297,80 @@ fn build_compiler_mode_fallback_uses_rust_reference_path() {
         manifest.is_file(),
         "fallback build manifest was not written"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn build_compiler_source_defaults_to_selfhost_when_default_evidence_exists() {
+    let dir = tempdir().expect("tempdir");
+    let (bootstrap, provenance) = write_selfhost_mode_fixture(dir.path());
+    let fake_compiler = write_fake_selfhost_compiler(dir.path());
+    let output = dir.path().join("default-aic-selfhost");
+    let output_arg = output.to_string_lossy().to_string();
+    let bootstrap_arg = bootstrap.to_string_lossy().to_string();
+    let provenance_arg = provenance.to_string_lossy().to_string();
+    let fake_arg = fake_compiler.to_string_lossy().to_string();
+
+    let result = run_aic_with_envs(
+        &[
+            "build",
+            "compiler/aic/tools/aic_selfhost",
+            "-o",
+            &output_arg,
+        ],
+        &[
+            ("AIC_SELFHOST_COMPILER", &fake_arg),
+            ("AIC_SELFHOST_BOOTSTRAP_REPORT", &bootstrap_arg),
+            ("AIC_SELFHOST_PROVENANCE", &provenance_arg),
+        ],
+    );
+
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&output).expect("read default artifact"),
+        "fake self-host compiler artifact\n"
+    );
+    assert!(String::from_utf8_lossy(&result.stdout).contains("with self-host compiler"));
+}
+
+#[cfg(unix)]
+#[test]
+fn build_compiler_source_default_blocks_missing_evidence_without_fallback() {
+    let dir = tempdir().expect("tempdir");
+    let fake_compiler = write_fake_selfhost_compiler(dir.path());
+    let output = dir.path().join("default-aic-selfhost");
+    let output_arg = output.to_string_lossy().to_string();
+    let missing_bootstrap = dir.path().join("missing-bootstrap.json");
+    let missing_provenance = dir.path().join("missing-provenance.json");
+    let missing_bootstrap_arg = missing_bootstrap.to_string_lossy().to_string();
+    let missing_provenance_arg = missing_provenance.to_string_lossy().to_string();
+    let fake_arg = fake_compiler.to_string_lossy().to_string();
+
+    let result = run_aic_with_envs(
+        &[
+            "build",
+            "compiler/aic/tools/aic_selfhost",
+            "-o",
+            &output_arg,
+        ],
+        &[
+            ("AIC_SELFHOST_COMPILER", &fake_arg),
+            ("AIC_SELFHOST_BOOTSTRAP_REPORT", &missing_bootstrap_arg),
+            ("AIC_SELFHOST_PROVENANCE", &missing_provenance_arg),
+        ],
+    );
+
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("self-host compiler mode check failed"));
+    assert!(stderr.contains("make selfhost-bootstrap"));
+    assert!(!output.exists(), "default build should not write artifact");
 }
 
 #[test]
@@ -437,6 +545,8 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
         "make selfhost-bootstrap",
         "make selfhost-release-provenance",
         "make selfhost-mode-check",
+        "make selfhost-default-mode-check",
+        "make selfhost-default-build-check",
         "release lts --check",
         "release-metadata.md",
     ] {
@@ -484,6 +594,8 @@ fn ops_workflows_enforce_release_preflight_and_security_gates() {
         "make selfhost-bootstrap",
         "make selfhost-release-provenance",
         "make selfhost-mode-check",
+        "make selfhost-default-mode-check",
+        "make selfhost-default-build-check",
         "target/selfhost-bootstrap/report.json",
         "target/selfhost-release/**",
         "release policy --check",

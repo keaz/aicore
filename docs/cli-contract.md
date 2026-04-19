@@ -239,14 +239,14 @@ Stable `build` flags include:
 - `--verify-hash <sha256>`
 - `--manifest <path>` (defaults to `build.json` for single-target builds)
 
-`--compiler-mode reference` and `--compiler-mode fallback` use the Rust reference compiler path. `--compiler-mode experimental` routes the build through `AIC_SELFHOST_COMPILER` or the latest local self-host artifact without claiming production readiness. `--compiler-mode selfhost`, `supported`, and `default` require the self-host mode gate to pass before invoking the self-host compiler. Default mode also requires explicit default approval.
+`--compiler-mode reference` and `--compiler-mode fallback` use the Rust reference compiler path. `--compiler-mode experimental` routes the build through `AIC_SELFHOST_COMPILER` or the latest local self-host artifact without claiming production readiness. `--compiler-mode selfhost`, `supported`, and `default` require the self-host mode gate to pass before invoking the self-host compiler. When `--compiler-mode` and `AIC_COMPILER_MODE` are both absent, `aic build compiler/aic/tools/aic_selfhost -o <artifact>` is the controlled default self-host compiler source path after default evidence exists. That implicit default applies only to the unmodified executable build shape; builds with target, artifact, link, debug, release, optimization, offline, verify-hash, or manifest modifiers retain the reference path unless a mode is explicit. Other inputs also retain the reference path unless a mode is explicit. Missing default evidence blocks the implicit self-host compiler source build and tells maintainers to run the bootstrap/provenance gates or force fallback.
 
 Stable `release selfhost-mode` flags include:
 
 - `--mode <mode>` (`reference|experimental|supported|default|fallback`)
 - `--bootstrap-report <path>` (defaults to `target/selfhost-bootstrap/report.json`)
 - `--provenance <path>` (defaults to `target/selfhost-release/provenance.json`)
-- `--approve-default` (required with `--mode default --check`)
+- `--approve-default` (required with `--mode default --check`; release/preflight uses this after controlled cutover approval)
 - `--check`
 - `--json`
 

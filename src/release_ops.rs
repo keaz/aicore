@@ -812,6 +812,8 @@ pub fn evaluate_selfhost_compiler_mode(
             "make selfhost-bootstrap".to_string(),
             "make selfhost-stage-matrix".to_string(),
             "make selfhost-release-provenance".to_string(),
+            "make selfhost-default-mode-check".to_string(),
+            "make selfhost-default-build-check".to_string(),
             "make release-preflight".to_string(),
             "make examples-check".to_string(),
             "make examples-run".to_string(),

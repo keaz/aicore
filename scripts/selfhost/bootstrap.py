@@ -474,7 +474,14 @@ def stage0_command(stage0: Path) -> list[str]:
         command = ["cargo", "run", "--quiet", "--bin", "aic", "--"]
     else:
         command = shlex.split(raw)
-    return command + ["build", "compiler/aic/tools/aic_selfhost", "-o", str(stage0)]
+    return command + [
+        "build",
+        "compiler/aic/tools/aic_selfhost",
+        "-o",
+        str(stage0),
+        "--compiler-mode",
+        "reference",
+    ]
 
 
 def reproducibility(stage1: Path, stage2: Path) -> dict[str, object]:
