@@ -272,6 +272,7 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
         "Verify provenance signature",
         "Release Self-Host Bootstrap",
         "make selfhost-bootstrap",
+        "make selfhost-release-provenance",
         "release lts --check",
         "release-metadata.md",
     ] {
@@ -317,7 +318,9 @@ fn ops_workflows_enforce_release_preflight_and_security_gates() {
         "make ci",
         "release-selfhost-bootstrap",
         "make selfhost-bootstrap",
+        "make selfhost-release-provenance",
         "target/selfhost-bootstrap/report.json",
+        "target/selfhost-release/**",
         "release policy --check",
         "release lts --check",
         "release security-audit --json",

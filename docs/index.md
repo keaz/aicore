@@ -9,7 +9,7 @@ Start here if you want the shortest path to the right docs.
 - Runnable examples: [examples/README.md](../examples/README.md)
 - Documentation examples and workflows: [docs/examples/README.md](examples/README.md)
 - Test guidance and gates: [tests/README.md](../tests/README.md), [verification quality runbooks](verification-quality/README.md)
-- Self-hosting parity: [selfhost/README.md](selfhost/README.md)
+- Self-hosting parity and release provenance: [selfhost/README.md](selfhost/README.md), [selfhost/release-provenance.md](selfhost/release-provenance.md)
 - Agent tooling: [agent-tooling/README.md](agent-tooling/README.md), [agent-recipes/README.md](agent-recipes/README.md)
 - Runtime and operations: [IO runtime](io-runtime/README.md), [security ops](security-ops/README.md)
 

@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_json::Value;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -16,6 +17,10 @@ fn parity_script() -> PathBuf {
 
 fn stage_matrix_script() -> PathBuf {
     repo_root().join("scripts/selfhost/stage_matrix.py")
+}
+
+fn release_provenance_script() -> PathBuf {
+    repo_root().join("scripts/selfhost/release_provenance.py")
 }
 
 fn run_parity(args: &[String]) -> std::process::Output {
@@ -34,6 +39,283 @@ fn run_stage_matrix(args: &[String]) -> std::process::Output {
         .current_dir(repo_root())
         .output()
         .expect("run stage matrix script")
+}
+
+fn run_release_provenance(args: &[String]) -> std::process::Output {
+    Command::new("python3")
+        .arg(release_provenance_script())
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("run release provenance script")
+}
+
+fn sha256_prefixed(path: &Path) -> String {
+    let bytes = fs::read(path).expect("read checksum input");
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+#[cfg(target_os = "linux")]
+fn selfhost_test_platform() -> &'static str {
+    "linux"
+}
+
+#[cfg(target_os = "macos")]
+fn selfhost_test_platform() -> &'static str {
+    "macos"
+}
+
+#[cfg(target_os = "linux")]
+fn selfhost_test_strip_command() -> &'static str {
+    "strip --strip-all"
+}
+
+#[cfg(target_os = "macos")]
+fn selfhost_test_strip_command() -> &'static str {
+    "strip -S -x"
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn normalized_sha256_prefixed(path: &Path) -> String {
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(
+            r#"
+import hashlib
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+source = pathlib.Path(sys.argv[1])
+command = sys.argv[2].split()
+with tempfile.TemporaryDirectory(prefix="aicore-selfhost-release-strip-test-") as tmp:
+    copy = pathlib.Path(tmp) / source.name
+    shutil.copy2(source, copy)
+    completed = subprocess.run(command + [str(copy)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if completed.returncode != 0:
+        sys.stderr.write(completed.stderr or completed.stdout)
+        raise SystemExit(completed.returncode)
+    digest = hashlib.sha256(copy.read_bytes()).hexdigest()
+    print("sha256:" + digest)
+"#,
+        )
+        .arg(path)
+        .arg(selfhost_test_strip_command())
+        .output()
+        .expect("run python normalization");
+    assert!(
+        output.status.success(),
+        "normalization failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("utf8 digest")
+        .trim()
+        .to_string()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn copy_test_stage_artifacts(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let source = PathBuf::from(env!("CARGO_BIN_EXE_aic"));
+    let stage0 = root.join("stage0").join("aic_selfhost");
+    let stage1 = root.join("stage1").join("aic_selfhost");
+    let stage2 = root.join("stage2").join("aic_selfhost");
+    for stage in [&stage0, &stage1, &stage2] {
+        fs::create_dir_all(stage.parent().expect("stage parent")).expect("mkdir stage parent");
+        fs::copy(&source, stage).expect("copy stage artifact");
+    }
+    (stage0, stage1, stage2)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn write_selfhost_release_fixture(root: &Path) -> PathBuf {
+    let (stage0, stage1, stage2) = copy_test_stage_artifacts(root);
+    let reports = root.join("reports");
+    fs::create_dir_all(&reports).expect("mkdir reports");
+    let parity = reports.join("parity-report.json");
+    let matrix = reports.join("stage-matrix-report.json");
+    let performance = reports.join("performance-report.json");
+    let trend = reports.join("performance-trend.json");
+    let bootstrap = reports.join("bootstrap-report.json");
+
+    fs::write(
+        &parity,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-parity-v1",
+            "ok": true,
+            "manifest": { "schema_version": 1, "name": "fixture", "case_count": 1 },
+            "results": []
+        }))
+        .expect("parity json"),
+    )
+    .expect("write parity");
+    fs::write(
+        &matrix,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-stage-matrix-v1",
+            "ok": true,
+            "manifest": { "schema_version": 1, "name": "fixture", "case_count": 1 },
+            "results": []
+        }))
+        .expect("matrix json"),
+    )
+    .expect("write matrix");
+    fs::write(
+        &performance,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-bootstrap-performance-v1",
+            "ready": true,
+            "status": "supported-ready",
+            "performance": {
+                "ok": true,
+                "violations": [],
+                "budget_source": {
+                    "path": "docs/selfhost/bootstrap-budgets.v1.json",
+                    "schema_version": 1,
+                    "platform": selfhost_test_platform(),
+                    "overrides": {}
+                }
+            }
+        }))
+        .expect("performance json"),
+    )
+    .expect("write performance");
+    fs::write(
+        &trend,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-bootstrap-performance-trend-v1",
+            "ok": true,
+            "status": "supported-ready"
+        }))
+        .expect("trend json"),
+    )
+    .expect("write trend");
+
+    let stage1_norm = normalized_sha256_prefixed(&stage1);
+    let stage2_norm = normalized_sha256_prefixed(&stage2);
+    let bootstrap_json = json!({
+        "format": "aicore-selfhost-bootstrap-v1",
+        "mode": "supported",
+        "status": "supported-ready",
+        "ready": true,
+        "reasons": [],
+        "host": {
+            "platform": selfhost_test_platform(),
+            "system": if selfhost_test_platform() == "macos" { "Darwin" } else { "Linux" },
+            "machine": "x86_64",
+            "python_version": "3.test"
+        },
+        "stage0": stage0,
+        "stage1": stage1,
+        "stage2": stage2,
+        "parity_report": parity,
+        "stage_matrix_report": matrix,
+        "performance_report": performance,
+        "performance_trend": trend,
+        "reproducibility": {
+            "stage1": stage1,
+            "stage2": stage2,
+            "stage1_sha256": sha256_prefixed(&stage1),
+            "stage2_sha256": sha256_prefixed(&stage2),
+            "exact_matches": true,
+            "strip_command": selfhost_test_strip_command(),
+            "stage1_stripped_sha256": stage1_norm,
+            "stage2_stripped_sha256": stage2_norm,
+            "stripped_matches": true,
+            "matches": true,
+            "allowed_differences": [],
+            "duration_ms": 1
+        },
+        "performance": {
+            "ok": true,
+            "violations": [],
+            "budget_source": {
+                "path": "docs/selfhost/bootstrap-budgets.v1.json",
+                "schema_version": 1,
+                "platform": selfhost_test_platform(),
+                "overrides": {}
+            }
+        },
+        "steps": [
+            {
+                "name": "host-preflight",
+                "artifact": null,
+                "artifact_exists": null,
+                "artifact_sha256": null,
+                "artifact_size_bytes": null,
+                "child_peak_rss_bytes": 1,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "timed_out": false
+            },
+            {
+                "name": "stage0",
+                "artifact": stage0,
+                "artifact_exists": true,
+                "artifact_sha256": sha256_prefixed(&stage0),
+                "artifact_size_bytes": fs::metadata(&stage0).expect("stage0 meta").len(),
+                "child_peak_rss_bytes": 1,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "timed_out": false
+            },
+            {
+                "name": "stage1",
+                "artifact": stage1,
+                "artifact_exists": true,
+                "artifact_sha256": sha256_prefixed(&stage1),
+                "artifact_size_bytes": fs::metadata(&stage1).expect("stage1 meta").len(),
+                "child_peak_rss_bytes": 1,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "timed_out": false
+            },
+            {
+                "name": "stage2",
+                "artifact": stage2,
+                "artifact_exists": true,
+                "artifact_sha256": sha256_prefixed(&stage2),
+                "artifact_size_bytes": fs::metadata(&stage2).expect("stage2 meta").len(),
+                "child_peak_rss_bytes": 1,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "timed_out": false
+            },
+            {
+                "name": "parity",
+                "artifact": parity,
+                "artifact_exists": true,
+                "artifact_sha256": sha256_prefixed(&parity),
+                "artifact_size_bytes": fs::metadata(&parity).expect("parity meta").len(),
+                "child_peak_rss_bytes": 1,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "timed_out": false
+            },
+            {
+                "name": "stage-matrix",
+                "artifact": matrix,
+                "artifact_exists": true,
+                "artifact_sha256": sha256_prefixed(&matrix),
+                "artifact_size_bytes": fs::metadata(&matrix).expect("matrix meta").len(),
+                "child_peak_rss_bytes": 1,
+                "duration_ms": 1,
+                "exit_code": 0,
+                "timed_out": false
+            }
+        ]
+    });
+    fs::write(
+        &bootstrap,
+        serde_json::to_string_pretty(&bootstrap_json).expect("bootstrap json"),
+    )
+    .expect("write bootstrap");
+    bootstrap
 }
 
 fn write_fake_compiler(path: &Path, variant: &str) {
@@ -742,6 +1024,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(makefile.contains("selfhost-stage-matrix"));
     assert!(makefile.contains("selfhost-bootstrap"));
     assert!(makefile.contains("selfhost-bootstrap-report"));
+    assert!(makefile.contains("selfhost-release-provenance"));
 
     let bootstrap = fs::read_to_string(root.join("scripts/selfhost/bootstrap.py"))
         .expect("read bootstrap script");
@@ -780,6 +1063,17 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("child_peak_rss_bytes"));
     assert!(bootstrap.contains("AIC_SELFHOST_MAX_STEP_MS"));
     assert!(bootstrap.contains("AIC_SELFHOST_MAX_ARTIFACT_BYTES"));
+    let release_provenance =
+        fs::read_to_string(root.join("scripts/selfhost/release_provenance.py"))
+            .expect("read selfhost release provenance");
+    assert!(release_provenance.contains("aicore-selfhost-release-provenance-v1"));
+    assert!(release_provenance.contains("canonical_artifact"));
+    assert!(release_provenance.contains("stage0"));
+    assert!(release_provenance.contains("stage1"));
+    assert!(release_provenance.contains("stage2"));
+    assert!(release_provenance.contains("performance_trend"));
+    assert!(release_provenance.contains("selfhost-release-checksums.sha256"));
+    assert!(release_provenance.contains("unsupported self-host release platform"));
 
     let budget_manifest = fs::read_to_string(root.join("docs/selfhost/bootstrap-budgets.v1.json"))
         .expect("read self-host budget manifest");
@@ -804,10 +1098,20 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("make selfhost-stage-matrix"));
     assert!(selfhost_docs.contains("docs/selfhost/bootstrap-budgets.v1.json"));
     assert!(selfhost_docs.contains("performance-trend.json"));
+    assert!(selfhost_docs.contains("make selfhost-release-provenance"));
+    assert!(selfhost_docs.contains("aicore-selfhost-release-provenance-v1"));
     let performance_docs =
         fs::read_to_string(root.join("docs/selfhost/performance.md")).expect("read perf docs");
     assert!(performance_docs.contains("Release gates use the checked-in manifest defaults"));
     assert!(performance_docs.contains("performance.budget_source"));
+    let release_provenance_docs =
+        fs::read_to_string(root.join("docs/selfhost/release-provenance.md"))
+            .expect("read release provenance docs");
+    assert!(release_provenance_docs.contains("aicore-selfhost-release-provenance-v1"));
+    assert!(
+        release_provenance_docs.contains("python3 scripts/selfhost/release_provenance.py verify")
+    );
+    assert!(release_provenance_docs.contains("aicore-selfhost-compiler-<platform>-<arch>"));
     assert!(selfhost_docs.contains("docs/selfhost/stage-matrix.md"));
     assert!(selfhost_docs.contains("experimental"));
     assert!(selfhost_docs.contains("supported"));
@@ -951,7 +1255,10 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900",
         "selfhost-bootstrap:",
         "scripts/selfhost/bootstrap.py --mode supported --timeout \"$(AIC_SELFHOST_BOOTSTRAP_TIMEOUT)\"",
-        "release-preflight: ci selfhost-bootstrap repro-check security-audit",
+        "selfhost-release-provenance:",
+        "scripts/selfhost/release_provenance.py generate",
+        "scripts/selfhost/release_provenance.py verify",
+        "release-preflight: ci selfhost-bootstrap selfhost-release-provenance repro-check security-audit",
     ] {
         assert!(makefile.contains(token), "Makefile missing token: {token}");
     }
@@ -971,6 +1278,8 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "codesign: available",
         "Supported self-host bootstrap gate",
         "make selfhost-bootstrap",
+        "Self-host release provenance gate",
+        "make selfhost-release-provenance",
         "Upload self-host bootstrap reports",
         "actions/upload-artifact@v4",
         "if: always()",
@@ -980,6 +1289,7 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "target/selfhost-bootstrap/performance-trend.json",
         "target/selfhost-bootstrap/parity-report.json",
         "target/selfhost-bootstrap/stage-matrix-report.json",
+        "target/selfhost-release/**",
     ] {
         assert!(ci.contains(token), "ci workflow missing token: {token}");
     }
@@ -1010,12 +1320,15 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "command -v codesign",
         "codesign: available",
         "make selfhost-bootstrap",
+        "Self-host release provenance gate",
+        "make selfhost-release-provenance",
         "release-selfhost-bootstrap-${{ matrix.os }}",
         "target/selfhost-bootstrap/report.json",
         "target/selfhost-bootstrap/performance-report.json",
         "target/selfhost-bootstrap/performance-trend.json",
         "target/selfhost-bootstrap/parity-report.json",
         "target/selfhost-bootstrap/stage-matrix-report.json",
+        "target/selfhost-release/**",
         "- release-selfhost-bootstrap",
     ] {
         assert!(
@@ -1395,6 +1708,231 @@ assert trend["steps"]["stage-matrix"]["artifact_size_bytes"] == 20
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn selfhost_release_provenance_generates_and_verifies_schema() {
+    let tmp = tempdir().expect("tempdir");
+    let bootstrap = write_selfhost_release_fixture(tmp.path());
+    let out_dir = tmp.path().join("release");
+    let provenance = out_dir.join("provenance.json");
+
+    let output = run_release_provenance(&[
+        "generate".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--out-dir".into(),
+        out_dir.to_string_lossy().to_string(),
+        "--provenance".into(),
+        provenance.to_string_lossy().to_string(),
+        "--source-commit".into(),
+        "test-commit".into(),
+    ]);
+    assert!(
+        output.status.success(),
+        "generate failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let verify = run_release_provenance(&[
+        "verify".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--provenance".into(),
+        provenance.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        verify.status.success(),
+        "verify failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&verify.stdout),
+        String::from_utf8_lossy(&verify.stderr)
+    );
+
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&provenance).expect("read provenance"))
+            .expect("parse provenance");
+    assert_eq!(document["format"], "aicore-selfhost-release-provenance-v1");
+    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["source"]["commit"], "test-commit");
+    assert_eq!(document["validation"]["bootstrap_ready"], true);
+    assert_eq!(document["validation"]["parity_ok"], true);
+    assert_eq!(document["validation"]["stage_matrix_ok"], true);
+    assert_eq!(document["validation"]["performance_ok"], true);
+    assert_eq!(document["validation"]["budget_overrides"], json!({}));
+    assert!(document["canonical_artifact"]["path"]
+        .as_str()
+        .expect("artifact path")
+        .contains("aicore-selfhost-compiler-"));
+    for stage in ["stage0", "stage1", "stage2"] {
+        assert!(document["stages"][stage]["raw_sha256"]
+            .as_str()
+            .expect("raw digest")
+            .starts_with("sha256:"));
+        assert!(document["stages"][stage]["normalized_sha256"]
+            .as_str()
+            .expect("normalized digest")
+            .starts_with("sha256:"));
+    }
+    for report in [
+        "bootstrap",
+        "parity",
+        "stage_matrix",
+        "performance",
+        "performance_trend",
+    ] {
+        assert_eq!(document["reports"][report]["ok"], true);
+        assert!(document["reports"][report]["sha256"]
+            .as_str()
+            .expect("report digest")
+            .starts_with("sha256:"));
+    }
+}
+
+#[test]
+fn selfhost_release_provenance_rejects_missing_bootstrap_report() {
+    let tmp = tempdir().expect("tempdir");
+    let missing = tmp.path().join("missing-report.json");
+    let output = run_release_provenance(&[
+        "generate".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--bootstrap-report".into(),
+        missing.to_string_lossy().to_string(),
+        "--out-dir".into(),
+        tmp.path().join("release").to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required bootstrap report"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn selfhost_release_provenance_rejects_missing_stage_artifact() {
+    let tmp = tempdir().expect("tempdir");
+    let bootstrap = write_selfhost_release_fixture(tmp.path());
+    let report: Value =
+        serde_json::from_str(&fs::read_to_string(&bootstrap).expect("read bootstrap"))
+            .expect("parse bootstrap");
+    let stage2 = PathBuf::from(report["stage2"].as_str().expect("stage2 path"));
+    fs::remove_file(stage2).expect("remove stage2");
+
+    let output = run_release_provenance(&[
+        "generate".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--out-dir".into(),
+        tmp.path().join("release").to_string_lossy().to_string(),
+        "--source-commit".into(),
+        "test-commit".into(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing required stage2 artifact"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn selfhost_release_provenance_verify_detects_checksum_mismatch() {
+    let tmp = tempdir().expect("tempdir");
+    let bootstrap = write_selfhost_release_fixture(tmp.path());
+    let out_dir = tmp.path().join("release");
+    let provenance = out_dir.join("provenance.json");
+    let output = run_release_provenance(&[
+        "generate".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--out-dir".into(),
+        out_dir.to_string_lossy().to_string(),
+        "--provenance".into(),
+        provenance.to_string_lossy().to_string(),
+        "--source-commit".into(),
+        "test-commit".into(),
+    ]);
+    assert!(output.status.success());
+
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&provenance).expect("read provenance"))
+            .expect("parse provenance");
+    let artifact = repo_root().join(
+        document["canonical_artifact"]["path"]
+            .as_str()
+            .expect("artifact path"),
+    );
+    fs::write(&artifact, b"tampered").expect("tamper artifact");
+
+    let verify = run_release_provenance(&[
+        "verify".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--provenance".into(),
+        provenance.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(verify.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&verify.stderr);
+    assert!(stderr.contains("checksum mismatch"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn selfhost_release_provenance_rejects_unsupported_platform() {
+    let tmp = tempdir().expect("tempdir");
+    let bootstrap = write_selfhost_release_fixture(tmp.path());
+    let output = run_release_provenance(&[
+        "generate".into(),
+        "--repo-root".into(),
+        repo_root().to_string_lossy().to_string(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--out-dir".into(),
+        tmp.path().join("release").to_string_lossy().to_string(),
+        "--platform".into(),
+        "windows".into(),
+        "--source-commit".into(),
+        "test-commit".into(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unsupported self-host release platform: windows"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn selfhost_release_provenance_generation_is_deterministic() {
+    let tmp = tempdir().expect("tempdir");
+    let bootstrap = write_selfhost_release_fixture(tmp.path());
+    let out_dir = tmp.path().join("release");
+    let provenance = out_dir.join("provenance.json");
+    let args = [
+        "generate".to_string(),
+        "--repo-root".to_string(),
+        repo_root().to_string_lossy().to_string(),
+        "--bootstrap-report".to_string(),
+        bootstrap.to_string_lossy().to_string(),
+        "--out-dir".to_string(),
+        out_dir.to_string_lossy().to_string(),
+        "--provenance".to_string(),
+        provenance.to_string_lossy().to_string(),
+        "--source-commit".to_string(),
+        "test-commit".to_string(),
+    ];
+    let first = run_release_provenance(&args);
+    assert!(first.status.success());
+    let first_doc = fs::read_to_string(&provenance).expect("read first provenance");
+
+    let second = run_release_provenance(&args);
+    assert!(second.status.success());
+    let second_doc = fs::read_to_string(&provenance).expect("read second provenance");
+
+    assert_eq!(first_doc, second_doc);
 }
 
 #[test]

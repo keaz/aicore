@@ -33,6 +33,7 @@ For full release readiness:
 make test-e9
 make security-audit
 make repro-check
+make selfhost-release-provenance
 make release-preflight
 ```
 
@@ -43,16 +44,24 @@ make release-preflight
 | `make test-e9` | `.github/workflows/ci.yml` (`E9 release and security tests`) | Runs `tests/e9_release_ops_tests.rs` to validate deterministic release/migration outputs, release policy + LTS + security-audit command contracts, checksum/provenance tamper detection, and OPS runbook/workflow gate wiring. |
 | `make security-audit` | `.github/workflows/ci.yml`, `.github/workflows/security.yml` | Enforces the release security audit gate on PR/mainline CI and on the scheduled security workflow. |
 | `make repro-check` | `.github/workflows/ci.yml`, `.github/workflows/security.yml` | Enforces reproducibility manifest checks in CI and in the security workflow. |
-| `make release-preflight` | `.github/workflows/release.yml` (`release-preflight` job) | Mirrors release gating locally before tagging, aligned with release workflow checks (`make ci`, release policy/LTS gates, and security-audit gate). |
+| `make release-preflight` | `.github/workflows/release.yml` (`release-preflight` and `release-selfhost-bootstrap` jobs) | Mirrors release gating locally before tagging, aligned with release workflow checks (`make ci`, supported self-host bootstrap, self-host release provenance, release policy/LTS gates, and security-audit gate). |
 
 ## Release-Blocking Policy
 
 - `release.yml` always runs `release-preflight` before `release-build`.
-- `release-preflight` runs:
+- The local `make release-preflight` target runs:
+  - `make ci`
+  - `make selfhost-bootstrap`
+  - `make selfhost-release-provenance`
+  - `make repro-check`
+  - `make security-audit`
+- The release workflow runs:
   - `make ci`
   - `aic release policy --check`
   - `aic release lts --check`
   - `aic release security-audit --json`
+  - `make selfhost-bootstrap`
+  - `make selfhost-release-provenance`
 - Security workflow independently enforces:
   - `make security-audit`
   - `aic release policy --check`

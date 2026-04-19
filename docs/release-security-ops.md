@@ -26,6 +26,14 @@ aic release manifest --root . --output target/release/repro-manifest.json --sour
 
 The manifest records source inputs only. Local/generated directories such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules` are excluded so release verification is not affected by self-host bootstrap artifacts, editor test downloads, or local build output. Self-host native reproducibility uses platform artifact normalization outside this source manifest: Linux uses `strip --strip-all`, and macOS uses `strip -S -x` after Mach-O outputs are ad-hoc signed. The self-host bootstrap report also records manifest-backed resource budgets and observed duration, artifact-size, reproducibility-duration, and child peak-RSS values; release readiness requires `performance.ok` to be `true` with no CI/release budget overrides.
 
+Self-host release provenance is generated after the bootstrap gate:
+
+```bash
+make selfhost-release-provenance
+```
+
+This writes `target/selfhost-release/provenance.json`, `target/selfhost-release/selfhost-release-checksums.sha256`, and the canonical `target/selfhost-release/aicore-selfhost-compiler-<platform>-<arch>` artifact. The provenance format is `aicore-selfhost-release-provenance-v1`; it records source commit, toolchain versions, stage0/stage1/stage2 raw and normalized digests, bootstrap/parity/stage-matrix/performance reports, and the reproducibility result.
+
 Verify against checked-in/output manifest:
 
 ```bash
@@ -61,6 +69,9 @@ Verify the provenance file:
 aic release verify-provenance \
   --provenance target/release/provenance.json \
   --key-env AIC_SIGNING_KEY
+
+python3 scripts/selfhost/release_provenance.py verify \
+  --provenance target/selfhost-release/provenance.json
 ```
 
 ### Artifact checksum verification
@@ -198,17 +209,18 @@ make security-audit
 make repro-check
 make test-e9
 make selfhost-bootstrap
+make selfhost-release-provenance
 make release-preflight
 aic release lts --check
 ```
 
-`make ci` also runs E9 checks. `make release-preflight` is the local release-readiness target and includes the supported self-host bootstrap gate for the current host.
+`make ci` also runs E9 checks. `make release-preflight` is the local release-readiness target and includes the supported self-host bootstrap gate plus self-host release provenance for the current host.
 
 ## GitHub Actions
 
 - `.github/workflows/ci.yml` runs `make test-e9`, `make security-audit`, and `make repro-check`.
-- `.github/workflows/ci.yml` also runs `Self-Host Bootstrap (${{ matrix.os }})` on Linux and macOS and uploads `target/selfhost-bootstrap/report.json`, `performance-report.json`, `performance-trend.json`, parity, and stage-matrix artifacts.
-- `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata, with `release policy`, `release lts`, and `Release Self-Host Bootstrap (${{ matrix.os }})` Linux/macOS gates.
+- `.github/workflows/ci.yml` also runs `Self-Host Bootstrap (${{ matrix.os }})` on Linux and macOS, runs `make selfhost-release-provenance`, and uploads `target/selfhost-bootstrap/report.json`, `performance-report.json`, `performance-trend.json`, parity, stage-matrix artifacts, and `target/selfhost-release/**`.
+- `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata, with `release policy`, `release lts`, `Release Self-Host Bootstrap (${{ matrix.os }})`, and self-host release provenance Linux/macOS gates.
 - `.github/workflows/security.yml` runs scheduled and on-demand security audit checks, and the LTS policy gate.
 - `docs/release/matrix.md` documents the cross-platform release matrix and verification workflow.
 - `docs/release/lts-policy.md` and `docs/release/compatibility-matrix.json` define branch support windows and SLA compatibility expectations.

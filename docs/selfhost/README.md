@@ -146,6 +146,18 @@ That command exits nonzero until the supported criteria are met. It must not be 
 
 The current Linux/macOS bootstrap status is supported-ready when the gate is run with a working reference compiler, `clang`, `strip`, and macOS `codesign` where applicable. `aic build compiler/aic/tools/aic_selfhost` produces a real stage0 compiler, stage0 emits a runnable stage1 compiler, stage1 emits a runnable stage2 compiler, the latest stage compiler passes the expanded Rust-vs-self-host parity manifest, the latest stage compiler passes the package/workspace/core-example matrix, stage1/stage2 runtime artifacts match exactly or after stripping non-loadable symbol/debug tables, and the resource-budget report passes. The backend-covered executable surface includes primitive functions, backend-covered aggregate signatures, return-position struct literals, lossless fixed-width integer widening at return boundaries, runtime-backed string replacement and `string.join`, escaped string-literal emission, vector construction/push/length/get support for backend-covered values, direct parser-shaped `Some`/`None` match returns over `vec.get`, runtime-backed filesystem result construction for direct `read_text`/`temp_file`/`write_text`/`delete` returns, runtime-backed process execution and argument lookup for the self-host driver, return-position primitive/string conditionals, match/loop lowering for the compiler package graph, field/local value lowering, and stdout/stderr string printing.
 
+## Release Provenance
+
+After `make selfhost-bootstrap` succeeds, release review must generate machine-readable self-host artifact provenance:
+
+```bash
+make selfhost-release-provenance
+```
+
+This target writes `target/selfhost-release/provenance.json`, verifies it, and records checksums for the canonical stage2 release artifact, stage0/stage1/stage2 compilers, the bootstrap report, the parity report, the stage-matrix report, and performance reports. Canonical release artifacts are named `aicore-selfhost-compiler-<platform>-<arch>` for Linux and macOS. The provenance format is `aicore-selfhost-release-provenance-v1`.
+
+The provenance gate fails when required reports or artifacts are missing, when checksums no longer match the bootstrap report, when stage1/stage2 reproducibility did not pass, when performance budget overrides were used, or when the host platform is unsupported. See `docs/selfhost/release-provenance.md` for schema details and verification commands.
+
 ## CI and Release Gates
 
 GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.yml` as `Self-Host Bootstrap (${{ matrix.os }})` on `ubuntu-latest` and `macos-latest`. The job installs `clang` on Linux, runs the host tool preflight, then runs the same supported-mode command used locally:
@@ -167,6 +179,7 @@ make release-preflight
 ```
 
 `make release-preflight` runs the full local CI gate plus the supported self-host bootstrap gate for the current host before reproducibility and security checks.
+It also runs `make selfhost-release-provenance` so local release dry runs produce the same self-host artifact metadata that CI uploads.
 
 Both CI and release workflows upload self-host artifacts even when the gate fails. Inspect these artifact names first:
 
@@ -175,13 +188,14 @@ Both CI and release workflows upload self-host artifacts even when the gate fail
 - `release-selfhost-bootstrap-ubuntu-latest`
 - `release-selfhost-bootstrap-macos-latest`
 
-Each artifact contains `target/selfhost-bootstrap/report.json`, `target/selfhost-bootstrap/performance-report.json`, `target/selfhost-bootstrap/performance-trend.json`, `target/selfhost-bootstrap/parity-report.json`, `target/selfhost-bootstrap/stage-matrix-report.json`, stage compiler outputs, parity artifacts, and stage-matrix artifacts when those files were produced. The report `host`, `steps`, `reproducibility`, and `performance` fields are the primary evidence for platform details, stage exit codes, strip normalization, resource budgets, and readiness status.
+Each artifact contains `target/selfhost-bootstrap/report.json`, `target/selfhost-bootstrap/performance-report.json`, `target/selfhost-bootstrap/performance-trend.json`, `target/selfhost-bootstrap/parity-report.json`, `target/selfhost-bootstrap/stage-matrix-report.json`, stage compiler outputs, parity artifacts, stage-matrix artifacts, and `target/selfhost-release/**` when those files were produced. The report `host`, `steps`, `reproducibility`, and `performance` fields are the primary evidence for platform details, stage exit codes, strip normalization, resource budgets, and readiness status. The release provenance file ties those reports to the canonical self-host compiler artifact, source commit, toolchain versions, and checksums.
 
 For troubleshooting:
 
 - Inspect `target/selfhost-bootstrap/report.json` for command lines, exit codes, timeouts, stdout/stderr, artifact paths, artifact sizes, SHA-256 digests, peak RSS, and resource-budget violations.
 - Inspect `target/selfhost-bootstrap/performance-trend.json` for platform baselines, active budgets, observed top-level metrics, per-step metrics, and local budget overrides.
 - Inspect `target/selfhost-bootstrap/stage-matrix-report.json` for package, package-member, workspace-probe, and core-example stage compiler results.
+- Inspect `target/selfhost-release/provenance.json` and verify it with `python3 scripts/selfhost/release_provenance.py verify`.
 - Run `target/selfhost-bootstrap/stage0/aic_selfhost check <package>` to isolate package-level front-end failures.
 - Run `make selfhost-parity-candidate` to validate the currently supported Rust-vs-self-host parity corpus independently of bootstrap.
 - Run `make selfhost-stage-matrix` to validate the latest stage compiler independently of bootstrap.

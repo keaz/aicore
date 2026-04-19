@@ -256,6 +256,9 @@ jobs:
       - name: Supported self-host bootstrap gate
         run: make selfhost-bootstrap
 
+      - name: Self-host release provenance gate
+        run: make selfhost-release-provenance
+
       - name: Upload self-host bootstrap reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -272,6 +275,7 @@ jobs:
             target/selfhost-bootstrap/stage0/aic_selfhost
             target/selfhost-bootstrap/stage1/aic_selfhost
             target/selfhost-bootstrap/stage2/aic_selfhost
+            target/selfhost-release/**
           if-no-files-found: ignore
 
   execution-windows-smoke:
