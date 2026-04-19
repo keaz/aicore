@@ -43,6 +43,28 @@
     "requires_clean_provenance_worktree": true,
     "requires_production_budget_defaults": true
   },
+  "rollback": {
+    "required": true,
+    "validated": false,
+    "restore_source": {
+      "kind": "tag-or-branch",
+      "ref": null,
+      "commit": null
+    },
+    "restore_paths": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "src",
+      "tests"
+    ],
+    "required_commands": [
+      "git fetch --tags origin",
+      "git checkout <last-rust-reference-tag> -- Cargo.toml Cargo.lock src tests",
+      "cargo build --locked",
+      "make selfhost-retirement-audit"
+    ],
+    "validation_evidence": []
+  },
   "required_active_paths": [
     "Cargo.toml",
     "Cargo.lock",
@@ -214,7 +236,8 @@
         "rust-reference-compiler-core",
         "make selfhost-retirement-audit",
         "approval required before Rust reference removal",
-        "Rollback Source"
+        "Rollback Source",
+        "Rollback Validation Evidence"
       ]
     },
     {
@@ -230,6 +253,7 @@
       "tokens": [
         "Rust Reference Retirement Audit",
         "target/selfhost-retirement/report.json",
+        "rollback.validation_evidence",
         "python3 scripts/selfhost/retirement_audit.py --require-approved"
       ]
     }

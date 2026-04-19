@@ -21,6 +21,16 @@ STATUSES = {"deferred", "approved", "retired"}
 GLOB_CHARS = "*?["
 RELEASE_PREFLIGHT_COMMAND = "make release-preflight"
 CI_COMMAND = "make ci"
+ROLLBACK_FETCH_COMMAND = "git fetch --tags origin"
+ROLLBACK_CHECKOUT_COMMAND = "git checkout <last-rust-reference-tag> -- Cargo.toml Cargo.lock src tests"
+ROLLBACK_BUILD_COMMAND = "cargo build --locked"
+ROLLBACK_AUDIT_COMMAND = "make selfhost-retirement-audit"
+ROLLBACK_REQUIRED_COMMANDS = [
+    ROLLBACK_FETCH_COMMAND,
+    ROLLBACK_CHECKOUT_COMMAND,
+    ROLLBACK_BUILD_COMMAND,
+    ROLLBACK_AUDIT_COMMAND,
+]
 
 
 def default_repo_root() -> Path:
@@ -130,6 +140,15 @@ def required_string(value: Any, field: str, problems: list[str]) -> str:
     return value
 
 
+def optional_string(value: Any, field: str, problems: list[str]) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value.strip() == "":
+        problems.append(f"{field} must be null or a non-empty string")
+        return None
+    return value
+
+
 def required_bool(value: Any, field: str, problems: list[str]) -> bool:
     if not isinstance(value, bool):
         problems.append(f"{field} must be a boolean")
@@ -156,6 +175,21 @@ def verify_sha256(path: Path, expected: str, field: str, problems: list[str]) ->
         problems.append(f"{field} mismatch for {path}: expected {expected}, found {actual}")
         return False
     return True
+
+
+def looks_like_commit(value: str) -> bool:
+    return 7 <= len(value) <= 64 and all(char in "0123456789abcdefABCDEF" for char in value)
+
+
+def has_restore_checkout_command(commands: list[str], source_ref: str, restore_paths: list[str]) -> bool:
+    prefix = f"git checkout {source_ref} -- "
+    for command in commands:
+        if not command.startswith(prefix):
+            continue
+        restored = command[len(prefix) :].split()
+        if all(path in restored for path in restore_paths):
+            return True
+    return False
 
 
 def tracked_rust_inventory(repo_root: Path) -> list[str]:
@@ -618,6 +652,258 @@ def audit_bake_in(
     )
 
 
+def validate_rollback_evidence(
+    item: dict[str, Any],
+    index: int,
+    repo_root: Path,
+    restore_source_ref: str | None,
+    restore_source_commit: str | None,
+    restore_paths: list[str],
+    problems: list[str],
+) -> tuple[dict[str, Any], bool]:
+    source_ref = required_string(item.get("source_ref"), f"rollback.validation_evidence[{index}].source_ref", problems)
+    source_commit = required_string(
+        item.get("source_commit"),
+        f"rollback.validation_evidence[{index}].source_commit",
+        problems,
+    )
+    recorded_at = required_string(item.get("recorded_at"), f"rollback.validation_evidence[{index}].recorded_at", problems)
+    commands = string_list(item.get("commands"), f"rollback.validation_evidence[{index}].commands", problems)
+    cargo_log_raw = required_string(
+        item.get("cargo_build_log"),
+        f"rollback.validation_evidence[{index}].cargo_build_log",
+        problems,
+    )
+    cargo_sha = required_string(
+        item.get("cargo_build_sha256"),
+        f"rollback.validation_evidence[{index}].cargo_build_sha256",
+        problems,
+    )
+    audit_report_raw = required_string(
+        item.get("retirement_audit_report"),
+        f"rollback.validation_evidence[{index}].retirement_audit_report",
+        problems,
+    )
+    audit_sha = required_string(
+        item.get("retirement_audit_sha256"),
+        f"rollback.validation_evidence[{index}].retirement_audit_sha256",
+        problems,
+    )
+    marker_report_raw = required_string(
+        item.get("marker_scan_report"),
+        f"rollback.validation_evidence[{index}].marker_scan_report",
+        problems,
+    )
+    marker_sha = required_string(
+        item.get("marker_scan_sha256"),
+        f"rollback.validation_evidence[{index}].marker_scan_sha256",
+        problems,
+    )
+
+    summary: dict[str, Any] = {
+        "source_ref": source_ref,
+        "source_commit": source_commit,
+        "recorded_at": recorded_at,
+        "commands": commands,
+        "cargo_build": {"path": cargo_log_raw, "sha256_ok": False},
+        "retirement_audit": {"path": audit_report_raw, "sha256_ok": False, "problems_ok": False},
+        "marker_scan": {"path": marker_report_raw, "sha256_ok": False},
+        "valid_for_rollback": False,
+    }
+
+    if source_commit and not looks_like_commit(source_commit):
+        problems.append(f"rollback.validation_evidence[{index}].source_commit must be a git commit digest")
+    if restore_source_ref is not None and source_ref and source_ref != restore_source_ref:
+        problems.append(f"rollback.validation_evidence[{index}].source_ref does not match rollback restore source")
+    if restore_source_commit is not None and source_commit and source_commit != restore_source_commit:
+        problems.append(
+            f"rollback.validation_evidence[{index}].source_commit does not match rollback restore source commit"
+        )
+    for required in (ROLLBACK_FETCH_COMMAND, ROLLBACK_BUILD_COMMAND, ROLLBACK_AUDIT_COMMAND):
+        if required not in commands:
+            problems.append(f"rollback.validation_evidence[{index}].commands must include `{required}`")
+    checkout_ok = bool(source_ref) and has_restore_checkout_command(commands, source_ref, restore_paths)
+    summary["checkout_command_ok"] = checkout_ok
+    if not checkout_ok:
+        problems.append(
+            f"rollback.validation_evidence[{index}].commands must restore all rollback.restore_paths from source_ref"
+        )
+
+    cargo_ok = False
+    if cargo_log_raw and cargo_sha:
+        cargo_ok = verify_sha256(
+            resolve_repo_path(repo_root, cargo_log_raw),
+            cargo_sha,
+            f"rollback.validation_evidence[{index}].cargo_build_sha256",
+            problems,
+        )
+    summary["cargo_build"]["sha256_ok"] = cargo_ok
+
+    audit_ok = False
+    audit_problems_ok = False
+    if audit_report_raw and audit_sha:
+        audit_path = resolve_repo_path(repo_root, audit_report_raw)
+        audit_ok = verify_sha256(
+            audit_path,
+            audit_sha,
+            f"rollback.validation_evidence[{index}].retirement_audit_sha256",
+            problems,
+        )
+        if audit_path.is_file():
+            try:
+                audit_report = read_json(audit_path)
+            except (OSError, ValueError) as exc:
+                problems.append(f"rollback.validation_evidence[{index}].retirement_audit_report is invalid: {exc}")
+            else:
+                if audit_report.get("format") != REPORT_FORMAT:
+                    problems.append(
+                        f"rollback.validation_evidence[{index}].retirement_audit_report format must be {REPORT_FORMAT}"
+                    )
+                audit_problems = audit_report.get("problems")
+                audit_problems_ok = isinstance(audit_problems, list) and not audit_problems
+                if not audit_problems_ok:
+                    problems.append(
+                        f"rollback.validation_evidence[{index}].retirement_audit_report must have no problems"
+                    )
+    summary["retirement_audit"]["sha256_ok"] = audit_ok
+    summary["retirement_audit"]["problems_ok"] = audit_problems_ok
+
+    marker_ok = False
+    if marker_report_raw and marker_sha:
+        marker_ok = verify_sha256(
+            resolve_repo_path(repo_root, marker_report_raw),
+            marker_sha,
+            f"rollback.validation_evidence[{index}].marker_scan_sha256",
+            problems,
+        )
+    summary["marker_scan"]["sha256_ok"] = marker_ok
+
+    valid = (
+        bool(source_ref)
+        and bool(source_commit)
+        and looks_like_commit(source_commit)
+        and bool(recorded_at)
+        and ROLLBACK_FETCH_COMMAND in commands
+        and ROLLBACK_BUILD_COMMAND in commands
+        and ROLLBACK_AUDIT_COMMAND in commands
+        and checkout_ok
+        and cargo_ok
+        and audit_ok
+        and audit_problems_ok
+        and marker_ok
+    )
+    summary["valid_for_rollback"] = valid
+    return summary, valid
+
+
+def audit_rollback(
+    manifest: dict[str, Any],
+    repo_root: Path,
+    problems: list[str],
+) -> tuple[dict[str, Any], list[str]]:
+    rollback = object_field(manifest.get("rollback"), "rollback", problems)
+    required = required_bool(rollback.get("required"), "rollback.required", problems)
+    validated = required_bool(rollback.get("validated"), "rollback.validated", problems)
+    restore_source = object_field(rollback.get("restore_source"), "rollback.restore_source", problems)
+    restore_source_kind = optional_string(
+        restore_source.get("kind"),
+        "rollback.restore_source.kind",
+        problems,
+    )
+    restore_source_ref = optional_string(
+        restore_source.get("ref"),
+        "rollback.restore_source.ref",
+        problems,
+    )
+    restore_source_commit = optional_string(
+        restore_source.get("commit"),
+        "rollback.restore_source.commit",
+        problems,
+    )
+    if restore_source_kind is not None and restore_source_kind not in {"tag-or-branch", "tag", "branch", "commit"}:
+        problems.append("rollback.restore_source.kind must be tag-or-branch, tag, branch, or commit")
+    if validated and not restore_source_ref:
+        problems.append("rollback.restore_source.ref must be recorded when rollback.validated is true")
+    if validated and not restore_source_commit:
+        problems.append("rollback.restore_source.commit must be recorded when rollback.validated is true")
+    if restore_source_commit is not None and not looks_like_commit(restore_source_commit):
+        problems.append("rollback.restore_source.commit must be a git commit digest")
+
+    restore_paths = string_list(rollback.get("restore_paths"), "rollback.restore_paths", problems)
+    restore_path_summaries: list[dict[str, Any]] = []
+    for raw in restore_paths:
+        path = resolve_repo_path(repo_root, raw)
+        exists = path.exists()
+        if not exists:
+            problems.append(f"rollback.restore_paths entry is missing: {raw}")
+        restore_path_summaries.append(
+            {
+                "path": raw,
+                "exists": exists,
+                "kind": "directory" if path.is_dir() else "file" if path.is_file() else "missing",
+            }
+        )
+
+    required_commands = string_list(rollback.get("required_commands"), "rollback.required_commands", problems)
+    for command in ROLLBACK_REQUIRED_COMMANDS:
+        if command not in required_commands:
+            problems.append(f"rollback.required_commands must include `{command}`")
+
+    raw_evidence = rollback.get("validation_evidence", [])
+    evidence: list[dict[str, Any]] = []
+    if not isinstance(raw_evidence, list):
+        problems.append("rollback.validation_evidence must be a list")
+    else:
+        for index, item in enumerate(raw_evidence):
+            if not isinstance(item, dict):
+                problems.append(f"rollback.validation_evidence[{index}] must be an object")
+                continue
+            evidence.append(item)
+
+    evidence_summaries: list[dict[str, Any]] = []
+    valid_evidence: list[dict[str, Any]] = []
+    for index, item in enumerate(evidence):
+        summary, valid = validate_rollback_evidence(
+            item,
+            index,
+            repo_root,
+            restore_source_ref,
+            restore_source_commit,
+            restore_paths,
+            problems,
+        )
+        evidence_summaries.append(summary)
+        if valid:
+            valid_evidence.append(summary)
+
+    if validated and not valid_evidence:
+        problems.append("rollback.validated is true but no valid validation_evidence entry was recorded")
+
+    blockers: list[str] = []
+    if required and not validated:
+        blockers.append("rollback restore validation is not recorded")
+    if required and not valid_evidence:
+        blockers.append("rollback requires a validated restore evidence entry")
+
+    return (
+        {
+            "required": required,
+            "validated": validated,
+            "restore_source": {
+                "kind": restore_source_kind,
+                "ref": restore_source_ref,
+                "commit": restore_source_commit,
+            },
+            "restore_paths": restore_path_summaries,
+            "required_commands": required_commands,
+            "evidence_count": len(evidence),
+            "valid_evidence_count": len(valid_evidence),
+            "validation_evidence": evidence_summaries,
+        },
+        blockers,
+    )
+
+
 def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
     problems: list[str] = []
     manifest = read_json(manifest_path)
@@ -652,6 +938,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
     docs = audit_docs(manifest, repo_root, problems)
     classes, classified_paths = audit_classes(manifest, repo_root, problems)
     bake_in, bake_in_blockers = audit_bake_in(manifest, repo_root, problems)
+    rollback, rollback_blockers = audit_rollback(manifest, repo_root, problems)
 
     tracked = tracked_rust_inventory(repo_root)
     unclassified = sorted(path for path in tracked if path not in classified_paths)
@@ -663,6 +950,9 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
         "rollback_commands",
         problems,
     )
+    for command in ROLLBACK_REQUIRED_COMMANDS:
+        if command not in rollback_commands:
+            problems.append(f"rollback_commands must include `{command}`")
 
     blockers: list[str] = []
     if status != "approved":
@@ -670,6 +960,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
     if approval_required and not approval_granted:
         blockers.append("approval required before Rust reference removal")
     blockers.extend(bake_in_blockers)
+    blockers.extend(rollback_blockers)
     for item in classes:
         if item["removal_allowed"] is not True:
             blockers.append(f"{item['class']} is still marked removal_allowed=false")
@@ -689,6 +980,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
             "approver": approver if isinstance(approver, str) else None,
         },
         "bake_in": bake_in,
+        "rollback": rollback,
         "rust_path_classes": classes,
         "tracked_rust_inventory": {
             "total": len(tracked),

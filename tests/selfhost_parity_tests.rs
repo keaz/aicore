@@ -419,6 +419,59 @@ fn write_retirement_manifest_with_evidence(path: &Path, evidence: Value) {
     .expect("write retirement manifest");
 }
 
+fn write_rollback_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf, String, String) {
+    let source_ref = "refs/tags/aicore-rust-reference-v1".to_string();
+    let source_commit = "abcdef1234567890abcdef1234567890abcdef12".to_string();
+    let cargo_log = root.join("cargo-build.log");
+    let audit_report = root.join("rollback-retirement-audit.json");
+    let marker_report = root.join("marker-scan.txt");
+    fs::write(&cargo_log, b"cargo build --locked\nfinished\n").expect("write cargo log");
+    fs::write(
+        &audit_report,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-rust-reference-retirement-audit-v1",
+            "schema_version": 1,
+            "status": "deferred",
+            "problems": [],
+            "blockers": ["retirement decision status is deferred; approved is required for removal"],
+            "removal_allowed": false
+        }))
+        .expect("audit report json"),
+    )
+    .expect("write audit report");
+    fs::write(&marker_report, b"").expect("write marker report");
+    (
+        cargo_log,
+        audit_report,
+        marker_report,
+        source_ref,
+        source_commit,
+    )
+}
+
+fn write_retirement_manifest_with_rollback(
+    path: &Path,
+    evidence: Value,
+    source_ref: &str,
+    source_commit: &str,
+) {
+    let root = repo_root();
+    let mut manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
+            .expect("read retirement manifest"),
+    )
+    .expect("retirement manifest json");
+    manifest["rollback"]["validated"] = json!(true);
+    manifest["rollback"]["restore_source"]["ref"] = json!(source_ref);
+    manifest["rollback"]["restore_source"]["commit"] = json!(source_commit);
+    manifest["rollback"]["validation_evidence"] = json!([evidence]);
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&manifest).expect("retirement manifest"),
+    )
+    .expect("write retirement manifest");
+}
+
 fn write_fake_compiler(path: &Path, variant: &str) {
     fs::write(
         path,
@@ -1278,6 +1331,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "Default compiler status changed",
         "Rust Reference Retirement Audit",
         "target/selfhost-retirement/report.json",
+        "rollback.validation_evidence",
         "python3 scripts/selfhost/retirement_audit.py --require-approved",
     ] {
         assert!(
@@ -1306,6 +1360,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(retirement_doc.contains("make selfhost-retirement-audit"));
     assert!(retirement_doc.contains("approval required before Rust reference removal"));
     assert!(retirement_doc.contains("Rollback Source"));
+    assert!(retirement_doc.contains("Rollback Validation Evidence"));
 
     let retirement_manifest: Value = serde_json::from_str(
         &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
@@ -1330,6 +1385,17 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "make release-preflight"
     );
     assert_eq!(retirement_manifest["approval"]["approved"], false);
+    assert_eq!(retirement_manifest["rollback"]["required"], true);
+    assert_eq!(retirement_manifest["rollback"]["validated"], false);
+    assert_eq!(
+        retirement_manifest["rollback"]["restore_paths"],
+        json!(["Cargo.toml", "Cargo.lock", "src", "tests"])
+    );
+    assert!(retirement_manifest["rollback"]["required_commands"]
+        .as_array()
+        .expect("rollback commands")
+        .iter()
+        .any(|command| command == "cargo build --locked"));
     assert!(retirement_manifest["rust_path_classes"]
         .as_array()
         .expect("rust classes")
@@ -1619,11 +1685,18 @@ fn selfhost_retirement_audit_records_deferred_state() {
         0
     );
     assert_eq!(document["problems"].as_array().expect("problems").len(), 0);
+    assert_eq!(document["rollback"]["required"], true);
+    assert_eq!(document["rollback"]["validated"], false);
+    assert_eq!(document["rollback"]["evidence_count"], 0);
     let blockers = document["blockers"].as_array().expect("blockers");
     assert!(blockers.iter().any(|blocker| blocker
         .as_str()
         .expect("blocker")
         .contains("approval required")));
+    assert!(blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("rollback restore validation")));
     assert!(document["rust_path_classes"]
         .as_array()
         .expect("classes")
@@ -1754,6 +1827,104 @@ fn selfhost_retirement_audit_rejects_unverified_bake_in_evidence() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("default_build_sha256 mismatch"));
+}
+
+#[test]
+fn selfhost_retirement_audit_accepts_verified_rollback_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let (cargo_log, audit_report, marker_report, source_ref, source_commit) =
+        write_rollback_evidence_fixture(tmp.path());
+    let manifest = tmp.path().join("retirement-manifest.json");
+    write_retirement_manifest_with_rollback(
+        &manifest,
+        json!({
+            "source_ref": source_ref,
+            "source_commit": source_commit,
+            "recorded_at": "2026-04-19T00:00:00Z",
+            "commands": [
+                "git fetch --tags origin",
+                format!("git checkout {} -- Cargo.toml Cargo.lock src tests", source_ref),
+                "cargo build --locked",
+                "make selfhost-retirement-audit"
+            ],
+            "cargo_build_log": cargo_log.to_string_lossy(),
+            "cargo_build_sha256": sha256_prefixed(&cargo_log),
+            "retirement_audit_report": audit_report.to_string_lossy(),
+            "retirement_audit_sha256": sha256_prefixed(&audit_report),
+            "marker_scan_report": marker_report.to_string_lossy(),
+            "marker_scan_sha256": sha256_prefixed(&marker_report)
+        }),
+        &source_ref,
+        &source_commit,
+    );
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "rollback evidence audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    assert_eq!(document["rollback"]["validated"], true);
+    assert_eq!(document["rollback"]["valid_evidence_count"], 1);
+    assert_eq!(
+        document["rollback"]["validation_evidence"][0]["valid_for_rollback"],
+        true
+    );
+    let blockers = document["blockers"].as_array().expect("blockers");
+    assert!(!blockers
+        .iter()
+        .any(|blocker| blocker.as_str().expect("blocker").contains("rollback")));
+}
+
+#[test]
+fn selfhost_retirement_audit_rejects_unverified_rollback_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let (cargo_log, audit_report, marker_report, source_ref, source_commit) =
+        write_rollback_evidence_fixture(tmp.path());
+    let manifest = tmp.path().join("bad-retirement-manifest.json");
+    write_retirement_manifest_with_rollback(
+        &manifest,
+        json!({
+            "source_ref": source_ref,
+            "source_commit": source_commit,
+            "recorded_at": "2026-04-19T00:00:00Z",
+            "commands": [
+                "git fetch --tags origin",
+                format!("git checkout {} -- Cargo.toml Cargo.lock src tests", source_ref),
+                "cargo build --locked",
+                "make selfhost-retirement-audit"
+            ],
+            "cargo_build_log": cargo_log.to_string_lossy(),
+            "cargo_build_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "retirement_audit_report": audit_report.to_string_lossy(),
+            "retirement_audit_sha256": sha256_prefixed(&audit_report),
+            "marker_scan_report": marker_report.to_string_lossy(),
+            "marker_scan_sha256": sha256_prefixed(&marker_report)
+        }),
+        &source_ref,
+        &source_commit,
+    );
+    let report = tmp.path().join("bad-retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cargo_build_sha256 mismatch"));
 }
 
 #[test]

@@ -174,13 +174,13 @@ Run the consistency audit with:
 make selfhost-retirement-audit
 ```
 
-That target writes `target/selfhost-retirement/report.json` and passes while the inventory, docs, rollback commands, and tracked Rust/Cargo path classification are internally consistent. It does not approve removal. The stronger approval gate remains blocked until the issue `#419` decision, bake-in evidence, and replacement/retention mapping are complete:
+That target writes `target/selfhost-retirement/report.json` and passes while the inventory, docs, rollback commands, rollback validation schema, and tracked Rust/Cargo path classification are internally consistent. It does not approve removal. The stronger approval gate remains blocked until the issue `#419` decision, bake-in evidence, rollback validation evidence, and replacement/retention mapping are complete:
 
 ```bash
 python3 scripts/selfhost/retirement_audit.py --require-approved
 ```
 
-Passing bake-in entries must be machine-verifiable: each entry records `make release-preflight`, `make ci`, source commit, supported bootstrap report checksum, release provenance checksum, and default compiler-source build artifact checksum. Empty or failed entries do not count toward Linux/macOS bake-in.
+Passing bake-in entries must be machine-verifiable: each entry records `make release-preflight`, `make ci`, source commit, supported bootstrap report checksum, release provenance checksum, and default compiler-source build artifact checksum. Empty or failed entries do not count toward Linux/macOS bake-in. Rollback evidence is also machine-verifiable through `rollback.validation_evidence`, including the restore source, checkout/build/audit commands, and checksums for the build log, retirement audit report, and marker scan report.
 
 ## CI and Release Gates
 

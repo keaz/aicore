@@ -20,7 +20,7 @@ The stronger approval gate must continue to fail until every blocker is cleared:
 python3 scripts/selfhost/retirement_audit.py --require-approved
 ```
 
-The current blocker is intentional: approval required before Rust reference removal.
+The current blockers are intentional: approval required before Rust reference removal, release bake-in evidence, replacement or retained-role decisions, and rollback validation evidence.
 
 ## Bake-In Evidence Format
 
@@ -90,6 +90,22 @@ AIC_COMPILER_MODE=fallback aic build <input> -o <artifact>
 ```
 
 After deletion, rollback must restore the last approved Rust reference source or roll the release branch back to the tagged artifact set.
+
+## Rollback Validation Evidence
+
+Rollback validation evidence in `docs/selfhost/rust-reference-retirement.v1.json` must prove that the recorded source can restore the Rust reference implementation and that the restored checkout still passes the retirement audit consistency gate. The manifest keeps this in `rollback.validation_evidence`.
+
+A valid entry must include:
+
+- `source_ref`: the tag or branch used as the restore source
+- `source_commit`: the exact commit resolved from that restore source
+- `recorded_at`: the review timestamp or CI run timestamp
+- `commands`: including `git fetch --tags origin`, a `git checkout <source_ref> -- ...` command that restores every `rollback.restore_paths` entry, `cargo build --locked`, and `make selfhost-retirement-audit`
+- `cargo_build_log` and `cargo_build_sha256`
+- `retirement_audit_report` and `retirement_audit_sha256`
+- `marker_scan_report` and `marker_scan_sha256`
+
+The audit verifies each evidence checksum and verifies that the retirement audit report has format `aicore-rust-reference-retirement-audit-v1` with no consistency problems. `rollback.validated` must remain `false` until at least one valid restore evidence entry is recorded, and `python3 scripts/selfhost/retirement_audit.py --require-approved` must remain blocked while rollback validation is missing.
 
 ## Closure Evidence
 
