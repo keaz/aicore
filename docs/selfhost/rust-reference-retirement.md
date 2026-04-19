@@ -48,7 +48,7 @@ Rust code can remain after reference compiler retirement when it has a documente
 
 ## Inventory Classes
 
-The retirement audit classifies tracked Rust and Cargo-owned paths into these classes:
+The retirement audit classifies tracked Rust and Cargo-owned paths into these classes. Each manifest entry also has a `retirement_decision` object so removal and retention are reviewed with the same evidence contract.
 
 | Class | Current role | Current removal state | Replacement owner |
 |---|---|---|---|
@@ -59,6 +59,17 @@ The retirement audit classifies tracked Rust and Cargo-owned paths into these cl
 | `rust-test-suites` | Integration and regression tests that define the compatibility contract. | Not allowed | Post-retirement test harness or retained Rust test crate with documented scope |
 
 The audit fails if a tracked Rust or Cargo path is not covered by at least one documented ownership decision. Overlap is allowed only where the path participates in more than one review surface; any such overlap is visible in the generated report.
+
+## Class Decision Evidence
+
+Each `rust_path_classes` entry must declare a `retirement_decision`:
+
+- `intent`: `remove-after-replacement` for Rust reference compiler behavior that must disappear after replacement, or `retain-non-reference` for Rust code that may remain as host tooling, release tooling, bootstrap support, tests, or other non-reference infrastructure.
+- `status`: `pending` until the decision has complete evidence, or `approved` only after every required command has verified evidence.
+- `non_reference_role`: required when `intent` is `retain-non-reference`.
+- `evidence`: one entry per required command, each with `command`, `recorded_at`, `report`, and `report_sha256`.
+
+The audit verifies every class evidence checksum. A class decision cannot be `approved` unless every command listed in `required_replacement_evidence` has a matching evidence entry. For `remove-after-replacement`, `removal_allowed` must also be true before approval is accepted. Until then, `python3 scripts/selfhost/retirement_audit.py --require-approved` reports the class as a blocker.
 
 ## Approval Criteria
 

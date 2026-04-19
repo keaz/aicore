@@ -312,7 +312,9 @@ docs-check:
 	@grep -Fq "python3 scripts/selfhost/retirement_audit.py --require-approved" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "bootstrap_report_sha256" docs/selfhost/rust-reference-retirement.md
 	@grep -Fq "Rollback Validation Evidence" docs/selfhost/rust-reference-retirement.md
+	@grep -Fq "Class Decision Evidence" docs/selfhost/rust-reference-retirement.md
 	@grep -Fq "rollback.validation_evidence" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "retirement_decision" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "requires_production_budget_defaults" docs/selfhost/rust-reference-retirement.v1.json
 	@grep -Fq "selfhost-default-build-check" Makefile
 	@grep -Fq "selfhost-default-mode-check" Makefile

@@ -228,11 +228,13 @@ The report is written to:
 target/selfhost-retirement/report.json
 ```
 
-The audit passes when the manifest, decision record, docs, rollback commands, rollback validation schema, active paths, and tracked Rust/Cargo path classifications are internally consistent. It intentionally reports `removal_allowed=false` until approval, bake-in evidence, rollback validation evidence, and every replacement or retained-role decision is complete.
+The audit passes when the manifest, decision record, docs, rollback commands, rollback validation schema, active paths, tracked Rust/Cargo path classifications, and every `retirement_decision` entry are internally consistent. It intentionally reports `removal_allowed=false` until approval, bake-in evidence, rollback validation evidence, and every replacement or retained-role decision is complete.
 
 Passing bake-in evidence must include `make release-preflight`, `make ci`, the source commit, a supported bootstrap report with a matching `sha256:` digest, release provenance with a matching `sha256:` digest, and the controlled default compiler-source build artifact with a matching `sha256:` digest. Failed evidence can be recorded for history, but it does not count toward Linux/macOS bake-in.
 
 Rollback evidence must be recorded under `rollback.validation_evidence`. A valid entry records the tag or branch and commit used to restore the Rust reference, the exact checkout command covering every `rollback.restore_paths` entry, `cargo build --locked`, `make selfhost-retirement-audit`, and matching `sha256:` digests for the cargo build log, retirement audit report, and marker scan report.
+
+Class decision evidence is recorded under each `rust_path_classes[*].retirement_decision`. Reference compiler classes use `intent=remove-after-replacement`; retained host/tooling/test classes use `intent=retain-non-reference` with a named non-reference role. A class decision stays blocked until every command listed in `required_replacement_evidence` has a matching report and checksum.
 
 Use this command only when validating the final retirement decision:
 

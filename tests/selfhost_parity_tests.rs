@@ -472,6 +472,64 @@ fn write_retirement_manifest_with_rollback(
     .expect("write retirement manifest");
 }
 
+fn write_class_decision_evidence_report(root: &Path) -> PathBuf {
+    let report = root.join("class-decision-report.txt");
+    fs::write(&report, b"class decision evidence\n").expect("write class decision report");
+    report
+}
+
+fn write_retirement_manifest_with_approved_class_decision(
+    path: &Path,
+    class_id: &str,
+    report: &Path,
+    bad_sha: bool,
+) {
+    let root = repo_root();
+    let mut manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
+            .expect("read retirement manifest"),
+    )
+    .expect("retirement manifest json");
+    let classes = manifest["rust_path_classes"]
+        .as_array_mut()
+        .expect("rust classes");
+    let class = classes
+        .iter_mut()
+        .find(|item| item["class"] == class_id)
+        .expect("find rust class");
+    class["removal_allowed"] = json!(true);
+    class["retirement_decision"]["status"] = json!("approved");
+    let commands: Vec<String> = class["required_replacement_evidence"]
+        .as_array()
+        .expect("required evidence")
+        .iter()
+        .map(|item| item.as_str().expect("command").to_string())
+        .collect();
+    let valid_sha = sha256_prefixed(report);
+    let evidence: Vec<Value> = commands
+        .iter()
+        .enumerate()
+        .map(|(index, command)| {
+            json!({
+                "command": command,
+                "recorded_at": "2026-04-19T00:00:00Z",
+                "report": report.to_string_lossy(),
+                "report_sha256": if bad_sha && index == 0 {
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string()
+                } else {
+                    valid_sha.clone()
+                }
+            })
+        })
+        .collect();
+    class["retirement_decision"]["evidence"] = Value::Array(evidence);
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&manifest).expect("retirement manifest"),
+    )
+    .expect("write retirement manifest");
+}
+
 fn write_fake_compiler(path: &Path, variant: &str) {
     fs::write(
         path,
@@ -1332,6 +1390,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "Rust Reference Retirement Audit",
         "target/selfhost-retirement/report.json",
         "rollback.validation_evidence",
+        "retirement_decision",
         "python3 scripts/selfhost/retirement_audit.py --require-approved",
     ] {
         assert!(
@@ -1361,6 +1420,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(retirement_doc.contains("approval required before Rust reference removal"));
     assert!(retirement_doc.contains("Rollback Source"));
     assert!(retirement_doc.contains("Rollback Validation Evidence"));
+    assert!(retirement_doc.contains("Class Decision Evidence"));
 
     let retirement_manifest: Value = serde_json::from_str(
         &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
@@ -1400,7 +1460,14 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         .as_array()
         .expect("rust classes")
         .iter()
-        .any(|class| class["class"] == "rust-reference-compiler-core"));
+        .any(|class| class["class"] == "rust-reference-compiler-core"
+            && class["retirement_decision"]["intent"] == "remove-after-replacement"));
+    assert!(retirement_manifest["rust_path_classes"]
+        .as_array()
+        .expect("rust classes")
+        .iter()
+        .any(|class| class["class"] == "rust-host-cli-release-packaging"
+            && class["retirement_decision"]["intent"] == "retain-non-reference"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
@@ -1697,11 +1764,20 @@ fn selfhost_retirement_audit_records_deferred_state() {
         .as_str()
         .expect("blocker")
         .contains("rollback restore validation")));
+    assert!(blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("replacement/removal decision is pending")));
+    assert!(blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("retained Rust role is not approved")));
     assert!(document["rust_path_classes"]
         .as_array()
         .expect("classes")
         .iter()
         .any(|class| class["class"] == "rust-reference-compiler-core"
+            && class["retirement_decision"]["status"] == "pending"
             && class["matched_paths"]
                 .as_array()
                 .expect("matched paths")
@@ -1925,6 +2001,81 @@ fn selfhost_retirement_audit_rejects_unverified_rollback_evidence() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("cargo_build_sha256 mismatch"));
+}
+
+#[test]
+fn selfhost_retirement_audit_accepts_verified_class_decision_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let evidence_report = write_class_decision_evidence_report(tmp.path());
+    let manifest = tmp.path().join("retirement-manifest.json");
+    write_retirement_manifest_with_approved_class_decision(
+        &manifest,
+        "rust-reference-compiler-core",
+        &evidence_report,
+        false,
+    );
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "class decision evidence audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    let classes = document["rust_path_classes"]
+        .as_array()
+        .expect("rust classes");
+    let class = classes
+        .iter()
+        .find(|item| item["class"] == "rust-reference-compiler-core")
+        .expect("find core class");
+    assert_eq!(class["retirement_decision"]["status"], "approved");
+    assert_eq!(
+        class["retirement_decision"]["valid_evidence_commands"],
+        json!([
+            "make selfhost-bootstrap",
+            "make selfhost-parity-candidate",
+            "make selfhost-stage-matrix"
+        ])
+    );
+    let blockers = document["blockers"].as_array().expect("blockers");
+    assert!(!blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("rust-reference-compiler-core replacement")));
+}
+
+#[test]
+fn selfhost_retirement_audit_rejects_unverified_class_decision_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let evidence_report = write_class_decision_evidence_report(tmp.path());
+    let manifest = tmp.path().join("bad-retirement-manifest.json");
+    write_retirement_manifest_with_approved_class_decision(
+        &manifest,
+        "rust-reference-compiler-core",
+        &evidence_report,
+        true,
+    );
+    let report = tmp.path().join("bad-retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("retirement_decision.evidence[0].report_sha256 mismatch"));
 }
 
 #[test]

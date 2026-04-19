@@ -18,6 +18,8 @@ BOOTSTRAP_FORMAT = "aicore-selfhost-bootstrap-v1"
 PROVENANCE_FORMAT = "aicore-selfhost-release-provenance-v1"
 SCHEMA_VERSION = 1
 STATUSES = {"deferred", "approved", "retired"}
+CLASS_DECISION_INTENTS = {"remove-after-replacement", "retain-non-reference"}
+CLASS_DECISION_STATUSES = {"pending", "approved"}
 GLOB_CHARS = "*?["
 RELEASE_PREFLIGHT_COMMAND = "make release-preflight"
 CI_COMMAND = "make ci"
@@ -271,13 +273,124 @@ def audit_docs(
     return docs
 
 
+def validate_class_decision_evidence(
+    item: dict[str, Any],
+    class_index: int,
+    evidence_index: int,
+    repo_root: Path,
+    allowed_commands: list[str],
+    problems: list[str],
+) -> tuple[dict[str, Any], bool]:
+    prefix = f"rust_path_classes[{class_index}].retirement_decision.evidence[{evidence_index}]"
+    command = required_string(item.get("command"), f"{prefix}.command", problems)
+    recorded_at = required_string(item.get("recorded_at"), f"{prefix}.recorded_at", problems)
+    report_raw = required_string(item.get("report"), f"{prefix}.report", problems)
+    report_sha = required_string(item.get("report_sha256"), f"{prefix}.report_sha256", problems)
+    if command and command not in allowed_commands:
+        problems.append(f"{prefix}.command is not listed in required_replacement_evidence")
+    sha_ok = False
+    if report_raw and report_sha:
+        sha_ok = verify_sha256(resolve_repo_path(repo_root, report_raw), report_sha, f"{prefix}.report_sha256", problems)
+    valid = bool(command) and command in allowed_commands and bool(recorded_at) and sha_ok
+    return (
+        {
+            "command": command,
+            "recorded_at": recorded_at,
+            "report": report_raw,
+            "sha256_ok": sha_ok,
+            "valid": valid,
+        },
+        valid,
+    )
+
+
+def audit_class_decision(
+    item: dict[str, Any],
+    index: int,
+    repo_root: Path,
+    class_id: str,
+    removal_allowed: bool,
+    required_evidence: list[str],
+    problems: list[str],
+) -> tuple[dict[str, Any], list[str]]:
+    field = f"rust_path_classes[{index}].retirement_decision"
+    decision = object_field(item.get("retirement_decision"), field, problems)
+    intent = required_string(decision.get("intent"), f"{field}.intent", problems)
+    status = required_string(decision.get("status"), f"{field}.status", problems)
+    if intent and intent not in CLASS_DECISION_INTENTS:
+        problems.append(f"{field}.intent must be one of {sorted(CLASS_DECISION_INTENTS)}")
+    if status and status not in CLASS_DECISION_STATUSES:
+        problems.append(f"{field}.status must be one of {sorted(CLASS_DECISION_STATUSES)}")
+    non_reference_role = optional_string(decision.get("non_reference_role"), f"{field}.non_reference_role", problems)
+    if intent == "retain-non-reference" and not non_reference_role:
+        problems.append(f"{field}.non_reference_role must be recorded for retained Rust classes")
+
+    raw_evidence = decision.get("evidence", [])
+    evidence: list[dict[str, Any]] = []
+    if not isinstance(raw_evidence, list):
+        problems.append(f"{field}.evidence must be a list")
+    else:
+        for evidence_index, evidence_item in enumerate(raw_evidence):
+            if not isinstance(evidence_item, dict):
+                problems.append(f"{field}.evidence[{evidence_index}] must be an object")
+                continue
+            evidence.append(evidence_item)
+
+    summaries: list[dict[str, Any]] = []
+    valid_commands: set[str] = set()
+    for evidence_index, evidence_item in enumerate(evidence):
+        summary, valid = validate_class_decision_evidence(
+            evidence_item,
+            index,
+            evidence_index,
+            repo_root,
+            required_evidence,
+            problems,
+        )
+        summaries.append(summary)
+        if valid:
+            valid_commands.add(summary["command"])
+
+    missing_evidence = [command for command in required_evidence if command not in valid_commands]
+    if status == "approved":
+        if not required_evidence:
+            problems.append(f"{field}.status cannot be approved without required_replacement_evidence")
+        if missing_evidence:
+            problems.append(f"{field}.evidence is missing approved command evidence: {', '.join(missing_evidence)}")
+        if intent == "remove-after-replacement" and removal_allowed is not True:
+            problems.append(f"{field}.removal_allowed must be true when replacement removal is approved")
+
+    blockers: list[str] = []
+    if status != "approved":
+        if intent == "retain-non-reference":
+            blockers.append(f"{class_id} retained Rust role is not approved")
+        elif intent == "remove-after-replacement":
+            blockers.append(f"{class_id} replacement/removal decision is pending")
+        else:
+            blockers.append(f"{class_id} retirement decision is not approved")
+
+    return (
+        {
+            "intent": intent,
+            "status": status,
+            "non_reference_role": non_reference_role,
+            "evidence_count": len(evidence),
+            "valid_evidence_commands": sorted(valid_commands),
+            "missing_evidence": missing_evidence,
+            "evidence": summaries,
+        },
+        blockers,
+    )
+
+
 def audit_classes(
     manifest: dict[str, Any],
     repo_root: Path,
     problems: list[str],
-) -> tuple[list[dict[str, Any]], set[str]]:
+) -> tuple[list[dict[str, Any]], set[str], list[str]]:
     classes: list[dict[str, Any]] = []
     classified_paths: set[str] = set()
+    blockers: list[str] = []
     seen_classes: set[str] = set()
     for index, item in enumerate(object_list(manifest.get("rust_path_classes"), "rust_path_classes", problems)):
         class_id = required_string(item.get("class"), f"rust_path_classes[{index}].class", problems)
@@ -300,6 +413,16 @@ def audit_classes(
             problems,
             required=False,
         )
+        retirement_decision, class_blockers = audit_class_decision(
+            item,
+            index,
+            repo_root,
+            class_id,
+            removal_allowed,
+            evidence,
+            problems,
+        )
+        blockers.extend(class_blockers)
         matched: list[str] = []
         for pattern in patterns:
             matches = expand_pattern(repo_root, pattern)
@@ -321,9 +444,10 @@ def audit_classes(
                 "patterns": patterns,
                 "matched_paths": matched,
                 "required_replacement_evidence": evidence,
+                "retirement_decision": retirement_decision,
             }
         )
-    return classes, classified_paths
+    return classes, classified_paths, blockers
 
 
 def validate_bootstrap_evidence(
@@ -936,7 +1060,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
 
     active_paths = audit_active_paths(manifest, repo_root, problems)
     docs = audit_docs(manifest, repo_root, problems)
-    classes, classified_paths = audit_classes(manifest, repo_root, problems)
+    classes, classified_paths, class_blockers = audit_classes(manifest, repo_root, problems)
     bake_in, bake_in_blockers = audit_bake_in(manifest, repo_root, problems)
     rollback, rollback_blockers = audit_rollback(manifest, repo_root, problems)
 
@@ -961,9 +1085,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
         blockers.append("approval required before Rust reference removal")
     blockers.extend(bake_in_blockers)
     blockers.extend(rollback_blockers)
-    for item in classes:
-        if item["removal_allowed"] is not True:
-            blockers.append(f"{item['class']} is still marked removal_allowed=false")
+    blockers.extend(class_blockers)
 
     removal_allowed = not problems and not blockers
     return {

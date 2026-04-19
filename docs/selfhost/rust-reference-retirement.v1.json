@@ -115,7 +115,13 @@
         "make selfhost-parity-candidate",
         "make selfhost-bootstrap",
         "make selfhost-stage-matrix"
-      ]
+      ],
+      "retirement_decision": {
+        "intent": "remove-after-replacement",
+        "status": "pending",
+        "non_reference_role": null,
+        "evidence": []
+      }
     },
     {
       "class": "rust-reference-backend-runtime",
@@ -129,7 +135,13 @@
         "make selfhost-parity-candidate",
         "make examples-run",
         "make selfhost-bootstrap"
-      ]
+      ],
+      "retirement_decision": {
+        "intent": "remove-after-replacement",
+        "status": "pending",
+        "non_reference_role": null,
+        "evidence": []
+      }
     },
     {
       "class": "rust-host-cli-release-packaging",
@@ -157,7 +169,13 @@
         "cargo build --locked",
         "make release-preflight",
         "post-retirement packaging check"
-      ]
+      ],
+      "retirement_decision": {
+        "intent": "retain-non-reference",
+        "status": "pending",
+        "non_reference_role": "Cargo-backed host CLI, release, packaging, project, sandbox, and bootstrap orchestration while those responsibilities remain outside the self-host compiler.",
+        "evidence": []
+      }
     },
     {
       "class": "rust-developer-tooling",
@@ -204,7 +222,13 @@
         "make ci",
         "make docs-check",
         "tool-specific migration notes"
-      ]
+      ],
+      "retirement_decision": {
+        "intent": "retain-non-reference",
+        "status": "pending",
+        "non_reference_role": "Developer tooling, documentation generation, LSP, profiling, migration, and analysis commands retained as tooling rather than the active AICore compiler implementation.",
+        "evidence": []
+      }
     },
     {
       "class": "rust-test-suites",
@@ -218,7 +242,13 @@
         "make ci",
         "post-retirement CI equivalent",
         "repository-wide reference scan"
-      ]
+      ],
+      "retirement_decision": {
+        "intent": "retain-non-reference",
+        "status": "pending",
+        "non_reference_role": "Rust integration and regression tests retained as the compatibility contract until an equivalent post-retirement test harness is approved.",
+        "evidence": []
+      }
     }
   ],
   "rollback_commands": [
@@ -237,7 +267,8 @@
         "make selfhost-retirement-audit",
         "approval required before Rust reference removal",
         "Rollback Source",
-        "Rollback Validation Evidence"
+        "Rollback Validation Evidence",
+        "Class Decision Evidence"
       ]
     },
     {
@@ -254,6 +285,7 @@
         "Rust Reference Retirement Audit",
         "target/selfhost-retirement/report.json",
         "rollback.validation_evidence",
+        "retirement_decision",
         "python3 scripts/selfhost/retirement_audit.py --require-approved"
       ]
     }
