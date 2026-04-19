@@ -23,8 +23,24 @@ except ImportError:  # pragma: no cover - resource is unavailable on non-POSIX h
     resource = None
 
 
-DEFAULT_MAX_ARTIFACT_BYTES = 512 * 1024 * 1024
-DEFAULT_MAX_PEAK_RSS_BYTES = 16 * 1024 * 1024 * 1024
+BOOTSTRAP_BUDGET_FORMAT = "aicore-selfhost-bootstrap-budgets-v1"
+BOOTSTRAP_PERFORMANCE_FORMAT = "aicore-selfhost-bootstrap-performance-v1"
+BOOTSTRAP_PERFORMANCE_TREND_FORMAT = "aicore-selfhost-bootstrap-performance-trend-v1"
+REQUIRED_BOOTSTRAP_STEPS = (
+    "host-preflight",
+    "stage0",
+    "stage1",
+    "stage2",
+    "parity",
+    "stage-matrix",
+)
+REQUIRED_BASELINE_FIELDS = (
+    "total_duration_ms",
+    "max_step_duration_ms",
+    "max_artifact_size_bytes",
+    "max_child_peak_rss_bytes",
+    "reproducibility_duration_ms",
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +81,13 @@ class ResourceBudgets:
     max_total_ms: int | None
     max_artifact_bytes: int | None
     max_peak_rss_bytes: int | None
+    per_step_max_ms: dict[str, int] | None = None
+    max_reproducibility_ms: int | None = None
+    source: str | None = None
+    schema_version: int | None = None
+    platform: str | None = None
+    baseline: dict[str, object] | None = None
+    overrides: dict[str, str] | None = None
 
 
 def positive_int(value: str) -> int:
@@ -84,15 +107,161 @@ def env_budget(name: str, default: int | None) -> int | None:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
         return default
-    return optional_budget_arg(raw.strip())
+    try:
+        return optional_budget_arg(raw.strip())
+    except (argparse.ArgumentTypeError, ValueError) as exc:
+        raise ValueError(
+            f"{name} must be a positive integer, 0, off, none, or disabled"
+        ) from exc
 
 
-def bootstrap_budgets(args: argparse.Namespace) -> ResourceBudgets:
+def platform_budget_key(platform_name: str) -> str:
+    if platform_name == "darwin":
+        return "macos"
+    if platform_name.startswith("linux"):
+        return "linux"
+    return platform_name
+
+
+def require_int_field(data: dict[str, object], field: str, context: str) -> int:
+    value = data.get(field)
+    if not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{context}.{field} must be a positive integer")
+    return value
+
+
+def load_budget_manifest(path: Path, platform_name: str) -> ResourceBudgets:
+    raw = json.loads(path.read_text())
+    if raw.get("format") != BOOTSTRAP_BUDGET_FORMAT:
+        raise ValueError(f"budget manifest format must be {BOOTSTRAP_BUDGET_FORMAT}")
+    schema_version = raw.get("schema_version")
+    if schema_version != 1:
+        raise ValueError("budget manifest schema_version must be 1")
+    platforms = raw.get("platforms")
+    if not isinstance(platforms, dict):
+        raise ValueError("budget manifest platforms must be an object")
+    key = platform_budget_key(platform_name)
+    platform_entry = platforms.get(key)
+    if not isinstance(platform_entry, dict):
+        raise ValueError(f"budget manifest has no supported platform entry for {key}")
+    budgets = platform_entry.get("budgets")
+    if not isinstance(budgets, dict):
+        raise ValueError(f"budget manifest platform {key} is missing budgets")
+    per_step_raw = budgets.get("per_step_ms")
+    if not isinstance(per_step_raw, dict):
+        raise ValueError(f"budget manifest platform {key} is missing per_step_ms")
+    per_step: dict[str, int] = {}
+    for step in REQUIRED_BOOTSTRAP_STEPS:
+        per_step[step] = require_int_field(
+            per_step_raw,
+            step,
+            f"platforms.{key}.budgets.per_step_ms",
+        )
+    baseline = platform_entry.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ValueError(f"budget manifest platform {key} is missing baseline")
+    for field in REQUIRED_BASELINE_FIELDS:
+        require_int_field(baseline, field, f"platforms.{key}.baseline")
+    baseline_steps = baseline.get("steps")
+    if not isinstance(baseline_steps, dict):
+        raise ValueError(f"budget manifest platform {key} baseline is missing steps")
+    for step in REQUIRED_BOOTSTRAP_STEPS:
+        step_baseline = baseline_steps.get(step)
+        if not isinstance(step_baseline, dict):
+            raise ValueError(f"budget manifest platform {key} baseline is missing {step}")
+        require_int_field(step_baseline, "duration_ms", f"platforms.{key}.baseline.steps.{step}")
     return ResourceBudgets(
-        max_step_ms=args.max_step_ms,
-        max_total_ms=args.max_total_ms,
-        max_artifact_bytes=args.max_artifact_bytes,
-        max_peak_rss_bytes=args.max_peak_rss_bytes,
+        max_step_ms=require_int_field(budgets, "max_step_ms", f"platforms.{key}.budgets"),
+        max_total_ms=require_int_field(budgets, "max_total_ms", f"platforms.{key}.budgets"),
+        max_artifact_bytes=require_int_field(
+            budgets,
+            "max_artifact_bytes",
+            f"platforms.{key}.budgets",
+        ),
+        max_peak_rss_bytes=require_int_field(
+            budgets,
+            "max_peak_rss_bytes",
+            f"platforms.{key}.budgets",
+        ),
+        per_step_max_ms=per_step,
+        max_reproducibility_ms=require_int_field(
+            budgets,
+            "max_reproducibility_ms",
+            f"platforms.{key}.budgets",
+        ),
+        source=str(path),
+        schema_version=schema_version,
+        platform=key,
+        baseline=baseline,
+        overrides={},
+    )
+
+
+def override_budget(
+    default: int | None,
+    env_name: str,
+    arg_value: int | None,
+) -> tuple[int | None, str | None]:
+    if arg_value is not None:
+        return (arg_value, "cli")
+    if env_name in os.environ and os.environ.get(env_name, "").strip() != "":
+        return (env_budget(env_name, default), env_name)
+    return (default, None)
+
+
+def bootstrap_budgets(args: argparse.Namespace, root: Path) -> ResourceBudgets:
+    manifest_path = Path(args.budget_manifest)
+    if not manifest_path.is_absolute():
+        manifest_path = root / manifest_path
+    manifest = load_budget_manifest(manifest_path, sys.platform)
+    max_step_ms, max_step_source = override_budget(
+        manifest.max_step_ms,
+        "AIC_SELFHOST_MAX_STEP_MS",
+        args.max_step_ms,
+    )
+    max_total_ms, max_total_source = override_budget(
+        manifest.max_total_ms,
+        "AIC_SELFHOST_MAX_TOTAL_MS",
+        args.max_total_ms,
+    )
+    max_artifact_bytes, max_artifact_source = override_budget(
+        manifest.max_artifact_bytes,
+        "AIC_SELFHOST_MAX_ARTIFACT_BYTES",
+        args.max_artifact_bytes,
+    )
+    max_peak_rss_bytes, max_peak_rss_source = override_budget(
+        manifest.max_peak_rss_bytes,
+        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES",
+        args.max_peak_rss_bytes,
+    )
+    max_reproducibility_ms, max_reproducibility_source = override_budget(
+        manifest.max_reproducibility_ms,
+        "AIC_SELFHOST_MAX_REPRODUCIBILITY_MS",
+        args.max_reproducibility_ms,
+    )
+    overrides = {
+        key: source
+        for key, source in {
+            "max_step_ms": max_step_source,
+            "max_total_ms": max_total_source,
+            "max_artifact_bytes": max_artifact_source,
+            "max_peak_rss_bytes": max_peak_rss_source,
+            "max_reproducibility_ms": max_reproducibility_source,
+        }.items()
+        if source is not None
+    }
+    return ResourceBudgets(
+        max_step_ms=max_step_ms,
+        max_total_ms=max_total_ms,
+        max_artifact_bytes=max_artifact_bytes,
+        max_peak_rss_bytes=max_peak_rss_bytes,
+        per_step_max_ms=manifest.per_step_max_ms,
+        max_reproducibility_ms=max_reproducibility_ms,
+        source=manifest.source,
+        schema_version=manifest.schema_version,
+        platform=manifest.platform,
+        baseline=manifest.baseline,
+        overrides=overrides,
     )
 
 
@@ -342,6 +511,7 @@ def reproducibility(stage1: Path, stage2: Path) -> dict[str, object]:
 def resource_budget_report(
     steps: list[StepResult],
     budgets: ResourceBudgets,
+    reproducibility_duration_ms: int | None = None,
 ) -> dict[str, object]:
     total_duration_ms = sum(step.duration_ms for step in steps)
     max_step_duration_ms = max((step.duration_ms for step in steps), default=0)
@@ -354,6 +524,32 @@ def resource_budget_report(
         default=0,
     )
     violations: list[str] = []
+    step_observations = {
+        step.name: {
+            "duration_ms": step.duration_ms,
+            "artifact_size_bytes": step.artifact_size_bytes,
+            "artifact_exists": step.artifact_exists,
+            "child_peak_rss_bytes": step.child_peak_rss_bytes,
+            "exit_code": step.exit_code,
+            "timed_out": step.timed_out,
+        }
+        for step in steps
+    }
+    per_step_max_ms = budgets.per_step_max_ms or {}
+    by_name = {step.name: step for step in steps}
+    for step_name, budget_ms in per_step_max_ms.items():
+        step = by_name.get(step_name)
+        if step is None:
+            violations.append(f"{step_name} missing required duration metric")
+            continue
+        if step.duration_ms > budget_ms:
+            violations.append(
+                f"{step_name} duration {step.duration_ms}ms exceeded budget {budget_ms}ms"
+            )
+        if budgets.max_peak_rss_bytes is not None and step.child_peak_rss_bytes is None:
+            violations.append(f"{step_name} missing child peak RSS metric")
+        if step.artifact is not None and step.artifact_size_bytes is None:
+            violations.append(f"{step_name} missing artifact size metric")
     if budgets.max_step_ms is not None and max_step_duration_ms > budgets.max_step_ms:
         violations.append(
             f"max step duration {max_step_duration_ms}ms exceeded budget {budgets.max_step_ms}ms"
@@ -375,21 +571,94 @@ def resource_budget_report(
             "child peak RSS "
             f"{max_peak_rss_bytes} bytes exceeded budget {budgets.max_peak_rss_bytes} bytes"
         )
+    if budgets.max_reproducibility_ms is not None:
+        if reproducibility_duration_ms is None:
+            violations.append("reproducibility comparison missing duration metric")
+        elif reproducibility_duration_ms > budgets.max_reproducibility_ms:
+            violations.append(
+                "reproducibility comparison duration "
+                f"{reproducibility_duration_ms}ms exceeded budget "
+                f"{budgets.max_reproducibility_ms}ms"
+            )
     return {
         "ok": len(violations) == 0,
         "violations": violations,
+        "budget_source": {
+            "path": budgets.source,
+            "schema_version": budgets.schema_version,
+            "platform": budgets.platform,
+            "overrides": budgets.overrides or {},
+        },
+        "baseline": budgets.baseline or {},
         "budgets": {
             "max_step_ms": budgets.max_step_ms,
             "max_total_ms": budgets.max_total_ms,
             "max_artifact_bytes": budgets.max_artifact_bytes,
             "max_peak_rss_bytes": budgets.max_peak_rss_bytes,
+            "per_step_ms": budgets.per_step_max_ms or {},
+            "max_reproducibility_ms": budgets.max_reproducibility_ms,
         },
         "observed": {
             "total_duration_ms": total_duration_ms,
             "max_step_duration_ms": max_step_duration_ms,
             "max_artifact_size_bytes": max_artifact_size_bytes,
             "max_child_peak_rss_bytes": max_peak_rss_bytes,
+            "reproducibility_duration_ms": reproducibility_duration_ms,
+            "steps": step_observations,
         },
+    }
+
+
+def performance_report_document(
+    host: dict[str, object],
+    status: str,
+    ready: bool,
+    performance: dict[str, object],
+    repro: dict[str, object],
+    steps: list[StepResult],
+) -> dict[str, object]:
+    return {
+        "format": BOOTSTRAP_PERFORMANCE_FORMAT,
+        "host": host,
+        "status": status,
+        "ready": ready,
+        "budget_source": performance.get("budget_source", {}),
+        "performance": performance,
+        "reproducibility": {
+            "matches": repro.get("matches"),
+            "exact_matches": repro.get("exact_matches"),
+            "stripped_matches": repro.get("stripped_matches"),
+            "duration_ms": repro.get("duration_ms"),
+        },
+        "steps": [step.to_json() for step in steps],
+    }
+
+
+def performance_trend_document(
+    host: dict[str, object],
+    status: str,
+    performance: dict[str, object],
+) -> dict[str, object]:
+    observed = performance.get("observed", {})
+    if not isinstance(observed, dict):
+        observed = {}
+    return {
+        "format": BOOTSTRAP_PERFORMANCE_TREND_FORMAT,
+        "host": host,
+        "status": status,
+        "ok": performance.get("ok"),
+        "budget_source": performance.get("budget_source", {}),
+        "budgets": performance.get("budgets", {}),
+        "baseline": performance.get("baseline", {}),
+        "metrics": {
+            "total_duration_ms": observed.get("total_duration_ms"),
+            "max_step_duration_ms": observed.get("max_step_duration_ms"),
+            "max_artifact_size_bytes": observed.get("max_artifact_size_bytes"),
+            "max_child_peak_rss_bytes": observed.get("max_child_peak_rss_bytes"),
+            "reproducibility_duration_ms": observed.get("reproducibility_duration_ms"),
+        },
+        "steps": observed.get("steps", {}),
+        "violations": performance.get("violations", []),
     }
 
 
@@ -435,6 +704,11 @@ def run_bootstrap(args: argparse.Namespace) -> int:
     if not out_dir.is_absolute():
         out_dir = root / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        budgets = bootstrap_budgets(args, root)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"selfhost-bootstrap: invalid performance budget configuration: {exc}", file=sys.stderr)
+        return 2
 
     stage0 = out_dir / "stage0" / "aic_selfhost"
     stage1 = out_dir / "stage1" / "aic_selfhost"
@@ -507,21 +781,33 @@ def run_bootstrap(args: argparse.Namespace) -> int:
             )
         )
 
+    repro_started = time.monotonic()
     repro = reproducibility(stage1, stage2)
-    performance = resource_budget_report(steps, bootstrap_budgets(args))
+    repro["duration_ms"] = int((time.monotonic() - repro_started) * 1000)
+    performance = resource_budget_report(steps, budgets, repro["duration_ms"])
     status, reasons = readiness_status(args.mode, steps, repro, performance)
+    host = host_report()
+    ready = not reasons
+    performance_report_path = Path(args.performance_report)
+    if not performance_report_path.is_absolute():
+        performance_report_path = root / performance_report_path
+    performance_trend_path = Path(args.performance_trend)
+    if not performance_trend_path.is_absolute():
+        performance_trend_path = root / performance_trend_path
     report = {
         "format": "aicore-selfhost-bootstrap-v1",
         "mode": args.mode,
         "status": status,
-        "ready": not reasons,
+        "ready": ready,
         "reasons": reasons,
-        "host": host_report(),
+        "host": host,
         "stage0": str(stage0),
         "stage1": str(stage1),
         "stage2": str(stage2),
         "parity_report": str(parity_report),
         "stage_matrix_report": str(stage_matrix_report),
+        "performance_report": str(performance_report_path),
+        "performance_trend": str(performance_trend_path),
         "reproducibility": repro,
         "performance": performance,
         "steps": [step.to_json() for step in steps],
@@ -536,6 +822,20 @@ def run_bootstrap(args: argparse.Namespace) -> int:
         report_path = root / report_path
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    performance_report_path.parent.mkdir(parents=True, exist_ok=True)
+    performance_report_path.write_text(
+        json.dumps(
+            performance_report_document(host, status, ready, performance, repro, steps),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    performance_trend_path.parent.mkdir(parents=True, exist_ok=True)
+    performance_trend_path.write_text(
+        json.dumps(performance_trend_document(host, status, performance), indent=2, sort_keys=True)
+        + "\n"
+    )
     print(f"selfhost-bootstrap: status={status} report={report_path}")
     for reason in reasons:
         print(f"selfhost-bootstrap: {reason}", file=sys.stderr)
@@ -549,30 +849,48 @@ def main() -> int:
     parser.add_argument("--repo-root", default=os.getcwd())
     parser.add_argument("--out-dir", default="target/selfhost-bootstrap")
     parser.add_argument("--report", default="target/selfhost-bootstrap/report.json")
+    parser.add_argument(
+        "--performance-report",
+        default="target/selfhost-bootstrap/performance-report.json",
+    )
+    parser.add_argument(
+        "--performance-trend",
+        default="target/selfhost-bootstrap/performance-trend.json",
+    )
+    parser.add_argument(
+        "--budget-manifest",
+        default="docs/selfhost/bootstrap-budgets.v1.json",
+    )
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument(
         "--max-step-ms",
         type=optional_budget_arg,
-        default=env_budget("AIC_SELFHOST_MAX_STEP_MS", 900_000),
+        default=None,
         help="maximum duration for any bootstrap step; use 0/off to disable",
     )
     parser.add_argument(
         "--max-total-ms",
         type=optional_budget_arg,
-        default=env_budget("AIC_SELFHOST_MAX_TOTAL_MS", 3_600_000),
+        default=None,
         help="maximum total duration for the bootstrap gate; use 0/off to disable",
     )
     parser.add_argument(
         "--max-artifact-bytes",
         type=optional_budget_arg,
-        default=env_budget("AIC_SELFHOST_MAX_ARTIFACT_BYTES", DEFAULT_MAX_ARTIFACT_BYTES),
+        default=None,
         help="maximum size for any produced bootstrap artifact; use 0/off to disable",
     )
     parser.add_argument(
         "--max-peak-rss-bytes",
         type=optional_budget_arg,
-        default=env_budget("AIC_SELFHOST_MAX_PEAK_RSS_BYTES", DEFAULT_MAX_PEAK_RSS_BYTES),
+        default=None,
         help="maximum cumulative child peak RSS observed by the bootstrap process; use 0/off to disable",
+    )
+    parser.add_argument(
+        "--max-reproducibility-ms",
+        type=optional_budget_arg,
+        default=None,
+        help="maximum duration for stage1/stage2 reproducibility comparison; use 0/off to disable",
     )
     parser.add_argument("--mode", choices=("experimental", "supported", "default"), default="supported")
     parser.add_argument(

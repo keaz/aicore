@@ -249,11 +249,14 @@ docs-check:
 	@test -f docs/security-threat-model.md
 	@test -f docs/selfhost/README.md
 	@test -f docs/selfhost/stage-matrix.md
+	@test -f docs/selfhost/performance.md
+	@test -f docs/selfhost/bootstrap-budgets.v1.json
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/errors/secure-networking-error-contract.v1.json
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool tests/selfhost/parity_manifest.json >/dev/null
 	@python3 -m json.tool tests/selfhost/stage_matrix_manifest.json >/dev/null
+	@python3 -m json.tool docs/selfhost/bootstrap-budgets.v1.json >/dev/null
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/parse-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null

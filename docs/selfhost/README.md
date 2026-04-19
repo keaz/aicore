@@ -127,14 +127,14 @@ The report distinguishes compiler modes:
 - `supported`: stage0, stage1, stage2, parity, the stage compiler matrix, stage1/stage2 reproducibility, and resource budgets must pass. Native artifacts may match exactly, or may match after platform strip normalization when the only recorded difference is non-loadable symbol/debug table data. Linux uses `strip --strip-all`; macOS uses `strip -S -x`.
 - `default`: the supported gate must pass, followed by explicit release approval.
 
-The bootstrap report includes a `performance` object with total duration, maximum step duration, maximum produced artifact size, and the maximum child-process peak RSS observed by the gate. The default release-safety budgets are intentionally broad enough for current Linux/macOS self-builds while still catching runaway builds:
+The bootstrap report includes a `performance` object with total duration, per-step duration, maximum produced artifact size, reproducibility comparison duration, and the maximum child-process peak RSS observed by the gate. Production budgets come from the checked-in manifest at `docs/selfhost/bootstrap-budgets.v1.json`; the report records the manifest path, schema version, platform entry, baseline values, active budgets, and local overrides under `performance.budget_source`.
 
-- `--max-step-ms` / `AIC_SELFHOST_MAX_STEP_MS`, default `900000`
-- `--max-total-ms` / `AIC_SELFHOST_MAX_TOTAL_MS`, default `3600000`
-- `--max-artifact-bytes` / `AIC_SELFHOST_MAX_ARTIFACT_BYTES`, default `536870912`
-- `--max-peak-rss-bytes` / `AIC_SELFHOST_MAX_PEAK_RSS_BYTES`, default `17179869184`
+The gate also writes performance-specific artifacts:
 
-Set any budget to `0`, `off`, `none`, or `disabled` only for local investigation; supported readiness requires the report's `performance.ok` field to be `true`.
+- `target/selfhost-bootstrap/performance-report.json`
+- `target/selfhost-bootstrap/performance-trend.json`
+
+The trend report is the review artifact for comparing a run against the Linux/macOS baselines without scraping logs. See `docs/selfhost/performance.md` for metric meanings, current baselines, local override rules, and the budget update process. Set any budget override to `0`, `off`, `none`, or `disabled` only for local investigation; supported readiness requires `performance.ok` to be `true`, and release evidence must use the checked-in production defaults.
 
 The release-blocking command is:
 
@@ -154,15 +154,10 @@ GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.
 make selfhost-bootstrap
 ```
 
-The CI job uses the release budget environment shown below so workflow timeouts and the bootstrap report agree:
+CI and release workflows use the checked-in production budgets from `docs/selfhost/bootstrap-budgets.v1.json`. They set only the bootstrap process timeout so long supported runs can finish and report precise manifest budget failures:
 
 ```bash
-AIC_SELFHOST_BOOTSTRAP_TIMEOUT=3600 \
-AIC_SELFHOST_MAX_STEP_MS=3600000 \
-AIC_SELFHOST_MAX_TOTAL_MS=7200000 \
-AIC_SELFHOST_MAX_ARTIFACT_BYTES=536870912 \
-AIC_SELFHOST_MAX_PEAK_RSS_BYTES=17179869184 \
-make selfhost-bootstrap
+AIC_SELFHOST_BOOTSTRAP_TIMEOUT=3600 make selfhost-bootstrap
 ```
 
 The release workflow has a separate `Release Self-Host Bootstrap (${{ matrix.os }})` matrix for `ubuntu-latest` and `macos-latest`; release builds depend on that matrix succeeding. Local release validation uses the same host command contract through:
@@ -180,11 +175,12 @@ Both CI and release workflows upload self-host artifacts even when the gate fail
 - `release-selfhost-bootstrap-ubuntu-latest`
 - `release-selfhost-bootstrap-macos-latest`
 
-Each artifact contains `target/selfhost-bootstrap/report.json`, `target/selfhost-bootstrap/parity-report.json`, `target/selfhost-bootstrap/stage-matrix-report.json`, stage compiler outputs, parity artifacts, and stage-matrix artifacts when those files were produced. The report `host`, `steps`, `reproducibility`, and `performance` fields are the primary evidence for platform details, stage exit codes, strip normalization, resource budgets, and readiness status.
+Each artifact contains `target/selfhost-bootstrap/report.json`, `target/selfhost-bootstrap/performance-report.json`, `target/selfhost-bootstrap/performance-trend.json`, `target/selfhost-bootstrap/parity-report.json`, `target/selfhost-bootstrap/stage-matrix-report.json`, stage compiler outputs, parity artifacts, and stage-matrix artifacts when those files were produced. The report `host`, `steps`, `reproducibility`, and `performance` fields are the primary evidence for platform details, stage exit codes, strip normalization, resource budgets, and readiness status.
 
 For troubleshooting:
 
 - Inspect `target/selfhost-bootstrap/report.json` for command lines, exit codes, timeouts, stdout/stderr, artifact paths, artifact sizes, SHA-256 digests, peak RSS, and resource-budget violations.
+- Inspect `target/selfhost-bootstrap/performance-trend.json` for platform baselines, active budgets, observed top-level metrics, per-step metrics, and local budget overrides.
 - Inspect `target/selfhost-bootstrap/stage-matrix-report.json` for package, package-member, workspace-probe, and core-example stage compiler results.
 - Run `target/selfhost-bootstrap/stage0/aic_selfhost check <package>` to isolate package-level front-end failures.
 - Run `make selfhost-parity-candidate` to validate the currently supported Rust-vs-self-host parity corpus independently of bootstrap.

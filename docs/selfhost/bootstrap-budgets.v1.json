@@ -1,0 +1,98 @@
+{
+  "format": "aicore-selfhost-bootstrap-budgets-v1",
+  "schema_version": 1,
+  "description": "Production self-host bootstrap performance budgets. Values cover compiler bootstrap only; unrelated runtime/application benchmarks belong in separate manifests.",
+  "review_policy": "Update baselines only with a linked self-hosting issue, local and CI evidence for Linux and macOS, and reviewer approval that the change reflects expected compiler behavior rather than a masked regression.",
+  "platforms": {
+    "linux": {
+      "baseline": {
+        "source": "CI self-host bootstrap gate introduced by issue 413 on ubuntu-latest",
+        "total_duration_ms": 4800000,
+        "max_step_duration_ms": 3000000,
+        "max_artifact_size_bytes": 90000000,
+        "max_child_peak_rss_bytes": 9000000000,
+        "reproducibility_duration_ms": 30000,
+        "steps": {
+          "host-preflight": {
+            "duration_ms": 5000
+          },
+          "stage0": {
+            "duration_ms": 240000
+          },
+          "stage1": {
+            "duration_ms": 3000000
+          },
+          "stage2": {
+            "duration_ms": 950000
+          },
+          "parity": {
+            "duration_ms": 480000
+          },
+          "stage-matrix": {
+            "duration_ms": 120000
+          }
+        }
+      },
+      "budgets": {
+        "max_step_ms": 3600000,
+        "max_total_ms": 7200000,
+        "max_artifact_bytes": 536870912,
+        "max_peak_rss_bytes": 17179869184,
+        "max_reproducibility_ms": 120000,
+        "per_step_ms": {
+          "host-preflight": 60000,
+          "stage0": 600000,
+          "stage1": 3600000,
+          "stage2": 2400000,
+          "parity": 900000,
+          "stage-matrix": 600000
+        }
+      }
+    },
+    "macos": {
+      "baseline": {
+        "source": "Local macOS supported bootstrap gate introduced by issue 413 on Darwin arm64",
+        "total_duration_ms": 700000,
+        "max_step_duration_ms": 460000,
+        "max_artifact_size_bytes": 90000000,
+        "max_child_peak_rss_bytes": 6000000000,
+        "reproducibility_duration_ms": 30000,
+        "steps": {
+          "host-preflight": {
+            "duration_ms": 2000
+          },
+          "stage0": {
+            "duration_ms": 50000
+          },
+          "stage1": {
+            "duration_ms": 460000
+          },
+          "stage2": {
+            "duration_ms": 140000
+          },
+          "parity": {
+            "duration_ms": 45000
+          },
+          "stage-matrix": {
+            "duration_ms": 15000
+          }
+        }
+      },
+      "budgets": {
+        "max_step_ms": 1800000,
+        "max_total_ms": 3600000,
+        "max_artifact_bytes": 536870912,
+        "max_peak_rss_bytes": 17179869184,
+        "max_reproducibility_ms": 120000,
+        "per_step_ms": {
+          "host-preflight": 60000,
+          "stage0": 300000,
+          "stage1": 1800000,
+          "stage2": 900000,
+          "parity": 600000,
+          "stage-matrix": 300000
+        }
+      }
+    }
+  }
+}

@@ -24,7 +24,7 @@ Generate deterministic source manifest:
 aic release manifest --root . --output target/release/repro-manifest.json --source-date-epoch 1700000000
 ```
 
-The manifest records source inputs only. Local/generated directories such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules` are excluded so release verification is not affected by self-host bootstrap artifacts, editor test downloads, or local build output. Self-host native reproducibility uses platform artifact normalization outside this source manifest: Linux uses `strip --strip-all`, and macOS uses `strip -S -x` after Mach-O outputs are ad-hoc signed. The self-host bootstrap report also records resource budgets and observed duration, artifact-size, and child peak-RSS values; release readiness requires `performance.ok` to be `true`.
+The manifest records source inputs only. Local/generated directories such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules` are excluded so release verification is not affected by self-host bootstrap artifacts, editor test downloads, or local build output. Self-host native reproducibility uses platform artifact normalization outside this source manifest: Linux uses `strip --strip-all`, and macOS uses `strip -S -x` after Mach-O outputs are ad-hoc signed. The self-host bootstrap report also records manifest-backed resource budgets and observed duration, artifact-size, reproducibility-duration, and child peak-RSS values; release readiness requires `performance.ok` to be `true` with no CI/release budget overrides.
 
 Verify against checked-in/output manifest:
 
@@ -207,7 +207,7 @@ aic release lts --check
 ## GitHub Actions
 
 - `.github/workflows/ci.yml` runs `make test-e9`, `make security-audit`, and `make repro-check`.
-- `.github/workflows/ci.yml` also runs `Self-Host Bootstrap (${{ matrix.os }})` on Linux and macOS and uploads `target/selfhost-bootstrap/report.json`, parity, and stage-matrix artifacts.
+- `.github/workflows/ci.yml` also runs `Self-Host Bootstrap (${{ matrix.os }})` on Linux and macOS and uploads `target/selfhost-bootstrap/report.json`, `performance-report.json`, `performance-trend.json`, parity, and stage-matrix artifacts.
 - `.github/workflows/release.yml` builds release artifacts and publishes checksums + metadata, with `release policy`, `release lts`, and `Release Self-Host Bootstrap (${{ matrix.os }})` Linux/macOS gates.
 - `.github/workflows/security.yml` runs scheduled and on-demand security audit checks, and the LTS policy gate.
 - `docs/release/matrix.md` documents the cross-platform release matrix and verification workflow.

@@ -770,10 +770,24 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(bootstrap.contains("AIC_SELFHOST_STAGE0"));
     assert!(bootstrap.contains("resource_budget_report"));
     assert!(bootstrap.contains("performance"));
+    assert!(bootstrap.contains("aicore-selfhost-bootstrap-budgets-v1"));
+    assert!(bootstrap.contains("aicore-selfhost-bootstrap-performance-v1"));
+    assert!(bootstrap.contains("performance-report.json"));
+    assert!(bootstrap.contains("performance-trend.json"));
+    assert!(bootstrap.contains("budget_source"));
+    assert!(bootstrap.contains("max_reproducibility_ms"));
     assert!(bootstrap.contains("artifact_size_bytes"));
     assert!(bootstrap.contains("child_peak_rss_bytes"));
     assert!(bootstrap.contains("AIC_SELFHOST_MAX_STEP_MS"));
     assert!(bootstrap.contains("AIC_SELFHOST_MAX_ARTIFACT_BYTES"));
+
+    let budget_manifest = fs::read_to_string(root.join("docs/selfhost/bootstrap-budgets.v1.json"))
+        .expect("read self-host budget manifest");
+    assert!(budget_manifest.contains("aicore-selfhost-bootstrap-budgets-v1"));
+    assert!(budget_manifest.contains("\"linux\""));
+    assert!(budget_manifest.contains("\"macos\""));
+    assert!(budget_manifest.contains("\"max_reproducibility_ms\""));
+    assert!(budget_manifest.contains("\"per_step_ms\""));
 
     let stage_matrix = fs::read_to_string(root.join("scripts/selfhost/stage_matrix.py"))
         .expect("read stage matrix");
@@ -788,6 +802,12 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("make selfhost-bootstrap-report"));
     assert!(selfhost_docs.contains("make selfhost-bootstrap"));
     assert!(selfhost_docs.contains("make selfhost-stage-matrix"));
+    assert!(selfhost_docs.contains("docs/selfhost/bootstrap-budgets.v1.json"));
+    assert!(selfhost_docs.contains("performance-trend.json"));
+    let performance_docs =
+        fs::read_to_string(root.join("docs/selfhost/performance.md")).expect("read perf docs");
+    assert!(performance_docs.contains("Release gates use the checked-in manifest defaults"));
+    assert!(performance_docs.contains("performance.budget_source"));
     assert!(selfhost_docs.contains("docs/selfhost/stage-matrix.md"));
     assert!(selfhost_docs.contains("experimental"));
     assert!(selfhost_docs.contains("supported"));
@@ -943,10 +963,6 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "os: [ubuntu-latest, macos-latest]",
         "timeout-minutes: 150",
         "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"3600\"",
-        "AIC_SELFHOST_MAX_STEP_MS: \"3600000\"",
-        "AIC_SELFHOST_MAX_TOTAL_MS: \"7200000\"",
-        "AIC_SELFHOST_MAX_ARTIFACT_BYTES: \"536870912\"",
-        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES: \"17179869184\"",
         "Host tool preflight",
         "command -v cargo",
         "command -v clang",
@@ -960,10 +976,23 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "if: always()",
         "selfhost-bootstrap-${{ matrix.os }}",
         "target/selfhost-bootstrap/report.json",
+        "target/selfhost-bootstrap/performance-report.json",
+        "target/selfhost-bootstrap/performance-trend.json",
         "target/selfhost-bootstrap/parity-report.json",
         "target/selfhost-bootstrap/stage-matrix-report.json",
     ] {
         assert!(ci.contains(token), "ci workflow missing token: {token}");
+    }
+    for forbidden in [
+        "AIC_SELFHOST_MAX_STEP_MS:",
+        "AIC_SELFHOST_MAX_TOTAL_MS:",
+        "AIC_SELFHOST_MAX_ARTIFACT_BYTES:",
+        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES:",
+    ] {
+        assert!(
+            !ci.contains(forbidden),
+            "ci workflow must use manifest budget defaults, found: {forbidden}"
+        );
     }
 
     let release = fs::read_to_string(root.join(".github/workflows/release.yml"))
@@ -974,10 +1003,6 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "os: [ubuntu-latest, macos-latest]",
         "timeout-minutes: 150",
         "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"3600\"",
-        "AIC_SELFHOST_MAX_STEP_MS: \"3600000\"",
-        "AIC_SELFHOST_MAX_TOTAL_MS: \"7200000\"",
-        "AIC_SELFHOST_MAX_ARTIFACT_BYTES: \"536870912\"",
-        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES: \"17179869184\"",
         "Host tool preflight",
         "command -v cargo",
         "command -v clang",
@@ -987,6 +1012,8 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "make selfhost-bootstrap",
         "release-selfhost-bootstrap-${{ matrix.os }}",
         "target/selfhost-bootstrap/report.json",
+        "target/selfhost-bootstrap/performance-report.json",
+        "target/selfhost-bootstrap/performance-trend.json",
         "target/selfhost-bootstrap/parity-report.json",
         "target/selfhost-bootstrap/stage-matrix-report.json",
         "- release-selfhost-bootstrap",
@@ -994,6 +1021,17 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         assert!(
             release.contains(token),
             "release workflow missing token: {token}"
+        );
+    }
+    for forbidden in [
+        "AIC_SELFHOST_MAX_STEP_MS:",
+        "AIC_SELFHOST_MAX_TOTAL_MS:",
+        "AIC_SELFHOST_MAX_ARTIFACT_BYTES:",
+        "AIC_SELFHOST_MAX_PEAK_RSS_BYTES:",
+    ] {
+        assert!(
+            !release.contains(forbidden),
+            "release workflow must use manifest budget defaults, found: {forbidden}"
         );
     }
 }
@@ -1088,7 +1126,7 @@ module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-def step(name, duration_ms, artifact_size_bytes, child_peak_rss_bytes):
+def step(name, duration_ms, artifact_size_bytes, child_peak_rss_bytes, artifact=True):
     return module.StepResult(
         name=name,
         command=["true"],
@@ -1097,14 +1135,15 @@ def step(name, duration_ms, artifact_size_bytes, child_peak_rss_bytes):
         stdout="",
         stderr="",
         timed_out=False,
-        artifact=name,
-        artifact_exists=True,
+        artifact=name if artifact else None,
+        artifact_exists=True if artifact else None,
         artifact_sha256="sha256:" + name,
-        artifact_size_bytes=artifact_size_bytes,
+        artifact_size_bytes=artifact_size_bytes if artifact else None,
         child_peak_rss_bytes=child_peak_rss_bytes,
     )
 
 steps = [
+    step("host-preflight", 10, 0, 30, artifact=False),
     step("stage0", 10, 20, 30),
     step("stage1", 200, 300, 400),
     step("stage2", 10, 20, 30),
@@ -1118,12 +1157,30 @@ passing = module.resource_budget_report(
         max_total_ms=500,
         max_artifact_bytes=500,
         max_peak_rss_bytes=500,
+        per_step_max_ms={{
+            "host-preflight": 100,
+            "stage0": 100,
+            "stage1": 500,
+            "stage2": 100,
+            "parity": 100,
+            "stage-matrix": 100,
+        }},
+        max_reproducibility_ms=100,
+        source="docs/selfhost/bootstrap-budgets.v1.json",
+        schema_version=1,
+        platform="linux",
+        baseline={{"total_duration_ms": 300}},
     ),
+    50,
 )
 assert passing["ok"] is True
 assert passing["observed"]["max_step_duration_ms"] == 200
 assert passing["observed"]["max_artifact_size_bytes"] == 300
 assert passing["observed"]["max_child_peak_rss_bytes"] == 400
+assert passing["observed"]["reproducibility_duration_ms"] == 50
+assert passing["observed"]["steps"]["stage1"]["duration_ms"] == 200
+assert passing["budget_source"]["schema_version"] == 1
+assert passing["budgets"]["max_reproducibility_ms"] == 100
 
 failing = module.resource_budget_report(
     steps,
@@ -1132,13 +1189,56 @@ failing = module.resource_budget_report(
         max_total_ms=100,
         max_artifact_bytes=100,
         max_peak_rss_bytes=100,
+        per_step_max_ms={{
+            "host-preflight": 100,
+            "stage0": 100,
+            "stage1": 100,
+            "stage2": 100,
+            "parity": 100,
+            "stage-matrix": 100,
+        }},
+        max_reproducibility_ms=10,
     ),
+    50,
 )
 assert failing["ok"] is False
-assert len(failing["violations"]) == 4
+assert len(failing["violations"]) == 6
+assert any("stage1 duration" in violation for violation in failing["violations"])
+assert any("reproducibility comparison duration" in violation for violation in failing["violations"])
 status, reasons = module.readiness_status("supported", steps, {{"matches": True}}, failing)
 assert status == "experimental"
 assert any("resource budget violation" in reason for reason in reasons)
+
+missing = module.resource_budget_report(
+    steps[:-1],
+    module.ResourceBudgets(
+        max_step_ms=500,
+        max_total_ms=500,
+        max_artifact_bytes=500,
+        max_peak_rss_bytes=500,
+        per_step_max_ms={{"stage-matrix": 100}},
+        max_reproducibility_ms=100,
+    ),
+    None,
+)
+assert missing["ok"] is False
+assert "stage-matrix missing required duration metric" in missing["violations"]
+assert "reproducibility comparison missing duration metric" in missing["violations"]
+
+missing_step_metrics = module.resource_budget_report(
+    [step("stage0", 10, None, None)],
+    module.ResourceBudgets(
+        max_step_ms=500,
+        max_total_ms=500,
+        max_artifact_bytes=500,
+        max_peak_rss_bytes=500,
+        per_step_max_ms={{"stage0": 100}},
+        max_reproducibility_ms=None,
+    ),
+    1,
+)
+assert "stage0 missing child peak RSS metric" in missing_step_metrics["violations"]
+assert "stage0 missing artifact size metric" in missing_step_metrics["violations"]
 "#,
             script = script.to_string_lossy()
         ))
@@ -1147,6 +1247,151 @@ assert any("resource budget violation" in reason for reason in reasons)
     assert!(
         output.status.success(),
         "bootstrap budget probe failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn selfhost_bootstrap_budget_manifest_parsing_is_platform_specific() {
+    let root = repo_root();
+    let script = root.join("scripts/selfhost/bootstrap.py");
+    let manifest = root.join("docs/selfhost/bootstrap-budgets.v1.json");
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            r#"
+import importlib.util
+import json
+import os
+import pathlib
+import sys
+import tempfile
+spec = importlib.util.spec_from_file_location("bootstrap", {script:?})
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+manifest_path = pathlib.Path({manifest:?})
+linux = module.load_budget_manifest(manifest_path, "linux")
+macos = module.load_budget_manifest(manifest_path, "darwin")
+assert linux.platform == "linux"
+assert macos.platform == "macos"
+assert linux.schema_version == 1
+assert macos.schema_version == 1
+assert linux.per_step_max_ms["stage1"] > linux.baseline["steps"]["stage1"]["duration_ms"]
+assert macos.per_step_max_ms["stage1"] > macos.baseline["steps"]["stage1"]["duration_ms"]
+
+class Args:
+    budget_manifest = str(manifest_path)
+    max_step_ms = None
+    max_total_ms = None
+    max_artifact_bytes = None
+    max_peak_rss_bytes = None
+    max_reproducibility_ms = None
+
+os.environ["AIC_SELFHOST_MAX_TOTAL_MS"] = "123456"
+try:
+    budgets = module.bootstrap_budgets(Args(), pathlib.Path("."))
+    assert budgets.max_total_ms == 123456
+    assert budgets.overrides["max_total_ms"] == "AIC_SELFHOST_MAX_TOTAL_MS"
+finally:
+    os.environ.pop("AIC_SELFHOST_MAX_TOTAL_MS", None)
+
+with tempfile.TemporaryDirectory() as tmp:
+    invalid_path = pathlib.Path(tmp) / "budgets.json"
+    invalid = json.loads(manifest_path.read_text())
+    del invalid["platforms"]["linux"]["budgets"]["per_step_ms"]["stage-matrix"]
+    invalid_path.write_text(json.dumps(invalid))
+    try:
+        module.load_budget_manifest(invalid_path, "linux")
+    except ValueError as exc:
+        assert "stage-matrix" in str(exc)
+    else:
+        raise AssertionError("invalid manifest was accepted")
+"#,
+            script = script.to_string_lossy(),
+            manifest = manifest.to_string_lossy()
+        ))
+        .output()
+        .expect("run bootstrap manifest probe");
+    assert!(
+        output.status.success(),
+        "bootstrap manifest probe failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn selfhost_bootstrap_performance_reports_have_stable_schema() {
+    let root = repo_root();
+    let script = root.join("scripts/selfhost/bootstrap.py");
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(format!(
+            r#"
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("bootstrap", {script:?})
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+def step(name):
+    return module.StepResult(
+        name=name,
+        command=["true"],
+        exit_code=0,
+        duration_ms=10,
+        stdout="",
+        stderr="",
+        timed_out=False,
+        artifact=name if name != "host-preflight" else None,
+        artifact_exists=True if name != "host-preflight" else None,
+        artifact_sha256="sha256:" + name,
+        artifact_size_bytes=20 if name != "host-preflight" else None,
+        child_peak_rss_bytes=30,
+    )
+
+steps = [step(name) for name in module.REQUIRED_BOOTSTRAP_STEPS]
+performance = module.resource_budget_report(
+    steps,
+    module.ResourceBudgets(
+        max_step_ms=100,
+        max_total_ms=1000,
+        max_artifact_bytes=1000,
+        max_peak_rss_bytes=1000,
+        per_step_max_ms={{name: 100 for name in module.REQUIRED_BOOTSTRAP_STEPS}},
+        max_reproducibility_ms=100,
+        source="docs/selfhost/bootstrap-budgets.v1.json",
+        schema_version=1,
+        platform="linux",
+        baseline={{"total_duration_ms": 60}},
+    ),
+    5,
+)
+assert performance["ok"] is True
+repro = {{"matches": True, "exact_matches": True, "stripped_matches": True, "duration_ms": 5}}
+host = {{"platform": "linux", "system": "Linux", "machine": "x86_64"}}
+report = module.performance_report_document(host, "supported-ready", True, performance, repro, steps)
+trend = module.performance_trend_document(host, "supported-ready", performance)
+assert report["format"] == "aicore-selfhost-bootstrap-performance-v1"
+assert report["budget_source"]["schema_version"] == 1
+assert report["performance"]["observed"]["steps"]["stage1"]["duration_ms"] == 10
+assert report["reproducibility"]["duration_ms"] == 5
+assert trend["format"] == "aicore-selfhost-bootstrap-performance-trend-v1"
+assert trend["ok"] is True
+assert trend["metrics"]["total_duration_ms"] == 60
+assert trend["steps"]["stage-matrix"]["artifact_size_bytes"] == 20
+"#,
+            script = script.to_string_lossy()
+        ))
+        .output()
+        .expect("run bootstrap performance schema probe");
+    assert!(
+        output.status.success(),
+        "bootstrap performance schema probe failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
