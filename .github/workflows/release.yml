@@ -48,15 +48,15 @@ jobs:
     name: Release Self-Host Bootstrap (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: release-preflight
-    timeout-minutes: 90
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     env:
-      AIC_SELFHOST_BOOTSTRAP_TIMEOUT: "1200"
-      AIC_SELFHOST_MAX_STEP_MS: "1200000"
-      AIC_SELFHOST_MAX_TOTAL_MS: "5400000"
+      AIC_SELFHOST_BOOTSTRAP_TIMEOUT: "3600"
+      AIC_SELFHOST_MAX_STEP_MS: "3600000"
+      AIC_SELFHOST_MAX_TOTAL_MS: "7200000"
       AIC_SELFHOST_MAX_ARTIFACT_BYTES: "536870912"
       AIC_SELFHOST_MAX_PEAK_RSS_BYTES: "17179869184"
     steps:

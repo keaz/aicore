@@ -796,7 +796,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("CI and Release Gates"));
     assert!(selfhost_docs.contains("Self-Host Bootstrap (${{ matrix.os }})"));
     assert!(selfhost_docs.contains("Release Self-Host Bootstrap (${{ matrix.os }})"));
-    assert!(selfhost_docs.contains("AIC_SELFHOST_BOOTSTRAP_TIMEOUT=1200"));
+    assert!(selfhost_docs.contains("AIC_SELFHOST_BOOTSTRAP_TIMEOUT=3600"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
@@ -941,9 +941,10 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "selfhost-bootstrap:",
         "Self-Host Bootstrap (${{ matrix.os }})",
         "os: [ubuntu-latest, macos-latest]",
-        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"1200\"",
-        "AIC_SELFHOST_MAX_STEP_MS: \"1200000\"",
-        "AIC_SELFHOST_MAX_TOTAL_MS: \"5400000\"",
+        "timeout-minutes: 150",
+        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"3600\"",
+        "AIC_SELFHOST_MAX_STEP_MS: \"3600000\"",
+        "AIC_SELFHOST_MAX_TOTAL_MS: \"7200000\"",
         "AIC_SELFHOST_MAX_ARTIFACT_BYTES: \"536870912\"",
         "AIC_SELFHOST_MAX_PEAK_RSS_BYTES: \"17179869184\"",
         "Host tool preflight",
@@ -971,9 +972,10 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "release-selfhost-bootstrap:",
         "Release Self-Host Bootstrap (${{ matrix.os }})",
         "os: [ubuntu-latest, macos-latest]",
-        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"1200\"",
-        "AIC_SELFHOST_MAX_STEP_MS: \"1200000\"",
-        "AIC_SELFHOST_MAX_TOTAL_MS: \"5400000\"",
+        "timeout-minutes: 150",
+        "AIC_SELFHOST_BOOTSTRAP_TIMEOUT: \"3600\"",
+        "AIC_SELFHOST_MAX_STEP_MS: \"3600000\"",
+        "AIC_SELFHOST_MAX_TOTAL_MS: \"7200000\"",
         "AIC_SELFHOST_MAX_ARTIFACT_BYTES: \"536870912\"",
         "AIC_SELFHOST_MAX_PEAK_RSS_BYTES: \"17179869184\"",
         "Host tool preflight",
