@@ -180,6 +180,8 @@ That target writes `target/selfhost-retirement/report.json` and passes while the
 python3 scripts/selfhost/retirement_audit.py --require-approved
 ```
 
+Passing bake-in entries must be machine-verifiable: each entry records `make release-preflight`, `make ci`, source commit, supported bootstrap report checksum, release provenance checksum, and default compiler-source build artifact checksum. Empty or failed entries do not count toward Linux/macOS bake-in.
+
 ## CI and Release Gates
 
 GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.yml` as `Self-Host Bootstrap (${{ matrix.os }})` on `ubuntu-latest` and `macos-latest`. The job installs `clang` on Linux, runs the host tool preflight, then runs the same supported-mode command used locally:

@@ -18,6 +18,31 @@
     ],
     "evidence": []
   },
+  "evidence_schema": {
+    "passed_entry_required_fields": [
+      "platform",
+      "status",
+      "source_commit",
+      "recorded_at",
+      "release_preflight_command",
+      "ci_command",
+      "bootstrap_report",
+      "bootstrap_report_sha256",
+      "release_provenance",
+      "release_provenance_sha256",
+      "default_build_artifact",
+      "default_build_sha256"
+    ],
+    "required_commands": {
+      "release_preflight_command": "make release-preflight",
+      "ci_command": "make ci"
+    },
+    "required_bootstrap_format": "aicore-selfhost-bootstrap-v1",
+    "required_provenance_format": "aicore-selfhost-release-provenance-v1",
+    "required_bootstrap_status": "supported-ready",
+    "requires_clean_provenance_worktree": true,
+    "requires_production_budget_defaults": true
+  },
   "required_active_paths": [
     "Cargo.toml",
     "Cargo.lock",

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -13,9 +14,13 @@ from typing import Any
 
 MANIFEST_FORMAT = "aicore-rust-reference-retirement-v1"
 REPORT_FORMAT = "aicore-rust-reference-retirement-audit-v1"
+BOOTSTRAP_FORMAT = "aicore-selfhost-bootstrap-v1"
+PROVENANCE_FORMAT = "aicore-selfhost-release-provenance-v1"
 SCHEMA_VERSION = 1
 STATUSES = {"deferred", "approved", "retired"}
 GLOB_CHARS = "*?["
+RELEASE_PREFLIGHT_COMMAND = "make release-preflight"
+CI_COMMAND = "make ci"
 
 
 def default_repo_root() -> Path:
@@ -35,6 +40,23 @@ def read_json(path: Path) -> dict[str, Any]:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def sha256_prefixed(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def platform_key(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized == "darwin":
+        return "macos"
+    if normalized.startswith("linux"):
+        return "linux"
+    return normalized
 
 
 def display_path(path: Path, repo_root: Path) -> str:
@@ -120,6 +142,20 @@ def required_positive_int(value: Any, field: str, problems: list[str]) -> int:
         problems.append(f"{field} must be a positive integer")
         return 0
     return value
+
+
+def verify_sha256(path: Path, expected: str, field: str, problems: list[str]) -> bool:
+    if not isinstance(expected, str) or not expected.startswith("sha256:"):
+        problems.append(f"{field} must be a sha256: digest")
+        return False
+    if not path.is_file():
+        problems.append(f"{field} target is missing: {path}")
+        return False
+    actual = sha256_prefixed(path)
+    if actual != expected:
+        problems.append(f"{field} mismatch for {path}: expected {expected}, found {actual}")
+        return False
+    return True
 
 
 def tracked_rust_inventory(repo_root: Path) -> list[str]:
@@ -256,8 +292,278 @@ def audit_classes(
     return classes, classified_paths
 
 
+def validate_bootstrap_evidence(
+    item: dict[str, Any],
+    index: int,
+    repo_root: Path,
+    evidence_platform: str,
+    source_commit: str,
+    problems: list[str],
+) -> dict[str, Any]:
+    raw_path = required_string(item.get("bootstrap_report"), f"bake_in.evidence[{index}].bootstrap_report", problems)
+    expected_sha = required_string(
+        item.get("bootstrap_report_sha256"),
+        f"bake_in.evidence[{index}].bootstrap_report_sha256",
+        problems,
+    )
+    result = {
+        "path": raw_path,
+        "exists": False,
+        "sha256_ok": False,
+        "ready": False,
+        "status": None,
+        "platform": None,
+        "budget_overrides_ok": False,
+    }
+    if not raw_path:
+        return result
+    path = resolve_repo_path(repo_root, raw_path)
+    result["exists"] = path.is_file()
+    if expected_sha:
+        result["sha256_ok"] = verify_sha256(
+            path, expected_sha, f"bake_in.evidence[{index}].bootstrap_report_sha256", problems
+        )
+    if not path.is_file():
+        problems.append(f"bake_in.evidence[{index}].bootstrap_report is missing: {raw_path}")
+        return result
+    try:
+        report = read_json(path)
+    except (OSError, ValueError) as exc:
+        problems.append(f"bake_in.evidence[{index}].bootstrap_report is invalid: {exc}")
+        return result
+    if report.get("format") != BOOTSTRAP_FORMAT:
+        problems.append(f"bake_in.evidence[{index}].bootstrap_report format must be {BOOTSTRAP_FORMAT}")
+    result["ready"] = report.get("ready") is True
+    result["status"] = report.get("status")
+    if result["status"] != "supported-ready" or result["ready"] is not True:
+        problems.append(f"bake_in.evidence[{index}].bootstrap_report must be supported-ready")
+    host = report.get("host")
+    host_platform = host.get("platform") if isinstance(host, dict) else None
+    normalized_host = platform_key(host_platform) if isinstance(host_platform, str) else ""
+    result["platform"] = normalized_host or None
+    if normalized_host != evidence_platform:
+        problems.append(
+            f"bake_in.evidence[{index}].bootstrap_report platform {host_platform!r} "
+            f"does not match evidence platform {evidence_platform!r}"
+        )
+    performance = report.get("performance")
+    budget_source = performance.get("budget_source") if isinstance(performance, dict) else None
+    overrides = budget_source.get("overrides") if isinstance(budget_source, dict) else None
+    result["budget_overrides_ok"] = overrides == {}
+    if overrides != {}:
+        problems.append(f"bake_in.evidence[{index}].bootstrap_report must use production budget defaults")
+    if source_commit:
+        result["source_commit"] = source_commit
+    return result
+
+
+def validate_provenance_evidence(
+    item: dict[str, Any],
+    index: int,
+    repo_root: Path,
+    evidence_platform: str,
+    source_commit: str,
+    problems: list[str],
+) -> dict[str, Any]:
+    raw_path = required_string(
+        item.get("release_provenance"),
+        f"bake_in.evidence[{index}].release_provenance",
+        problems,
+    )
+    expected_sha = required_string(
+        item.get("release_provenance_sha256"),
+        f"bake_in.evidence[{index}].release_provenance_sha256",
+        problems,
+    )
+    result = {
+        "path": raw_path,
+        "exists": False,
+        "sha256_ok": False,
+        "source_commit_ok": False,
+        "worktree_clean": False,
+        "validation_ok": False,
+        "canonical_artifact_ok": False,
+    }
+    if not raw_path:
+        return result
+    path = resolve_repo_path(repo_root, raw_path)
+    result["exists"] = path.is_file()
+    if expected_sha:
+        result["sha256_ok"] = verify_sha256(
+            path, expected_sha, f"bake_in.evidence[{index}].release_provenance_sha256", problems
+        )
+    if not path.is_file():
+        problems.append(f"bake_in.evidence[{index}].release_provenance is missing: {raw_path}")
+        return result
+    try:
+        report = read_json(path)
+    except (OSError, ValueError) as exc:
+        problems.append(f"bake_in.evidence[{index}].release_provenance is invalid: {exc}")
+        return result
+    if report.get("format") != PROVENANCE_FORMAT:
+        problems.append(f"bake_in.evidence[{index}].release_provenance format must be {PROVENANCE_FORMAT}")
+    source = report.get("source")
+    recorded_commit = source.get("commit") if isinstance(source, dict) else None
+    result["source_commit_ok"] = recorded_commit == source_commit
+    if recorded_commit != source_commit:
+        problems.append(
+            f"bake_in.evidence[{index}].release_provenance source commit does not match evidence source_commit"
+        )
+    result["worktree_clean"] = isinstance(source, dict) and source.get("worktree_dirty") is False
+    if result["worktree_clean"] is not True:
+        problems.append(f"bake_in.evidence[{index}].release_provenance must record a clean worktree")
+    host = report.get("host")
+    host_platform = host.get("platform") if isinstance(host, dict) else None
+    normalized_host = platform_key(host_platform) if isinstance(host_platform, str) else ""
+    if normalized_host != evidence_platform:
+        problems.append(
+            f"bake_in.evidence[{index}].release_provenance platform {host_platform!r} "
+            f"does not match evidence platform {evidence_platform!r}"
+        )
+    validation = report.get("validation")
+    validation_ok = isinstance(validation, dict) and all(
+        validation.get(key) is True
+        for key in ("bootstrap_ready", "parity_ok", "stage_matrix_ok", "performance_ok")
+    )
+    validation_ok = validation_ok and isinstance(validation, dict) and validation.get("budget_overrides") == {}
+    result["validation_ok"] = validation_ok
+    if not validation_ok:
+        problems.append(f"bake_in.evidence[{index}].release_provenance validation fields must all pass")
+    artifact = report.get("canonical_artifact")
+    artifact_path_raw = artifact.get("path") if isinstance(artifact, dict) else None
+    artifact_sha = artifact.get("sha256") if isinstance(artifact, dict) else None
+    if isinstance(artifact_path_raw, str) and isinstance(artifact_sha, str):
+        artifact_path = resolve_repo_path(repo_root, artifact_path_raw)
+        result["canonical_artifact_ok"] = verify_sha256(
+            artifact_path,
+            artifact_sha,
+            f"bake_in.evidence[{index}].release_provenance.canonical_artifact.sha256",
+            problems,
+        )
+    else:
+        problems.append(f"bake_in.evidence[{index}].release_provenance missing canonical artifact")
+    return result
+
+
+def validate_default_build_evidence(
+    item: dict[str, Any],
+    index: int,
+    repo_root: Path,
+    problems: list[str],
+) -> dict[str, Any]:
+    raw_path = required_string(
+        item.get("default_build_artifact"),
+        f"bake_in.evidence[{index}].default_build_artifact",
+        problems,
+    )
+    expected_sha = required_string(
+        item.get("default_build_sha256"),
+        f"bake_in.evidence[{index}].default_build_sha256",
+        problems,
+    )
+    result = {"path": raw_path, "exists": False, "sha256_ok": False}
+    if not raw_path:
+        return result
+    path = resolve_repo_path(repo_root, raw_path)
+    result["exists"] = path.is_file()
+    if expected_sha:
+        result["sha256_ok"] = verify_sha256(
+            path, expected_sha, f"bake_in.evidence[{index}].default_build_sha256", problems
+        )
+    if not path.is_file():
+        problems.append(f"bake_in.evidence[{index}].default_build_artifact is missing: {raw_path}")
+    return result
+
+
+def audit_bake_in_evidence(
+    item: dict[str, Any],
+    index: int,
+    repo_root: Path,
+    required_platforms: list[str],
+    problems: list[str],
+) -> tuple[dict[str, Any], bool]:
+    platform = required_string(item.get("platform"), f"bake_in.evidence[{index}].platform", problems)
+    evidence_platform = platform_key(platform) if platform else ""
+    status = required_string(item.get("status"), f"bake_in.evidence[{index}].status", problems)
+    source_commit = required_string(
+        item.get("source_commit"),
+        f"bake_in.evidence[{index}].source_commit",
+        problems,
+    )
+    recorded_at = required_string(item.get("recorded_at"), f"bake_in.evidence[{index}].recorded_at", problems)
+    release_command = required_string(
+        item.get("release_preflight_command"),
+        f"bake_in.evidence[{index}].release_preflight_command",
+        problems,
+    )
+    ci_command = required_string(item.get("ci_command"), f"bake_in.evidence[{index}].ci_command", problems)
+    if status not in {"passed", "failed"}:
+        problems.append(f"bake_in.evidence[{index}].status must be passed or failed")
+    if evidence_platform and evidence_platform not in required_platforms:
+        problems.append(f"bake_in.evidence[{index}].platform is not in bake_in.required_platforms")
+    if release_command and release_command != RELEASE_PREFLIGHT_COMMAND:
+        problems.append(f"bake_in.evidence[{index}].release_preflight_command must be `{RELEASE_PREFLIGHT_COMMAND}`")
+    if ci_command and ci_command != CI_COMMAND:
+        problems.append(f"bake_in.evidence[{index}].ci_command must be `{CI_COMMAND}`")
+    if status == "failed":
+        failure_summary = required_string(
+            item.get("failure_summary"),
+            f"bake_in.evidence[{index}].failure_summary",
+            problems,
+        )
+        return (
+            {
+                "platform": evidence_platform,
+                "status": status,
+                "source_commit": source_commit,
+                "recorded_at": recorded_at,
+                "release_preflight_command": release_command,
+                "ci_command": ci_command,
+                "failure_summary": failure_summary,
+                "valid_for_bake_in": False,
+            },
+            False,
+        )
+
+    bootstrap = validate_bootstrap_evidence(item, index, repo_root, evidence_platform, source_commit, problems)
+    provenance = validate_provenance_evidence(item, index, repo_root, evidence_platform, source_commit, problems)
+    default_build = validate_default_build_evidence(item, index, repo_root, problems)
+    valid = (
+        status == "passed"
+        and evidence_platform in required_platforms
+        and release_command == RELEASE_PREFLIGHT_COMMAND
+        and ci_command == CI_COMMAND
+        and bootstrap.get("sha256_ok") is True
+        and bootstrap.get("ready") is True
+        and bootstrap.get("status") == "supported-ready"
+        and bootstrap.get("budget_overrides_ok") is True
+        and provenance.get("sha256_ok") is True
+        and provenance.get("source_commit_ok") is True
+        and provenance.get("worktree_clean") is True
+        and provenance.get("validation_ok") is True
+        and provenance.get("canonical_artifact_ok") is True
+        and default_build.get("sha256_ok") is True
+    )
+    return (
+        {
+            "platform": evidence_platform,
+            "status": status,
+            "source_commit": source_commit,
+            "recorded_at": recorded_at,
+            "release_preflight_command": release_command,
+            "ci_command": ci_command,
+            "bootstrap": bootstrap,
+            "release_provenance": provenance,
+            "default_build": default_build,
+            "valid_for_bake_in": valid,
+        },
+        valid,
+    )
+
+
 def audit_bake_in(
     manifest: dict[str, Any],
+    repo_root: Path,
     problems: list[str],
 ) -> tuple[dict[str, Any], list[str]]:
     bake_in = object_field(manifest.get("bake_in"), "bake_in", problems)
@@ -281,15 +587,13 @@ def audit_bake_in(
                 problems.append(f"bake_in.evidence[{index}] must be an object")
                 continue
             evidence.append(item)
+    summaries: list[dict[str, Any]] = []
     passed: list[dict[str, Any]] = []
     for index, item in enumerate(evidence):
-        platform = required_string(item.get("platform"), f"bake_in.evidence[{index}].platform", problems)
-        status = required_string(item.get("status"), f"bake_in.evidence[{index}].status", problems)
-        report = required_string(item.get("report"), f"bake_in.evidence[{index}].report", problems)
-        if status not in {"passed", "failed"}:
-            problems.append(f"bake_in.evidence[{index}].status must be passed or failed")
-        if platform and status == "passed" and report:
-            passed.append(item)
+        summary, valid = audit_bake_in_evidence(item, index, repo_root, required_platforms, problems)
+        summaries.append(summary)
+        if valid:
+            passed.append(summary)
     platforms_with_passes = sorted(
         {item["platform"] for item in passed if isinstance(item.get("platform"), str)}
     )
@@ -308,6 +612,7 @@ def audit_bake_in(
             "passed_release_preflight_runs": len(passed),
             "platforms_with_passes": platforms_with_passes,
             "evidence_count": len(evidence),
+            "evidence": summaries,
         },
         blockers,
     )
@@ -346,7 +651,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
     active_paths = audit_active_paths(manifest, repo_root, problems)
     docs = audit_docs(manifest, repo_root, problems)
     classes, classified_paths = audit_classes(manifest, repo_root, problems)
-    bake_in, bake_in_blockers = audit_bake_in(manifest, problems)
+    bake_in, bake_in_blockers = audit_bake_in(manifest, repo_root, problems)
 
     tracked = tracked_rust_inventory(repo_root)
     unclassified = sorted(path for path in tracked if path not in classified_paths)

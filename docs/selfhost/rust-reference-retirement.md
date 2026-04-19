@@ -22,6 +22,24 @@ python3 scripts/selfhost/retirement_audit.py --require-approved
 
 The current blocker is intentional: approval required before Rust reference removal.
 
+## Bake-In Evidence Format
+
+Bake-in evidence entries in `docs/selfhost/rust-reference-retirement.v1.json` must be machine-verifiable. A passing entry must include:
+
+- `platform`: `linux` or `macos`
+- `status`: `passed`
+- `source_commit`: the exact source commit used for the release preflight
+- `recorded_at`: the review timestamp or CI run timestamp
+- `release_preflight_command`: `make release-preflight`
+- `ci_command`: `make ci`
+- `bootstrap_report` and `bootstrap_report_sha256`
+- `release_provenance` and `release_provenance_sha256`
+- `default_build_artifact` and `default_build_sha256`
+
+The audit verifies that the bootstrap report is `aicore-selfhost-bootstrap-v1`, is `supported-ready`, matches the evidence platform, and uses production budget defaults. It verifies that release provenance is `aicore-selfhost-release-provenance-v1`, has passing validation fields, records a clean worktree, matches the evidence source commit and platform, and points to a canonical artifact with a matching checksum. It also verifies that the default-build artifact exists and matches the recorded checksum.
+
+Failed evidence entries can be recorded for history, but they do not count toward bake-in. They must include a `failure_summary`.
+
 ## Scope
 
 This decision is limited to Rust reference compiler retirement. It does not change AICore language semantics, standard library APIs, runtime behavior, editor tooling behavior, or package-manager behavior.
@@ -79,6 +97,7 @@ Do not close issue `#419` until the evidence comment includes:
 
 - the approved decision manifest and report from `target/selfhost-retirement/report.json`
 - the bake-in release preflight runs for Linux and macOS
+- the machine-verified bootstrap, release provenance, and default-build artifact checksums for each passing bake-in entry
 - the exact Rust paths removed and the exact Rust paths retained
 - replacement owners and tests for every removed class
 - `cargo build --locked`, `make ci`, `make release-preflight`, `make selfhost-bootstrap`, `make examples-check`, `make examples-run`, and `make docs-check`

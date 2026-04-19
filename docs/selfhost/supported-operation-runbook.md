@@ -230,6 +230,8 @@ target/selfhost-retirement/report.json
 
 The audit passes when the manifest, decision record, docs, rollback commands, active paths, and tracked Rust/Cargo path classifications are internally consistent. It intentionally reports `removal_allowed=false` until approval, bake-in evidence, and every replacement or retained-role decision is complete.
 
+Passing bake-in evidence must include `make release-preflight`, `make ci`, the source commit, a supported bootstrap report with a matching `sha256:` digest, release provenance with a matching `sha256:` digest, and the controlled default compiler-source build artifact with a matching `sha256:` digest. Failed evidence can be recorded for history, but it does not count toward Linux/macOS bake-in.
+
 Use this command only when validating the final retirement decision:
 
 ```bash

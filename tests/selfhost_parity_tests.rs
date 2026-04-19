@@ -331,6 +331,94 @@ fn write_selfhost_release_fixture(root: &Path) -> PathBuf {
     bootstrap
 }
 
+fn write_retirement_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf, String) {
+    let source_commit = "1234567890abcdef1234567890abcdef12345678".to_string();
+    let artifact = root.join("aicore-selfhost-compiler-macos-arm64");
+    let default_artifact = root.join("default-aic-selfhost");
+    fs::write(&artifact, b"release artifact").expect("write release artifact");
+    fs::write(&default_artifact, b"default build artifact").expect("write default artifact");
+
+    let bootstrap = root.join("bootstrap-report.json");
+    fs::write(
+        &bootstrap,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-bootstrap-v1",
+            "schema_version": 1,
+            "mode": "supported",
+            "status": "supported-ready",
+            "ready": true,
+            "host": {
+                "platform": "darwin",
+                "system": "Darwin",
+                "machine": "arm64"
+            },
+            "performance": {
+                "ok": true,
+                "budget_source": {
+                    "path": "docs/selfhost/bootstrap-budgets.v1.json",
+                    "schema_version": 1,
+                    "platform": "macos",
+                    "overrides": {}
+                }
+            }
+        }))
+        .expect("bootstrap json"),
+    )
+    .expect("write bootstrap evidence");
+
+    let provenance = root.join("provenance.json");
+    fs::write(
+        &provenance,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-release-provenance-v1",
+            "schema_version": 1,
+            "host": {
+                "platform": "darwin",
+                "system": "Darwin",
+                "machine": "arm64"
+            },
+            "source": {
+                "commit": source_commit.clone(),
+                "worktree_dirty": false
+            },
+            "validation": {
+                "bootstrap_ready": true,
+                "bootstrap_status": "supported-ready",
+                "parity_ok": true,
+                "stage_matrix_ok": true,
+                "performance_ok": true,
+                "budget_overrides": {}
+            },
+            "canonical_artifact": {
+                "path": artifact.to_string_lossy(),
+                "sha256": sha256_prefixed(&artifact),
+                "bytes": fs::metadata(&artifact).expect("artifact meta").len()
+            }
+        }))
+        .expect("provenance json"),
+    )
+    .expect("write provenance evidence");
+
+    (bootstrap, provenance, default_artifact, source_commit)
+}
+
+fn write_retirement_manifest_with_evidence(path: &Path, evidence: Value) {
+    let root = repo_root();
+    let mut manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
+            .expect("read retirement manifest"),
+    )
+    .expect("retirement manifest json");
+    manifest["bake_in"]["required_release_preflight_runs"] = json!(1);
+    manifest["bake_in"]["required_platforms"] = json!(["macos"]);
+    manifest["bake_in"]["evidence"] = json!([evidence]);
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&manifest).expect("retirement manifest"),
+    )
+    .expect("write retirement manifest");
+}
+
 fn write_fake_compiler(path: &Path, variant: &str) {
     fs::write(
         path,
@@ -1213,6 +1301,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.md"))
             .expect("read retirement decision record");
     assert!(retirement_doc.contains("Removal Status: Deferred"));
+    assert!(retirement_doc.contains("Bake-In Evidence Format"));
     assert!(retirement_doc.contains("rust-reference-compiler-core"));
     assert!(retirement_doc.contains("make selfhost-retirement-audit"));
     assert!(retirement_doc.contains("approval required before Rust reference removal"));
@@ -1231,6 +1320,14 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert_eq!(
         retirement_manifest["decision_record"],
         "docs/selfhost/rust-reference-retirement.md"
+    );
+    assert_eq!(
+        retirement_manifest["evidence_schema"]["required_bootstrap_status"],
+        "supported-ready"
+    );
+    assert_eq!(
+        retirement_manifest["evidence_schema"]["required_commands"]["release_preflight_command"],
+        "make release-preflight"
     );
     assert_eq!(retirement_manifest["approval"]["approved"], false);
     assert!(retirement_manifest["rust_path_classes"]
@@ -1565,6 +1662,98 @@ fn selfhost_retirement_audit_requires_approval_for_removal() {
             .as_str()
             .expect("blocker")
             .contains("bake-in requires passing release evidence for macos")));
+}
+
+#[test]
+fn selfhost_retirement_audit_accepts_verified_bake_in_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let (bootstrap, provenance, default_artifact, source_commit) =
+        write_retirement_evidence_fixture(tmp.path());
+    let manifest = tmp.path().join("retirement-manifest.json");
+    write_retirement_manifest_with_evidence(
+        &manifest,
+        json!({
+            "platform": "macos",
+            "status": "passed",
+            "source_commit": source_commit,
+            "recorded_at": "2026-04-19T00:00:00Z",
+            "release_preflight_command": "make release-preflight",
+            "ci_command": "make ci",
+            "bootstrap_report": bootstrap.to_string_lossy(),
+            "bootstrap_report_sha256": sha256_prefixed(&bootstrap),
+            "release_provenance": provenance.to_string_lossy(),
+            "release_provenance_sha256": sha256_prefixed(&provenance),
+            "default_build_artifact": default_artifact.to_string_lossy(),
+            "default_build_sha256": sha256_prefixed(&default_artifact)
+        }),
+    );
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "retirement evidence audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    assert_eq!(document["bake_in"]["passed_release_preflight_runs"], 1);
+    assert_eq!(
+        document["bake_in"]["platforms_with_passes"],
+        json!(["macos"])
+    );
+    assert_eq!(
+        document["bake_in"]["evidence"][0]["valid_for_bake_in"],
+        true
+    );
+    let blockers = document["blockers"].as_array().expect("blockers");
+    assert!(!blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("bake-in requires")));
+}
+
+#[test]
+fn selfhost_retirement_audit_rejects_unverified_bake_in_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let (bootstrap, provenance, default_artifact, source_commit) =
+        write_retirement_evidence_fixture(tmp.path());
+    let manifest = tmp.path().join("bad-retirement-manifest.json");
+    write_retirement_manifest_with_evidence(
+        &manifest,
+        json!({
+            "platform": "macos",
+            "status": "passed",
+            "source_commit": source_commit,
+            "recorded_at": "2026-04-19T00:00:00Z",
+            "release_preflight_command": "make release-preflight",
+            "ci_command": "make ci",
+            "bootstrap_report": bootstrap.to_string_lossy(),
+            "bootstrap_report_sha256": sha256_prefixed(&bootstrap),
+            "release_provenance": provenance.to_string_lossy(),
+            "release_provenance_sha256": sha256_prefixed(&provenance),
+            "default_build_artifact": default_artifact.to_string_lossy(),
+            "default_build_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }),
+    );
+    let report = tmp.path().join("bad-retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("default_build_sha256 mismatch"));
 }
 
 #[test]
