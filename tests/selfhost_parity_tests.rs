@@ -1026,6 +1026,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(makefile.contains("selfhost-bootstrap"));
     assert!(makefile.contains("selfhost-bootstrap-report"));
     assert!(makefile.contains("selfhost-release-provenance"));
+    assert!(makefile.contains("selfhost-mode-check"));
 
     let bootstrap = fs::read_to_string(root.join("scripts/selfhost/bootstrap.py"))
         .expect("read bootstrap script");
@@ -1100,6 +1101,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("docs/selfhost/bootstrap-budgets.v1.json"));
     assert!(selfhost_docs.contains("performance-trend.json"));
     assert!(selfhost_docs.contains("make selfhost-release-provenance"));
+    assert!(selfhost_docs.contains("make selfhost-mode-check"));
+    assert!(selfhost_docs.contains("aic release selfhost-mode --mode supported --check"));
+    assert!(selfhost_docs.contains("AIC_COMPILER_MODE=fallback"));
     assert!(selfhost_docs.contains("aicore-selfhost-release-provenance-v1"));
     assert!(selfhost_docs.contains("docs/selfhost/supported-operation-runbook.md"));
     let performance_docs =
@@ -1127,6 +1131,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "make selfhost-bootstrap",
         "make selfhost-release-provenance",
         "make release-preflight",
+        "aic release selfhost-mode --mode supported --check",
+        "AIC_COMPILER_MODE=fallback",
+        "--compiler-mode supported",
         "make ci",
         "AIC_MARKER_PATTERN",
         "Linux prerequisites",
@@ -1298,7 +1305,9 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "selfhost-release-provenance:",
         "scripts/selfhost/release_provenance.py generate",
         "scripts/selfhost/release_provenance.py verify",
-        "release-preflight: ci selfhost-bootstrap selfhost-release-provenance repro-check security-audit",
+        "selfhost-mode-check:",
+        "release selfhost-mode --mode supported --check",
+        "release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check repro-check security-audit",
     ] {
         assert!(makefile.contains(token), "Makefile missing token: {token}");
     }
@@ -1320,6 +1329,8 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "make selfhost-bootstrap",
         "Self-host release provenance gate",
         "make selfhost-release-provenance",
+        "Self-host compiler mode gate",
+        "make selfhost-mode-check",
         "Upload self-host bootstrap reports",
         "actions/upload-artifact@v4",
         "if: always()",
@@ -1362,6 +1373,8 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "make selfhost-bootstrap",
         "Self-host release provenance gate",
         "make selfhost-release-provenance",
+        "Self-host compiler mode gate",
+        "make selfhost-mode-check",
         "release-selfhost-bootstrap-${{ matrix.os }}",
         "target/selfhost-bootstrap/report.json",
         "target/selfhost-bootstrap/performance-report.json",

@@ -52,6 +52,51 @@ fn first_sandbox_violation(stderr: &[u8]) -> serde_json::Value {
     serde_json::from_str::<serde_json::Value>(line).expect("parse sandbox violation json line")
 }
 
+fn write_selfhost_mode_fixture(root: &std::path::Path) -> (PathBuf, PathBuf) {
+    let bootstrap = root.join("bootstrap.json");
+    let provenance = root.join("provenance.json");
+    fs::write(
+        &bootstrap,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "format": "aicore-selfhost-bootstrap-v1",
+            "status": "supported-ready",
+            "ready": true,
+            "reproducibility": { "matches": true },
+            "performance": {
+                "ok": true,
+                "budget_source": { "overrides": {} }
+            }
+        }))
+        .expect("bootstrap json"),
+    )
+    .expect("write bootstrap fixture");
+    fs::write(
+        &provenance,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "format": "aicore-selfhost-release-provenance-v1",
+            "validation": {
+                "bootstrap_ready": true,
+                "bootstrap_status": "supported-ready",
+                "budget_overrides": {},
+                "parity_ok": true,
+                "performance_ok": true,
+                "stage_matrix_ok": true
+            },
+            "canonical_artifact": {
+                "path": "target/selfhost-release/aicore-selfhost-compiler-test",
+                "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "source": {
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+                "worktree_dirty": false
+            }
+        }))
+        .expect("provenance json"),
+    )
+    .expect("write provenance fixture");
+    (bootstrap, provenance)
+}
+
 #[test]
 fn release_manifest_generation_and_verification_are_deterministic() {
     let dir = tempdir().expect("tempdir");
@@ -100,6 +145,124 @@ fn release_manifest_generation_and_verification_are_deterministic() {
         &out1_str,
     ]);
     assert_eq!(verify.status.code(), Some(0));
+}
+
+#[test]
+fn release_selfhost_mode_gate_accepts_supported_and_blocks_unapproved_default() {
+    let dir = tempdir().expect("tempdir");
+    let (bootstrap, provenance) = write_selfhost_mode_fixture(dir.path());
+    let root = dir.path().to_string_lossy().to_string();
+    let bootstrap_arg = bootstrap.to_string_lossy().to_string();
+    let provenance_arg = provenance.to_string_lossy().to_string();
+
+    let supported = run_aic(&[
+        "release",
+        "selfhost-mode",
+        "--root",
+        &root,
+        "--mode",
+        "supported",
+        "--bootstrap-report",
+        &bootstrap_arg,
+        "--provenance",
+        &provenance_arg,
+        "--check",
+        "--json",
+    ]);
+    assert_eq!(supported.status.code(), Some(0));
+    let supported_json: serde_json::Value =
+        serde_json::from_slice(&supported.stdout).expect("supported mode json");
+    assert_eq!(supported_json["format"], "aicore-selfhost-compiler-mode-v1");
+    assert_eq!(supported_json["requested_mode"], "supported");
+    assert_eq!(supported_json["active_compiler"], "aic-selfhost");
+    assert_eq!(supported_json["ok"], true);
+    assert_eq!(supported_json["default_enabled"], false);
+
+    let default_without_approval = run_aic(&[
+        "release",
+        "selfhost-mode",
+        "--root",
+        &root,
+        "--mode",
+        "default",
+        "--bootstrap-report",
+        &bootstrap_arg,
+        "--provenance",
+        &provenance_arg,
+        "--check",
+        "--json",
+    ]);
+    assert_eq!(default_without_approval.status.code(), Some(1));
+    let default_json: serde_json::Value =
+        serde_json::from_slice(&default_without_approval.stdout).expect("default mode json");
+    assert_eq!(default_json["requested_mode"], "default");
+    assert_eq!(default_json["ok"], false);
+    assert!(default_json["problems"]
+        .as_array()
+        .expect("problems")
+        .iter()
+        .any(|problem| problem
+            .as_str()
+            .expect("problem text")
+            .contains("explicit approval")));
+
+    let default_with_approval = run_aic(&[
+        "release",
+        "selfhost-mode",
+        "--root",
+        &root,
+        "--mode",
+        "default",
+        "--bootstrap-report",
+        &bootstrap_arg,
+        "--provenance",
+        &provenance_arg,
+        "--approve-default",
+        "--check",
+        "--json",
+    ]);
+    assert_eq!(default_with_approval.status.code(), Some(0));
+    let approved_json: serde_json::Value =
+        serde_json::from_slice(&default_with_approval.stdout).expect("approved mode json");
+    assert_eq!(approved_json["ok"], true);
+    assert_eq!(approved_json["default_enabled"], true);
+    assert_eq!(
+        approved_json["rust_reference_retirement"]["allowed_in_this_issue"],
+        false
+    );
+}
+
+#[test]
+fn build_compiler_mode_fallback_uses_rust_reference_path() {
+    let dir = tempdir().expect("tempdir");
+    let output = dir.path().join("fallback-hello");
+    let manifest = dir.path().join("fallback-build.json");
+    let output_arg = output.to_string_lossy().to_string();
+    let manifest_arg = manifest.to_string_lossy().to_string();
+    let result = run_aic_with_env(
+        &[
+            "build",
+            "examples/e5/hello_int.aic",
+            "-o",
+            &output_arg,
+            "--manifest",
+            &manifest_arg,
+        ],
+        "AIC_COMPILER_MODE",
+        "fallback",
+    );
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(output.is_file(), "fallback build did not create artifact");
+    assert!(
+        manifest.is_file(),
+        "fallback build manifest was not written"
+    );
 }
 
 #[test]
@@ -273,6 +436,7 @@ fn release_workflow_declares_cross_platform_matrix_and_verification_steps() {
         "Release Self-Host Bootstrap",
         "make selfhost-bootstrap",
         "make selfhost-release-provenance",
+        "make selfhost-mode-check",
         "release lts --check",
         "release-metadata.md",
     ] {
@@ -319,6 +483,7 @@ fn ops_workflows_enforce_release_preflight_and_security_gates() {
         "release-selfhost-bootstrap",
         "make selfhost-bootstrap",
         "make selfhost-release-provenance",
+        "make selfhost-mode-check",
         "target/selfhost-bootstrap/report.json",
         "target/selfhost-release/**",
         "release policy --check",

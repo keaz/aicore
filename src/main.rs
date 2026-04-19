@@ -57,9 +57,10 @@ use aicore::project::init_project;
 use aicore::property_test_runner::run_property_tests;
 use aicore::release_ops::{
     check_compatibility_policy, check_lts_policy, compatibility_policy,
-    effective_source_date_epoch, generate_provenance, generate_repro_manifest, generate_sbom,
-    lts_policy, read_provenance, read_repro_manifest, run_security_audit, verify_checksum_file,
-    verify_provenance, verify_repro_manifest, write_provenance, write_repro_manifest, write_sbom,
+    effective_source_date_epoch, evaluate_selfhost_compiler_mode, generate_provenance,
+    generate_repro_manifest, generate_sbom, lts_policy, normalize_selfhost_mode, read_provenance,
+    read_repro_manifest, run_security_audit, verify_checksum_file, verify_provenance,
+    verify_repro_manifest, write_provenance, write_repro_manifest, write_sbom,
 };
 use aicore::sandbox::{load_policy as load_sandbox_policy, run_with_policy, SandboxProfile};
 use aicore::sarif::diagnostics_to_sarif;
@@ -378,6 +379,8 @@ enum Command {
         verify_hash: Option<String>,
         #[arg(long)]
         manifest: Option<PathBuf>,
+        #[arg(long, value_enum)]
+        compiler_mode: Option<BuildCompilerModeArg>,
     },
     Doc {
         #[arg(default_value = "src/main.aic")]
@@ -512,6 +515,16 @@ enum BuildArtifact {
     Exe,
     Obj,
     Lib,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum BuildCompilerModeArg {
+    Reference,
+    Experimental,
+    Selfhost,
+    Supported,
+    Default,
+    Fallback,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -832,6 +845,31 @@ enum ReleaseCommand {
         #[arg(long)]
         check: bool,
     },
+    SelfhostMode {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        mode: Option<SelfHostModeArg>,
+        #[arg(long, default_value = "target/selfhost-bootstrap/report.json")]
+        bootstrap_report: PathBuf,
+        #[arg(long, default_value = "target/selfhost-release/provenance.json")]
+        provenance: PathBuf,
+        #[arg(long)]
+        approve_default: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SelfHostModeArg {
+    Reference,
+    Experimental,
+    Supported,
+    Default,
+    Fallback,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -2235,7 +2273,32 @@ fn run_cli() -> anyhow::Result<i32> {
             offline,
             verify_hash,
             manifest,
+            compiler_mode,
         } => {
+            let effective_compiler_mode = match resolve_build_compiler_mode(compiler_mode) {
+                Ok(mode) => mode,
+                Err(message) => {
+                    eprintln!("{message}");
+                    return Ok(EXIT_USAGE_ERROR);
+                }
+            };
+            if build_mode_uses_selfhost(effective_compiler_mode) {
+                return Ok(run_selfhost_build(
+                    effective_compiler_mode,
+                    input,
+                    output,
+                    artifact,
+                    target,
+                    static_link,
+                    debug_info,
+                    release,
+                    opt_level,
+                    offline,
+                    verify_hash,
+                    manifest,
+                )?);
+            }
+
             let resolved_target = target.or_else(host_build_target);
             let target_label = resolved_target
                 .map(|entry| entry.canonical_label().to_string())
@@ -3248,6 +3311,46 @@ fn run_cli() -> anyhow::Result<i32> {
                     EXIT_OK
                 } else {
                     EXIT_DIAGNOSTIC_ERROR
+                }
+            }
+            ReleaseCommand::SelfhostMode {
+                root,
+                mode,
+                bootstrap_report,
+                provenance,
+                approve_default,
+                json,
+                check,
+            } => {
+                let requested_mode = resolve_release_selfhost_mode(mode);
+                let report = evaluate_selfhost_compiler_mode(
+                    &root,
+                    &requested_mode,
+                    &bootstrap_report,
+                    &provenance,
+                    approve_default,
+                );
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else if report.ok {
+                    println!(
+                        "self-host compiler mode: {} (active={}, default_enabled={}, fallback_available={})",
+                        report.requested_mode,
+                        report.active_compiler,
+                        report.default_enabled,
+                        report.fallback_available
+                    );
+                } else {
+                    eprintln!("self-host compiler mode check failed:");
+                    for problem in &report.problems {
+                        eprintln!("  - {problem}");
+                    }
+                }
+
+                if check && !report.ok {
+                    EXIT_DIAGNOSTIC_ERROR
+                } else {
+                    EXIT_OK
                 }
             }
         },
@@ -5035,6 +5138,171 @@ fn fresh_work_dir(tag: &str) -> PathBuf {
         .unwrap_or(0);
     let seq = WORK_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("aicore-{tag}-{pid}-{nanos}-{seq}"))
+}
+
+fn resolve_build_compiler_mode(
+    explicit: Option<BuildCompilerModeArg>,
+) -> Result<BuildCompilerModeArg, String> {
+    if let Some(mode) = explicit {
+        return Ok(mode);
+    }
+    let Ok(raw) = std::env::var("AIC_COMPILER_MODE") else {
+        return Ok(BuildCompilerModeArg::Reference);
+    };
+    match normalize_selfhost_mode(&raw).as_deref() {
+        Some("reference") => Ok(BuildCompilerModeArg::Reference),
+        Some("experimental") => Ok(BuildCompilerModeArg::Experimental),
+        Some("supported") => Ok(BuildCompilerModeArg::Supported),
+        Some("default") => Ok(BuildCompilerModeArg::Default),
+        Some("fallback") => Ok(BuildCompilerModeArg::Fallback),
+        _ => Err(format!(
+            "unsupported AIC_COMPILER_MODE `{raw}`; expected reference, experimental, supported, default, or fallback"
+        )),
+    }
+}
+
+fn resolve_release_selfhost_mode(explicit: Option<SelfHostModeArg>) -> String {
+    explicit
+        .map(|mode| match mode {
+            SelfHostModeArg::Reference => "reference",
+            SelfHostModeArg::Experimental => "experimental",
+            SelfHostModeArg::Supported => "supported",
+            SelfHostModeArg::Default => "default",
+            SelfHostModeArg::Fallback => "fallback",
+        })
+        .map(str::to_string)
+        .or_else(|| std::env::var("AIC_COMPILER_MODE").ok())
+        .unwrap_or_else(|| "reference".to_string())
+}
+
+fn build_mode_uses_selfhost(mode: BuildCompilerModeArg) -> bool {
+    matches!(
+        mode,
+        BuildCompilerModeArg::Experimental
+            | BuildCompilerModeArg::Selfhost
+            | BuildCompilerModeArg::Supported
+            | BuildCompilerModeArg::Default
+    )
+}
+
+fn run_selfhost_build(
+    mode: BuildCompilerModeArg,
+    input: PathBuf,
+    output: Option<PathBuf>,
+    artifact: BuildArtifact,
+    target: Option<BuildTarget>,
+    static_link: bool,
+    debug_info: bool,
+    release: bool,
+    opt_level: Option<OptimizationLevel>,
+    offline: bool,
+    verify_hash: Option<String>,
+    manifest: Option<PathBuf>,
+) -> anyhow::Result<i32> {
+    if artifact != BuildArtifact::Exe {
+        eprintln!("self-host compiler build mode currently supports --artifact exe only");
+        return Ok(EXIT_USAGE_ERROR);
+    }
+    if target.is_some() || static_link || debug_info || release || opt_level.is_some() || offline {
+        eprintln!(
+            "self-host compiler build mode does not support --target, --static-link, --debug-info, --release, --opt-level, or --offline"
+        );
+        return Ok(EXIT_USAGE_ERROR);
+    }
+    if verify_hash.is_some() || manifest.is_some() {
+        eprintln!("self-host compiler build mode does not support --verify-hash or --manifest");
+        return Ok(EXIT_USAGE_ERROR);
+    }
+
+    if matches!(
+        mode,
+        BuildCompilerModeArg::Selfhost
+            | BuildCompilerModeArg::Supported
+            | BuildCompilerModeArg::Default
+    ) {
+        let requested_mode = if mode == BuildCompilerModeArg::Default {
+            "default"
+        } else {
+            "supported"
+        };
+        let approved = std::env::var("AIC_SELFHOST_DEFAULT_APPROVED")
+            .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false);
+        let report = evaluate_selfhost_compiler_mode(
+            Path::new("."),
+            requested_mode,
+            Path::new("target/selfhost-bootstrap/report.json"),
+            Path::new("target/selfhost-release/provenance.json"),
+            approved,
+        );
+        if !report.ok {
+            eprintln!("self-host compiler mode check failed:");
+            for problem in &report.problems {
+                eprintln!("  - {problem}");
+            }
+            return Ok(EXIT_DIAGNOSTIC_ERROR);
+        }
+    }
+
+    let Some(compiler) = resolve_selfhost_compiler_path() else {
+        eprintln!(
+            "self-host compiler executable not found; set AIC_SELFHOST_COMPILER or run make selfhost-bootstrap"
+        );
+        return Ok(EXIT_DIAGNOSTIC_ERROR);
+    };
+    let out = output.unwrap_or_else(|| default_build_output_name(&input, BuildArtifact::Exe, None));
+    let result = ProcessCommand::new(&compiler)
+        .arg("build")
+        .arg(&input)
+        .arg("-o")
+        .arg(&out)
+        .output()?;
+    std::io::stdout().write_all(&result.stdout)?;
+    std::io::stderr().write_all(&result.stderr)?;
+    if result.status.success() {
+        println!(
+            "built {} with self-host compiler {}",
+            out.display(),
+            compiler.display()
+        );
+        Ok(EXIT_OK)
+    } else {
+        Ok(result.status.code().unwrap_or(EXIT_DIAGNOSTIC_ERROR))
+    }
+}
+
+fn resolve_selfhost_compiler_path() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("AIC_SELFHOST_COMPILER") {
+        let candidate = PathBuf::from(path);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    selfhost_compiler_candidates()
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
+fn selfhost_compiler_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(name) = selfhost_release_artifact_name() {
+        candidates.push(PathBuf::from("target/selfhost-release").join(name));
+    }
+    candidates.push(PathBuf::from(
+        "target/selfhost-bootstrap/stage2/aic_selfhost",
+    ));
+    candidates.push(PathBuf::from("target/aic_selfhost_candidate"));
+    candidates
+}
+
+fn selfhost_release_artifact_name() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => Some("aicore-selfhost-compiler-linux-x64"),
+        ("linux", "aarch64") => Some("aicore-selfhost-compiler-linux-arm64"),
+        ("macos", "x86_64") => Some("aicore-selfhost-compiler-macos-x64"),
+        ("macos", "aarch64") => Some("aicore-selfhost-compiler-macos-arm64"),
+        _ => None,
+    }
 }
 
 impl BuildArtifact {

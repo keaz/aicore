@@ -245,7 +245,7 @@ pub static COMMAND_CONTRACTS: &[CommandContract] = &[
     CommandContract {
         name: "build",
         description: "Build executable/object/static-library artifacts",
-        stable_flags: &["--artifact", "--debug-info", "--offline"],
+        stable_flags: &["--artifact", "--compiler-mode", "--debug-info", "--offline"],
         output_modes: &["text"],
     },
     CommandContract {

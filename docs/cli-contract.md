@@ -231,12 +231,24 @@ Stable `pkg` flags include:
 Stable `build` flags include:
 
 - `--artifact` (`exe|obj|lib`)
+- `--compiler-mode <mode>` (`reference|experimental|selfhost|supported|default|fallback`)
 - `--debug-info`
 - `--release` (defaults optimization level to `O2`)
 - `--opt-level <LEVEL>` (`0|1|2|3` or `O0|O1|O2|O3`)
 - `-O<LEVEL>` shorthand (for example `-O2`)
 - `--verify-hash <sha256>`
 - `--manifest <path>` (defaults to `build.json` for single-target builds)
+
+`--compiler-mode reference` and `--compiler-mode fallback` use the Rust reference compiler path. `--compiler-mode experimental` routes the build through `AIC_SELFHOST_COMPILER` or the latest local self-host artifact without claiming production readiness. `--compiler-mode selfhost`, `supported`, and `default` require the self-host mode gate to pass before invoking the self-host compiler. Default mode also requires explicit default approval.
+
+Stable `release selfhost-mode` flags include:
+
+- `--mode <mode>` (`reference|experimental|supported|default|fallback`)
+- `--bootstrap-report <path>` (defaults to `target/selfhost-bootstrap/report.json`)
+- `--provenance <path>` (defaults to `target/selfhost-release/provenance.json`)
+- `--approve-default` (required with `--mode default --check`)
+- `--check`
+- `--json`
 
 Stable `debug` flags include:
 

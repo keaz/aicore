@@ -6,7 +6,7 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -33,6 +33,7 @@ help:
 	@echo "  make selfhost-bootstrap Run required stage0/stage1/stage2 self-host bootstrap gate"
 	@echo "  make selfhost-bootstrap-report Generate bounded bootstrap readiness report without claiming readiness"
 	@echo "  make selfhost-release-provenance Generate and verify release-grade self-host provenance"
+	@echo "  make selfhost-mode-check Verify supported self-host compiler mode evidence"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -144,6 +145,9 @@ selfhost-release-provenance:
 	python3 scripts/selfhost/release_provenance.py generate
 	python3 scripts/selfhost/release_provenance.py verify
 
+selfhost-mode-check:
+	$(AIC) release selfhost-mode --mode supported --check
+
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
 
@@ -178,7 +182,7 @@ repro-check:
 security-audit:
 	./scripts/ci/security-audit.sh
 
-release-preflight: ci selfhost-bootstrap selfhost-release-provenance repro-check security-audit
+release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check repro-check security-audit
 
 docs-check:
 	@test -f docs/spec.md
@@ -284,6 +288,10 @@ docs-check:
 	@grep -Fq "AIC_MARKER_PATTERN" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "_dyld_start" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "core compiler" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "aic release selfhost-mode --mode supported --check" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "AIC_COMPILER_MODE=fallback" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "selfhost-mode-check" Makefile
+	@grep -Fq "selfhost-mode" docs/cli-contract.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn udp_send_to(handle: Int, addr: String, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md

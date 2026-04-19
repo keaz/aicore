@@ -41,6 +41,26 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT=3600 make selfhost-bootstrap
 
 Do not set resource-budget override variables for release evidence. Supported readiness requires the checked-in production defaults from `docs/selfhost/bootstrap-budgets.v1.json`.
 
+Check the active compiler mode policy with:
+
+```bash
+aic release selfhost-mode --mode reference --check --json
+aic release selfhost-mode --mode supported --check
+aic release selfhost-mode --mode default --check --approve-default
+```
+
+`reference` and `fallback` use the Rust reference compiler path and do not require self-host evidence. `supported` requires the supported bootstrap report, parity report, package/workspace matrix report, performance evidence, and release provenance to pass. `default` requires the same evidence plus explicit default approval; do not use `--approve-default` until all production-readiness issues and the parent readiness gate have evidence.
+
+Use the compiler-mode selector only when the build path needs an explicit implementation choice:
+
+```bash
+AIC_COMPILER_MODE=fallback aic build examples/e5/hello_int.aic -o target/fallback-hello
+AIC_SELFHOST_COMPILER=target/selfhost-release/aicore-selfhost-compiler-<platform>-<arch> \
+  aic build examples/e5/hello_int.aic -o target/selfhost-hello --compiler-mode supported
+```
+
+The `experimental` mode can route through a local self-host compiler for investigation without claiming supported or default readiness. Fallback validation must use `reference` or `fallback` mode, not an absent mode selector.
+
 Use this scanner before closing a self-hosting issue. It intentionally builds the pattern from adjacent shell strings so the runbook does not match itself:
 
 ```bash
@@ -174,6 +194,13 @@ Rollback is required when a promoted self-host artifact or workflow gate is foun
 4. Open a follow-up issue with the failing report digest, platform, toolchain versions, and rollback commit.
 5. Rerun `make ci` and the supported bootstrap gate on the fallback path before restoring release promotion.
 
+Fallback validation command:
+
+```bash
+AIC_COMPILER_MODE=fallback aic build examples/e5/hello_int.aic -o target/selfhost-fallback-check
+aic release selfhost-mode --mode fallback --check --json
+```
+
 ## Issue Closure Policy
 
 Self-hosting issues remain open when any acceptance criterion is not fully implemented, when a placeholder path remains, when a scaffold-only implementation stands in for real behavior, when a fake success path is present, when a readiness case is skipped, or when production behavior is unsupported on the claimed platform.
@@ -218,6 +245,8 @@ Readiness decision:
 ```
 
 Only use `default` when the explicit default-mode cutover issue is complete. For all other self-hosting issues, set `Default compiler status changed` to `no`.
+
+Rust-reference retirement is not part of default-mode operation. Removal requires a separate issue with its own approval, tests, rollback plan, release notes, and verification evidence.
 
 ## CI And Release Evidence
 

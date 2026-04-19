@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::cli_contract::CLI_CONTRACT_VERSION;
@@ -13,6 +14,7 @@ pub const SBOM_FORMAT: &str = "aicore-sbom-v1";
 pub const PROVENANCE_FORMAT: &str = "aicore-provenance-v1";
 pub const COMPATIBILITY_POLICY_VERSION: &str = "1.0";
 pub const LTS_POLICY_VERSION: &str = "1.0";
+pub const SELFHOST_MODE_FORMAT: &str = "aicore-selfhost-compiler-mode-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReproManifest {
@@ -104,6 +106,44 @@ pub struct SecurityAuditCheck {
     pub name: String,
     pub passed: bool,
     pub details: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelfHostModeReport {
+    pub format: String,
+    pub requested_mode: String,
+    pub active_compiler: String,
+    pub default_enabled: bool,
+    pub fallback_available: bool,
+    pub default_approval: bool,
+    pub ok: bool,
+    pub problems: Vec<String>,
+    pub required_gates: Vec<String>,
+    pub evidence: SelfHostModeEvidence,
+    pub rust_reference_retirement: RustReferenceRetirementPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelfHostModeEvidence {
+    pub bootstrap_report: String,
+    pub provenance: String,
+    pub bootstrap_ready: bool,
+    pub bootstrap_status: Option<String>,
+    pub reproducibility_ok: bool,
+    pub parity_ok: bool,
+    pub stage_matrix_ok: bool,
+    pub performance_ok: bool,
+    pub budget_overrides: Vec<String>,
+    pub canonical_artifact: Option<String>,
+    pub canonical_artifact_sha256: Option<String>,
+    pub source_commit: Option<String>,
+    pub worktree_dirty: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RustReferenceRetirementPolicy {
+    pub allowed_in_this_issue: bool,
+    pub requirement: String,
 }
 
 pub fn effective_source_date_epoch(explicit: Option<u64>) -> u64 {
@@ -712,6 +752,285 @@ pub fn check_lts_policy(root: &Path, policy: &LtsPolicy) -> Vec<String> {
     problems.sort();
     problems.dedup();
     problems
+}
+
+pub fn evaluate_selfhost_compiler_mode(
+    root: &Path,
+    requested_mode: &str,
+    bootstrap_report: &Path,
+    provenance: &Path,
+    default_approval: bool,
+) -> SelfHostModeReport {
+    let normalized_mode = normalize_selfhost_mode(requested_mode);
+    let mut problems = Vec::new();
+    let mut evidence = empty_selfhost_evidence(bootstrap_report, provenance);
+    let evidence_required = matches!(normalized_mode.as_deref(), Some("supported" | "default"));
+
+    if normalized_mode.is_none() {
+        problems.push(format!(
+            "unsupported compiler mode `{}`; expected reference, experimental, supported, default, or fallback",
+            requested_mode
+        ));
+    }
+
+    if evidence_required {
+        evidence = load_selfhost_mode_evidence(root, bootstrap_report, provenance, &mut problems);
+        require_supported_selfhost_evidence(&evidence, &mut problems);
+    } else if normalized_mode.as_deref() == Some("experimental") {
+        evidence = load_optional_selfhost_mode_evidence(root, bootstrap_report, provenance);
+    }
+
+    if normalized_mode.as_deref() == Some("default") && !default_approval {
+        problems.push(
+            "default self-host mode requires explicit approval after all production gates pass"
+                .to_string(),
+        );
+    }
+
+    problems.sort();
+    problems.dedup();
+
+    let mode = normalized_mode.unwrap_or_else(|| requested_mode.to_string());
+    let active_compiler = match mode.as_str() {
+        "experimental" | "supported" | "default" => "aic-selfhost",
+        _ => "rust-reference",
+    };
+
+    SelfHostModeReport {
+        format: SELFHOST_MODE_FORMAT.to_string(),
+        requested_mode: mode.clone(),
+        active_compiler: active_compiler.to_string(),
+        default_enabled: mode == "default" && default_approval && problems.is_empty(),
+        fallback_available: true,
+        default_approval,
+        ok: problems.is_empty(),
+        problems,
+        required_gates: vec![
+            "cargo build --locked".to_string(),
+            "cargo test --locked".to_string(),
+            "make selfhost-parity-candidate".to_string(),
+            "make selfhost-bootstrap".to_string(),
+            "make selfhost-stage-matrix".to_string(),
+            "make selfhost-release-provenance".to_string(),
+            "make release-preflight".to_string(),
+            "make examples-check".to_string(),
+            "make examples-run".to_string(),
+            "make docs-check".to_string(),
+            "make ci".to_string(),
+        ],
+        evidence,
+        rust_reference_retirement: RustReferenceRetirementPolicy {
+            allowed_in_this_issue: false,
+            requirement: "keep the Rust reference compiler available until a separate retirement issue is opened, approved, implemented, and verified".to_string(),
+        },
+    }
+}
+
+pub fn normalize_selfhost_mode(value: &str) -> Option<String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" => Some("reference".to_string()),
+        "reference" | "rust" | "rust-reference" => Some("reference".to_string()),
+        "experimental" | "experiment" => Some("experimental".to_string()),
+        "selfhost" | "self-host" | "supported" => Some("supported".to_string()),
+        "default" => Some("default".to_string()),
+        "fallback" | "rust-fallback" => Some("fallback".to_string()),
+        _ => None,
+    }
+}
+
+fn empty_selfhost_evidence(bootstrap_report: &Path, provenance: &Path) -> SelfHostModeEvidence {
+    SelfHostModeEvidence {
+        bootstrap_report: bootstrap_report.display().to_string(),
+        provenance: provenance.display().to_string(),
+        bootstrap_ready: false,
+        bootstrap_status: None,
+        reproducibility_ok: false,
+        parity_ok: false,
+        stage_matrix_ok: false,
+        performance_ok: false,
+        budget_overrides: Vec::new(),
+        canonical_artifact: None,
+        canonical_artifact_sha256: None,
+        source_commit: None,
+        worktree_dirty: None,
+    }
+}
+
+fn load_optional_selfhost_mode_evidence(
+    root: &Path,
+    bootstrap_report: &Path,
+    provenance: &Path,
+) -> SelfHostModeEvidence {
+    let mut ignored = Vec::new();
+    load_selfhost_mode_evidence(root, bootstrap_report, provenance, &mut ignored)
+}
+
+fn load_selfhost_mode_evidence(
+    root: &Path,
+    bootstrap_report: &Path,
+    provenance: &Path,
+    problems: &mut Vec<String>,
+) -> SelfHostModeEvidence {
+    let bootstrap_path = resolve_release_path(root, bootstrap_report);
+    let provenance_path = resolve_release_path(root, provenance);
+    let mut evidence = empty_selfhost_evidence(bootstrap_report, provenance);
+
+    match read_json_value(&bootstrap_path) {
+        Ok(report) => {
+            if report.get("format").and_then(Value::as_str) != Some("aicore-selfhost-bootstrap-v1")
+            {
+                problems.push(format!(
+                    "bootstrap report has unexpected format: {}",
+                    bootstrap_report.display()
+                ));
+            }
+            evidence.bootstrap_ready = report
+                .get("ready")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            evidence.bootstrap_status = report
+                .get("status")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            evidence.reproducibility_ok = report
+                .get("reproducibility")
+                .and_then(|value| value.get("matches"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            evidence.performance_ok = report
+                .get("performance")
+                .and_then(|value| value.get("ok"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            evidence.budget_overrides = object_keys(
+                report
+                    .get("performance")
+                    .and_then(|value| value.get("budget_source"))
+                    .and_then(|value| value.get("overrides")),
+            );
+        }
+        Err(err) => problems.push(format!(
+            "missing or invalid self-host bootstrap report {}: {}",
+            bootstrap_report.display(),
+            err
+        )),
+    }
+
+    match read_json_value(&provenance_path) {
+        Ok(report) => {
+            if report.get("format").and_then(Value::as_str)
+                != Some("aicore-selfhost-release-provenance-v1")
+            {
+                problems.push(format!(
+                    "self-host provenance has unexpected format: {}",
+                    provenance.display()
+                ));
+            }
+            let validation = report.get("validation");
+            evidence.parity_ok = validation
+                .and_then(|value| value.get("parity_ok"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            evidence.stage_matrix_ok = validation
+                .and_then(|value| value.get("stage_matrix_ok"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let provenance_performance_ok = validation
+                .and_then(|value| value.get("performance_ok"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            evidence.performance_ok = evidence.performance_ok && provenance_performance_ok;
+            evidence.budget_overrides.extend(object_keys(
+                validation.and_then(|value| value.get("budget_overrides")),
+            ));
+            evidence.budget_overrides.sort();
+            evidence.budget_overrides.dedup();
+            evidence.canonical_artifact = report
+                .get("canonical_artifact")
+                .and_then(|value| value.get("path"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            evidence.canonical_artifact_sha256 = report
+                .get("canonical_artifact")
+                .and_then(|value| value.get("sha256"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            evidence.source_commit = report
+                .get("source")
+                .and_then(|value| value.get("commit"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            evidence.worktree_dirty = report
+                .get("source")
+                .and_then(|value| value.get("worktree_dirty"))
+                .and_then(Value::as_bool);
+        }
+        Err(err) => problems.push(format!(
+            "missing or invalid self-host release provenance {}: {}",
+            provenance.display(),
+            err
+        )),
+    }
+
+    evidence
+}
+
+fn require_supported_selfhost_evidence(
+    evidence: &SelfHostModeEvidence,
+    problems: &mut Vec<String>,
+) {
+    if !evidence.bootstrap_ready || evidence.bootstrap_status.as_deref() != Some("supported-ready")
+    {
+        problems.push("self-host bootstrap report is not supported-ready".to_string());
+    }
+    if !evidence.reproducibility_ok {
+        problems.push("self-host stage reproducibility did not pass".to_string());
+    }
+    if !evidence.parity_ok {
+        problems.push("self-host parity evidence did not pass".to_string());
+    }
+    if !evidence.stage_matrix_ok {
+        problems.push("self-host package/workspace matrix evidence did not pass".to_string());
+    }
+    if !evidence.performance_ok {
+        problems.push("self-host performance evidence did not pass".to_string());
+    }
+    if !evidence.budget_overrides.is_empty() {
+        problems.push(format!(
+            "self-host performance budget overrides are not allowed for supported/default mode: {}",
+            evidence.budget_overrides.join(",")
+        ));
+    }
+    if evidence.canonical_artifact.is_none() || evidence.canonical_artifact_sha256.is_none() {
+        problems.push(
+            "self-host release provenance is missing canonical artifact evidence".to_string(),
+        );
+    }
+    if evidence.worktree_dirty.unwrap_or(true) {
+        problems.push(
+            "self-host release provenance was generated from a dirty tracked worktree".to_string(),
+        );
+    }
+}
+
+fn resolve_release_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
+fn read_json_value(path: &Path) -> anyhow::Result<Value> {
+    let raw = fs::read_to_string(path)?;
+    Ok(serde_json::from_str::<Value>(&raw)?)
+}
+
+fn object_keys(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_object)
+        .map(|items| items.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default()
 }
 
 pub fn run_security_audit(root: &Path) -> anyhow::Result<SecurityAuditReport> {

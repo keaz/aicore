@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (253 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (296 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -124,6 +124,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1093` | Invalid intrinsic declaration form (missing `fn`/`;`, body present, or unsupported contracts/generics). | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool { false }` | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool;` |
 | `E1094` | Malformed source attribute delimiter or missing attribute name. | `#[] fn main() -> Int { 0 }` | `#[test] fn main() -> Int { 0 }` |
 | `E1095` | Malformed source attribute argument list or argument value. | `#[validate(min =)] struct User { age: Int }` | `#[validate(min = 0)] struct User { age: Int }` |
+| `E1096` | Framework source attribute target, duplicate, route/filter, or validation shape error. | `#[route(GET)] fn handler() -> Int { 0 }` | `#[route(method = "GET", path = "/")] fn handler() -> Int { 0 }` |
+| `E1097` | Framework source attribute argument or generated validation rule error. | `#[validate(min = "zero")] struct User { age: Int }` | `#[validate(min = 0)] struct User { age: Int }` |
 | `E1100` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1101` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1102` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
@@ -293,6 +295,17 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E5034` | Backend cannot lower referenced function as a first-class function value. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5035` | Closure helper return type mismatch during backend lowering. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5036` | JSON encode/decode for function values is unsupported. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
+| `E5101` | Self-host LLVM backend has no executable lowering hook for the IR statement or expression shape. | `fn main() -> Int { for value in "abc" { print_int(value); } 0 }` | `fn main() -> Int { for value in 0..3 { print_int(value); } 0 }` |
+| `E5102` | Self-host LLVM backend received an ABI or type form without a deterministic LLVM layout. | `struct Pair { left: Int, right: Int } fn main() -> Pair { Pair { left: 1, right: 2 } }` | `fn main() -> Int { 1 }` |
+| `E5103` | Self-host LLVM backend received invalid native-link metadata. | `native link ""` | `native link "aic_runtime"` |
+| `E5104` | Self-host LLVM backend received invalid artifact input such as an empty artifact name or missing entry point. | `aic_selfhost build examples/e5/hello_int.aic -o ""` | `aic_selfhost build examples/e5/hello_int.aic -o target/hello_int` |
+| `E5105` | Native object, archive, or executable materialization was requested from the LLVM-text backend package. | `compiler.backend_llvm materialize exe` | `compiler.backend_llvm emit llvm-text` |
+| `E5200` | Self-host driver received an unsupported command or malformed command shape. | `aic_selfhost unknown examples/e5/hello_int.aic` | `aic_selfhost build examples/e5/hello_int.aic -o target/hello_int` |
+| `E5201` | Self-host driver could not parse an entry program from the provided source set. | `aic_selfhost build empty.aic -o target/app` | `aic_selfhost build examples/e5/hello_int.aic -o target/hello_int` |
+| `E5202` | Self-host driver could not read the requested source input. | `aic_selfhost build missing.aic -o target/app` | `aic_selfhost build examples/e5/hello_int.aic -o target/hello_int` |
+| `E5203` | Self-host driver could not write the requested backend artifact. | `aic_selfhost build examples/e5/hello_int.aic -o /root/app` | `aic_selfhost build examples/e5/hello_int.aic -o target/hello_int` |
+| `E5204` | Self-host driver could not materialize a native executable from the self-host LLVM artifact. | `aic_selfhost build broken_backend.aic -o target/app` | `aic_selfhost build examples/e5/hello_int.aic -o target/hello_int` |
+| `E5205` | Low-level self-host driver run execution was requested through the library path instead of the executable path. | `compiler.driver.run_direct("examples/e5/hello_int.aic")` | `aic_selfhost run examples/e5/hello_int.aic` |
 | `E6001` | Deprecated std API usage warning. | `fn main() -> Int effects { time } { std.time.now() }` | `fn main() -> Int effects { time } { std.time.now_ms() }` |
 | `E6002` | Std-compat check found a baseline compatibility break. | `fn main() -> Int effects { time } { std.time.now() }` | `fn main() -> Int effects { time } { std.time.now_ms() }` |
 | `E6003` | Typed hole (`_`) accepted with inferred type/context. | `fn id(x: _) -> _ { x }` | `fn id(x: Int) -> Int { x }` |

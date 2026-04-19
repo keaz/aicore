@@ -92,6 +92,9 @@ jobs:
       - name: Self-host release provenance gate
         run: make selfhost-release-provenance
 
+      - name: Self-host compiler mode gate
+        run: make selfhost-mode-check
+
       - name: Upload self-host bootstrap reports
         if: always()
         uses: actions/upload-artifact@v4

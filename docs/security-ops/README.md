@@ -34,6 +34,7 @@ make test-e9
 make security-audit
 make repro-check
 make selfhost-release-provenance
+aic release selfhost-mode --mode supported --check
 make release-preflight
 ```
 
@@ -53,6 +54,7 @@ make release-preflight
   - `make ci`
   - `make selfhost-bootstrap`
   - `make selfhost-release-provenance`
+  - `make selfhost-mode-check`
   - `make repro-check`
   - `make security-audit`
 - The release workflow runs:
@@ -62,6 +64,7 @@ make release-preflight
   - `aic release security-audit --json`
   - `make selfhost-bootstrap`
   - `make selfhost-release-provenance`
+  - `aic release selfhost-mode --mode supported --check`
 - Security workflow independently enforces:
   - `make security-audit`
   - `aic release policy --check`
