@@ -6,7 +6,7 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -36,6 +36,7 @@ help:
 	@echo "  make selfhost-mode-check Verify supported self-host compiler mode evidence"
 	@echo "  make selfhost-default-mode-check Verify approved default self-host compiler mode evidence"
 	@echo "  make selfhost-default-build-check Verify default AICore compiler source build uses self-host"
+	@echo "  make selfhost-retirement-audit Verify Rust-reference retirement inventory remains blocked until approved"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -69,7 +70,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 test-selfhost intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 test-selfhost selfhost-retirement-audit intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -156,6 +157,9 @@ selfhost-default-mode-check:
 selfhost-default-build-check:
 	@mkdir -p target/selfhost-default
 	$(AIC) build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
+
+selfhost-retirement-audit:
+	python3 scripts/selfhost/retirement_audit.py --check --report target/selfhost-retirement/report.json
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
@@ -271,12 +275,15 @@ docs-check:
 	@test -f docs/selfhost/release-provenance.md
 	@test -f docs/selfhost/supported-operation-runbook.md
 	@test -f docs/selfhost/bootstrap-budgets.v1.json
+	@test -f docs/selfhost/rust-reference-retirement.md
+	@test -f docs/selfhost/rust-reference-retirement.v1.json
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/errors/secure-networking-error-contract.v1.json
 	@test -f docs/std-api-baseline.json
 	@python3 -m json.tool tests/selfhost/parity_manifest.json >/dev/null
 	@python3 -m json.tool tests/selfhost/stage_matrix_manifest.json >/dev/null
 	@python3 -m json.tool docs/selfhost/bootstrap-budgets.v1.json >/dev/null
+	@python3 -m json.tool docs/selfhost/rust-reference-retirement.v1.json >/dev/null
 	@python3 -m json.tool docs/diagnostics.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/parse-response.schema.json >/dev/null
 	@python3 -m json.tool docs/agent-tooling/schemas/check-response.schema.json >/dev/null
@@ -300,9 +307,13 @@ docs-check:
 	@grep -Fq "aic release selfhost-mode --mode supported --check" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "aic release selfhost-mode --mode default --check --approve-default" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "AIC_COMPILER_MODE=fallback" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "Rust Reference Retirement Audit" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "target/selfhost-retirement/report.json" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "python3 scripts/selfhost/retirement_audit.py --require-approved" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "selfhost-default-build-check" Makefile
 	@grep -Fq "selfhost-default-mode-check" Makefile
 	@grep -Fq "selfhost-mode-check" Makefile
+	@grep -Fq "selfhost-retirement-audit" Makefile
 	@grep -Fq "selfhost-mode" docs/cli-contract.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md

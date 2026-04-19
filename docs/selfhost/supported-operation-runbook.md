@@ -31,6 +31,7 @@ make selfhost-bootstrap
 make selfhost-release-provenance
 make selfhost-default-mode-check
 make selfhost-default-build-check
+make selfhost-retirement-audit
 make release-preflight
 make ci
 ```
@@ -210,6 +211,32 @@ Default compiler source validation command:
 aic release selfhost-mode --mode default --check --approve-default
 aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
 ```
+
+## Rust Reference Retirement Audit
+
+Rust-reference retirement is a separate governance step after default-mode operation. The supported/default self-host gates do not approve Rust source deletion by themselves.
+
+Run the retirement inventory audit before making or reviewing issue `#419` changes:
+
+```bash
+make selfhost-retirement-audit
+```
+
+The report is written to:
+
+```text
+target/selfhost-retirement/report.json
+```
+
+The audit passes when the manifest, decision record, docs, rollback commands, active paths, and tracked Rust/Cargo path classifications are internally consistent. It intentionally reports `removal_allowed=false` until approval, bake-in evidence, and every replacement or retained-role decision is complete.
+
+Use this command only when validating the final retirement decision:
+
+```bash
+python3 scripts/selfhost/retirement_audit.py --require-approved
+```
+
+That command must fail while the decision is deferred. Do not delete Rust reference source, remove fallback behavior, or close issue `#419` until it succeeds with an approved manifest and validated rollback evidence.
 
 ## Issue Closure Policy
 

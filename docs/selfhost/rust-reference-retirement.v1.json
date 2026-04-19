@@ -1,0 +1,212 @@
+{
+  "format": "aicore-rust-reference-retirement-v1",
+  "schema_version": 1,
+  "status": "deferred",
+  "decision_record": "docs/selfhost/rust-reference-retirement.md",
+  "controlled_default_issue": 418,
+  "retirement_issue": 419,
+  "approval": {
+    "required": true,
+    "approved": false,
+    "approver": null
+  },
+  "bake_in": {
+    "required_release_preflight_runs": 2,
+    "required_platforms": [
+      "linux",
+      "macos"
+    ],
+    "evidence": []
+  },
+  "required_active_paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "Makefile",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    "src/main.rs",
+    "src/lib.rs",
+    "src/release_ops.rs",
+    "src/codegen/runtime/part01.c",
+    "src/codegen/runtime/part02.c",
+    "src/codegen/runtime/part03.c",
+    "src/codegen/runtime/part04.c",
+    "src/codegen/runtime/part05.c",
+    "compiler/aic/aic.workspace.toml",
+    "compiler/aic/tools/aic_selfhost/src/main.aic",
+    "scripts/selfhost/bootstrap.py",
+    "scripts/selfhost/release_provenance.py",
+    "scripts/selfhost/retirement_audit.py",
+    "docs/selfhost/supported-operation-runbook.md",
+    "docs/selfhost/rust-reference-retirement.md"
+  ],
+  "rust_path_classes": [
+    {
+      "class": "rust-reference-compiler-core",
+      "description": "Rust parser, resolver, diagnostics, typing, IR, formatting, and core semantic compiler behavior still available as the reference implementation.",
+      "patterns": [
+        "src/ast.rs",
+        "src/contracts.rs",
+        "src/diagnostic_codes.rs",
+        "src/diagnostic_reasoning.rs",
+        "src/diagnostics.rs",
+        "src/effects.rs",
+        "src/formatter.rs",
+        "src/ir.rs",
+        "src/ir_builder.rs",
+        "src/lexer.rs",
+        "src/parser.rs",
+        "src/resolver.rs",
+        "src/span.rs",
+        "src/template_lowering.rs",
+        "src/typecheck.rs",
+        "src/unused_analysis.rs"
+      ],
+      "removal_allowed": false,
+      "replacement_owner": "compiler/aic/libs/{source,diagnostics,syntax,lexer,parser,ast,ir,frontend,semantics,typecheck}",
+      "required_replacement_evidence": [
+        "make selfhost-parity-candidate",
+        "make selfhost-bootstrap",
+        "make selfhost-stage-matrix"
+      ]
+    },
+    {
+      "class": "rust-reference-backend-runtime",
+      "description": "Rust LLVM backend generation and runtime materialization logic that still anchors native executable behavior and runtime linking.",
+      "patterns": [
+        "src/codegen/*.rs"
+      ],
+      "removal_allowed": false,
+      "replacement_owner": "compiler/aic/libs/backend_llvm and compiler/aic/tools/aic_selfhost native materialization",
+      "required_replacement_evidence": [
+        "make selfhost-parity-candidate",
+        "make examples-run",
+        "make selfhost-bootstrap"
+      ]
+    },
+    {
+      "class": "rust-host-cli-release-packaging",
+      "description": "Rust host command, package, release, sandbox, project, toolchain, and policy code that remains required by cargo build, release checks, and bootstrap orchestration.",
+      "patterns": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "src/driver.rs",
+        "src/lib.rs",
+        "src/machine_paths.rs",
+        "src/main.rs",
+        "src/package_loader.rs",
+        "src/package_registry.rs",
+        "src/package_workflow.rs",
+        "src/project.rs",
+        "src/release_ops.rs",
+        "src/sandbox.rs",
+        "src/std_policy.rs",
+        "src/telemetry.rs",
+        "src/toolchain.rs"
+      ],
+      "removal_allowed": false,
+      "replacement_owner": "post-retirement host tooling or narrowed Rust host crate with documented non-reference role",
+      "required_replacement_evidence": [
+        "cargo build --locked",
+        "make release-preflight",
+        "post-retirement packaging check"
+      ]
+    },
+    {
+      "class": "rust-developer-tooling",
+      "description": "Rust developer tooling, conformance, documentation, analysis, LSP, profiling, migration, and test-generation commands that are not approved for deletion by compiler-source default cutover alone.",
+      "patterns": [
+        "src/api_conformance.rs",
+        "src/attr_test_runner.rs",
+        "src/checkpoint.rs",
+        "src/cli_contract.rs",
+        "src/conformance.rs",
+        "src/context_query.rs",
+        "src/coverage.rs",
+        "src/daemon.rs",
+        "src/diag_fixes.rs",
+        "src/diagnostic_explain.rs",
+        "src/differential.rs",
+        "src/docgen.rs",
+        "src/execution_matrix.rs",
+        "src/fuzzing.rs",
+        "src/impact.rs",
+        "src/intrinsic_verifier.rs",
+        "src/lsp.rs",
+        "src/metrics.rs",
+        "src/migration.rs",
+        "src/patch_protocol.rs",
+        "src/perf_gate.rs",
+        "src/profile.rs",
+        "src/property_test_runner.rs",
+        "src/sarif.rs",
+        "src/scaffold.rs",
+        "src/semantic_diff.rs",
+        "src/session.rs",
+        "src/suggest_contracts.rs",
+        "src/suggest_effects.rs",
+        "src/symbol_query.rs",
+        "src/synthesize.rs",
+        "src/test_harness.rs",
+        "src/testgen.rs",
+        "src/web_annotations.rs"
+      ],
+      "removal_allowed": false,
+      "replacement_owner": "separate developer-tooling issues or documented retained Rust tooling",
+      "required_replacement_evidence": [
+        "make ci",
+        "make docs-check",
+        "tool-specific migration notes"
+      ]
+    },
+    {
+      "class": "rust-test-suites",
+      "description": "Rust integration and regression tests that define the behavior contract during cutover and must be replaced, migrated, or explicitly retained.",
+      "patterns": [
+        "tests/*.rs"
+      ],
+      "removal_allowed": false,
+      "replacement_owner": "post-retirement test harness or retained Rust test crate with documented scope",
+      "required_replacement_evidence": [
+        "make ci",
+        "post-retirement CI equivalent",
+        "repository-wide reference scan"
+      ]
+    }
+  ],
+  "rollback_commands": [
+    "AIC_COMPILER_MODE=fallback aic build <input> -o <artifact>",
+    "git fetch --tags origin",
+    "git checkout <last-rust-reference-tag> -- Cargo.toml Cargo.lock src tests",
+    "cargo build --locked",
+    "make selfhost-retirement-audit"
+  ],
+  "required_docs_tokens": [
+    {
+      "path": "docs/selfhost/rust-reference-retirement.md",
+      "tokens": [
+        "Removal Status: Deferred",
+        "rust-reference-compiler-core",
+        "make selfhost-retirement-audit",
+        "approval required before Rust reference removal",
+        "Rollback Source"
+      ]
+    },
+    {
+      "path": "docs/selfhost/README.md",
+      "tokens": [
+        "Rust Reference Retirement",
+        "docs/selfhost/rust-reference-retirement.md",
+        "make selfhost-retirement-audit"
+      ]
+    },
+    {
+      "path": "docs/selfhost/supported-operation-runbook.md",
+      "tokens": [
+        "Rust Reference Retirement Audit",
+        "target/selfhost-retirement/report.json",
+        "python3 scripts/selfhost/retirement_audit.py --require-approved"
+      ]
+    }
+  ]
+}

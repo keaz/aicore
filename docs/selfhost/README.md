@@ -164,6 +164,22 @@ This target writes `target/selfhost-release/provenance.json`, verifies it, and r
 
 The provenance gate fails when required reports or artifacts are missing, when checksums no longer match the bootstrap report, when stage1/stage2 reproducibility did not pass, when performance budget overrides were used, or when the host platform is unsupported. See `docs/selfhost/release-provenance.md` for schema details and verification commands.
 
+## Rust Reference Retirement
+
+Rust-reference removal is tracked separately from supported/default self-host operation. The decision record is `docs/selfhost/rust-reference-retirement.md`, and the checked inventory is `docs/selfhost/rust-reference-retirement.v1.json`.
+
+Run the consistency audit with:
+
+```bash
+make selfhost-retirement-audit
+```
+
+That target writes `target/selfhost-retirement/report.json` and passes while the inventory, docs, rollback commands, and tracked Rust/Cargo path classification are internally consistent. It does not approve removal. The stronger approval gate remains blocked until the issue `#419` decision, bake-in evidence, and replacement/retention mapping are complete:
+
+```bash
+python3 scripts/selfhost/retirement_audit.py --require-approved
+```
+
 ## CI and Release Gates
 
 GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.yml` as `Self-Host Bootstrap (${{ matrix.os }})` on `ubuntu-latest` and `macos-latest`. The job installs `clang` on Linux, runs the host tool preflight, then runs the same supported-mode command used locally:

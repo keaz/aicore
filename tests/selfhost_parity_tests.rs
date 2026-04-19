@@ -23,6 +23,10 @@ fn release_provenance_script() -> PathBuf {
     repo_root().join("scripts/selfhost/release_provenance.py")
 }
 
+fn retirement_audit_script() -> PathBuf {
+    repo_root().join("scripts/selfhost/retirement_audit.py")
+}
+
 fn run_parity(args: &[String]) -> std::process::Output {
     Command::new("python3")
         .arg(parity_script())
@@ -48,6 +52,15 @@ fn run_release_provenance(args: &[String]) -> std::process::Output {
         .current_dir(repo_root())
         .output()
         .expect("run release provenance script")
+}
+
+fn run_retirement_audit(args: &[String]) -> std::process::Output {
+    Command::new("python3")
+        .arg(retirement_audit_script())
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("run retirement audit script")
 }
 
 fn sha256_prefixed(path: &Path) -> String {
@@ -632,8 +645,11 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "tests/selfhost/rust_vs_selfhost_manifest.json",
         "tests/selfhost/stage_matrix_manifest.json",
         "scripts/selfhost/stage_matrix.py",
+        "scripts/selfhost/retirement_audit.py",
         "docs/selfhost/stage-matrix.md",
         "docs/selfhost/supported-operation-runbook.md",
+        "docs/selfhost/rust-reference-retirement.md",
+        "docs/selfhost/rust-reference-retirement.v1.json",
         "tests/selfhost/cases/borrow_invalid.aic",
         "tests/selfhost/cases/resource_invalid.aic",
     ] {
@@ -1029,6 +1045,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(makefile.contains("selfhost-mode-check"));
     assert!(makefile.contains("selfhost-default-mode-check"));
     assert!(makefile.contains("selfhost-default-build-check"));
+    assert!(makefile.contains("selfhost-retirement-audit"));
 
     let bootstrap = fs::read_to_string(root.join("scripts/selfhost/bootstrap.py"))
         .expect("read bootstrap script");
@@ -1081,6 +1098,13 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(release_provenance.contains("selfhost-release-checksums.sha256"));
     assert!(release_provenance.contains("unsupported self-host release platform"));
 
+    let retirement_audit = fs::read_to_string(root.join("scripts/selfhost/retirement_audit.py"))
+        .expect("read retirement audit");
+    assert!(retirement_audit.contains("aicore-rust-reference-retirement-audit-v1"));
+    assert!(retirement_audit.contains("tracked_rust_inventory"));
+    assert!(retirement_audit.contains("--require-approved"));
+    assert!(retirement_audit.contains("removal_allowed"));
+
     let budget_manifest = fs::read_to_string(root.join("docs/selfhost/bootstrap-budgets.v1.json"))
         .expect("read self-host budget manifest");
     assert!(budget_manifest.contains("aicore-selfhost-bootstrap-budgets-v1"));
@@ -1108,12 +1132,15 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("make selfhost-mode-check"));
     assert!(selfhost_docs.contains("make selfhost-default-mode-check"));
     assert!(selfhost_docs.contains("make selfhost-default-build-check"));
+    assert!(selfhost_docs.contains("make selfhost-retirement-audit"));
     assert!(selfhost_docs.contains("aic release selfhost-mode --mode supported --check"));
     assert!(selfhost_docs
         .contains("aic release selfhost-mode --mode default --check --approve-default"));
     assert!(selfhost_docs.contains("AIC_COMPILER_MODE=fallback"));
     assert!(selfhost_docs.contains("aicore-selfhost-release-provenance-v1"));
     assert!(selfhost_docs.contains("docs/selfhost/supported-operation-runbook.md"));
+    assert!(selfhost_docs.contains("docs/selfhost/rust-reference-retirement.md"));
+    assert!(selfhost_docs.contains("Rust Reference Retirement"));
     let performance_docs =
         fs::read_to_string(root.join("docs/selfhost/performance.md")).expect("read perf docs");
     assert!(performance_docs.contains("Release gates use the checked-in manifest defaults"));
@@ -1161,6 +1188,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "fake success path",
         "core compiler",
         "Default compiler status changed",
+        "Rust Reference Retirement Audit",
+        "target/selfhost-retirement/report.json",
+        "python3 scripts/selfhost/retirement_audit.py --require-approved",
     ] {
         assert!(
             operation_runbook.contains(token),
@@ -1178,6 +1208,36 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("Self-Host Bootstrap (${{ matrix.os }})"));
     assert!(selfhost_docs.contains("Release Self-Host Bootstrap (${{ matrix.os }})"));
     assert!(selfhost_docs.contains("AIC_SELFHOST_BOOTSTRAP_TIMEOUT=3600"));
+
+    let retirement_doc =
+        fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.md"))
+            .expect("read retirement decision record");
+    assert!(retirement_doc.contains("Removal Status: Deferred"));
+    assert!(retirement_doc.contains("rust-reference-compiler-core"));
+    assert!(retirement_doc.contains("make selfhost-retirement-audit"));
+    assert!(retirement_doc.contains("approval required before Rust reference removal"));
+    assert!(retirement_doc.contains("Rollback Source"));
+
+    let retirement_manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
+            .expect("read retirement manifest"),
+    )
+    .expect("retirement manifest json");
+    assert_eq!(
+        retirement_manifest["format"],
+        "aicore-rust-reference-retirement-v1"
+    );
+    assert_eq!(retirement_manifest["status"], "deferred");
+    assert_eq!(
+        retirement_manifest["decision_record"],
+        "docs/selfhost/rust-reference-retirement.md"
+    );
+    assert_eq!(retirement_manifest["approval"]["approved"], false);
+    assert!(retirement_manifest["rust_path_classes"]
+        .as_array()
+        .expect("rust classes")
+        .iter()
+        .any(|class| class["class"] == "rust-reference-compiler-core"));
 
     let parser = fs::read_to_string(root.join("compiler/aic/libs/parser/src/main.aic"))
         .expect("read parser lib");
@@ -1422,6 +1482,89 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
             "release workflow must use manifest budget defaults, found: {forbidden}"
         );
     }
+}
+
+#[test]
+fn selfhost_retirement_audit_records_deferred_state() {
+    let tmp = tempdir().expect("tempdir");
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "retirement audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("status=deferred"));
+    assert!(stdout.contains("removal_allowed=false"));
+
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    assert_eq!(
+        document["format"],
+        "aicore-rust-reference-retirement-audit-v1"
+    );
+    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["status"], "deferred");
+    assert_eq!(document["retirement_issue"], 419);
+    assert_eq!(document["removal_allowed"], false);
+    assert_eq!(
+        document["tracked_rust_inventory"]["unclassified"]
+            .as_array()
+            .expect("unclassified")
+            .len(),
+        0
+    );
+    assert_eq!(document["problems"].as_array().expect("problems").len(), 0);
+    let blockers = document["blockers"].as_array().expect("blockers");
+    assert!(blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("approval required")));
+    assert!(document["rust_path_classes"]
+        .as_array()
+        .expect("classes")
+        .iter()
+        .any(|class| class["class"] == "rust-reference-compiler-core"
+            && class["matched_paths"]
+                .as_array()
+                .expect("matched paths")
+                .iter()
+                .any(|path| path == "src/parser.rs")));
+}
+
+#[test]
+fn selfhost_retirement_audit_requires_approval_for_removal() {
+    let tmp = tempdir().expect("tempdir");
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--require-approved".into(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Rust reference retirement is blocked"));
+    assert!(stderr.contains("approval required before Rust reference removal"));
+
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    assert_eq!(document["removal_allowed"], false);
+    assert!(document["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .any(|blocker| blocker
+            .as_str()
+            .expect("blocker")
+            .contains("bake-in requires passing release evidence for macos")));
 }
 
 #[test]
