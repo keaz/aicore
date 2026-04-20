@@ -31,6 +31,10 @@ fn retirement_evidence_script() -> PathBuf {
     repo_root().join("scripts/selfhost/retirement_evidence.py")
 }
 
+fn retirement_reference_scan_script() -> PathBuf {
+    repo_root().join("scripts/selfhost/retirement_reference_scan.py")
+}
+
 fn run_parity(args: &[String]) -> std::process::Output {
     Command::new("python3")
         .arg(parity_script())
@@ -74,6 +78,15 @@ fn run_retirement_evidence(args: &[String]) -> std::process::Output {
         .current_dir(repo_root())
         .output()
         .expect("run retirement evidence script")
+}
+
+fn run_retirement_reference_scan(args: &[String]) -> std::process::Output {
+    Command::new("python3")
+        .arg(retirement_reference_scan_script())
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("run retirement reference scan script")
 }
 
 fn sha256_prefixed(path: &Path) -> String {
@@ -491,6 +504,45 @@ fn write_class_decision_evidence_report(root: &Path) -> PathBuf {
     report
 }
 
+fn write_reference_scan_report(root: &Path, ok: bool) -> PathBuf {
+    let report = root.join(if ok {
+        "reference-scan.json"
+    } else {
+        "bad-reference-scan.json"
+    });
+    fs::write(
+        &report,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-rust-reference-retirement-reference-scan-v1",
+            "schema_version": 1,
+            "ok": ok,
+            "targeted_class_count": 1,
+            "reference_token_count": 2,
+            "findings": if ok {
+                json!([])
+            } else {
+                json!([{
+                    "path": "docs/active.md",
+                    "line": 1,
+                    "token": "src/parser.rs",
+                    "line_text": "legacy src/parser.rs"
+                }])
+            },
+            "problems": [],
+            "targeted_classes": [{
+                "class": "rust-reference-compiler-core",
+                "patterns": ["src/parser.rs"],
+                "reference_tokens": ["src/parser.rs"]
+            }],
+            "reference_tokens": ["src/codegen/", "src/parser.rs"],
+            "scanned_files": 3
+        }))
+        .expect("reference scan report json"),
+    )
+    .expect("write reference scan report");
+    report
+}
+
 fn write_retirement_manifest_with_approved_class_decision(
     path: &Path,
     class_id: &str,
@@ -531,6 +583,61 @@ fn write_retirement_manifest_with_approved_class_decision(
                     "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string()
                 } else {
                     valid_sha.clone()
+                }
+            })
+        })
+        .collect();
+    class["retirement_decision"]["evidence"] = Value::Array(evidence);
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&manifest).expect("retirement manifest"),
+    )
+    .expect("write retirement manifest");
+}
+
+fn write_retirement_manifest_with_reference_scan_evidence(
+    path: &Path,
+    scan_report: &Path,
+    scan_bad_sha: bool,
+) {
+    let root = repo_root();
+    let ordinary_report =
+        write_class_decision_evidence_report(path.parent().expect("manifest parent"));
+    let mut manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
+            .expect("read retirement manifest"),
+    )
+    .expect("retirement manifest json");
+    let classes = manifest["rust_path_classes"]
+        .as_array_mut()
+        .expect("rust classes");
+    let class = classes
+        .iter_mut()
+        .find(|item| item["class"] == "rust-test-suites")
+        .expect("find rust test class");
+    class["retirement_decision"]["status"] = json!("approved");
+    let commands: Vec<String> = class["required_replacement_evidence"]
+        .as_array()
+        .expect("required evidence")
+        .iter()
+        .map(|item| item.as_str().expect("command").to_string())
+        .collect();
+    let evidence: Vec<Value> = commands
+        .iter()
+        .map(|command| {
+            let report = if command == "repository-wide reference scan" {
+                scan_report
+            } else {
+                &ordinary_report
+            };
+            json!({
+                "command": command,
+                "recorded_at": "2026-04-20T00:00:00Z",
+                "report": report.to_string_lossy(),
+                "report_sha256": if scan_bad_sha && command == "repository-wide reference scan" {
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string()
+                } else {
+                    sha256_prefixed(report)
                 }
             })
         })
@@ -2217,6 +2324,196 @@ fn selfhost_retirement_audit_rejects_unverified_class_decision_evidence() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("retirement_decision.evidence[0].report_sha256 mismatch"));
+}
+
+#[test]
+fn selfhost_retirement_reference_scan_accepts_clean_active_files() {
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join(".github/workflows")).expect("create workflows");
+    fs::create_dir_all(repo.join("docs/selfhost")).expect("create docs");
+    fs::create_dir_all(repo.join("scripts")).expect("create scripts");
+    fs::create_dir_all(repo.join("tests")).expect("create tests");
+    fs::write(repo.join("Makefile"), b"check:\n\ttrue\n").expect("write makefile");
+    fs::write(repo.join("README.md"), b"AICore\n").expect("write readme");
+    fs::write(repo.join(".github/workflows/ci.yml"), b"name: ci\n").expect("write workflow");
+    fs::write(repo.join("docs/active.md"), b"post-retirement docs\n").expect("write docs");
+    fs::write(repo.join("scripts/build.py"), b"print('build')\n").expect("write script");
+    fs::write(
+        repo.join("tests/contract.txt"),
+        b"post-retirement test contract\n",
+    )
+    .expect("write test");
+    fs::write(
+        repo.join("docs/selfhost/rust-reference-retirement.md"),
+        b"historical src/parser.rs migration note\n",
+    )
+    .expect("write allowed historical doc");
+
+    let manifest = repo.join("retirement-manifest.json");
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&json!({
+            "rust_path_classes": [{
+                "class": "rust-reference-compiler-core",
+                "patterns": ["src/parser.rs", "src/codegen/*.rs"],
+                "removal_allowed": true,
+                "retirement_decision": {
+                    "intent": "remove-after-replacement",
+                    "status": "approved"
+                }
+            }]
+        }))
+        .expect("manifest json"),
+    )
+    .expect("write manifest");
+
+    let report = tmp.path().join("reference-scan.json");
+    let output = run_retirement_reference_scan(&[
+        "--repo-root".into(),
+        repo.to_string_lossy().to_string(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "reference scan failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read scan report"))
+            .expect("scan report json");
+    assert_eq!(
+        document["format"],
+        "aicore-rust-reference-retirement-reference-scan-v1"
+    );
+    assert_eq!(document["ok"], true);
+    assert_eq!(document["targeted_class_count"], 1);
+    assert_eq!(
+        document["reference_tokens"],
+        json!(["src/codegen/", "src/parser.rs"])
+    );
+    assert_eq!(document["findings"].as_array().expect("findings").len(), 0);
+}
+
+#[test]
+fn selfhost_retirement_reference_scan_rejects_active_reference() {
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join(".github/workflows")).expect("create workflows");
+    fs::create_dir_all(repo.join("docs")).expect("create docs");
+    fs::create_dir_all(repo.join("scripts")).expect("create scripts");
+    fs::create_dir_all(repo.join("tests")).expect("create tests");
+    fs::write(repo.join("Makefile"), b"check:\n\ttrue\n").expect("write makefile");
+    fs::write(repo.join("README.md"), b"AICore\n").expect("write readme");
+    fs::write(repo.join(".github/workflows/ci.yml"), b"name: ci\n").expect("write workflow");
+    fs::write(
+        repo.join("docs/active.md"),
+        b"Do not keep invoking src/parser.rs after retirement.\n",
+    )
+    .expect("write docs");
+
+    let manifest = repo.join("retirement-manifest.json");
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&json!({
+            "rust_path_classes": [{
+                "class": "rust-reference-compiler-core",
+                "patterns": ["src/parser.rs"],
+                "removal_allowed": true,
+                "retirement_decision": {
+                    "intent": "remove-after-replacement",
+                    "status": "approved"
+                }
+            }]
+        }))
+        .expect("manifest json"),
+    )
+    .expect("write manifest");
+
+    let report = tmp.path().join("bad-reference-scan.json");
+    let output = run_retirement_reference_scan(&[
+        "--repo-root".into(),
+        repo.to_string_lossy().to_string(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("docs/active.md:1 references src/parser.rs"));
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read scan report"))
+            .expect("scan report json");
+    assert_eq!(document["ok"], false);
+    assert_eq!(document["findings"].as_array().expect("findings").len(), 1);
+}
+
+#[test]
+fn selfhost_retirement_audit_accepts_reference_scan_class_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let scan_report = write_reference_scan_report(tmp.path(), true);
+    let manifest = tmp.path().join("retirement-manifest.json");
+    write_retirement_manifest_with_reference_scan_evidence(&manifest, &scan_report, false);
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "reference scan evidence audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    let class = document["rust_path_classes"]
+        .as_array()
+        .expect("classes")
+        .iter()
+        .find(|item| item["class"] == "rust-test-suites")
+        .expect("test class");
+    assert_eq!(class["retirement_decision"]["status"], "approved");
+    assert!(class["retirement_decision"]["evidence"]
+        .as_array()
+        .expect("evidence")
+        .iter()
+        .any(|item| item["command"] == "repository-wide reference scan"
+            && item["reference_scan"]["valid"] == true));
+    let blockers = document["blockers"].as_array().expect("blockers");
+    assert!(!blockers.iter().any(|blocker| blocker
+        .as_str()
+        .expect("blocker")
+        .contains("rust-test-suites retained Rust role")));
+}
+
+#[test]
+fn selfhost_retirement_audit_rejects_failed_reference_scan_class_evidence() {
+    let tmp = tempdir().expect("tempdir");
+    let scan_report = write_reference_scan_report(tmp.path(), false);
+    let manifest = tmp.path().join("bad-retirement-manifest.json");
+    write_retirement_manifest_with_reference_scan_evidence(&manifest, &scan_report, false);
+    let report = tmp.path().join("bad-retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("reference scan report must be ok"));
+    assert!(stderr.contains("reference scan report must have no findings"));
 }
 
 #[test]

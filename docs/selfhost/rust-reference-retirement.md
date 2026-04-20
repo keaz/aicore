@@ -69,7 +69,19 @@ Each `rust_path_classes` entry must declare a `retirement_decision`:
 - `non_reference_role`: required when `intent` is `retain-non-reference`.
 - `evidence`: one entry per required command, each with `command`, `recorded_at`, `report`, and `report_sha256`.
 
-The audit verifies every class evidence checksum. A class decision cannot be `approved` unless every command listed in `required_replacement_evidence` has a matching evidence entry. For `remove-after-replacement`, `removal_allowed` must also be true before approval is accepted. Until then, `python3 scripts/selfhost/retirement_audit.py --require-approved` reports the class as a blocker.
+The audit verifies every class evidence checksum. A class decision cannot be `approved` unless every command listed in `required_replacement_evidence` has a matching evidence entry. For `remove-after-replacement`, `removal_allowed` must also be true before approval is accepted. When the manifest status is `retired`, approved removal classes are expected to have no active files left at their historical patterns. Until then, `python3 scripts/selfhost/retirement_audit.py --require-approved` reports the class as a blocker.
+
+## Reference Scan Evidence
+
+Issue `#419` requires a repository-wide search proving active docs, scripts, tests, and workflows no longer reference removed Rust reference paths. Generate that evidence from the final candidate manifest after the removal classes are approved:
+
+```bash
+python3 scripts/selfhost/retirement_reference_scan.py \
+  --manifest target/selfhost-retirement/approved-manifest.json \
+  --report target/selfhost-retirement/reference-scan.json
+```
+
+The report format is `aicore-rust-reference-retirement-reference-scan-v1`. It scans `.github/workflows`, `docs`, `scripts`, `tests`, `Makefile`, and `README.md` by default, while allowing this decision record and its JSON manifest to keep historical migration references. Class evidence for the `repository-wide reference scan` command is valid only when the scan report is `ok=true`, targets at least one approved removal class, includes at least one retired path token, and has no findings or scan problems.
 
 ## Evidence Collection Helper
 
@@ -101,10 +113,10 @@ python3 scripts/selfhost/retirement_evidence.py rollback-entry \
   --out target/selfhost-retirement/rollback-entry.json
 
 python3 scripts/selfhost/retirement_evidence.py class-entry \
-  --command "make selfhost-bootstrap" \
+  --command "repository-wide reference scan" \
   --recorded-at <timestamp> \
-  --report target/selfhost-bootstrap/report.json \
-  --out target/selfhost-retirement/class-bootstrap.json
+  --report target/selfhost-retirement/reference-scan.json \
+  --out target/selfhost-retirement/class-reference-scan.json
 ```
 
 Assemble a candidate manifest for final review only after all required evidence files exist:
@@ -141,7 +153,7 @@ python3 scripts/selfhost/retirement_audit.py \
 
 Removal can be considered only after all of these are true:
 
-1. The decision manifest status is changed from `deferred` to `approved`.
+1. The decision manifest status is changed from `deferred` to `approved` before removal and to `retired` after the approved Rust reference paths are gone.
 2. `approval.approved` is true and an approver is recorded.
 3. The bake-in evidence records at least two passing release preflight runs across Linux and macOS.
 4. Every Rust path class is either marked `removal_allowed=true` with replacement evidence or retained with a documented non-reference role.
@@ -194,5 +206,6 @@ Do not close issue `#419` until the evidence comment includes:
 - the exact Rust paths removed and the exact Rust paths retained
 - replacement owners and tests for every removed class
 - `cargo build --locked`, `make ci`, `make release-preflight`, `make selfhost-bootstrap`, `make examples-check`, `make examples-run`, and `make docs-check`
+- the `aicore-rust-reference-retirement-reference-scan-v1` report proving active files no longer reference removed Rust reference paths
 - rollback validation from the recorded source
 - marker scan output for every touched path

@@ -6,7 +6,7 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -37,6 +37,7 @@ help:
 	@echo "  make selfhost-default-mode-check Verify approved default self-host compiler mode evidence"
 	@echo "  make selfhost-default-build-check Verify default AICore compiler source build uses self-host"
 	@echo "  make selfhost-retirement-audit Verify Rust-reference retirement inventory remains blocked until approved"
+	@echo "  make selfhost-retirement-reference-scan Scan active files for retired Rust reference path references"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -161,6 +162,9 @@ selfhost-default-build-check:
 selfhost-retirement-audit:
 	python3 scripts/selfhost/retirement_audit.py --check --report target/selfhost-retirement/report.json
 
+selfhost-retirement-reference-scan:
+	python3 scripts/selfhost/retirement_reference_scan.py --report target/selfhost-retirement/reference-scan.json
+
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
 
@@ -278,6 +282,7 @@ docs-check:
 	@test -f docs/selfhost/rust-reference-retirement.md
 	@test -f docs/selfhost/rust-reference-retirement.v1.json
 	@test -f scripts/selfhost/retirement_evidence.py
+	@test -f scripts/selfhost/retirement_reference_scan.py
 	@test -f docs/compatibility-migration-policy.md
 	@test -f docs/errors/secure-networking-error-contract.v1.json
 	@test -f docs/std-api-baseline.json
@@ -317,13 +322,16 @@ docs-check:
 	@grep -Fq "rollback.validation_evidence" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "retirement_decision" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "scripts/selfhost/retirement_evidence.py" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "scripts/selfhost/retirement_reference_scan.py" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq -- "--path-base" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq -- "--evidence-root" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq "aicore-rust-reference-retirement-reference-scan-v1" docs/selfhost/rust-reference-retirement.md
 	@grep -Fq "requires_production_budget_defaults" docs/selfhost/rust-reference-retirement.v1.json
 	@grep -Fq "selfhost-default-build-check" Makefile
 	@grep -Fq "selfhost-default-mode-check" Makefile
 	@grep -Fq "selfhost-mode-check" Makefile
 	@grep -Fq "selfhost-retirement-audit" Makefile
+	@grep -Fq "selfhost-retirement-reference-scan" Makefile
 	@grep -Fq "selfhost-mode" docs/cli-contract.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md

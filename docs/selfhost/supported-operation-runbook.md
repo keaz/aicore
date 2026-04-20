@@ -234,11 +234,13 @@ Passing bake-in evidence must include `make release-preflight`, `make ci`, the s
 
 Rollback evidence must be recorded under `rollback.validation_evidence`. A valid entry records the tag or branch and commit used to restore the Rust reference, the exact checkout command covering every `rollback.restore_paths` entry, `cargo build --locked`, `make selfhost-retirement-audit`, and matching `sha256:` digests for the cargo build log, retirement audit report, and marker scan report.
 
-Class decision evidence is recorded under each `rust_path_classes[*].retirement_decision`. Reference compiler classes use `intent=remove-after-replacement`; retained host/tooling/test classes use `intent=retain-non-reference` with a named non-reference role. A class decision stays blocked until every command listed in `required_replacement_evidence` has a matching report and checksum.
+Class decision evidence is recorded under each `rust_path_classes[*].retirement_decision`. Reference compiler classes use `intent=remove-after-replacement`; retained host/tooling/test classes use `intent=retain-non-reference` with a named non-reference role. A class decision stays blocked until every command listed in `required_replacement_evidence` has a matching report and checksum. When a final manifest is marked `retired`, approved removal-class file patterns must be absent from the repository.
 
 Use `scripts/selfhost/retirement_evidence.py` after the real commands have run to generate checksum-bearing bake-in, rollback, and class decision entries. The helper can assemble a candidate manifest under `target/selfhost-retirement/` for review, but the approved manifest must still pass `python3 scripts/selfhost/retirement_audit.py --require-approved` before issue `#419` can close.
 
 If release evidence is stored as a separate artifact bundle, pass `--path-base <bundle>` when creating evidence entries and use `python3 scripts/selfhost/retirement_audit.py --evidence-root <bundle>` when auditing the candidate manifest. Relative evidence paths are resolved inside that bundle while source paths and Rust inventory still resolve against the repository.
+
+Before closing issue `#419`, run `scripts/selfhost/retirement_reference_scan.py` against the final candidate manifest and attach its `aicore-rust-reference-retirement-reference-scan-v1` report as evidence for the `repository-wide reference scan` command. The scan must target at least one approved removal class and must report no active references in docs, scripts, tests, workflows, `Makefile`, or `README.md`.
 
 Use this command only when validating the final retirement decision:
 

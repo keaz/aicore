@@ -14,6 +14,7 @@ from typing import Any
 
 MANIFEST_FORMAT = "aicore-rust-reference-retirement-v1"
 REPORT_FORMAT = "aicore-rust-reference-retirement-audit-v1"
+REFERENCE_SCAN_FORMAT = "aicore-rust-reference-retirement-reference-scan-v1"
 BOOTSTRAP_FORMAT = "aicore-selfhost-bootstrap-v1"
 PROVENANCE_FORMAT = "aicore-selfhost-release-provenance-v1"
 SCHEMA_VERSION = 1
@@ -27,6 +28,7 @@ ROLLBACK_FETCH_COMMAND = "git fetch --tags origin"
 ROLLBACK_CHECKOUT_COMMAND = "git checkout <last-rust-reference-tag> -- Cargo.toml Cargo.lock src tests"
 ROLLBACK_BUILD_COMMAND = "cargo build --locked"
 ROLLBACK_AUDIT_COMMAND = "make selfhost-retirement-audit"
+REFERENCE_SCAN_COMMAND = "repository-wide reference scan"
 ROLLBACK_REQUIRED_COMMANDS = [
     ROLLBACK_FETCH_COMMAND,
     ROLLBACK_CHECKOUT_COMMAND,
@@ -280,6 +282,63 @@ def audit_docs(
     return docs
 
 
+def validate_reference_scan_evidence(path: Path, field: str, problems: list[str]) -> tuple[dict[str, Any], bool]:
+    summary: dict[str, Any] = {
+        "format_ok": False,
+        "ok": False,
+        "targeted_class_count": 0,
+        "reference_token_count": 0,
+        "findings_count": None,
+        "problems_count": None,
+        "valid": False,
+    }
+    try:
+        report = read_json(path)
+    except (OSError, ValueError) as exc:
+        problems.append(f"{field} reference scan report is invalid: {exc}")
+        return summary, False
+
+    summary["format_ok"] = report.get("format") == REFERENCE_SCAN_FORMAT
+    if not summary["format_ok"]:
+        problems.append(f"{field} reference scan report format must be {REFERENCE_SCAN_FORMAT}")
+    summary["ok"] = report.get("ok") is True
+    if not summary["ok"]:
+        problems.append(f"{field} reference scan report must be ok")
+
+    targeted_class_count = report.get("targeted_class_count")
+    reference_token_count = report.get("reference_token_count")
+    findings = report.get("findings")
+    scan_problems = report.get("problems")
+    summary["targeted_class_count"] = targeted_class_count if isinstance(targeted_class_count, int) else 0
+    summary["reference_token_count"] = reference_token_count if isinstance(reference_token_count, int) else 0
+    summary["findings_count"] = len(findings) if isinstance(findings, list) else None
+    summary["problems_count"] = len(scan_problems) if isinstance(scan_problems, list) else None
+
+    if not isinstance(targeted_class_count, int) or targeted_class_count < 1:
+        problems.append(f"{field} reference scan report must target at least one approved removal class")
+    if not isinstance(reference_token_count, int) or reference_token_count < 1:
+        problems.append(f"{field} reference scan report must include at least one retired reference token")
+    if not isinstance(findings, list) or findings:
+        problems.append(f"{field} reference scan report must have no findings")
+    if not isinstance(scan_problems, list) or scan_problems:
+        problems.append(f"{field} reference scan report must have no problems")
+
+    valid = (
+        summary["format_ok"] is True
+        and summary["ok"] is True
+        and isinstance(targeted_class_count, int)
+        and targeted_class_count >= 1
+        and isinstance(reference_token_count, int)
+        and reference_token_count >= 1
+        and isinstance(findings, list)
+        and not findings
+        and isinstance(scan_problems, list)
+        and not scan_problems
+    )
+    summary["valid"] = valid
+    return summary, valid
+
+
 def validate_class_decision_evidence(
     item: dict[str, Any],
     class_index: int,
@@ -296,22 +355,30 @@ def validate_class_decision_evidence(
     if command and command not in allowed_commands:
         problems.append(f"{prefix}.command is not listed in required_replacement_evidence")
     sha_ok = False
+    reference_scan: dict[str, Any] | None = None
+    reference_scan_ok = True
     if report_raw and report_sha:
+        report_path = resolve_evidence_path(evidence_root, report_raw)
         sha_ok = verify_sha256(
-            resolve_evidence_path(evidence_root, report_raw),
+            report_path,
             report_sha,
             f"{prefix}.report_sha256",
             problems,
         )
-    valid = bool(command) and command in allowed_commands and bool(recorded_at) and sha_ok
+        if command == REFERENCE_SCAN_COMMAND and sha_ok:
+            reference_scan, reference_scan_ok = validate_reference_scan_evidence(report_path, prefix, problems)
+    valid = bool(command) and command in allowed_commands and bool(recorded_at) and sha_ok and reference_scan_ok
+    summary = {
+        "command": command,
+        "recorded_at": recorded_at,
+        "report": report_raw,
+        "sha256_ok": sha_ok,
+        "valid": valid,
+    }
+    if reference_scan is not None:
+        summary["reference_scan"] = reference_scan
     return (
-        {
-            "command": command,
-            "recorded_at": recorded_at,
-            "report": report_raw,
-            "sha256_ok": sha_ok,
-            "valid": valid,
-        },
+        summary,
         valid,
     )
 
@@ -399,6 +466,7 @@ def audit_classes(
     manifest: dict[str, Any],
     repo_root: Path,
     evidence_root: Path,
+    retirement_status: str,
     problems: list[str],
 ) -> tuple[list[dict[str, Any]], set[str], list[str]]:
     classes: list[dict[str, Any]] = []
@@ -437,16 +505,28 @@ def audit_classes(
         )
         blockers.extend(class_blockers)
         matched: list[str] = []
+        absent_patterns: list[str] = []
+        removed_class_is_retired = (
+            retirement_status == "retired"
+            and retirement_decision.get("intent") == "remove-after-replacement"
+            and retirement_decision.get("status") == "approved"
+            and removal_allowed is True
+        )
         for pattern in patterns:
             matches = expand_pattern(repo_root, pattern)
             if not matches:
-                problems.append(f"rust path class {class_id} pattern matched no files: {pattern}")
+                if removed_class_is_retired:
+                    absent_patterns.append(pattern)
+                else:
+                    problems.append(f"rust path class {class_id} pattern matched no files: {pattern}")
             for path in matches:
                 displayed = display_path(path, repo_root)
+                if removed_class_is_retired:
+                    problems.append(f"retired rust path class {class_id} still has active file: {displayed}")
                 matched.append(displayed)
                 classified_paths.add(displayed)
         matched = sorted(set(matched))
-        if not matched:
+        if not matched and not removed_class_is_retired:
             problems.append(f"rust path class {class_id} has no matched files")
         classes.append(
             {
@@ -456,6 +536,7 @@ def audit_classes(
                 "removal_allowed": removal_allowed,
                 "patterns": patterns,
                 "matched_paths": matched,
+                "absent_patterns": absent_patterns,
                 "required_replacement_evidence": evidence,
                 "retirement_decision": retirement_decision,
             }
@@ -1075,7 +1156,7 @@ def build_report(manifest_path: Path, repo_root: Path, evidence_root: Path | Non
 
     active_paths = audit_active_paths(manifest, repo_root, problems)
     docs = audit_docs(manifest, repo_root, problems)
-    classes, classified_paths, class_blockers = audit_classes(manifest, repo_root, evidence_root, problems)
+    classes, classified_paths, class_blockers = audit_classes(manifest, repo_root, evidence_root, status, problems)
     bake_in, bake_in_blockers = audit_bake_in(manifest, evidence_root, problems)
     rollback, rollback_blockers = audit_rollback(manifest, repo_root, evidence_root, problems)
 
@@ -1094,8 +1175,8 @@ def build_report(manifest_path: Path, repo_root: Path, evidence_root: Path | Non
             problems.append(f"rollback_commands must include `{command}`")
 
     blockers: list[str] = []
-    if status != "approved":
-        blockers.append(f"retirement decision status is {status}; approved is required for removal")
+    if status not in {"approved", "retired"}:
+        blockers.append(f"retirement decision status is {status}; approved or retired is required for removal")
     if approval_required and not approval_granted:
         blockers.append("approval required before Rust reference removal")
     blockers.extend(bake_in_blockers)

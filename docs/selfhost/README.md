@@ -182,11 +182,13 @@ python3 scripts/selfhost/retirement_audit.py --require-approved
 
 Passing bake-in entries must be machine-verifiable: each entry records `make release-preflight`, `make ci`, source commit, supported bootstrap report checksum, release provenance checksum, and default compiler-source build artifact checksum. Empty or failed entries do not count toward Linux/macOS bake-in. Rollback evidence is also machine-verifiable through `rollback.validation_evidence`, including the restore source, checkout/build/audit commands, and checksums for the build log, retirement audit report, and marker scan report.
 
-Class decisions are machine-verifiable through `rust_path_classes[*].retirement_decision`. Rust reference compiler classes must use `remove-after-replacement`, while retained Rust host/tooling/test classes must name a non-reference role and provide evidence for each required command before approval.
+Class decisions are machine-verifiable through `rust_path_classes[*].retirement_decision`. Rust reference compiler classes must use `remove-after-replacement`, while retained Rust host/tooling/test classes must name a non-reference role and provide evidence for each required command before approval. After removal, a `retired` manifest expects approved removal class paths to be absent from the repository.
 
 Generate review entries with `scripts/selfhost/retirement_evidence.py` after the corresponding commands have run. The helper records checksums for bake-in, rollback, and class decision evidence and can assemble a candidate manifest under `target/selfhost-retirement/`.
 
 Use `--path-base <bundle>` when creating evidence entries and `python3 scripts/selfhost/retirement_audit.py --evidence-root <bundle>` when auditing a candidate manifest whose reports, logs, and compiler artifacts are stored in a separate release evidence bundle.
+
+Generate final reference-scan evidence with `scripts/selfhost/retirement_reference_scan.py` after the removal classes are approved in the candidate manifest. The report format is `aicore-rust-reference-retirement-reference-scan-v1`; it must be attached as class evidence for `repository-wide reference scan` and must have no active docs, scripts, tests, workflow, `Makefile`, or `README.md` findings.
 
 ## CI and Release Gates
 
