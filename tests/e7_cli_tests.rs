@@ -6823,7 +6823,15 @@ fn pkg_example_consumes_local_http_client_module() {
 
 #[test]
 fn pkg_workspace_demo_example_checks_and_builds() {
-    let check = run_aic(&["check", "examples/pkg/workspace_demo"]);
+    let workspace = tempdir().expect("workspace demo copy");
+    copy_dir_recursive(
+        &repo_root().join("examples/pkg/workspace_demo"),
+        workspace.path(),
+    );
+    let _ = fs::remove_dir_all(workspace.path().join("target"));
+    let workspace_path = workspace.path().to_str().expect("workspace path");
+
+    let check = run_aic(&["check", workspace_path]);
     assert_eq!(
         check.status.code(),
         Some(0),
@@ -6832,7 +6840,7 @@ fn pkg_workspace_demo_example_checks_and_builds() {
         String::from_utf8_lossy(&check.stderr)
     );
 
-    let build = run_aic(&["build", "examples/pkg/workspace_demo"]);
+    let build = run_aic(&["build", workspace_path]);
     assert_eq!(
         build.status.code(),
         Some(0),
