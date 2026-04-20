@@ -2239,6 +2239,8 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
         provenance.to_string_lossy().to_string(),
         "--default-build-artifact".into(),
         default_artifact.to_string_lossy().to_string(),
+        "--path-base".into(),
+        tmp.path().to_string_lossy().to_string(),
         "--out".into(),
         bake_entry.to_string_lossy().to_string(),
     ]);
@@ -2266,6 +2268,8 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
         audit_report.to_string_lossy().to_string(),
         "--marker-scan-report".into(),
         marker_report.to_string_lossy().to_string(),
+        "--path-base".into(),
+        tmp.path().to_string_lossy().to_string(),
         "--out".into(),
         rollback_entry.to_string_lossy().to_string(),
     ]);
@@ -2294,6 +2298,8 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
             "2026-04-20T00:00:00Z".into(),
             "--report".into(),
             class_report.to_string_lossy().to_string(),
+            "--path-base".into(),
+            tmp.path().to_string_lossy().to_string(),
             "--out".into(),
             entry_path.to_string_lossy().to_string(),
         ]);
@@ -2344,6 +2350,8 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
         "--check".into(),
         "--manifest".into(),
         manifest.to_string_lossy().to_string(),
+        "--evidence-root".into(),
+        tmp.path().to_string_lossy().to_string(),
         "--report".into(),
         report.to_string_lossy().to_string(),
     ]);
@@ -2356,6 +2364,10 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
     let candidate: Value =
         serde_json::from_str(&fs::read_to_string(&manifest).expect("read candidate manifest"))
             .expect("candidate manifest json");
+    assert_eq!(
+        candidate["bake_in"]["evidence"][0]["bootstrap_report"],
+        "bootstrap-report.json"
+    );
     assert_eq!(candidate["rollback"]["validated"], true);
     assert_eq!(
         candidate["bake_in"]["evidence"]
@@ -2402,6 +2414,40 @@ fn selfhost_retirement_evidence_helper_rejects_invalid_commit_digest() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--source-commit must be a git commit digest"));
+}
+
+#[test]
+fn selfhost_retirement_evidence_helper_rejects_paths_outside_path_base() {
+    let tmp = tempdir().expect("tempdir");
+    let bundle = tmp.path().join("bundle");
+    fs::create_dir_all(&bundle).expect("create bundle");
+    let (bootstrap, provenance, default_artifact, source_commit) =
+        write_retirement_evidence_fixture(tmp.path());
+    let output = run_retirement_evidence(&[
+        "bake-in-entry".into(),
+        "--platform".into(),
+        "macos".into(),
+        "--source-commit".into(),
+        source_commit,
+        "--recorded-at".into(),
+        "2026-04-20T00:00:00Z".into(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--release-provenance".into(),
+        provenance.to_string_lossy().to_string(),
+        "--default-build-artifact".into(),
+        default_artifact.to_string_lossy().to_string(),
+        "--path-base".into(),
+        bundle.to_string_lossy().to_string(),
+        "--out".into(),
+        tmp.path()
+            .join("bake-entry.json")
+            .to_string_lossy()
+            .to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--bootstrap-report must be inside --path-base"));
 }
 
 #[test]

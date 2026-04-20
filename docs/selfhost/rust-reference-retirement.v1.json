@@ -270,6 +270,7 @@
         "Rollback Source",
         "Rollback Validation Evidence",
         "Class Decision Evidence",
+        "--path-base",
         "--evidence-root"
       ]
     },
@@ -279,6 +280,7 @@
         "Rust Reference Retirement",
         "docs/selfhost/rust-reference-retirement.md",
         "make selfhost-retirement-audit",
+        "--path-base",
         "--evidence-root"
       ]
     },
@@ -290,6 +292,7 @@
         "rollback.validation_evidence",
         "retirement_decision",
         "scripts/selfhost/retirement_evidence.py",
+        "--path-base",
         "--evidence-root",
         "python3 scripts/selfhost/retirement_audit.py --require-approved"
       ]

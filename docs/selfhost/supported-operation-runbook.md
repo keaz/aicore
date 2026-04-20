@@ -238,7 +238,7 @@ Class decision evidence is recorded under each `rust_path_classes[*].retirement_
 
 Use `scripts/selfhost/retirement_evidence.py` after the real commands have run to generate checksum-bearing bake-in, rollback, and class decision entries. The helper can assemble a candidate manifest under `target/selfhost-retirement/` for review, but the approved manifest must still pass `python3 scripts/selfhost/retirement_audit.py --require-approved` before issue `#419` can close.
 
-If release evidence is stored as a separate artifact bundle, use `python3 scripts/selfhost/retirement_audit.py --evidence-root <bundle>` so relative evidence paths are resolved inside that bundle while source paths and Rust inventory still resolve against the repository.
+If release evidence is stored as a separate artifact bundle, pass `--path-base <bundle>` when creating evidence entries and use `python3 scripts/selfhost/retirement_audit.py --evidence-root <bundle>` when auditing the candidate manifest. Relative evidence paths are resolved inside that bundle while source paths and Rust inventory still resolve against the repository.
 
 Use this command only when validating the final retirement decision:
 

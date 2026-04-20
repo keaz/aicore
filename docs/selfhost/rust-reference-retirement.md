@@ -121,6 +121,16 @@ python3 scripts/selfhost/retirement_evidence.py assemble-manifest \
 When evidence files are archived outside the repository root, keep paths in the candidate manifest relative to that archive and audit with an explicit evidence root:
 
 ```bash
+python3 scripts/selfhost/retirement_evidence.py bake-in-entry \
+  --platform macos \
+  --source-commit <commit> \
+  --recorded-at <timestamp> \
+  --bootstrap-report target/selfhost-retirement/evidence/bootstrap/report.json \
+  --release-provenance target/selfhost-retirement/evidence/release/provenance.json \
+  --default-build-artifact target/selfhost-retirement/evidence/default/aic_selfhost \
+  --path-base target/selfhost-retirement/evidence \
+  --out target/selfhost-retirement/bake-in-macos.json
+
 python3 scripts/selfhost/retirement_audit.py \
   --manifest target/selfhost-retirement/approved-manifest.json \
   --evidence-root target/selfhost-retirement/evidence \

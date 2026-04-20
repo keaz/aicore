@@ -33,6 +33,15 @@ def require_file(raw: str, field: str) -> Path:
     return path
 
 
+def evidence_path_value(path: Path, path_base: Path | None, field: str) -> str:
+    if path_base is None:
+        return str(path)
+    try:
+        return path.resolve().relative_to(path_base.resolve()).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"{field} must be inside --path-base") from exc
+
+
 def load_entry(path: Path) -> dict[str, Any]:
     entry = read_json(path)
     return entry
@@ -82,11 +91,15 @@ def write_bake_in_entry(args: argparse.Namespace) -> None:
             "recorded_at": args.recorded_at,
             "release_preflight_command": RELEASE_PREFLIGHT_COMMAND,
             "ci_command": CI_COMMAND,
-            "bootstrap_report": args.bootstrap_report,
+            "bootstrap_report": evidence_path_value(bootstrap, args.path_base, "--bootstrap-report"),
             "bootstrap_report_sha256": sha256_prefixed(bootstrap),
-            "release_provenance": args.release_provenance,
+            "release_provenance": evidence_path_value(provenance, args.path_base, "--release-provenance"),
             "release_provenance_sha256": sha256_prefixed(provenance),
-            "default_build_artifact": args.default_build_artifact,
+            "default_build_artifact": evidence_path_value(
+                default_build,
+                args.path_base,
+                "--default-build-artifact",
+            ),
             "default_build_sha256": sha256_prefixed(default_build),
         },
     )
@@ -111,11 +124,15 @@ def write_rollback_entry(args: argparse.Namespace) -> None:
                 ROLLBACK_BUILD_COMMAND,
                 ROLLBACK_AUDIT_COMMAND,
             ],
-            "cargo_build_log": args.cargo_build_log,
+            "cargo_build_log": evidence_path_value(cargo_log, args.path_base, "--cargo-build-log"),
             "cargo_build_sha256": sha256_prefixed(cargo_log),
-            "retirement_audit_report": args.retirement_audit_report,
+            "retirement_audit_report": evidence_path_value(
+                audit_report,
+                args.path_base,
+                "--retirement-audit-report",
+            ),
             "retirement_audit_sha256": sha256_prefixed(audit_report),
-            "marker_scan_report": args.marker_scan_report,
+            "marker_scan_report": evidence_path_value(marker_report, args.path_base, "--marker-scan-report"),
             "marker_scan_sha256": sha256_prefixed(marker_report),
         },
     )
@@ -128,7 +145,7 @@ def write_class_entry(args: argparse.Namespace) -> None:
         {
             "command": args.command,
             "recorded_at": args.recorded_at,
-            "report": args.report,
+            "report": evidence_path_value(report, args.path_base, "--report"),
             "report_sha256": sha256_prefixed(report),
         },
     )
@@ -239,6 +256,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     bake.add_argument("--bootstrap-report", required=True)
     bake.add_argument("--release-provenance", required=True)
     bake.add_argument("--default-build-artifact", required=True)
+    bake.add_argument("--path-base", type=Path)
     bake.add_argument("--out", type=Path, required=True)
     bake.set_defaults(func=write_bake_in_entry)
 
@@ -250,6 +268,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     rollback.add_argument("--retirement-audit-report", required=True)
     rollback.add_argument("--marker-scan-report", required=True)
     rollback.add_argument("--restore-path", action="append", default=[])
+    rollback.add_argument("--path-base", type=Path)
     rollback.add_argument("--out", type=Path, required=True)
     rollback.set_defaults(func=write_rollback_entry)
 
@@ -257,6 +276,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     class_entry.add_argument("--command", required=True)
     class_entry.add_argument("--recorded-at", required=True)
     class_entry.add_argument("--report", required=True)
+    class_entry.add_argument("--path-base", type=Path)
     class_entry.add_argument("--out", type=Path, required=True)
     class_entry.set_defaults(func=write_class_entry)
 
