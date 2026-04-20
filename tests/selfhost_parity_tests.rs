@@ -504,6 +504,64 @@ fn write_class_decision_evidence_report(root: &Path) -> PathBuf {
     report
 }
 
+fn write_class_command_evidence_report(root: &Path, command: &str) -> PathBuf {
+    let safe_name = command
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>();
+    let report = root.join(format!("{safe_name}.json"));
+    let payload = match command {
+        "make selfhost-parity-candidate" => json!({
+            "format": "aicore-selfhost-parity-v1",
+            "ok": true,
+            "manifest": {
+                "name": "test",
+                "schema_version": 1,
+                "case_count": 1
+            },
+            "results": [{
+                "name": "case",
+                "ok": true
+            }]
+        }),
+        "make selfhost-bootstrap" => json!({
+            "format": "aicore-selfhost-bootstrap-v1",
+            "schema_version": 1,
+            "status": "supported-ready",
+            "ready": true,
+            "performance": {
+                "budget_source": {
+                    "overrides": {}
+                }
+            }
+        }),
+        "make selfhost-stage-matrix" => json!({
+            "format": "aicore-selfhost-stage-matrix-v1",
+            "ok": true,
+            "summary": {
+                "passed": 1,
+                "unsupported": 0,
+                "failed": 0
+            },
+            "results": [{
+                "name": "case",
+                "status": "passed"
+            }]
+        }),
+        _ => json!({
+            "format": "aicore-class-evidence-log-v1",
+            "command": command,
+            "ok": true
+        }),
+    };
+    fs::write(
+        &report,
+        serde_json::to_string_pretty(&payload).expect("class command report json"),
+    )
+    .expect("write class command report");
+    report
+}
+
 fn write_reference_scan_report(root: &Path, ok: bool) -> PathBuf {
     let report = root.join(if ok {
         "reference-scan.json"
@@ -546,7 +604,7 @@ fn write_reference_scan_report(root: &Path, ok: bool) -> PathBuf {
 fn write_retirement_manifest_with_approved_class_decision(
     path: &Path,
     class_id: &str,
-    report: &Path,
+    _report: &Path,
     bad_sha: bool,
 ) {
     let root = repo_root();
@@ -570,19 +628,22 @@ fn write_retirement_manifest_with_approved_class_decision(
         .iter()
         .map(|item| item.as_str().expect("command").to_string())
         .collect();
-    let valid_sha = sha256_prefixed(report);
     let evidence: Vec<Value> = commands
         .iter()
         .enumerate()
         .map(|(index, command)| {
+            let command_report = write_class_command_evidence_report(
+                path.parent().expect("manifest parent"),
+                command,
+            );
             json!({
                 "command": command,
                 "recorded_at": "2026-04-19T00:00:00Z",
-                "report": report.to_string_lossy(),
+                "report": command_report.to_string_lossy(),
                 "report_sha256": if bad_sha && index == 0 {
                     "sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string()
                 } else {
-                    valid_sha.clone()
+                    sha256_prefixed(&command_report)
                 }
             })
         })
@@ -2327,6 +2388,68 @@ fn selfhost_retirement_audit_rejects_unverified_class_decision_evidence() {
 }
 
 #[test]
+fn selfhost_retirement_audit_rejects_wrong_known_class_report_format() {
+    let tmp = tempdir().expect("tempdir");
+    let evidence_report = write_class_decision_evidence_report(tmp.path());
+    let manifest = tmp.path().join("bad-command-report-manifest.json");
+    write_retirement_manifest_with_approved_class_decision(
+        &manifest,
+        "rust-reference-compiler-core",
+        &evidence_report,
+        false,
+    );
+    let mut manifest_json: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest).expect("read manifest"))
+            .expect("manifest json");
+    let classes = manifest_json["rust_path_classes"]
+        .as_array_mut()
+        .expect("classes");
+    let class = classes
+        .iter_mut()
+        .find(|item| item["class"] == "rust-reference-compiler-core")
+        .expect("core class");
+    let evidence = class["retirement_decision"]["evidence"]
+        .as_array_mut()
+        .expect("evidence");
+    let parity = evidence
+        .iter_mut()
+        .find(|item| item["command"] == "make selfhost-parity-candidate")
+        .expect("parity evidence");
+    let report_path = PathBuf::from(parity["report"].as_str().expect("report path"));
+    fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&json!({
+            "format": "not-a-parity-report",
+            "ok": true,
+            "results": [{
+                "name": "case",
+                "ok": true
+            }]
+        }))
+        .expect("bad report json"),
+    )
+    .expect("write bad report");
+    parity["report_sha256"] = json!(sha256_prefixed(&report_path));
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&manifest_json).expect("manifest json"),
+    )
+    .expect("rewrite manifest");
+
+    let report = tmp.path().join("bad-command-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("report for `make selfhost-parity-candidate` must be passing"));
+}
+
+#[test]
 fn selfhost_retirement_reference_scan_accepts_clean_active_files() {
     let tmp = tempdir().expect("tempdir");
     let repo = tmp.path().join("repo");
@@ -2577,13 +2700,13 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let class_report = write_class_decision_evidence_report(tmp.path());
     let mut class_entries = Vec::new();
     for command in [
         "make selfhost-parity-candidate",
         "make selfhost-bootstrap",
         "make selfhost-stage-matrix",
     ] {
+        let class_report = write_class_command_evidence_report(tmp.path(), command);
         let entry_path = tmp
             .path()
             .join(format!("class-{}.json", command.replace(' ', "-")));

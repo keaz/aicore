@@ -69,7 +69,7 @@ Each `rust_path_classes` entry must declare a `retirement_decision`:
 - `non_reference_role`: required when `intent` is `retain-non-reference`.
 - `evidence`: one entry per required command, each with `command`, `recorded_at`, `report`, and `report_sha256`.
 
-The audit verifies every class evidence checksum. A class decision cannot be `approved` unless every command listed in `required_replacement_evidence` has a matching evidence entry. For `remove-after-replacement`, `removal_allowed` must also be true before approval is accepted. When the manifest status is `retired`, approved removal classes are expected to have no active files left at their historical patterns. Until then, `python3 scripts/selfhost/retirement_audit.py --require-approved` reports the class as a blocker.
+The audit verifies every class evidence checksum. A class decision cannot be `approved` unless every command listed in `required_replacement_evidence` has a matching evidence entry. For report-producing commands, the audit also verifies the report shape: `make selfhost-parity-candidate` must provide a passing `aicore-selfhost-parity-v1` report, `make selfhost-bootstrap` must provide a `supported-ready` `aicore-selfhost-bootstrap-v1` report, and `make selfhost-stage-matrix` must provide a passing `aicore-selfhost-stage-matrix-v1` report. For `remove-after-replacement`, `removal_allowed` must also be true before approval is accepted. When the manifest status is `retired`, approved removal classes are expected to have no active files left at their historical patterns. Until then, `python3 scripts/selfhost/retirement_audit.py --require-approved` reports the class as a blocker.
 
 ## Reference Scan Evidence
 

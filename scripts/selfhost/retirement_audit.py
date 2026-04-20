@@ -16,6 +16,8 @@ MANIFEST_FORMAT = "aicore-rust-reference-retirement-v1"
 REPORT_FORMAT = "aicore-rust-reference-retirement-audit-v1"
 REFERENCE_SCAN_FORMAT = "aicore-rust-reference-retirement-reference-scan-v1"
 BOOTSTRAP_FORMAT = "aicore-selfhost-bootstrap-v1"
+PARITY_FORMAT = "aicore-selfhost-parity-v1"
+STAGE_MATRIX_FORMAT = "aicore-selfhost-stage-matrix-v1"
 PROVENANCE_FORMAT = "aicore-selfhost-release-provenance-v1"
 SCHEMA_VERSION = 1
 STATUSES = {"deferred", "approved", "retired"}
@@ -29,6 +31,9 @@ ROLLBACK_CHECKOUT_COMMAND = "git checkout <last-rust-reference-tag> -- Cargo.tom
 ROLLBACK_BUILD_COMMAND = "cargo build --locked"
 ROLLBACK_AUDIT_COMMAND = "make selfhost-retirement-audit"
 REFERENCE_SCAN_COMMAND = "repository-wide reference scan"
+PARITY_COMMAND = "make selfhost-parity-candidate"
+BOOTSTRAP_COMMAND = "make selfhost-bootstrap"
+STAGE_MATRIX_COMMAND = "make selfhost-stage-matrix"
 ROLLBACK_REQUIRED_COMMANDS = [
     ROLLBACK_FETCH_COMMAND,
     ROLLBACK_CHECKOUT_COMMAND,
@@ -339,6 +344,59 @@ def validate_reference_scan_evidence(path: Path, field: str, problems: list[str]
     return summary, valid
 
 
+def validate_known_class_report(command: str, path: Path, field: str, problems: list[str]) -> tuple[dict[str, Any] | None, bool]:
+    if command not in {PARITY_COMMAND, BOOTSTRAP_COMMAND, STAGE_MATRIX_COMMAND}:
+        return None, True
+
+    summary: dict[str, Any] = {"valid": False, "format": None}
+    try:
+        report = read_json(path)
+    except (OSError, ValueError) as exc:
+        problems.append(f"{field} report for `{command}` is invalid JSON: {exc}")
+        return summary, False
+
+    summary["format"] = report.get("format")
+    if command == PARITY_COMMAND:
+        results = report.get("results")
+        ok = report.get("format") == PARITY_FORMAT and report.get("ok") is True and isinstance(results, list) and bool(results)
+        summary.update(
+            {
+                "ok": report.get("ok"),
+                "result_count": len(results) if isinstance(results, list) else None,
+            }
+        )
+        if not ok:
+            problems.append(f"{field} report for `{command}` must be passing {PARITY_FORMAT}")
+    elif command == BOOTSTRAP_COMMAND:
+        ok = report.get("format") == BOOTSTRAP_FORMAT and report.get("ready") is True and report.get("status") == "supported-ready"
+        summary.update({"ready": report.get("ready"), "status": report.get("status")})
+        if not ok:
+            problems.append(f"{field} report for `{command}` must be supported-ready {BOOTSTRAP_FORMAT}")
+    else:
+        results = report.get("results")
+        summary_data = report.get("summary")
+        failed = summary_data.get("failed") if isinstance(summary_data, dict) else None
+        ok = (
+            report.get("format") == STAGE_MATRIX_FORMAT
+            and report.get("ok") is True
+            and failed == 0
+            and isinstance(results, list)
+            and bool(results)
+        )
+        summary.update(
+            {
+                "ok": report.get("ok"),
+                "failed": failed,
+                "result_count": len(results) if isinstance(results, list) else None,
+            }
+        )
+        if not ok:
+            problems.append(f"{field} report for `{command}` must be passing {STAGE_MATRIX_FORMAT}")
+
+    summary["valid"] = ok
+    return summary, ok
+
+
 def validate_class_decision_evidence(
     item: dict[str, Any],
     class_index: int,
@@ -357,6 +415,8 @@ def validate_class_decision_evidence(
     sha_ok = False
     reference_scan: dict[str, Any] | None = None
     reference_scan_ok = True
+    command_report: dict[str, Any] | None = None
+    command_report_ok = True
     if report_raw and report_sha:
         report_path = resolve_evidence_path(evidence_root, report_raw)
         sha_ok = verify_sha256(
@@ -367,7 +427,16 @@ def validate_class_decision_evidence(
         )
         if command == REFERENCE_SCAN_COMMAND and sha_ok:
             reference_scan, reference_scan_ok = validate_reference_scan_evidence(report_path, prefix, problems)
-    valid = bool(command) and command in allowed_commands and bool(recorded_at) and sha_ok and reference_scan_ok
+        if sha_ok:
+            command_report, command_report_ok = validate_known_class_report(command, report_path, prefix, problems)
+    valid = (
+        bool(command)
+        and command in allowed_commands
+        and bool(recorded_at)
+        and sha_ok
+        and reference_scan_ok
+        and command_report_ok
+    )
     summary = {
         "command": command,
         "recorded_at": recorded_at,
@@ -377,6 +446,8 @@ def validate_class_decision_evidence(
     }
     if reference_scan is not None:
         summary["reference_scan"] = reference_scan
+    if command_report is not None:
+        summary["command_report"] = command_report
     return (
         summary,
         valid,
