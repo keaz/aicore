@@ -194,7 +194,7 @@ A valid entry must include:
 - `retirement_audit_report` and `retirement_audit_sha256`
 - `marker_scan_report` and `marker_scan_sha256`
 
-The audit verifies each evidence checksum and verifies that the retirement audit report has format `aicore-rust-reference-retirement-audit-v1` with no consistency problems. `rollback.validated` must remain `false` until at least one valid restore evidence entry is recorded, and `python3 scripts/selfhost/retirement_audit.py --require-approved` must remain blocked while rollback validation is missing.
+The audit verifies each evidence checksum, verifies that the retirement audit report has format `aicore-rust-reference-retirement-audit-v1` with no consistency problems, and verifies that the marker-scan report is empty. `rollback.validated` must remain `false` until at least one valid restore evidence entry is recorded, and `python3 scripts/selfhost/retirement_audit.py --require-approved` must remain blocked while rollback validation is missing.
 
 ## Closure Evidence
 

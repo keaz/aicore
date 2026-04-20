@@ -2313,6 +2313,52 @@ fn selfhost_retirement_audit_rejects_unverified_rollback_evidence() {
 }
 
 #[test]
+fn selfhost_retirement_audit_rejects_dirty_rollback_marker_scan() {
+    let tmp = tempdir().expect("tempdir");
+    let (cargo_log, audit_report, marker_report, source_ref, source_commit) =
+        write_rollback_evidence_fixture(tmp.path());
+    fs::write(
+        &marker_report,
+        b"docs/selfhost/rust-reference-retirement.md:1:marker\n",
+    )
+    .expect("write dirty marker report");
+    let manifest = tmp.path().join("bad-marker-retirement-manifest.json");
+    write_retirement_manifest_with_rollback(
+        &manifest,
+        json!({
+            "source_ref": source_ref,
+            "source_commit": source_commit,
+            "recorded_at": "2026-04-19T00:00:00Z",
+            "commands": [
+                "git fetch --tags origin",
+                format!("git checkout {} -- Cargo.toml Cargo.lock src tests", source_ref),
+                "cargo build --locked",
+                "make selfhost-retirement-audit"
+            ],
+            "cargo_build_log": cargo_log.to_string_lossy(),
+            "cargo_build_sha256": sha256_prefixed(&cargo_log),
+            "retirement_audit_report": audit_report.to_string_lossy(),
+            "retirement_audit_sha256": sha256_prefixed(&audit_report),
+            "marker_scan_report": marker_report.to_string_lossy(),
+            "marker_scan_sha256": sha256_prefixed(&marker_report)
+        }),
+        &source_ref,
+        &source_commit,
+    );
+    let report = tmp.path().join("bad-marker-retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("marker_scan_report must be clean"));
+}
+
+#[test]
 fn selfhost_retirement_audit_accepts_verified_class_decision_evidence() {
     let tmp = tempdir().expect("tempdir");
     let evidence_report = write_class_decision_evidence_report(tmp.path());

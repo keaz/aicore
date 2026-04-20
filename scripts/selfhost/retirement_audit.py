@@ -996,7 +996,7 @@ def validate_rollback_evidence(
         "commands": commands,
         "cargo_build": {"path": cargo_log_raw, "sha256_ok": False},
         "retirement_audit": {"path": audit_report_raw, "sha256_ok": False, "problems_ok": False},
-        "marker_scan": {"path": marker_report_raw, "sha256_ok": False},
+        "marker_scan": {"path": marker_report_raw, "sha256_ok": False, "clean": False},
         "valid_for_rollback": False,
     }
 
@@ -1058,14 +1058,24 @@ def validate_rollback_evidence(
     summary["retirement_audit"]["problems_ok"] = audit_problems_ok
 
     marker_ok = False
+    marker_clean = False
     if marker_report_raw and marker_sha:
+        marker_path = resolve_evidence_path(evidence_root, marker_report_raw)
         marker_ok = verify_sha256(
-            resolve_evidence_path(evidence_root, marker_report_raw),
+            marker_path,
             marker_sha,
             f"rollback.validation_evidence[{index}].marker_scan_sha256",
             problems,
         )
+        if marker_path.is_file():
+            try:
+                marker_clean = marker_path.read_text(encoding="utf-8").strip() == ""
+            except UnicodeDecodeError:
+                problems.append(f"rollback.validation_evidence[{index}].marker_scan_report must be UTF-8 text")
+            if not marker_clean:
+                problems.append(f"rollback.validation_evidence[{index}].marker_scan_report must be clean")
     summary["marker_scan"]["sha256_ok"] = marker_ok
+    summary["marker_scan"]["clean"] = marker_clean
 
     valid = (
         bool(source_ref)
@@ -1080,6 +1090,7 @@ def validate_rollback_evidence(
         and audit_ok
         and audit_problems_ok
         and marker_ok
+        and marker_clean
     )
     summary["valid_for_rollback"] = valid
     return summary, valid
