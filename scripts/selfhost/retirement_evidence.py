@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from retirement_audit import (
+    BOOTSTRAP_FORMAT,
     CI_COMMAND,
+    PROVENANCE_FORMAT,
     RELEASE_PREFLIGHT_COMMAND,
     ROLLBACK_AUDIT_COMMAND,
     ROLLBACK_BUILD_COMMAND,
@@ -74,6 +76,48 @@ def command_set(entries: list[dict[str, Any]]) -> set[str]:
     return commands
 
 
+def validate_bake_in_inputs(platform: str, source_commit: str, bootstrap: Path, provenance: Path) -> None:
+    problems: list[str] = []
+    bootstrap_report = read_json(bootstrap)
+    if bootstrap_report.get("format") != BOOTSTRAP_FORMAT:
+        problems.append(f"--bootstrap-report format must be {BOOTSTRAP_FORMAT}")
+    if bootstrap_report.get("status") != "supported-ready" or bootstrap_report.get("ready") is not True:
+        problems.append("--bootstrap-report must be supported-ready")
+    bootstrap_host = bootstrap_report.get("host")
+    bootstrap_platform = bootstrap_host.get("platform") if isinstance(bootstrap_host, dict) else None
+    if not isinstance(bootstrap_platform, str) or platform_key(bootstrap_platform) != platform:
+        problems.append("--bootstrap-report platform must match --platform")
+    performance = bootstrap_report.get("performance")
+    budget_source = performance.get("budget_source") if isinstance(performance, dict) else None
+    overrides = budget_source.get("overrides") if isinstance(budget_source, dict) else None
+    if overrides != {}:
+        problems.append("--bootstrap-report must use production budget defaults")
+
+    provenance_report = read_json(provenance)
+    if provenance_report.get("format") != PROVENANCE_FORMAT:
+        problems.append(f"--release-provenance format must be {PROVENANCE_FORMAT}")
+    provenance_host = provenance_report.get("host")
+    provenance_platform = provenance_host.get("platform") if isinstance(provenance_host, dict) else None
+    if not isinstance(provenance_platform, str) or platform_key(provenance_platform) != platform:
+        problems.append("--release-provenance platform must match --platform")
+    source = provenance_report.get("source")
+    recorded_commit = source.get("commit") if isinstance(source, dict) else None
+    if recorded_commit != source_commit:
+        problems.append("--release-provenance source commit must match --source-commit")
+    if not isinstance(source, dict) or source.get("worktree_dirty") is not False:
+        problems.append("--release-provenance must record a clean worktree")
+    validation = provenance_report.get("validation")
+    validation_ok = isinstance(validation, dict) and all(
+        validation.get(key) is True
+        for key in ("bootstrap_ready", "parity_ok", "stage_matrix_ok", "performance_ok")
+    )
+    validation_ok = validation_ok and isinstance(validation, dict) and validation.get("budget_overrides") == {}
+    if not validation_ok:
+        problems.append("--release-provenance validation fields must all pass")
+    if problems:
+        raise ValueError("; ".join(problems))
+
+
 def write_bake_in_entry(args: argparse.Namespace) -> None:
     platform = platform_key(args.platform)
     if platform not in {"linux", "macos"}:
@@ -82,6 +126,7 @@ def write_bake_in_entry(args: argparse.Namespace) -> None:
     bootstrap = require_file(args.bootstrap_report, "--bootstrap-report")
     provenance = require_file(args.release_provenance, "--release-provenance")
     default_build = require_file(args.default_build_artifact, "--default-build-artifact")
+    validate_bake_in_inputs(platform, args.source_commit, bootstrap, provenance)
     write_json(
         args.out,
         {

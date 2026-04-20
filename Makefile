@@ -6,7 +6,7 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan selfhost-retirement-bake-in-evidence intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -38,6 +38,7 @@ help:
 	@echo "  make selfhost-default-build-check Verify default AICore compiler source build uses self-host"
 	@echo "  make selfhost-retirement-audit Verify Rust-reference retirement inventory remains blocked until approved"
 	@echo "  make selfhost-retirement-reference-scan Scan active files for retired Rust reference path references"
+	@echo "  make selfhost-retirement-bake-in-evidence Generate local #419 bake-in evidence from real release-preflight outputs"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -164,6 +165,38 @@ selfhost-retirement-audit:
 
 selfhost-retirement-reference-scan:
 	python3 scripts/selfhost/retirement_reference_scan.py --report target/selfhost-retirement/reference-scan.json
+
+selfhost-retirement-bake-in-evidence:
+	@mkdir -p target/selfhost-retirement
+	@set -euo pipefail; \
+	host_os="$$(uname -s)"; \
+	case "$$host_os" in Darwin) platform=macos ;; Linux) platform=linux ;; *) echo "unsupported host platform: $$host_os" >&2; exit 1 ;; esac; \
+	commit="$$(git rev-parse HEAD)"; \
+	recorded_at="$$(date -u +"%Y-%m-%dT%H:%M:%SZ")"; \
+	entry="target/selfhost-retirement/bake-in-$$platform.json"; \
+	candidate="target/selfhost-retirement/candidate-manifest-$$platform.json"; \
+	report="target/selfhost-retirement/candidate-report-$$platform.json"; \
+	python3 scripts/selfhost/retirement_evidence.py bake-in-entry \
+		--platform "$$platform" \
+		--source-commit "$$commit" \
+		--recorded-at "$$recorded_at" \
+		--bootstrap-report target/selfhost-bootstrap/report.json \
+		--release-provenance target/selfhost-release/provenance.json \
+		--default-build-artifact target/selfhost-default/aic_selfhost \
+		--path-base "$$(pwd)" \
+		--out "$$entry"; \
+	python3 scripts/selfhost/retirement_evidence.py assemble-manifest \
+		--manifest docs/selfhost/rust-reference-retirement.v1.json \
+		--bake-in-entry "$$entry" \
+		--out "$$candidate"; \
+	python3 scripts/selfhost/retirement_audit.py \
+		--manifest "$$candidate" \
+		--evidence-root "$$(pwd)" \
+		--check \
+		--report "$$report"; \
+	echo "wrote $$entry"; \
+	echo "wrote $$candidate"; \
+	echo "wrote $$report"
 
 intrinsic-placeholder-guard:
 	python3 scripts/ci/intrinsic_placeholder_guard.py
@@ -332,6 +365,7 @@ docs-check:
 	@grep -Fq "selfhost-mode-check" Makefile
 	@grep -Fq "selfhost-retirement-audit" Makefile
 	@grep -Fq "selfhost-retirement-reference-scan" Makefile
+	@grep -Fq "selfhost-retirement-bake-in-evidence" Makefile
 	@grep -Fq "selfhost-mode" docs/cli-contract.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md

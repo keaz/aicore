@@ -90,6 +90,15 @@ Use `scripts/selfhost/retirement_evidence.py` to create checksum-bearing evidenc
 Create a bake-in entry from a successful platform run:
 
 ```bash
+make release-preflight
+make selfhost-retirement-bake-in-evidence
+```
+
+The make target detects the current Linux or macOS host, records `git rev-parse HEAD`, writes `target/selfhost-retirement/bake-in-<platform>.json`, assembles `target/selfhost-retirement/candidate-manifest-<platform>.json`, and audits that candidate against the local evidence files. It fails if the bootstrap report, release provenance, or default compiler-source build artifact is missing or stale for the current commit.
+
+The lower-level helper can also be called directly:
+
+```bash
 python3 scripts/selfhost/retirement_evidence.py bake-in-entry \
   --platform macos \
   --source-commit <commit> \

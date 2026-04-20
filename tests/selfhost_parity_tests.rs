@@ -1427,6 +1427,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(makefile.contains("selfhost-default-mode-check"));
     assert!(makefile.contains("selfhost-default-build-check"));
     assert!(makefile.contains("selfhost-retirement-audit"));
+    assert!(makefile.contains("selfhost-retirement-bake-in-evidence"));
 
     let bootstrap = fs::read_to_string(root.join("scripts/selfhost/bootstrap.py"))
         .expect("read bootstrap script");
@@ -1599,6 +1600,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(retirement_doc.contains("Bake-In Evidence Format"));
     assert!(retirement_doc.contains("rust-reference-compiler-core"));
     assert!(retirement_doc.contains("make selfhost-retirement-audit"));
+    assert!(retirement_doc.contains("make selfhost-retirement-bake-in-evidence"));
     assert!(retirement_doc.contains("approval required before Rust reference removal"));
     assert!(retirement_doc.contains("Rollback Source"));
     assert!(retirement_doc.contains("Rollback Validation Evidence"));
@@ -1793,6 +1795,11 @@ fn selfhost_bootstrap_ci_and_release_gates_are_wired() {
         "release selfhost-mode --mode default --check --approve-default",
         "selfhost-default-build-check:",
         "build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost",
+        "selfhost-retirement-bake-in-evidence:",
+        "set -euo pipefail",
+        "scripts/selfhost/retirement_evidence.py bake-in-entry",
+        "target/selfhost-retirement/bake-in-$$platform.json",
+        "candidate-manifest-$$platform.json",
         "release-preflight: ci selfhost-bootstrap selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check repro-check security-audit",
     ] {
         assert!(makefile.contains(token), "Makefile missing token: {token}");
@@ -2880,6 +2887,36 @@ fn selfhost_retirement_evidence_helper_rejects_invalid_commit_digest() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--source-commit must be a git commit digest"));
+}
+
+#[test]
+fn selfhost_retirement_evidence_helper_rejects_stale_bake_in_provenance() {
+    let tmp = tempdir().expect("tempdir");
+    let (bootstrap, provenance, default_artifact, _) =
+        write_retirement_evidence_fixture(tmp.path());
+    let output = run_retirement_evidence(&[
+        "bake-in-entry".into(),
+        "--platform".into(),
+        "macos".into(),
+        "--source-commit".into(),
+        "ffffffffffffffffffffffffffffffffffffffff".into(),
+        "--recorded-at".into(),
+        "2026-04-20T00:00:00Z".into(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--release-provenance".into(),
+        provenance.to_string_lossy().to_string(),
+        "--default-build-artifact".into(),
+        default_artifact.to_string_lossy().to_string(),
+        "--out".into(),
+        tmp.path()
+            .join("bake-entry.json")
+            .to_string_lossy()
+            .to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--release-provenance source commit must match --source-commit"));
 }
 
 #[test]
