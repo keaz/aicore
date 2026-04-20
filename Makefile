@@ -3,6 +3,8 @@ SHELL := /usr/bin/env bash
 CARGO ?= cargo
 AIC ?= cargo run --quiet --bin aic --
 AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
+RUST_MIN_STACK ?= 33554432
+EXEC_TEST_THREADS ?= 1
 
 .DEFAULT_GOAL := help
 
@@ -96,7 +98,7 @@ test-golden:
 	$(CARGO) test --locked --test golden_tests
 
 test-exec:
-	$(CARGO) test --locked --test execution_tests
+	RUST_MIN_STACK="$(RUST_MIN_STACK)" $(CARGO) test --locked --test execution_tests -- --test-threads="$(EXEC_TEST_THREADS)"
 
 test-e7:
 	$(CARGO) test --locked --test e7_cli_tests

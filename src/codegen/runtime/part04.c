@@ -2382,6 +2382,35 @@ static int aic_rt_net_async_ensure_workers_locked(void) {
     return started_workers > 0;
 }
 
+static int aic_rt_net_async_remove_queued_op_locked(long op_handle) {
+    if (op_handle <= 0 || aic_rt_net_async_queue_len <= 0 || aic_rt_net_async_queue_limit <= 0) {
+        return 0;
+    }
+
+    long old_len = aic_rt_net_async_queue_len;
+    long read = aic_rt_net_async_queue_head;
+    long write = aic_rt_net_async_queue_head;
+    int removed = 0;
+
+    for (long i = 0; i < old_len; ++i) {
+        long queued_op = aic_rt_net_async_queue[read];
+        read = (read + 1) % aic_rt_net_async_queue_limit;
+        if (!removed && queued_op == op_handle) {
+            removed = 1;
+            continue;
+        }
+        aic_rt_net_async_queue[write] = queued_op;
+        write = (write + 1) % aic_rt_net_async_queue_limit;
+    }
+
+    if (removed) {
+        aic_rt_net_async_queue_tail = write;
+        aic_rt_net_async_queue_len = old_len - 1;
+        pthread_cond_signal(&aic_rt_net_async_queue_not_full);
+    }
+    return removed;
+}
+
 static long aic_rt_net_async_alloc_slot_locked(void) {
     aic_rt_net_async_limits_ensure();
     for (long i = 0; i < aic_rt_net_async_op_limit; ++i) {
@@ -2740,20 +2769,31 @@ long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
     if (!op->initialized) {
         return 6;
     }
+    int queue_lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
+    if (queue_lock_rc != 0) {
+        return aic_rt_net_map_errno(queue_lock_rc);
+    }
     int lock_rc = pthread_mutex_lock(&op->mutex);
     if (lock_rc != 0) {
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return aic_rt_net_map_errno(lock_rc);
     }
     if (!op->active) {
         pthread_mutex_unlock(&op->mutex);
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 1;
     }
     if (op->done) {
         pthread_mutex_unlock(&op->mutex);
+        pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 0;
     }
 
     long release_handle = 0;
+    if (op->queued) {
+        (void)aic_rt_net_async_remove_queued_op_locked(op_handle);
+        op->queued = 0;
+    }
     if (op->nonblocking_held) {
         release_handle = op->arg0;
         op->nonblocking_held = 0;
@@ -2771,6 +2811,7 @@ long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
     }
     pthread_cond_broadcast(&op->cond);
     pthread_mutex_unlock(&op->mutex);
+    pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
 
     if (release_handle > 0) {
         aic_rt_net_async_release_nonblocking_for_handle(release_handle);

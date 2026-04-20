@@ -188,6 +188,7 @@ let socket = match accepted {
 - Active sockets are temporarily switched to non-blocking mode while an async op is in flight and restored when the op completes.
 - Completion data is published through per-operation condition variables.
 - Cancelled operations resolve as typed cancellation errors (`NetError::Cancelled` / `TlsError::Cancelled`).
+- Cancelling a net operation while it is still queued removes it from the bounded queue immediately, so follow-up pressure snapshots and submissions do not observe stale queued work.
 - `async_shutdown` enters drain mode:
   - new submissions are rejected with deterministic `NetError`,
   - queued + active operations are completed/drained,

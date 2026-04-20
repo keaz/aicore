@@ -1983,6 +1983,30 @@ static int aic_rt_vec_string_equal(const unsigned char* lhs, const unsigned char
     return memcmp(left->ptr, right->ptr, (size_t)left->len) == 0;
 }
 
+typedef struct {
+    int32_t tag;
+    unsigned char none_payload;
+    long some_payload;
+} AicOptionInt;
+
+static int aic_rt_vec_option_int_equal(const unsigned char* lhs, const unsigned char* rhs, size_t elem_size) {
+    if (elem_size < sizeof(AicOptionInt)) {
+        return elem_size == 0 || memcmp(lhs, rhs, elem_size) == 0;
+    }
+    const AicOptionInt* left = (const AicOptionInt*)(const void*)lhs;
+    const AicOptionInt* right = (const AicOptionInt*)(const void*)rhs;
+    if (left->tag != right->tag) {
+        return 0;
+    }
+    if (left->tag == 0) {
+        return 1;
+    }
+    if (left->tag == 1) {
+        return left->some_payload == right->some_payload;
+    }
+    return memcmp(lhs, rhs, elem_size) == 0;
+}
+
 static int aic_rt_vec_item_equal(
     const unsigned char* lhs,
     const unsigned char* rhs,
@@ -1991,6 +2015,9 @@ static int aic_rt_vec_item_equal(
 ) {
     if (elem_kind == 3) {
         return aic_rt_vec_string_equal(lhs, rhs, elem_size);
+    }
+    if (elem_kind == 4) {
+        return aic_rt_vec_option_int_equal(lhs, rhs, elem_size);
     }
     return elem_size == 0 || memcmp(lhs, rhs, elem_size) == 0;
 }

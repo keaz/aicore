@@ -1449,6 +1449,9 @@ fn process_is_alive(pid: u32) -> Option<bool> {
     }
     #[cfg(unix)]
     {
+        if pid == 0 || pid > i32::MAX as u32 {
+            return Some(false);
+        }
         return Command::new("kill")
             .arg("-0")
             .arg(pid.to_string())
@@ -1673,6 +1676,13 @@ mod tests {
             .expect("session create should reclaim stale lock");
         assert_eq!(created.session.id, "sess-0001");
         assert!(!sessions_root(dir.path()).join(STATE_LOCK_NAME).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_alive_rejects_non_process_pid_values() {
+        assert_eq!(process_is_alive(0), Some(false));
+        assert_eq!(process_is_alive(u32::MAX), Some(false));
     }
 
     #[test]

@@ -27,7 +27,7 @@ make init
 ## Required Quality Bar
 
 - Deliver complete behavior for the scoped change.
-- Do not leave stub, dummy, or no-op success paths in touched code.
+- Do not leave incomplete or fake success paths in touched code.
 - Update tests for both positive and failure paths.
 - Update docs/spec/reference when behavior changes.
 - Ensure deterministic outputs remain stable (formatting, diagnostics ordering, contract outputs).
@@ -102,7 +102,8 @@ Wave 5D examples:
 ### Execution and CLI/LSP integration
 
 - LLVM execution tests:
-  - `cargo test --locked --test execution_tests`
+  - `make test-exec`
+  - Direct cargo equivalent: `RUST_MIN_STACK=33554432 cargo test --locked --test execution_tests -- --test-threads=1`
 - CLI/LSP and harness integration:
   - `cargo test --locked --test e7_cli_tests`
   - `cargo test --locked --test lsp_smoke_tests`

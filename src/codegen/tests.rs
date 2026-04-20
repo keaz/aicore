@@ -2284,7 +2284,7 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_tls_connect(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
-        .contains("declare i64 @aic_rt_tls_connect_addr(i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64, i64*)"));
+        .contains("declare i64 @aic_rt_tls_connect_addr(i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64*)"));
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_tls_accept(i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i8*, i64, i64, i64, i64, i64*)"));
@@ -2513,6 +2513,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_vec_shrink_to_fit("));
     assert!(runtime_c_source().contains("long aic_rt_vec_contains("));
     assert!(runtime_c_source().contains("long aic_rt_vec_index_of("));
+    assert!(runtime_c_source().contains("static int aic_rt_vec_option_int_equal("));
     assert!(runtime_c_source().contains("long aic_rt_vec_reverse("));
     assert!(runtime_c_source().contains("long aic_rt_vec_slice("));
     assert!(runtime_c_source().contains("long aic_rt_vec_append("));
@@ -2662,6 +2663,7 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_net_async_wait_string("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
     assert!(runtime_c_source().contains("long aic_rt_net_async_pressure("));
+    assert!(runtime_c_source().contains("static int aic_rt_net_async_remove_queued_op_locked("));
     assert!(runtime_c_source().contains("long aic_rt_tls_connect("));
     assert!(runtime_c_source().contains("long aic_rt_tls_connect_addr("));
     assert!(runtime_c_source().contains("long aic_rt_tls_accept("));
