@@ -118,6 +118,15 @@ python3 scripts/selfhost/retirement_evidence.py assemble-manifest \
   --out target/selfhost-retirement/approved-manifest.json
 ```
 
+When evidence files are archived outside the repository root, keep paths in the candidate manifest relative to that archive and audit with an explicit evidence root:
+
+```bash
+python3 scripts/selfhost/retirement_audit.py \
+  --manifest target/selfhost-retirement/approved-manifest.json \
+  --evidence-root target/selfhost-retirement/evidence \
+  --require-approved
+```
+
 ## Approval Criteria
 
 Removal can be considered only after all of these are true:

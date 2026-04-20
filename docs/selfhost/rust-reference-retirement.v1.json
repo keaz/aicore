@@ -269,7 +269,8 @@
         "approval required before Rust reference removal",
         "Rollback Source",
         "Rollback Validation Evidence",
-        "Class Decision Evidence"
+        "Class Decision Evidence",
+        "--evidence-root"
       ]
     },
     {
@@ -277,7 +278,8 @@
       "tokens": [
         "Rust Reference Retirement",
         "docs/selfhost/rust-reference-retirement.md",
-        "make selfhost-retirement-audit"
+        "make selfhost-retirement-audit",
+        "--evidence-root"
       ]
     },
     {
@@ -288,6 +290,7 @@
         "rollback.validation_evidence",
         "retirement_decision",
         "scripts/selfhost/retirement_evidence.py",
+        "--evidence-root",
         "python3 scripts/selfhost/retirement_audit.py --require-approved"
       ]
     }

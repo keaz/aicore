@@ -86,6 +86,13 @@ def resolve_repo_path(repo_root: Path, raw: str) -> Path:
     return repo_root / path
 
 
+def resolve_evidence_path(evidence_root: Path, raw: str) -> Path:
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return evidence_root / path
+
+
 def has_glob(pattern: str) -> bool:
     return any(char in pattern for char in GLOB_CHARS)
 
@@ -277,7 +284,7 @@ def validate_class_decision_evidence(
     item: dict[str, Any],
     class_index: int,
     evidence_index: int,
-    repo_root: Path,
+    evidence_root: Path,
     allowed_commands: list[str],
     problems: list[str],
 ) -> tuple[dict[str, Any], bool]:
@@ -290,7 +297,12 @@ def validate_class_decision_evidence(
         problems.append(f"{prefix}.command is not listed in required_replacement_evidence")
     sha_ok = False
     if report_raw and report_sha:
-        sha_ok = verify_sha256(resolve_repo_path(repo_root, report_raw), report_sha, f"{prefix}.report_sha256", problems)
+        sha_ok = verify_sha256(
+            resolve_evidence_path(evidence_root, report_raw),
+            report_sha,
+            f"{prefix}.report_sha256",
+            problems,
+        )
     valid = bool(command) and command in allowed_commands and bool(recorded_at) and sha_ok
     return (
         {
@@ -307,7 +319,7 @@ def validate_class_decision_evidence(
 def audit_class_decision(
     item: dict[str, Any],
     index: int,
-    repo_root: Path,
+    evidence_root: Path,
     class_id: str,
     removal_allowed: bool,
     required_evidence: list[str],
@@ -343,7 +355,7 @@ def audit_class_decision(
             evidence_item,
             index,
             evidence_index,
-            repo_root,
+            evidence_root,
             required_evidence,
             problems,
         )
@@ -386,6 +398,7 @@ def audit_class_decision(
 def audit_classes(
     manifest: dict[str, Any],
     repo_root: Path,
+    evidence_root: Path,
     problems: list[str],
 ) -> tuple[list[dict[str, Any]], set[str], list[str]]:
     classes: list[dict[str, Any]] = []
@@ -416,7 +429,7 @@ def audit_classes(
         retirement_decision, class_blockers = audit_class_decision(
             item,
             index,
-            repo_root,
+            evidence_root,
             class_id,
             removal_allowed,
             evidence,
@@ -453,7 +466,7 @@ def audit_classes(
 def validate_bootstrap_evidence(
     item: dict[str, Any],
     index: int,
-    repo_root: Path,
+    evidence_root: Path,
     evidence_platform: str,
     source_commit: str,
     problems: list[str],
@@ -475,7 +488,7 @@ def validate_bootstrap_evidence(
     }
     if not raw_path:
         return result
-    path = resolve_repo_path(repo_root, raw_path)
+    path = resolve_evidence_path(evidence_root, raw_path)
     result["exists"] = path.is_file()
     if expected_sha:
         result["sha256_ok"] = verify_sha256(
@@ -518,7 +531,7 @@ def validate_bootstrap_evidence(
 def validate_provenance_evidence(
     item: dict[str, Any],
     index: int,
-    repo_root: Path,
+    evidence_root: Path,
     evidence_platform: str,
     source_commit: str,
     problems: list[str],
@@ -544,7 +557,7 @@ def validate_provenance_evidence(
     }
     if not raw_path:
         return result
-    path = resolve_repo_path(repo_root, raw_path)
+    path = resolve_evidence_path(evidence_root, raw_path)
     result["exists"] = path.is_file()
     if expected_sha:
         result["sha256_ok"] = verify_sha256(
@@ -591,7 +604,7 @@ def validate_provenance_evidence(
     artifact_path_raw = artifact.get("path") if isinstance(artifact, dict) else None
     artifact_sha = artifact.get("sha256") if isinstance(artifact, dict) else None
     if isinstance(artifact_path_raw, str) and isinstance(artifact_sha, str):
-        artifact_path = resolve_repo_path(repo_root, artifact_path_raw)
+        artifact_path = resolve_evidence_path(evidence_root, artifact_path_raw)
         result["canonical_artifact_ok"] = verify_sha256(
             artifact_path,
             artifact_sha,
@@ -606,7 +619,7 @@ def validate_provenance_evidence(
 def validate_default_build_evidence(
     item: dict[str, Any],
     index: int,
-    repo_root: Path,
+    evidence_root: Path,
     problems: list[str],
 ) -> dict[str, Any]:
     raw_path = required_string(
@@ -622,7 +635,7 @@ def validate_default_build_evidence(
     result = {"path": raw_path, "exists": False, "sha256_ok": False}
     if not raw_path:
         return result
-    path = resolve_repo_path(repo_root, raw_path)
+    path = resolve_evidence_path(evidence_root, raw_path)
     result["exists"] = path.is_file()
     if expected_sha:
         result["sha256_ok"] = verify_sha256(
@@ -636,7 +649,7 @@ def validate_default_build_evidence(
 def audit_bake_in_evidence(
     item: dict[str, Any],
     index: int,
-    repo_root: Path,
+    evidence_root: Path,
     required_platforms: list[str],
     problems: list[str],
 ) -> tuple[dict[str, Any], bool]:
@@ -683,9 +696,9 @@ def audit_bake_in_evidence(
             False,
         )
 
-    bootstrap = validate_bootstrap_evidence(item, index, repo_root, evidence_platform, source_commit, problems)
-    provenance = validate_provenance_evidence(item, index, repo_root, evidence_platform, source_commit, problems)
-    default_build = validate_default_build_evidence(item, index, repo_root, problems)
+    bootstrap = validate_bootstrap_evidence(item, index, evidence_root, evidence_platform, source_commit, problems)
+    provenance = validate_provenance_evidence(item, index, evidence_root, evidence_platform, source_commit, problems)
+    default_build = validate_default_build_evidence(item, index, evidence_root, problems)
     valid = (
         status == "passed"
         and evidence_platform in required_platforms
@@ -721,7 +734,7 @@ def audit_bake_in_evidence(
 
 def audit_bake_in(
     manifest: dict[str, Any],
-    repo_root: Path,
+    evidence_root: Path,
     problems: list[str],
 ) -> tuple[dict[str, Any], list[str]]:
     bake_in = object_field(manifest.get("bake_in"), "bake_in", problems)
@@ -748,7 +761,7 @@ def audit_bake_in(
     summaries: list[dict[str, Any]] = []
     passed: list[dict[str, Any]] = []
     for index, item in enumerate(evidence):
-        summary, valid = audit_bake_in_evidence(item, index, repo_root, required_platforms, problems)
+        summary, valid = audit_bake_in_evidence(item, index, evidence_root, required_platforms, problems)
         summaries.append(summary)
         if valid:
             passed.append(summary)
@@ -779,7 +792,7 @@ def audit_bake_in(
 def validate_rollback_evidence(
     item: dict[str, Any],
     index: int,
-    repo_root: Path,
+    evidence_root: Path,
     restore_source_ref: str | None,
     restore_source_commit: str | None,
     restore_paths: list[str],
@@ -856,7 +869,7 @@ def validate_rollback_evidence(
     cargo_ok = False
     if cargo_log_raw and cargo_sha:
         cargo_ok = verify_sha256(
-            resolve_repo_path(repo_root, cargo_log_raw),
+            resolve_evidence_path(evidence_root, cargo_log_raw),
             cargo_sha,
             f"rollback.validation_evidence[{index}].cargo_build_sha256",
             problems,
@@ -866,7 +879,7 @@ def validate_rollback_evidence(
     audit_ok = False
     audit_problems_ok = False
     if audit_report_raw and audit_sha:
-        audit_path = resolve_repo_path(repo_root, audit_report_raw)
+        audit_path = resolve_evidence_path(evidence_root, audit_report_raw)
         audit_ok = verify_sha256(
             audit_path,
             audit_sha,
@@ -895,7 +908,7 @@ def validate_rollback_evidence(
     marker_ok = False
     if marker_report_raw and marker_sha:
         marker_ok = verify_sha256(
-            resolve_repo_path(repo_root, marker_report_raw),
+            resolve_evidence_path(evidence_root, marker_report_raw),
             marker_sha,
             f"rollback.validation_evidence[{index}].marker_scan_sha256",
             problems,
@@ -923,6 +936,7 @@ def validate_rollback_evidence(
 def audit_rollback(
     manifest: dict[str, Any],
     repo_root: Path,
+    evidence_root: Path,
     problems: list[str],
 ) -> tuple[dict[str, Any], list[str]]:
     rollback = object_field(manifest.get("rollback"), "rollback", problems)
@@ -990,7 +1004,7 @@ def audit_rollback(
         summary, valid = validate_rollback_evidence(
             item,
             index,
-            repo_root,
+            evidence_root,
             restore_source_ref,
             restore_source_commit,
             restore_paths,
@@ -1028,8 +1042,9 @@ def audit_rollback(
     )
 
 
-def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
+def build_report(manifest_path: Path, repo_root: Path, evidence_root: Path | None = None) -> dict[str, Any]:
     problems: list[str] = []
+    evidence_root = evidence_root or repo_root
     manifest = read_json(manifest_path)
     if manifest.get("format") != MANIFEST_FORMAT:
         problems.append(f"manifest format must be {MANIFEST_FORMAT}")
@@ -1060,9 +1075,9 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
 
     active_paths = audit_active_paths(manifest, repo_root, problems)
     docs = audit_docs(manifest, repo_root, problems)
-    classes, classified_paths, class_blockers = audit_classes(manifest, repo_root, problems)
-    bake_in, bake_in_blockers = audit_bake_in(manifest, repo_root, problems)
-    rollback, rollback_blockers = audit_rollback(manifest, repo_root, problems)
+    classes, classified_paths, class_blockers = audit_classes(manifest, repo_root, evidence_root, problems)
+    bake_in, bake_in_blockers = audit_bake_in(manifest, evidence_root, problems)
+    rollback, rollback_blockers = audit_rollback(manifest, repo_root, evidence_root, problems)
 
     tracked = tracked_rust_inventory(repo_root)
     unclassified = sorted(path for path in tracked if path not in classified_paths)
@@ -1092,6 +1107,7 @@ def build_report(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
         "format": REPORT_FORMAT,
         "schema_version": SCHEMA_VERSION,
         "manifest": display_path(manifest_path, repo_root),
+        "evidence_root": display_path(evidence_root, repo_root),
         "status": status,
         "controlled_default_issue": controlled_default_issue,
         "retirement_issue": retirement_issue,
@@ -1139,6 +1155,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="path for the audit report",
     )
     parser.add_argument(
+        "--evidence-root",
+        type=Path,
+        help="base directory for relative evidence artifact paths; defaults to the repository root",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="fail only when the manifest or inventory is inconsistent",
@@ -1156,8 +1177,13 @@ def main(argv: list[str]) -> int:
     repo_root = args.repo_root.resolve()
     manifest_path = resolve_repo_path(repo_root, str(args.manifest))
     report_path = resolve_repo_path(repo_root, str(args.report))
+    evidence_root = (
+        resolve_repo_path(repo_root, str(args.evidence_root)).resolve()
+        if args.evidence_root is not None
+        else repo_root
+    )
     try:
-        report = build_report(manifest_path, repo_root)
+        report = build_report(manifest_path, repo_root, evidence_root)
     except (OSError, ValueError) as exc:
         print(f"selfhost-retirement-audit: {exc}", file=sys.stderr)
         return 1

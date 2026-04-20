@@ -317,6 +317,7 @@ docs-check:
 	@grep -Fq "rollback.validation_evidence" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "retirement_decision" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "scripts/selfhost/retirement_evidence.py" docs/selfhost/supported-operation-runbook.md
+	@grep -Fq -- "--evidence-root" docs/selfhost/supported-operation-runbook.md
 	@grep -Fq "requires_production_budget_defaults" docs/selfhost/rust-reference-retirement.v1.json
 	@grep -Fq "selfhost-default-build-check" Makefile
 	@grep -Fq "selfhost-default-mode-check" Makefile

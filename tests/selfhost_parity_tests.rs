@@ -1920,6 +1920,133 @@ fn selfhost_retirement_audit_rejects_unverified_bake_in_evidence() {
 }
 
 #[test]
+fn selfhost_retirement_audit_resolves_relative_evidence_from_bundle_root() {
+    let tmp = tempdir().expect("tempdir");
+    let bundle = tmp.path().join("retirement-evidence");
+    let bootstrap_dir = bundle.join("bootstrap");
+    let release_dir = bundle.join("release");
+    let default_dir = bundle.join("default");
+    fs::create_dir_all(&bootstrap_dir).expect("create bootstrap evidence dir");
+    fs::create_dir_all(&release_dir).expect("create release evidence dir");
+    fs::create_dir_all(&default_dir).expect("create default evidence dir");
+
+    let source_commit = "1234567890abcdef1234567890abcdef12345678";
+    let artifact = release_dir.join("aicore-selfhost-compiler-macos-arm64");
+    let default_artifact = default_dir.join("aic_selfhost");
+    fs::write(&artifact, b"portable release artifact").expect("write release artifact");
+    fs::write(&default_artifact, b"portable default artifact").expect("write default artifact");
+
+    let bootstrap = bootstrap_dir.join("report.json");
+    fs::write(
+        &bootstrap,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-bootstrap-v1",
+            "schema_version": 1,
+            "mode": "supported",
+            "status": "supported-ready",
+            "ready": true,
+            "host": {
+                "platform": "darwin",
+                "system": "Darwin",
+                "machine": "arm64"
+            },
+            "performance": {
+                "ok": true,
+                "budget_source": {
+                    "path": "docs/selfhost/bootstrap-budgets.v1.json",
+                    "schema_version": 1,
+                    "platform": "macos",
+                    "overrides": {}
+                }
+            }
+        }))
+        .expect("bootstrap json"),
+    )
+    .expect("write bootstrap evidence");
+
+    let provenance = release_dir.join("provenance.json");
+    fs::write(
+        &provenance,
+        serde_json::to_string_pretty(&json!({
+            "format": "aicore-selfhost-release-provenance-v1",
+            "schema_version": 1,
+            "host": {
+                "platform": "darwin",
+                "system": "Darwin",
+                "machine": "arm64"
+            },
+            "source": {
+                "commit": source_commit,
+                "worktree_dirty": false
+            },
+            "validation": {
+                "bootstrap_ready": true,
+                "bootstrap_status": "supported-ready",
+                "parity_ok": true,
+                "stage_matrix_ok": true,
+                "performance_ok": true,
+                "budget_overrides": {}
+            },
+            "canonical_artifact": {
+                "path": "release/aicore-selfhost-compiler-macos-arm64",
+                "sha256": sha256_prefixed(&artifact),
+                "bytes": fs::metadata(&artifact).expect("artifact meta").len()
+            }
+        }))
+        .expect("provenance json"),
+    )
+    .expect("write provenance evidence");
+
+    let manifest = tmp.path().join("retirement-manifest.json");
+    write_retirement_manifest_with_evidence(
+        &manifest,
+        json!({
+            "platform": "macos",
+            "status": "passed",
+            "source_commit": source_commit,
+            "recorded_at": "2026-04-20T00:00:00Z",
+            "release_preflight_command": "make release-preflight",
+            "ci_command": "make ci",
+            "bootstrap_report": "bootstrap/report.json",
+            "bootstrap_report_sha256": sha256_prefixed(&bootstrap),
+            "release_provenance": "release/provenance.json",
+            "release_provenance_sha256": sha256_prefixed(&provenance),
+            "default_build_artifact": "default/aic_selfhost",
+            "default_build_sha256": sha256_prefixed(&default_artifact)
+        }),
+    );
+
+    let report = tmp.path().join("retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--evidence-root".into(),
+        bundle.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "portable evidence audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read retirement report"))
+            .expect("retirement report json");
+    assert!(document["evidence_root"]
+        .as_str()
+        .expect("evidence root")
+        .ends_with("retirement-evidence"));
+    assert_eq!(
+        document["bake_in"]["evidence"][0]["valid_for_bake_in"],
+        true
+    );
+}
+
+#[test]
 fn selfhost_retirement_audit_accepts_verified_rollback_evidence() {
     let tmp = tempdir().expect("tempdir");
     let (cargo_log, audit_report, marker_report, source_ref, source_commit) =

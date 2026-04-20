@@ -186,6 +186,8 @@ Class decisions are machine-verifiable through `rust_path_classes[*].retirement_
 
 Generate review entries with `scripts/selfhost/retirement_evidence.py` after the corresponding commands have run. The helper records checksums for bake-in, rollback, and class decision evidence and can assemble a candidate manifest under `target/selfhost-retirement/`.
 
+Use `python3 scripts/selfhost/retirement_audit.py --evidence-root <bundle>` when auditing a candidate manifest whose reports, logs, and compiler artifacts are stored in a separate release evidence bundle.
+
 ## CI and Release Gates
 
 GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.yml` as `Self-Host Bootstrap (${{ matrix.os }})` on `ubuntu-latest` and `macos-latest`. The job installs `clang` on Linux, runs the host tool preflight, then runs the same supported-mode command used locally:
