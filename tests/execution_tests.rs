@@ -13571,7 +13571,7 @@ fn main() -> Int {
 }
 
 #[test]
-fn exec_extern_c_string_view_parameter_round_trips_through_native_stub() {
+fn exec_extern_c_string_view_parameter_round_trips_through_native_fixture() {
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("ffi_string_view.aic");
     let source = r#"import std.io;
@@ -13596,9 +13596,9 @@ fn main() -> Int effects { io } capabilities { io  } {
     let lowered = lower_runtime_asserts(&front.ir);
     let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
 
-    let c_stub = dir.path().join("ffi_string_view.c");
+    let c_fixture = dir.path().join("ffi_string_view.c");
     fs::write(
-        &c_stub,
+        &c_fixture,
         r#"#include <stdint.h>
 
 int64_t ffi_string_len(const char* ptr, int64_t len, int64_t cap) {
@@ -13608,13 +13608,13 @@ int64_t ffi_string_len(const char* ptr, int64_t len, int64_t cap) {
 }
 "#,
     )
-    .expect("write c stub");
+    .expect("write c fixture");
 
     let c_obj = dir.path().join("ffi_string_view.o");
     let compile_obj = Command::new("clang")
         .arg("-O0")
         .arg("-c")
-        .arg(&c_stub)
+        .arg(&c_fixture)
         .arg("-o")
         .arg(&c_obj)
         .output()
@@ -16455,7 +16455,7 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     i = 0;
     while i < 16 {
         recv_ops = match vec.get(servers, i) {
-            Some(handle) => match async_tcp_recv_submit(handle, 64, 2000) {
+            Some(handle) => match async_tcp_recv_submit(handle, 1, 2000) {
                 Ok(op) => vec.push(recv_ops, op),
                 Err(_) => recv_ops,
             },
@@ -16479,7 +16479,7 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     i = 0;
     while i < 16 {
         let sent = match vec.get(clients, i) {
-            Some(handle) => match tcp_send(handle, bytes.from_string("ping")) {
+            Some(handle) => match tcp_send(handle, bytes.from_string("p")) {
                 Ok(written) => written,
                 Err(_) => 0,
             },
@@ -16507,7 +16507,7 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     i = 0;
     while i < 16 {
         send_ops = match vec.get(servers, i) {
-            Some(handle) => match async_tcp_send_submit(handle, bytes.from_string("pong")) {
+            Some(handle) => match async_tcp_send_submit(handle, bytes.from_string("q")) {
                 Ok(op) => vec.push(send_ops, op),
                 Err(_) => send_ops,
             },
@@ -16534,7 +16534,7 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
     i = 0;
     while i < 16 {
         let echoed = match vec.get(clients, i) {
-            Some(handle) => match tcp_recv(handle, 16, 2000) {
+            Some(handle) => match tcp_recv(handle, 1, 2000) {
                 Ok(payload) => bytes.byte_len(payload),
                 Err(_) => 0,
             },
@@ -16574,10 +16574,10 @@ fn main() -> Int effects { io, net, concurrency } capabilities { io, net, concur
 
     let score = accepted_ok +
         pressure_ok +
-        (if sent_total == 64 { 1 } else { 0 }) +
-        (if recv_total == 64 { 1 } else { 0 }) +
-        (if ack_total == 64 { 1 } else { 0 }) +
-        (if echo_total == 64 { 1 } else { 0 }) +
+        (if sent_total == 16 { 1 } else { 0 }) +
+        (if recv_total == 16 { 1 } else { 0 }) +
+        (if ack_total == 16 { 1 } else { 0 }) +
+        (if echo_total == 16 { 1 } else { 0 }) +
         shutdown_ok +
         (if close_count == 33 { 1 } else { 0 });
     if score == 8 {

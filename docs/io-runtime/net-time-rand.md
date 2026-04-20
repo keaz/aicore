@@ -175,6 +175,7 @@ fn dns_reverse(addr: String) -> Result[String, NetError] effects { net }
   - `async_runtime_pressure` reports active/queued snapshots and configured limits for adaptive submit gating.
   - `AIC_RT_LIMIT_NET_ASYNC_WORKERS` scales socket progress beyond a single worker thread while keeping the async API surface unchanged.
   - `queue_depth` / `queue_limit` stay process-wide because the worker pool shares a single bounded submit queue.
+  - Parallel async accept workers allocate stream handles through the synchronized net handle table so each accepted socket has a unique public handle.
 - Recommended protocol-client defaults:
   - Request/response clients (PostgreSQL, Redis, RPC) usually start with `tcp_set_nodelay(..., true)`.
   - Long-lived pooled connections usually start with `tcp_set_keepalive(..., true)`.

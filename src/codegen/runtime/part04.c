@@ -997,6 +997,7 @@ typedef struct {
 
 static AicNetSlot aic_rt_net_table[AIC_RT_NET_TABLE_CAP];
 static long aic_rt_net_table_limit = AIC_RT_NET_TABLE_CAP;
+static pthread_mutex_t aic_rt_net_table_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t aic_rt_net_limits_once = PTHREAD_ONCE_INIT;
 
 static void aic_rt_net_limits_init(void) {
@@ -1134,6 +1135,11 @@ static long aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, long* out_hand
         *out_handle = 0;
     }
     aic_rt_net_limits_ensure();
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_table_mutex);
+    if (lock_rc != 0) {
+        aic_rt_net_close_fd(fd);
+        return aic_rt_net_map_errno(lock_rc);
+    }
     for (long i = 0; i < aic_rt_net_table_limit; ++i) {
         if (!aic_rt_net_table[i].active) {
             aic_rt_net_table[i].active = 1;
@@ -1142,11 +1148,55 @@ static long aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, long* out_hand
             if (out_handle != NULL) {
                 *out_handle = i + 1;
             }
+            pthread_mutex_unlock(&aic_rt_net_table_mutex);
             return 0;
         }
     }
+    pthread_mutex_unlock(&aic_rt_net_table_mutex);
     aic_rt_net_close_fd(fd);
     return 7;
+}
+
+static long aic_rt_net_take_handle(long handle, int kind_a, int kind_b, aic_rt_socket_t* out_fd) {
+    if (out_fd != NULL) {
+        *out_fd = AIC_RT_INVALID_SOCKET;
+    }
+    aic_rt_net_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_net_table_limit) {
+        return 6;
+    }
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_table_mutex);
+    if (lock_rc != 0) {
+        return aic_rt_net_map_errno(lock_rc);
+    }
+    AicNetSlot* slot = &aic_rt_net_table[handle - 1];
+    if (!slot->active || (slot->kind != kind_a && slot->kind != kind_b)) {
+        pthread_mutex_unlock(&aic_rt_net_table_mutex);
+        return 6;
+    }
+    aic_rt_socket_t fd = slot->fd;
+    aic_rt_net_reset_slot(slot);
+    pthread_mutex_unlock(&aic_rt_net_table_mutex);
+    if (out_fd != NULL) {
+        *out_fd = fd;
+    }
+    return 0;
+}
+
+static void aic_rt_net_reset_handle_if_matches(long handle, aic_rt_socket_t fd, int kind) {
+    aic_rt_net_limits_ensure();
+    if (handle <= 0 || handle > aic_rt_net_table_limit) {
+        return;
+    }
+    int lock_rc = pthread_mutex_lock(&aic_rt_net_table_mutex);
+    if (lock_rc != 0) {
+        return;
+    }
+    AicNetSlot* slot = &aic_rt_net_table[handle - 1];
+    if (slot->active && slot->fd == fd && slot->kind == kind) {
+        aic_rt_net_reset_slot(slot);
+    }
+    pthread_mutex_unlock(&aic_rt_net_table_mutex);
 }
 
 static long aic_rt_net_wait_fd(aic_rt_socket_t fd, int want_read, long timeout_ms) {
@@ -3352,12 +3402,16 @@ long aic_rt_net_tcp_recv(
 
 long aic_rt_net_tcp_close(long handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_close", 2);
-    AicNetSlot* slot = aic_rt_net_get_slot(handle);
-    if (slot == NULL || (slot->kind != AIC_RT_NET_KIND_TCP_LISTENER && slot->kind != AIC_RT_NET_KIND_TCP_STREAM)) {
-        return 6;
+    aic_rt_socket_t fd = AIC_RT_INVALID_SOCKET;
+    long take = aic_rt_net_take_handle(
+        handle,
+        AIC_RT_NET_KIND_TCP_LISTENER,
+        AIC_RT_NET_KIND_TCP_STREAM,
+        &fd
+    );
+    if (take != 0) {
+        return take;
     }
-        aic_rt_socket_t fd = slot->fd;
-    aic_rt_net_reset_slot(slot);
     return aic_rt_net_close_fd(fd);
 }
 
@@ -4020,12 +4074,11 @@ long aic_rt_net_udp_recv_from(
 
 long aic_rt_net_udp_close(long handle) {
     AIC_RT_SANDBOX_BLOCK_NET("udp_close", 2);
-    AicNetSlot* slot = aic_rt_net_get_slot(handle);
-    if (slot == NULL || slot->kind != AIC_RT_NET_KIND_UDP) {
-        return 6;
+    aic_rt_socket_t fd = AIC_RT_INVALID_SOCKET;
+    long take = aic_rt_net_take_handle(handle, AIC_RT_NET_KIND_UDP, AIC_RT_NET_KIND_UDP, &fd);
+    if (take != 0) {
+        return take;
     }
-    aic_rt_socket_t fd = slot->fd;
-    aic_rt_net_reset_slot(slot);
     return aic_rt_net_close_fd(fd);
 }
 
@@ -5643,10 +5696,7 @@ static long aic_rt_tls_connect_core(
         goto cleanup;
     }
 
-    net_slot = aic_rt_net_get_slot(tcp_handle);
-    if (net_slot != NULL && net_slot->fd == fd && net_slot->kind == AIC_RT_NET_KIND_TCP_STREAM) {
-        aic_rt_net_reset_slot(net_slot);
-    }
+    aic_rt_net_reset_handle_if_matches(tcp_handle, fd, AIC_RT_NET_KIND_TCP_STREAM);
 #else
     result = 5;
 #endif
@@ -5828,10 +5878,7 @@ static long aic_rt_tls_accept_core(
         goto cleanup;
     }
 
-    net_slot = aic_rt_net_get_slot(tcp_handle);
-    if (net_slot != NULL && net_slot->fd == fd && net_slot->kind == AIC_RT_NET_KIND_TCP_STREAM) {
-        aic_rt_net_reset_slot(net_slot);
-    }
+    aic_rt_net_reset_handle_if_matches(tcp_handle, fd, AIC_RT_NET_KIND_TCP_STREAM);
 #else
     result = 5;
 #endif

@@ -181,6 +181,7 @@ let socket = match accepted {
 - Worker-pool size is configurable at process start via `AIC_RT_LIMIT_NET_ASYNC_WORKERS` (default `1`, max `32`, clamped to the async op limit).
 - Submit paths enqueue opaque operation handles and operation metadata into a shared bounded queue.
 - A worker pool activates operations from the shared queue and advances them through per-thread reactors.
+- Accepted TCP sockets are registered through the synchronized net handle table, so parallel async accept workers cannot publish duplicate or lost stream handles.
 - Reactor backends:
   - Linux: `epoll`
   - macOS/BSD: `kqueue`

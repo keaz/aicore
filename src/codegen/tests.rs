@@ -2656,6 +2656,9 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
     assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
     assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup_all("));
+    assert!(runtime_c_source().contains("static pthread_mutex_t aic_rt_net_table_mutex"));
+    assert!(runtime_c_source().contains("static long aic_rt_net_take_handle("));
+    assert!(runtime_c_source().contains("static void aic_rt_net_reset_handle_if_matches("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_accept_submit("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_send_submit("));
     assert!(runtime_c_source().contains("long aic_rt_net_async_recv_submit("));
