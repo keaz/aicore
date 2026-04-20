@@ -184,6 +184,8 @@ Passing bake-in entries must be machine-verifiable: each entry records `make rel
 
 Class decisions are machine-verifiable through `rust_path_classes[*].retirement_decision`. Rust reference compiler classes must use `remove-after-replacement`, while retained Rust host/tooling/test classes must name a non-reference role and provide evidence for each required command before approval.
 
+Generate review entries with `scripts/selfhost/retirement_evidence.py` after the corresponding commands have run. The helper records checksums for bake-in, rollback, and class decision evidence and can assemble a candidate manifest under `target/selfhost-retirement/`.
+
 ## CI and Release Gates
 
 GitHub CI runs the production self-host bootstrap gate in `.github/workflows/ci.yml` as `Self-Host Bootstrap (${{ matrix.os }})` on `ubuntu-latest` and `macos-latest`. The job installs `clang` on Linux, runs the host tool preflight, then runs the same supported-mode command used locally:

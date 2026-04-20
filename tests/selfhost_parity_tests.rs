@@ -27,6 +27,10 @@ fn retirement_audit_script() -> PathBuf {
     repo_root().join("scripts/selfhost/retirement_audit.py")
 }
 
+fn retirement_evidence_script() -> PathBuf {
+    repo_root().join("scripts/selfhost/retirement_evidence.py")
+}
+
 fn run_parity(args: &[String]) -> std::process::Output {
     Command::new("python3")
         .arg(parity_script())
@@ -61,6 +65,15 @@ fn run_retirement_audit(args: &[String]) -> std::process::Output {
         .current_dir(repo_root())
         .output()
         .expect("run retirement audit script")
+}
+
+fn run_retirement_evidence(args: &[String]) -> std::process::Output {
+    Command::new("python3")
+        .arg(retirement_evidence_script())
+        .args(args)
+        .current_dir(repo_root())
+        .output()
+        .expect("run retirement evidence script")
 }
 
 fn sha256_prefixed(path: &Path) -> String {
@@ -845,6 +858,7 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "tests/selfhost/stage_matrix_manifest.json",
         "scripts/selfhost/stage_matrix.py",
         "scripts/selfhost/retirement_audit.py",
+        "scripts/selfhost/retirement_evidence.py",
         "docs/selfhost/stage-matrix.md",
         "docs/selfhost/supported-operation-runbook.md",
         "docs/selfhost/rust-reference-retirement.md",
@@ -2076,6 +2090,191 @@ fn selfhost_retirement_audit_rejects_unverified_class_decision_evidence() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("retirement_decision.evidence[0].report_sha256 mismatch"));
+}
+
+#[test]
+fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifest() {
+    let tmp = tempdir().expect("tempdir");
+    let (bootstrap, provenance, default_artifact, source_commit) =
+        write_retirement_evidence_fixture(tmp.path());
+    let bake_entry = tmp.path().join("bake-entry.json");
+    let output = run_retirement_evidence(&[
+        "bake-in-entry".into(),
+        "--platform".into(),
+        "macos".into(),
+        "--source-commit".into(),
+        source_commit.clone(),
+        "--recorded-at".into(),
+        "2026-04-20T00:00:00Z".into(),
+        "--bootstrap-report".into(),
+        bootstrap.to_string_lossy().to_string(),
+        "--release-provenance".into(),
+        provenance.to_string_lossy().to_string(),
+        "--default-build-artifact".into(),
+        default_artifact.to_string_lossy().to_string(),
+        "--out".into(),
+        bake_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "bake evidence helper failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let (cargo_log, audit_report, marker_report, source_ref, rollback_commit) =
+        write_rollback_evidence_fixture(tmp.path());
+    let rollback_entry = tmp.path().join("rollback-entry.json");
+    let output = run_retirement_evidence(&[
+        "rollback-entry".into(),
+        "--source-ref".into(),
+        source_ref.clone(),
+        "--source-commit".into(),
+        rollback_commit.clone(),
+        "--recorded-at".into(),
+        "2026-04-20T00:00:00Z".into(),
+        "--cargo-build-log".into(),
+        cargo_log.to_string_lossy().to_string(),
+        "--retirement-audit-report".into(),
+        audit_report.to_string_lossy().to_string(),
+        "--marker-scan-report".into(),
+        marker_report.to_string_lossy().to_string(),
+        "--out".into(),
+        rollback_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "rollback evidence helper failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let class_report = write_class_decision_evidence_report(tmp.path());
+    let mut class_entries = Vec::new();
+    for command in [
+        "make selfhost-parity-candidate",
+        "make selfhost-bootstrap",
+        "make selfhost-stage-matrix",
+    ] {
+        let entry_path = tmp
+            .path()
+            .join(format!("class-{}.json", command.replace(' ', "-")));
+        let output = run_retirement_evidence(&[
+            "class-entry".into(),
+            "--command".into(),
+            command.into(),
+            "--recorded-at".into(),
+            "2026-04-20T00:00:00Z".into(),
+            "--report".into(),
+            class_report.to_string_lossy().to_string(),
+            "--out".into(),
+            entry_path.to_string_lossy().to_string(),
+        ]);
+        assert!(
+            output.status.success(),
+            "class evidence helper failed for {command}\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        class_entries.push(entry_path);
+    }
+
+    let manifest = tmp.path().join("candidate-retirement-manifest.json");
+    let mut args = vec![
+        "assemble-manifest".to_string(),
+        "--manifest".to_string(),
+        "docs/selfhost/rust-reference-retirement.v1.json".to_string(),
+        "--bake-in-entry".to_string(),
+        bake_entry.to_string_lossy().to_string(),
+        "--rollback-entry".to_string(),
+        rollback_entry.to_string_lossy().to_string(),
+    ];
+    for entry in &class_entries {
+        args.push("--class-entry".to_string());
+        args.push(format!(
+            "rust-reference-compiler-core={}",
+            entry.to_string_lossy()
+        ));
+    }
+    args.extend([
+        "--approve-class".to_string(),
+        "rust-reference-compiler-core".to_string(),
+        "--allow-removal-class".to_string(),
+        "rust-reference-compiler-core".to_string(),
+        "--out".to_string(),
+        manifest.to_string_lossy().to_string(),
+    ]);
+    let output = run_retirement_evidence(&args);
+    assert!(
+        output.status.success(),
+        "assemble manifest helper failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report = tmp.path().join("candidate-retirement-report.json");
+    let output = run_retirement_audit(&[
+        "--check".into(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "assembled retirement manifest audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let candidate: Value =
+        serde_json::from_str(&fs::read_to_string(&manifest).expect("read candidate manifest"))
+            .expect("candidate manifest json");
+    assert_eq!(candidate["rollback"]["validated"], true);
+    assert_eq!(
+        candidate["bake_in"]["evidence"]
+            .as_array()
+            .expect("bake")
+            .len(),
+        1
+    );
+    let core = candidate["rust_path_classes"]
+        .as_array()
+        .expect("classes")
+        .iter()
+        .find(|item| item["class"] == "rust-reference-compiler-core")
+        .expect("core class");
+    assert_eq!(core["removal_allowed"], true);
+    assert_eq!(core["retirement_decision"]["status"], "approved");
+}
+
+#[test]
+fn selfhost_retirement_evidence_helper_rejects_invalid_commit_digest() {
+    let tmp = tempdir().expect("tempdir");
+    let (cargo_log, audit_report, marker_report, source_ref, _) =
+        write_rollback_evidence_fixture(tmp.path());
+    let output = run_retirement_evidence(&[
+        "rollback-entry".into(),
+        "--source-ref".into(),
+        source_ref,
+        "--source-commit".into(),
+        "not-a-commit".into(),
+        "--recorded-at".into(),
+        "2026-04-20T00:00:00Z".into(),
+        "--cargo-build-log".into(),
+        cargo_log.to_string_lossy().to_string(),
+        "--retirement-audit-report".into(),
+        audit_report.to_string_lossy().to_string(),
+        "--marker-scan-report".into(),
+        marker_report.to_string_lossy().to_string(),
+        "--out".into(),
+        tmp.path()
+            .join("rollback-entry.json")
+            .to_string_lossy()
+            .to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--source-commit must be a git commit digest"));
 }
 
 #[test]

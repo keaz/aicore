@@ -236,6 +236,8 @@ Rollback evidence must be recorded under `rollback.validation_evidence`. A valid
 
 Class decision evidence is recorded under each `rust_path_classes[*].retirement_decision`. Reference compiler classes use `intent=remove-after-replacement`; retained host/tooling/test classes use `intent=retain-non-reference` with a named non-reference role. A class decision stays blocked until every command listed in `required_replacement_evidence` has a matching report and checksum.
 
+Use `scripts/selfhost/retirement_evidence.py` after the real commands have run to generate checksum-bearing bake-in, rollback, and class decision entries. The helper can assemble a candidate manifest under `target/selfhost-retirement/` for review, but the approved manifest must still pass `python3 scripts/selfhost/retirement_audit.py --require-approved` before issue `#419` can close.
+
 Use this command only when validating the final retirement decision:
 
 ```bash

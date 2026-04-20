@@ -71,6 +71,53 @@ Each `rust_path_classes` entry must declare a `retirement_decision`:
 
 The audit verifies every class evidence checksum. A class decision cannot be `approved` unless every command listed in `required_replacement_evidence` has a matching evidence entry. For `remove-after-replacement`, `removal_allowed` must also be true before approval is accepted. Until then, `python3 scripts/selfhost/retirement_audit.py --require-approved` reports the class as a blocker.
 
+## Evidence Collection Helper
+
+Use `scripts/selfhost/retirement_evidence.py` to create checksum-bearing evidence entries after the required commands have actually run. The helper writes JSON entries for later review; it does not approve retirement unless the caller explicitly asks for an assembled candidate manifest with an approver.
+
+Create a bake-in entry from a successful platform run:
+
+```bash
+python3 scripts/selfhost/retirement_evidence.py bake-in-entry \
+  --platform macos \
+  --source-commit <commit> \
+  --recorded-at <timestamp> \
+  --bootstrap-report target/selfhost-bootstrap/report.json \
+  --release-provenance target/selfhost-release/provenance.json \
+  --default-build-artifact target/selfhost-default/aic_selfhost \
+  --out target/selfhost-retirement/bake-in-macos.json
+```
+
+Create rollback and class decision entries:
+
+```bash
+python3 scripts/selfhost/retirement_evidence.py rollback-entry \
+  --source-ref <last-rust-reference-tag> \
+  --source-commit <commit> \
+  --recorded-at <timestamp> \
+  --cargo-build-log target/selfhost-retirement/rollback-cargo-build.log \
+  --retirement-audit-report target/selfhost-retirement/rollback-audit.json \
+  --marker-scan-report target/selfhost-retirement/rollback-marker-scan.txt \
+  --out target/selfhost-retirement/rollback-entry.json
+
+python3 scripts/selfhost/retirement_evidence.py class-entry \
+  --command "make selfhost-bootstrap" \
+  --recorded-at <timestamp> \
+  --report target/selfhost-bootstrap/report.json \
+  --out target/selfhost-retirement/class-bootstrap.json
+```
+
+Assemble a candidate manifest for final review only after all required evidence files exist:
+
+```bash
+python3 scripts/selfhost/retirement_evidence.py assemble-manifest \
+  --manifest docs/selfhost/rust-reference-retirement.v1.json \
+  --bake-in-entry target/selfhost-retirement/bake-in-macos.json \
+  --rollback-entry target/selfhost-retirement/rollback-entry.json \
+  --class-entry rust-reference-compiler-core=target/selfhost-retirement/class-bootstrap.json \
+  --out target/selfhost-retirement/approved-manifest.json
+```
+
 ## Approval Criteria
 
 Removal can be considered only after all of these are true:
