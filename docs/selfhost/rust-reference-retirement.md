@@ -189,6 +189,15 @@ AIC_COMPILER_MODE=fallback aic build <input> -o <artifact>
 
 After deletion, rollback must restore the last approved Rust reference source or roll the release branch back to the tagged artifact set.
 
+Use the checked target for rollback-source validation:
+
+```bash
+AIC_SELFHOST_ROLLBACK_REF=<last-rust-reference-tag-or-branch> \
+  make selfhost-retirement-rollback-evidence
+```
+
+The target fetches tags, restores `Cargo.toml`, `Cargo.lock`, `src`, and `tests` from the recorded source in a temporary worktree, runs `cargo build --locked`, runs the retirement audit, scans rollback-touched paths for unfinished marker text, writes `target/selfhost-retirement/rollback-entry.json`, and audits a rollback candidate manifest. It fails before writing a valid candidate when the source ref is missing, the restored build fails, the retirement audit has consistency problems, or the marker scan is not clean.
+
 ## Rollback Validation Evidence
 
 Rollback validation evidence in `docs/selfhost/rust-reference-retirement.v1.json` must prove that the recorded source can restore the Rust reference implementation and that the restored checkout still passes the retirement audit consistency gate. The manifest keeps this in `rollback.validation_evidence`.

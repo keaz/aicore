@@ -6,7 +6,7 @@ AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan selfhost-retirement-bake-in-evidence intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan selfhost-retirement-bake-in-evidence selfhost-retirement-rollback-evidence intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -39,6 +39,7 @@ help:
 	@echo "  make selfhost-retirement-audit Verify Rust-reference retirement inventory remains blocked until approved"
 	@echo "  make selfhost-retirement-reference-scan Scan active files for retired Rust reference path references"
 	@echo "  make selfhost-retirement-bake-in-evidence Generate local #419 bake-in evidence from real release-preflight outputs"
+	@echo "  make selfhost-retirement-rollback-evidence Validate #419 rollback restore from AIC_SELFHOST_ROLLBACK_REF"
 	@echo "  make intrinsic-placeholder-guard Enforce AGX1 intrinsic declaration policy"
 	@echo "  make test-command-style-guard Enforce canonical cargo test snippet style"
 	@echo "  make verify-intrinsics Validate runtime intrinsic bindings"
@@ -194,6 +195,68 @@ selfhost-retirement-bake-in-evidence:
 		--evidence-root "$$(pwd)" \
 		--check \
 		--report "$$report"; \
+	echo "wrote $$entry"; \
+	echo "wrote $$candidate"; \
+	echo "wrote $$report"
+
+selfhost-retirement-rollback-evidence:
+	@mkdir -p target/selfhost-retirement
+	@set -euo pipefail; \
+	source_ref="$${AIC_SELFHOST_ROLLBACK_REF:-}"; \
+	if [ -z "$$source_ref" ]; then echo "set AIC_SELFHOST_ROLLBACK_REF=<last-rust-reference-tag-or-branch>" >&2; exit 1; fi; \
+	git fetch --tags origin; \
+	source_commit="$$(git rev-parse "$$source_ref^{commit}")"; \
+	recorded_at="$$(date -u +"%Y-%m-%dT%H:%M:%SZ")"; \
+	repo_root="$$(pwd)"; \
+	worktree="$$repo_root/target/selfhost-retirement/rollback-worktree"; \
+	cargo_log="$$repo_root/target/selfhost-retirement/rollback-cargo-build.log"; \
+	audit_report="$$repo_root/target/selfhost-retirement/rollback-audit.json"; \
+	audit_log="$$repo_root/target/selfhost-retirement/rollback-audit.log"; \
+	marker_report="$$repo_root/target/selfhost-retirement/rollback-marker-scan.txt"; \
+	entry="$$repo_root/target/selfhost-retirement/rollback-entry.json"; \
+	candidate="$$repo_root/target/selfhost-retirement/candidate-manifest-rollback.json"; \
+	report="$$repo_root/target/selfhost-retirement/candidate-report-rollback.json"; \
+	cleanup() { git -C "$$repo_root" worktree remove --force "$$worktree" >/dev/null 2>&1 || true; }; \
+	if git -C "$$repo_root" worktree list --porcelain | grep -Fqx "worktree $$worktree"; then cleanup; elif [ -e "$$worktree" ]; then rm -rf "$$worktree"; fi; \
+	trap cleanup EXIT; \
+	git -C "$$repo_root" worktree add --detach "$$worktree" HEAD >/dev/null; \
+	( cd "$$worktree"; \
+		git fetch --tags origin; \
+		git checkout "$$source_ref" -- Cargo.toml Cargo.lock src tests; \
+		cargo build --locked > "$$cargo_log" 2>&1; \
+		python3 scripts/selfhost/retirement_audit.py --check --report "$$audit_report" > "$$audit_log" 2>&1; \
+		changed_paths="$$(git diff --name-only -- Cargo.toml Cargo.lock src tests)"; \
+		if [ -n "$$changed_paths" ]; then \
+			AIC_MARKER_PATTERN="$$(printf '\\x54\\x4f\\x44\\x4f|\\x64\\x75\\x6d\\x6d\\x79|\\x73\\x74\\x75\\x62|\\x75\\x6e\\x69\\x6d\\x70\\x6c\\x65\\x6d\\x65\\x6e\\x74\\x65\\x64|\\x70\\x61\\x6e\\x69\\x63\\x5c\\x28\\x5c\\x22\\x74\\x6f\\x64\\x6f|\\x46\\x49\\x58\\x4d\\x45')"; \
+			set +e; \
+			printf '%s\n' "$$changed_paths" | xargs rg -n "$$AIC_MARKER_PATTERN" > "$$marker_report"; \
+			scan_rc=$$?; \
+			set -e; \
+			if [ "$$scan_rc" -gt 1 ]; then exit "$$scan_rc"; fi; \
+		else \
+			: > "$$marker_report"; \
+		fi; \
+		if [ -s "$$marker_report" ]; then cat "$$marker_report" >&2; exit 1; fi; \
+	); \
+	python3 scripts/selfhost/retirement_evidence.py rollback-entry \
+		--source-ref "$$source_ref" \
+		--source-commit "$$source_commit" \
+		--recorded-at "$$recorded_at" \
+		--cargo-build-log "$$cargo_log" \
+		--retirement-audit-report "$$audit_report" \
+		--marker-scan-report "$$marker_report" \
+		--out "$$entry"; \
+	python3 scripts/selfhost/retirement_evidence.py assemble-manifest \
+		--manifest docs/selfhost/rust-reference-retirement.v1.json \
+		--rollback-entry "$$entry" \
+		--out "$$candidate"; \
+	python3 scripts/selfhost/retirement_audit.py \
+		--manifest "$$candidate" \
+		--evidence-root "$$repo_root" \
+		--check \
+		--report "$$report"; \
+	echo "source_ref=$$source_ref"; \
+	echo "source_commit=$$source_commit"; \
 	echo "wrote $$entry"; \
 	echo "wrote $$candidate"; \
 	echo "wrote $$report"
@@ -366,6 +429,7 @@ docs-check:
 	@grep -Fq "selfhost-retirement-audit" Makefile
 	@grep -Fq "selfhost-retirement-reference-scan" Makefile
 	@grep -Fq "selfhost-retirement-bake-in-evidence" Makefile
+	@grep -Fq "selfhost-retirement-rollback-evidence" Makefile
 	@grep -Fq "selfhost-mode" docs/cli-contract.md
 	@grep -Fq "fn tcp_send(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net }" docs/io-api-reference.md
 	@grep -Fq "fn tcp_recv(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[Bytes, NetError] effects { net }" docs/io-api-reference.md
