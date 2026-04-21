@@ -158,6 +158,34 @@ python3 scripts/selfhost/retirement_audit.py \
   --require-approved
 ```
 
+To combine Linux and macOS evidence captured under different worktree roots, normalize each recorded entry into a shared bundle before final assembly:
+
+```bash
+python3 scripts/selfhost/retirement_evidence.py normalize-bake-in-entry \
+  --entry /tmp/linux-run/target/selfhost-retirement/bake-in-linux.json \
+  --source-evidence-root /tmp/linux-run \
+  --bundle-root target/selfhost-retirement/evidence \
+  --out target/selfhost-retirement/bake-in-linux-normalized.json
+
+python3 scripts/selfhost/retirement_evidence.py normalize-rollback-entry \
+  --entry target/selfhost-retirement/rollback-entry.json \
+  --source-evidence-root "$(pwd)" \
+  --bundle-root target/selfhost-retirement/evidence \
+  --out target/selfhost-retirement/rollback-entry-normalized.json
+```
+
+After the entries share one bundle root, assemble the review manifest with an approver and audit that bundle:
+
+```bash
+python3 scripts/selfhost/retirement_evidence.py assemble-manifest \
+  --manifest docs/selfhost/rust-reference-retirement.v1.json \
+  --bake-in-entry target/selfhost-retirement/bake-in-macos-normalized.json \
+  --bake-in-entry target/selfhost-retirement/bake-in-linux-normalized.json \
+  --rollback-entry target/selfhost-retirement/rollback-entry-normalized.json \
+  --approver <release-approver> \
+  --out target/selfhost-retirement/approved-manifest.json
+```
+
 ## Approval Criteria
 
 Removal can be considered only after all of these are true:

@@ -357,14 +357,23 @@ fn write_selfhost_release_fixture(root: &Path) -> PathBuf {
     bootstrap
 }
 
-fn write_retirement_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf, String) {
-    let source_commit = "1234567890abcdef1234567890abcdef12345678".to_string();
-    let artifact = root.join("aicore-selfhost-compiler-macos-arm64");
-    let default_artifact = root.join("default-aic-selfhost");
+fn write_retirement_evidence_fixture_for_platform(
+    root: &Path,
+    platform: &str,
+    source_commit: &str,
+) -> (PathBuf, PathBuf, PathBuf, String) {
+    let (host_platform, host_system, host_machine, suffix) = match platform {
+        "macos" => ("darwin", "Darwin", "arm64", "macos-arm64"),
+        "linux" => ("linux", "Linux", "arm64", "linux-arm64"),
+        other => panic!("unsupported retirement evidence fixture platform: {other}"),
+    };
+    let source_commit = source_commit.to_string();
+    let artifact = root.join(format!("aicore-selfhost-compiler-{suffix}"));
+    let default_artifact = root.join(format!("default-aic-selfhost-{platform}"));
     fs::write(&artifact, b"release artifact").expect("write release artifact");
     fs::write(&default_artifact, b"default build artifact").expect("write default artifact");
 
-    let bootstrap = root.join("bootstrap-report.json");
+    let bootstrap = root.join(format!("bootstrap-report-{platform}.json"));
     fs::write(
         &bootstrap,
         serde_json::to_string_pretty(&json!({
@@ -374,16 +383,16 @@ fn write_retirement_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf,
             "status": "supported-ready",
             "ready": true,
             "host": {
-                "platform": "darwin",
-                "system": "Darwin",
-                "machine": "arm64"
+                "platform": host_platform,
+                "system": host_system,
+                "machine": host_machine
             },
             "performance": {
                 "ok": true,
                 "budget_source": {
                     "path": "docs/selfhost/bootstrap-budgets.v1.json",
                     "schema_version": 1,
-                    "platform": "macos",
+                    "platform": platform,
                     "overrides": {}
                 }
             }
@@ -392,16 +401,16 @@ fn write_retirement_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf,
     )
     .expect("write bootstrap evidence");
 
-    let provenance = root.join("provenance.json");
+    let provenance = root.join(format!("provenance-{platform}.json"));
     fs::write(
         &provenance,
         serde_json::to_string_pretty(&json!({
             "format": "aicore-selfhost-release-provenance-v1",
             "schema_version": 1,
             "host": {
-                "platform": "darwin",
-                "system": "Darwin",
-                "machine": "arm64"
+                "platform": host_platform,
+                "system": host_system,
+                "machine": host_machine
             },
             "source": {
                 "commit": source_commit.clone(),
@@ -426,6 +435,14 @@ fn write_retirement_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf,
     .expect("write provenance evidence");
 
     (bootstrap, provenance, default_artifact, source_commit)
+}
+
+fn write_retirement_evidence_fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf, String) {
+    write_retirement_evidence_fixture_for_platform(
+        root,
+        "macos",
+        "1234567890abcdef1234567890abcdef12345678",
+    )
 }
 
 fn write_retirement_manifest_with_evidence(path: &Path, evidence: Value) {
@@ -1524,6 +1541,8 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(selfhost_docs.contains("docs/selfhost/supported-operation-runbook.md"));
     assert!(selfhost_docs.contains("docs/selfhost/rust-reference-retirement.md"));
     assert!(selfhost_docs.contains("Rust Reference Retirement"));
+    assert!(selfhost_docs.contains("normalize-bake-in-entry"));
+    assert!(selfhost_docs.contains("--approver"));
     let performance_docs =
         fs::read_to_string(root.join("docs/selfhost/performance.md")).expect("read perf docs");
     assert!(performance_docs.contains("Release gates use the checked-in manifest defaults"));
@@ -1575,6 +1594,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
         "target/selfhost-retirement/report.json",
         "rollback.validation_evidence",
         "retirement_decision",
+        "normalize-bake-in-entry",
+        "normalize-rollback-entry",
+        "--approver",
         "python3 scripts/selfhost/retirement_audit.py --require-approved",
     ] {
         assert!(
@@ -1607,6 +1629,9 @@ fn selfhost_compiler_support_packages_are_real_sources() {
     assert!(retirement_doc.contains("Rollback Source"));
     assert!(retirement_doc.contains("Rollback Validation Evidence"));
     assert!(retirement_doc.contains("Class Decision Evidence"));
+    assert!(retirement_doc.contains("normalize-bake-in-entry"));
+    assert!(retirement_doc.contains("normalize-rollback-entry"));
+    assert!(retirement_doc.contains("--approver"));
 
     let retirement_manifest: Value = serde_json::from_str(
         &fs::read_to_string(root.join("docs/selfhost/rust-reference-retirement.v1.json"))
@@ -2846,7 +2871,7 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
             .expect("candidate manifest json");
     assert_eq!(
         candidate["bake_in"]["evidence"][0]["bootstrap_report"],
-        "bootstrap-report.json"
+        "bootstrap-report-macos.json"
     );
     assert_eq!(candidate["rollback"]["validated"], true);
     assert_eq!(
@@ -2864,6 +2889,365 @@ fn selfhost_retirement_evidence_helper_generates_and_assembles_candidate_manifes
         .expect("core class");
     assert_eq!(core["removal_allowed"], true);
     assert_eq!(core["retirement_decision"]["status"], "approved");
+}
+
+#[test]
+fn selfhost_retirement_evidence_helper_normalizes_cross_root_entries_for_approved_audit() {
+    let tmp = tempdir().expect("tempdir");
+    let mac_root = tmp.path().join("mac-root");
+    let linux_root = tmp.path().join("linux-root");
+    let rollback_root = tmp.path().join("rollback-root");
+    let bundle = tmp.path().join("approval-bundle");
+    fs::create_dir_all(&mac_root).expect("create mac root");
+    fs::create_dir_all(&linux_root).expect("create linux root");
+    fs::create_dir_all(&rollback_root).expect("create rollback root");
+    fs::create_dir_all(&bundle).expect("create bundle");
+
+    let source_commit = "1234567890abcdef1234567890abcdef12345678";
+    let (mac_bootstrap, mac_provenance, mac_default_artifact, mac_commit) =
+        write_retirement_evidence_fixture_for_platform(&mac_root, "macos", source_commit);
+    let (linux_bootstrap, linux_provenance, linux_default_artifact, linux_commit) =
+        write_retirement_evidence_fixture_for_platform(&linux_root, "linux", source_commit);
+    assert_eq!(mac_commit, source_commit);
+    assert_eq!(linux_commit, source_commit);
+
+    let mac_entry = tmp.path().join("mac-entry.json");
+    let output = run_retirement_evidence(&[
+        "bake-in-entry".into(),
+        "--platform".into(),
+        "macos".into(),
+        "--source-commit".into(),
+        mac_commit.clone(),
+        "--recorded-at".into(),
+        "2026-04-21T00:00:00Z".into(),
+        "--bootstrap-report".into(),
+        mac_bootstrap.to_string_lossy().to_string(),
+        "--release-provenance".into(),
+        mac_provenance.to_string_lossy().to_string(),
+        "--default-build-artifact".into(),
+        mac_default_artifact.to_string_lossy().to_string(),
+        "--path-base".into(),
+        mac_root.to_string_lossy().to_string(),
+        "--out".into(),
+        mac_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "mac bake entry failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let linux_entry = tmp.path().join("linux-entry.json");
+    let output = run_retirement_evidence(&[
+        "bake-in-entry".into(),
+        "--platform".into(),
+        "linux".into(),
+        "--source-commit".into(),
+        linux_commit.clone(),
+        "--recorded-at".into(),
+        "2026-04-21T00:05:00Z".into(),
+        "--bootstrap-report".into(),
+        linux_bootstrap.to_string_lossy().to_string(),
+        "--release-provenance".into(),
+        linux_provenance.to_string_lossy().to_string(),
+        "--default-build-artifact".into(),
+        linux_default_artifact.to_string_lossy().to_string(),
+        "--path-base".into(),
+        linux_root.to_string_lossy().to_string(),
+        "--out".into(),
+        linux_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "linux bake entry failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let normalized_mac_entry = tmp.path().join("normalized-mac-entry.json");
+    let output = run_retirement_evidence(&[
+        "normalize-bake-in-entry".into(),
+        "--entry".into(),
+        mac_entry.to_string_lossy().to_string(),
+        "--source-evidence-root".into(),
+        mac_root.to_string_lossy().to_string(),
+        "--bundle-root".into(),
+        bundle.to_string_lossy().to_string(),
+        "--out".into(),
+        normalized_mac_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "normalize mac bake entry failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let normalized_linux_entry = tmp.path().join("normalized-linux-entry.json");
+    let output = run_retirement_evidence(&[
+        "normalize-bake-in-entry".into(),
+        "--entry".into(),
+        linux_entry.to_string_lossy().to_string(),
+        "--source-evidence-root".into(),
+        linux_root.to_string_lossy().to_string(),
+        "--bundle-root".into(),
+        bundle.to_string_lossy().to_string(),
+        "--out".into(),
+        normalized_linux_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "normalize linux bake entry failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let normalized_mac: Value = serde_json::from_str(
+        &fs::read_to_string(&normalized_mac_entry).expect("read normalized mac entry"),
+    )
+    .expect("normalized mac entry json");
+    assert_eq!(
+        normalized_mac["bootstrap_report"],
+        "macos/bootstrap/bootstrap-report-macos.json"
+    );
+    assert_eq!(
+        normalized_mac["release_provenance"],
+        "macos/release/provenance-macos.json"
+    );
+    assert_eq!(
+        normalized_mac["default_build_artifact"],
+        "macos/default/default-aic-selfhost-macos"
+    );
+
+    let normalized_linux: Value = serde_json::from_str(
+        &fs::read_to_string(&normalized_linux_entry).expect("read normalized linux entry"),
+    )
+    .expect("normalized linux entry json");
+    assert_eq!(
+        normalized_linux["bootstrap_report"],
+        "linux/bootstrap/bootstrap-report-linux.json"
+    );
+    assert_eq!(
+        normalized_linux["release_provenance"],
+        "linux/release/provenance-linux.json"
+    );
+    assert_eq!(
+        normalized_linux["default_build_artifact"],
+        "linux/default/default-aic-selfhost-linux"
+    );
+
+    let (cargo_log, audit_report, marker_report, source_ref, rollback_commit) =
+        write_rollback_evidence_fixture(&rollback_root);
+    let rollback_entry = tmp.path().join("rollback-entry.json");
+    let output = run_retirement_evidence(&[
+        "rollback-entry".into(),
+        "--source-ref".into(),
+        source_ref.clone(),
+        "--source-commit".into(),
+        rollback_commit.clone(),
+        "--recorded-at".into(),
+        "2026-04-21T00:10:00Z".into(),
+        "--cargo-build-log".into(),
+        cargo_log.to_string_lossy().to_string(),
+        "--retirement-audit-report".into(),
+        audit_report.to_string_lossy().to_string(),
+        "--marker-scan-report".into(),
+        marker_report.to_string_lossy().to_string(),
+        "--path-base".into(),
+        rollback_root.to_string_lossy().to_string(),
+        "--out".into(),
+        rollback_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "rollback entry failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let normalized_rollback_entry = tmp.path().join("normalized-rollback-entry.json");
+    let output = run_retirement_evidence(&[
+        "normalize-rollback-entry".into(),
+        "--entry".into(),
+        rollback_entry.to_string_lossy().to_string(),
+        "--source-evidence-root".into(),
+        rollback_root.to_string_lossy().to_string(),
+        "--bundle-root".into(),
+        bundle.to_string_lossy().to_string(),
+        "--out".into(),
+        normalized_rollback_entry.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "normalize rollback entry failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let class_reports_root = bundle.join("class-reports");
+    fs::create_dir_all(&class_reports_root).expect("create class reports root");
+    let reference_scan_report = write_reference_scan_report(&class_reports_root, true);
+    let class_specs: Vec<(&str, bool, Vec<&str>)> = vec![
+        (
+            "rust-reference-compiler-core",
+            true,
+            vec![
+                "make selfhost-parity-candidate",
+                "make selfhost-bootstrap",
+                "make selfhost-stage-matrix",
+            ],
+        ),
+        (
+            "rust-reference-backend-runtime",
+            true,
+            vec![
+                "make selfhost-parity-candidate",
+                "make examples-run",
+                "make selfhost-bootstrap",
+            ],
+        ),
+        (
+            "rust-host-cli-release-packaging",
+            false,
+            vec![
+                "cargo build --locked",
+                "make release-preflight",
+                "post-retirement packaging check",
+            ],
+        ),
+        (
+            "rust-developer-tooling",
+            false,
+            vec![
+                "make ci",
+                "make docs-check",
+                "tool-specific migration notes",
+            ],
+        ),
+        (
+            "rust-test-suites",
+            false,
+            vec![
+                "make ci",
+                "post-retirement CI equivalent",
+                "repository-wide reference scan",
+            ],
+        ),
+    ];
+    let mut class_entry_args: Vec<String> = Vec::new();
+    let mut approve_classes: Vec<String> = Vec::new();
+    let mut allow_removal_classes: Vec<String> = Vec::new();
+    for (class_id, removal_class, commands) in &class_specs {
+        approve_classes.push((*class_id).to_string());
+        if *removal_class {
+            allow_removal_classes.push((*class_id).to_string());
+        }
+        for command in commands {
+            let report = if *command == "repository-wide reference scan" {
+                reference_scan_report.clone()
+            } else {
+                write_class_command_evidence_report(&class_reports_root, command)
+            };
+            let entry_path = bundle.join(format!(
+                "{}-{}.json",
+                class_id,
+                command
+                    .chars()
+                    .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+                    .collect::<String>()
+            ));
+            let output = run_retirement_evidence(&[
+                "class-entry".into(),
+                "--command".into(),
+                (*command).to_string(),
+                "--recorded-at".into(),
+                "2026-04-21T00:15:00Z".into(),
+                "--report".into(),
+                report.to_string_lossy().to_string(),
+                "--path-base".into(),
+                bundle.to_string_lossy().to_string(),
+                "--out".into(),
+                entry_path.to_string_lossy().to_string(),
+            ]);
+            assert!(
+                output.status.success(),
+                "class entry failed for {class_id} / {command}\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            class_entry_args.push("--class-entry".to_string());
+            class_entry_args.push(format!("{class_id}={}", entry_path.to_string_lossy()));
+        }
+    }
+
+    let approved_manifest = tmp.path().join("approved-manifest.json");
+    let mut args = vec![
+        "assemble-manifest".to_string(),
+        "--manifest".to_string(),
+        "docs/selfhost/rust-reference-retirement.v1.json".to_string(),
+        "--bake-in-entry".to_string(),
+        normalized_mac_entry.to_string_lossy().to_string(),
+        "--bake-in-entry".to_string(),
+        normalized_linux_entry.to_string_lossy().to_string(),
+        "--rollback-entry".to_string(),
+        normalized_rollback_entry.to_string_lossy().to_string(),
+    ];
+    args.extend(class_entry_args);
+    for class_id in &approve_classes {
+        args.push("--approve-class".to_string());
+        args.push(class_id.clone());
+    }
+    for class_id in &allow_removal_classes {
+        args.push("--allow-removal-class".to_string());
+        args.push(class_id.clone());
+    }
+    args.extend([
+        "--approver".to_string(),
+        "keaz".to_string(),
+        "--out".to_string(),
+        approved_manifest.to_string_lossy().to_string(),
+    ]);
+    let output = run_retirement_evidence(&args);
+    assert!(
+        output.status.success(),
+        "assemble approved manifest failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let approved_report = tmp.path().join("approved-report.json");
+    let output = run_retirement_audit(&[
+        "--manifest".into(),
+        approved_manifest.to_string_lossy().to_string(),
+        "--evidence-root".into(),
+        bundle.to_string_lossy().to_string(),
+        "--require-approved".into(),
+        "--report".into(),
+        approved_report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "approved retirement audit failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&approved_report).expect("read approved report"))
+            .expect("approved report json");
+    assert_eq!(document["status"], "approved");
+    assert_eq!(document["approval"]["approved"], true);
+    assert_eq!(document["approval"]["approver"], "keaz");
+    assert_eq!(document["bake_in"]["passed_release_preflight_runs"], 2);
+    assert_eq!(
+        document["bake_in"]["platforms_with_passes"],
+        json!(["linux", "macos"])
+    );
+    assert_eq!(document["rollback"]["validated"], true);
+    assert_eq!(document["rollback"]["valid_evidence_count"], 1);
+    assert_eq!(document["removal_allowed"], true);
+    assert_eq!(document["blockers"], json!([]));
 }
 
 #[test]

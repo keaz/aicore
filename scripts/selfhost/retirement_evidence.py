@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,7 @@ from retirement_audit import (
     ROLLBACK_AUDIT_COMMAND,
     ROLLBACK_BUILD_COMMAND,
     ROLLBACK_FETCH_COMMAND,
+    resolve_evidence_path,
     looks_like_commit,
     platform_key,
     read_json,
@@ -49,6 +52,13 @@ def load_entry(path: Path) -> dict[str, Any]:
     return entry
 
 
+def required_entry_string(entry: dict[str, Any], field: str) -> str:
+    value = entry.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"entry {field} must be a non-empty string")
+    return value
+
+
 def parse_class_entry(value: str) -> tuple[str, Path]:
     if "=" not in value:
         raise ValueError("--class-entry must be CLASS=PATH")
@@ -74,6 +84,123 @@ def command_set(entries: list[dict[str, Any]]) -> set[str]:
         if isinstance(command, str):
             commands.add(command)
     return commands
+
+
+def bundle_relative_path(path: Path, bundle_root: Path) -> str:
+    return evidence_path_value(path, bundle_root, "bundle path")
+
+
+def ensure_parent(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def copy_into_bundle(source: Path, destination: Path) -> Path:
+    ensure_parent(destination)
+    shutil.copy2(source, destination)
+    return destination
+
+
+def normalize_bake_in_entry(args: argparse.Namespace) -> None:
+    entry = load_entry(args.entry)
+    source_root = args.source_evidence_root.resolve()
+    bundle_root = args.bundle_root.resolve()
+    platform = platform_key(required_entry_string(entry, "platform"))
+    bootstrap_source = resolve_evidence_path(
+        source_root,
+        required_entry_string(entry, "bootstrap_report"),
+    )
+    provenance_source = resolve_evidence_path(
+        source_root,
+        required_entry_string(entry, "release_provenance"),
+    )
+    default_build_source = resolve_evidence_path(
+        source_root,
+        required_entry_string(entry, "default_build_artifact"),
+    )
+    bootstrap_source = require_file(str(bootstrap_source), "entry bootstrap_report")
+    provenance_source = require_file(str(provenance_source), "entry release_provenance")
+    default_build_source = require_file(str(default_build_source), "entry default_build_artifact")
+
+    bootstrap_destination = copy_into_bundle(
+        bootstrap_source,
+        bundle_root / platform / "bootstrap" / bootstrap_source.name,
+    )
+    default_build_destination = copy_into_bundle(
+        default_build_source,
+        bundle_root / platform / "default" / default_build_source.name,
+    )
+
+    provenance_payload = read_json(provenance_source)
+    artifact = provenance_payload.get("canonical_artifact")
+    artifact_path_raw = artifact.get("path") if isinstance(artifact, dict) else None
+    if not isinstance(artifact_path_raw, str) or not artifact_path_raw.strip():
+        raise ValueError("entry release_provenance is missing canonical_artifact.path")
+    artifact_source = resolve_evidence_path(source_root, artifact_path_raw)
+    artifact_source = require_file(str(artifact_source), "entry release_provenance canonical artifact")
+    artifact_destination = copy_into_bundle(
+        artifact_source,
+        bundle_root / platform / "release" / artifact_source.name,
+    )
+    normalized_provenance = copy.deepcopy(provenance_payload)
+    canonical_artifact = normalized_provenance.get("canonical_artifact")
+    if not isinstance(canonical_artifact, dict):
+        raise ValueError("entry release_provenance canonical_artifact must be an object")
+    canonical_artifact["path"] = bundle_relative_path(artifact_destination, bundle_root)
+    provenance_destination = bundle_root / platform / "release" / provenance_source.name
+    write_json(provenance_destination, normalized_provenance)
+
+    normalized_entry = copy.deepcopy(entry)
+    normalized_entry["bootstrap_report"] = bundle_relative_path(bootstrap_destination, bundle_root)
+    normalized_entry["bootstrap_report_sha256"] = sha256_prefixed(bootstrap_destination)
+    normalized_entry["release_provenance"] = bundle_relative_path(provenance_destination, bundle_root)
+    normalized_entry["release_provenance_sha256"] = sha256_prefixed(provenance_destination)
+    normalized_entry["default_build_artifact"] = bundle_relative_path(default_build_destination, bundle_root)
+    normalized_entry["default_build_sha256"] = sha256_prefixed(default_build_destination)
+    write_json(args.out, normalized_entry)
+
+
+def normalize_rollback_entry(args: argparse.Namespace) -> None:
+    entry = load_entry(args.entry)
+    source_root = args.source_evidence_root.resolve()
+    bundle_root = args.bundle_root.resolve()
+
+    cargo_source = resolve_evidence_path(
+        source_root,
+        required_entry_string(entry, "cargo_build_log"),
+    )
+    audit_source = resolve_evidence_path(
+        source_root,
+        required_entry_string(entry, "retirement_audit_report"),
+    )
+    marker_source = resolve_evidence_path(
+        source_root,
+        required_entry_string(entry, "marker_scan_report"),
+    )
+    cargo_source = require_file(str(cargo_source), "entry cargo_build_log")
+    audit_source = require_file(str(audit_source), "entry retirement_audit_report")
+    marker_source = require_file(str(marker_source), "entry marker_scan_report")
+
+    cargo_destination = copy_into_bundle(
+        cargo_source,
+        bundle_root / "rollback" / cargo_source.name,
+    )
+    audit_destination = copy_into_bundle(
+        audit_source,
+        bundle_root / "rollback" / audit_source.name,
+    )
+    marker_destination = copy_into_bundle(
+        marker_source,
+        bundle_root / "rollback" / marker_source.name,
+    )
+
+    normalized_entry = copy.deepcopy(entry)
+    normalized_entry["cargo_build_log"] = bundle_relative_path(cargo_destination, bundle_root)
+    normalized_entry["cargo_build_sha256"] = sha256_prefixed(cargo_destination)
+    normalized_entry["retirement_audit_report"] = bundle_relative_path(audit_destination, bundle_root)
+    normalized_entry["retirement_audit_sha256"] = sha256_prefixed(audit_destination)
+    normalized_entry["marker_scan_report"] = bundle_relative_path(marker_destination, bundle_root)
+    normalized_entry["marker_scan_sha256"] = sha256_prefixed(marker_destination)
+    write_json(args.out, normalized_entry)
 
 
 def validate_bake_in_inputs(platform: str, source_commit: str, bootstrap: Path, provenance: Path) -> None:
@@ -305,6 +432,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     bake.add_argument("--out", type=Path, required=True)
     bake.set_defaults(func=write_bake_in_entry)
 
+    normalize_bake = subparsers.add_parser(
+        "normalize-bake-in-entry",
+        help="copy a bake-in entry and its artifacts into a shared evidence bundle",
+    )
+    normalize_bake.add_argument("--entry", type=Path, required=True)
+    normalize_bake.add_argument("--source-evidence-root", type=Path, required=True)
+    normalize_bake.add_argument("--bundle-root", type=Path, required=True)
+    normalize_bake.add_argument("--out", type=Path, required=True)
+    normalize_bake.set_defaults(func=normalize_bake_in_entry)
+
     rollback = subparsers.add_parser("rollback-entry", help="write one rollback validation evidence entry")
     rollback.add_argument("--source-ref", required=True)
     rollback.add_argument("--source-commit", required=True)
@@ -316,6 +453,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     rollback.add_argument("--path-base", type=Path)
     rollback.add_argument("--out", type=Path, required=True)
     rollback.set_defaults(func=write_rollback_entry)
+
+    normalize_rollback = subparsers.add_parser(
+        "normalize-rollback-entry",
+        help="copy a rollback entry and its artifacts into a shared evidence bundle",
+    )
+    normalize_rollback.add_argument("--entry", type=Path, required=True)
+    normalize_rollback.add_argument("--source-evidence-root", type=Path, required=True)
+    normalize_rollback.add_argument("--bundle-root", type=Path, required=True)
+    normalize_rollback.add_argument("--out", type=Path, required=True)
+    normalize_rollback.set_defaults(func=normalize_rollback_entry)
 
     class_entry = subparsers.add_parser("class-entry", help="write one class decision evidence entry")
     class_entry.add_argument("--command", required=True)

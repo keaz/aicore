@@ -272,6 +272,9 @@
         "Rollback Validation Evidence",
         "Class Decision Evidence",
         "Reference Scan Evidence",
+        "normalize-bake-in-entry",
+        "normalize-rollback-entry",
+        "--approver",
         "--path-base",
         "--evidence-root"
       ]
@@ -282,6 +285,8 @@
         "Rust Reference Retirement",
         "docs/selfhost/rust-reference-retirement.md",
         "make selfhost-retirement-audit",
+        "normalize-bake-in-entry",
+        "--approver",
         "--path-base",
         "--evidence-root"
       ]
@@ -295,6 +300,9 @@
         "retirement_decision",
         "scripts/selfhost/retirement_evidence.py",
         "scripts/selfhost/retirement_reference_scan.py",
+        "normalize-bake-in-entry",
+        "normalize-rollback-entry",
+        "--approver",
         "--path-base",
         "--evidence-root",
         "python3 scripts/selfhost/retirement_audit.py --require-approved"
