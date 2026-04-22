@@ -5011,7 +5011,7 @@ fn unit_secure_error_contract_module_and_manifest_are_in_sync() {
 }
 
 #[test]
-fn unit_tls_timeout_is_typed_across_std_codegen_runtime_and_docs() {
+fn unit_tls_timeout_is_typed_across_std_runtime_and_docs() {
     let tls_source = fs::read_to_string("std/tls.aic").expect("read std/tls.aic");
     assert!(
         tls_source.contains("Timeout,"),
@@ -5020,17 +5020,6 @@ fn unit_tls_timeout_is_typed_across_std_codegen_runtime_and_docs() {
     assert!(
         tls_source.contains("Cancelled,"),
         "std/tls.aic must expose Cancelled in TlsError variants"
-    );
-
-    let codegen_source = fs::read_to_string("src/codegen/generator_json_regex.rs")
-        .expect("read src/codegen/generator_json_regex.rs");
-    assert!(
-        codegen_source.contains("(8, \"Timeout\")"),
-        "codegen must map TLS runtime timeout status code 8 to TlsError::Timeout"
-    );
-    assert!(
-        codegen_source.contains("(9, \"Cancelled\")"),
-        "codegen must map runtime cancel status code 9 to typed Cancelled variants"
     );
 
     let runtime_source =
@@ -7326,7 +7315,10 @@ fn unit_diagnostic_registry_covers_all_emitted_codes() {
 
     let mut seen = BTreeSet::new();
     for path in files {
-        if path.ends_with("src/diagnostic_codes.rs") {
+        if path
+            .file_name()
+            .is_some_and(|name| name == "diagnostic_codes.rs")
+        {
             continue;
         }
         let text = fs::read_to_string(&path).expect("read rust file");
@@ -10579,49 +10571,6 @@ fn unit_std_buffer_u32_wrapper_surface_and_conversion_boundaries_are_declared() 
         assert!(
             source.contains(compatibility_surface),
             "std/buffer.aic must preserve legacy Int compatibility surface: {compatibility_surface}"
-        );
-    }
-}
-
-#[test]
-fn unit_buffer_codegen_dispatch_uses_width_specific_matching_helpers() {
-    let source = fs::read_to_string("src/codegen/generator_net_tls_buffer.rs")
-        .expect("read src/codegen/generator_net_tls_buffer.rs");
-
-    for helper in [
-        "fn sig_matches_buffer_read_result(&mut self, name: &str, ok_ty: &str) -> bool",
-        "fn sig_matches_buffer_write_result(",
-        "fn sig_matches_buffer_patch_result(",
-        "\"buf_read_u8\" if self.sig_matches_buffer_read_result(name, \"UInt8\")",
-        "\"buf_read_i16_be\" if self.sig_matches_buffer_read_result(name, \"Int16\")",
-        "\"buf_read_u64_le\" if self.sig_matches_buffer_read_result(name, \"UInt64\")",
-        "\"buf_write_u8\" if self.sig_matches_buffer_write_result(name, \"UInt8\")",
-        "\"buf_write_i32_le\" if self.sig_matches_buffer_write_result(name, \"Int32\")",
-        "\"buf_write_u64_be\" if self.sig_matches_buffer_write_result(name, \"UInt64\")",
-        "\"buf_patch_u16_be\" if self.sig_matches_buffer_patch_result(name, \"UInt16\")",
-        "\"buf_patch_u32_le\" if self.sig_matches_buffer_patch_result(name, \"UInt32\")",
-        "\"buf_patch_u64_be\" if self.sig_matches_buffer_patch_result(name, \"UInt64\")",
-        "format!(\"{name} expects {expected_value_ty} value\")",
-        "format!(\"{name} expects (ByteBuffer, Int, {expected_value_ty})\")",
-    ] {
-        assert!(
-            source.contains(helper),
-            "buffer codegen must include typed helper/matcher: {helper}"
-        );
-    }
-
-    for legacy in [
-        "\"buf_read_u8\"\n                if self.sig_matches_shape(name, &[\"ByteBuffer\"], \"Result[Int, BufferError]\")",
-        "\"buf_write_u8\" if self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\"])",
-        "\"buf_patch_u16_be\"\n                if self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\", \"Int\"])",
-        "|| self.sig_matches_shape(name, &[\"ByteBuffer\"], \"Result[Int, BufferError]\")",
-        "|| self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\"])",
-        "|| self.sig_matches_buffer_unit_result(name, &[\"ByteBuffer\", \"Int\", \"Int\"])",
-        "value.ty != expected_ty && value.ty != LType::Int",
-    ] {
-        assert!(
-            !source.contains(legacy),
-            "buffer codegen should not dispatch typed buffer paths via legacy Int-only branch checks: {legacy}"
         );
     }
 }

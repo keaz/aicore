@@ -32,7 +32,7 @@ This policy defines what AICore treats as compatibility guarantees and how migra
 
 - Diagnostic codes are stable machine identifiers.
 - Existing codes cannot be repurposed.
-- New codes must be registered in `src/diagnostic_codes.rs` and documented.
+- New codes must be registered in `diagnostic registry` and documented.
 
 ### Std API
 

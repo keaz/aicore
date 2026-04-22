@@ -17,8 +17,8 @@ Use this as the minimum map before changing REST behavior.
 | Concern | Primary files |
 |---|---|
 | Frontend orchestration and package load | `src/driver.rs`, `src/package_loader.rs` |
-| Type/effect/contracts validation | `src/typecheck.rs`, `src/effects.rs`, `src/contracts.rs` |
-| Runtime lowering and HTTP/async runtime backends | `src/codegen/mod.rs`, `src/codegen/generator_net_tls_buffer.rs`, `src/codegen/runtime/part04.c`, `src/codegen/runtime/part05.c` |
+| Type/effect/contracts validation | `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic` |
+| Runtime lowering and HTTP/async runtime backends | `compiler/aic/libs/backend_llvm/src/main.aic`, `compiler/aic/libs/backend_llvm/src/main.aic`, `src/codegen/runtime/part04.c`, `src/codegen/runtime/part05.c` |
 | REST stdlib API surface | `std/http_server.aic`, `std/router.aic`, `std/net.aic`, `std/json.aic`, `std/string.aic`, `std/map.aic` |
 | Test coverage | `tests/unit_tests.rs`, `tests/execution_tests.rs`, `tests/e8_perf_tests.rs` |
 | Example and CI wiring | `scripts/ci/examples.sh` |
@@ -30,15 +30,15 @@ Machine-checkable file reference set:
 AGENTS.md
 docs/ai-agent-implementation.md
 scripts/ci/examples.sh
-src/codegen/mod.rs
-src/contracts.rs
+compiler/aic/libs/backend_llvm/src/main.aic
+compiler/aic/libs/typecheck/src/main.aic
 src/driver.rs
-src/effects.rs
-src/codegen/generator_net_tls_buffer.rs
+compiler/aic/libs/typecheck/src/main.aic
+compiler/aic/libs/backend_llvm/src/main.aic
 src/codegen/runtime/part04.c
 src/codegen/runtime/part05.c
 src/package_loader.rs
-src/typecheck.rs
+compiler/aic/libs/typecheck/src/main.aic
 std/http_server.aic
 std/json.aic
 std/map.aic
@@ -54,11 +54,11 @@ tests/unit_tests.rs
 
 | Change goal | Primary files | Required coverage |
 |---|---|---|
-| New REST stdlib API shape | `std/*.aic` + `src/codegen/mod.rs` intrinsic mapping | Unit delegate tests + execution behavior test + example |
-| HTTP parse/serialize behavior | `src/codegen/mod.rs` runtime C section + `std/http_server.aic` | Execution test with malformed and valid requests |
-| Route dispatch semantics | `std/router.aic` + `src/codegen/mod.rs` router runtime calls | Deterministic route precedence tests + example |
-| JSON payload behavior for REST | `std/json.aic` + `src/codegen/mod.rs` JSON lowering/runtime | Roundtrip and negative-path execution tests |
-| Async REST networking behavior | `std/net.aic` + `src/codegen/mod.rs` async runtime section | Multi-connection test + backpressure test + perf gate |
+| New REST stdlib API shape | `std/*.aic` + `compiler/aic/libs/backend_llvm/src/main.aic` intrinsic mapping | Unit delegate tests + execution behavior test + example |
+| HTTP parse/serialize behavior | `compiler/aic/libs/backend_llvm/src/main.aic` runtime C section + `std/http_server.aic` | Execution test with malformed and valid requests |
+| Route dispatch semantics | `std/router.aic` + `compiler/aic/libs/backend_llvm/src/main.aic` router runtime calls | Deterministic route precedence tests + example |
+| JSON payload behavior for REST | `std/json.aic` + `compiler/aic/libs/backend_llvm/src/main.aic` JSON lowering/runtime | Roundtrip and negative-path execution tests |
+| Async REST networking behavior | `std/net.aic` + `compiler/aic/libs/backend_llvm/src/main.aic` async runtime section | Multi-connection test + backpressure test + perf gate |
 
 ### REST + Async Support Matrix
 

@@ -131,12 +131,12 @@ Backend note:
 
 ## Implementation Map
 
-- Parser and grammar: `src/lexer.rs`, `src/parser.rs`, `docs/grammar.ebnf` (frozen source contract: `docs/syntax.md`)
-- AST/IR contracts: `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`
-- Canonical printing: `src/formatter.rs`
-- Type and pattern checks: `src/typecheck.rs`
-- Contract expression cloning/traversal: `src/contracts.rs`
-- LLVM lowering behavior: `src/codegen/mod.rs`
+- Parser and grammar: `compiler/aic/libs/lexer/src/main.aic`, `compiler/aic/libs/parser/src/main.aic`, `docs/grammar.ebnf` (frozen source contract: `docs/syntax.md`)
+- AST/IR contracts: `compiler/aic/libs/ast/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`
+- Canonical printing: `canonical formatting implementation`
+- Type and pattern checks: `compiler/aic/libs/typecheck/src/main.aic`
+- Contract expression cloning/traversal: `compiler/aic/libs/typecheck/src/main.aic`
+- LLVM lowering behavior: `compiler/aic/libs/backend_llvm/src/main.aic`
 
 ## Validation Workflow
 

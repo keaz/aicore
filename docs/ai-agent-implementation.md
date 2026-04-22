@@ -33,10 +33,10 @@ Core language-specific deep dive:
 - Frontend orchestration: `src/driver.rs`
 - Package loading and imports: `src/package_loader.rs`
 - Manifest/lock/checksum/cache: `src/package_workflow.rs`
-- Effects normalization + validation: `src/effects.rs`
-- Type/effect checking + generic instantiation recording: `src/typecheck.rs`
-- Contract static verification + runtime lowering: `src/contracts.rs`
-- LLVM backend + runtime ABI: `src/codegen/mod.rs`
+- Effects normalization + validation: `compiler/aic/libs/typecheck/src/main.aic`
+- Type/effect checking + generic instantiation recording: `compiler/aic/libs/typecheck/src/main.aic`
+- Contract static verification + runtime lowering: `compiler/aic/libs/typecheck/src/main.aic`
+- LLVM backend + runtime ABI: `compiler/aic/libs/backend_llvm/src/main.aic`
 - API doc generation: `src/docgen.rs`
 - Std compatibility/deprecation policy: `src/std_policy.rs`
 - SARIF diagnostics export: `src/sarif.rs`
@@ -53,7 +53,7 @@ Core language-specific deep dive:
 ## Named Function Arguments (`[ERGO-T6]`)
 
 - Parser contract: call sites support `name: value` in argument lists and carry labels via `arg_names: Vec<Option<String>>` on AST/IR call nodes.
-- Typechecker contract (`src/typecheck.rs`):
+- Typechecker contract (`compiler/aic/libs/typecheck/src/main.aic`):
   - validates named arguments against declared parameter names
   - enforces positional-then-named ordering (`E1092` on violations)
   - reports unknown/duplicate/missing named parameters with `E1213` and nearest-name suggestions
@@ -87,7 +87,7 @@ Use this checklist to gate closure of epic `#62`. Keep epic status as In Progres
 
 ### Effects
 
-- Canonical pass: `normalize_effect_declarations(program, file)` in `src/effects.rs`
+- Canonical pass: `normalize_effect_declarations(program, file)` in `compiler/aic/libs/typecheck/src/main.aic`
 - Known taxonomy: `io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`
 - Diagnostics:
   - unknown effect: `E2003`
@@ -97,7 +97,7 @@ Use this checklist to gate closure of epic `#62`. Keep epic status as In Progres
 
 ### Contracts
 
-- Static verifier: `verify_static(program, file)` in `src/contracts.rs`
+- Static verifier: `verify_static(program, file)` in `compiler/aic/libs/typecheck/src/main.aic`
 - Runtime lowering: `lower_runtime_asserts(program)`
 - Guarantees:
   - `requires` checks at function entry
@@ -108,7 +108,7 @@ Use this checklist to gate closure of epic `#62`. Keep epic status as In Progres
 
 ### Toolchain contract
 
-In `src/codegen/mod.rs`:
+In `compiler/aic/libs/backend_llvm/src/main.aic`:
 
 - `probe_toolchain()` inspects `clang --version`
 - `MIN_SUPPORTED_LLVM_MAJOR = 14`
@@ -274,7 +274,7 @@ Diagnostics:
 
 ### Native dependency bridge (PKG-T3)
 
-`src/package_workflow.rs`, `src/typecheck.rs`, `src/codegen/mod.rs`, `src/main.rs`, and `src/driver.rs` now form the FFI bridge pipeline.
+`src/package_workflow.rs`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/backend_llvm/src/main.aic`, `src/main.rs`, and `src/driver.rs` now form the FFI bridge pipeline.
 
 - Frontend syntax:
   - `extern "C" fn ...;`
@@ -301,7 +301,7 @@ Implementation and test references:
 
 ### Intrinsic declarations (AGX1-T1)
 
-`src/lexer.rs`, `src/parser.rs`, `src/ir.rs`, `src/formatter.rs`, and `src/typecheck.rs` model intrinsic runtime bindings directly.
+`compiler/aic/libs/lexer/src/main.aic`, `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `canonical formatting implementation`, and `compiler/aic/libs/typecheck/src/main.aic` model intrinsic runtime bindings directly.
 
 - Surface syntax: `intrinsic fn ... -> ... effects { ... };`
 - Intrinsic declarations are signature-only; parser rejects bodies/contracts/generics with `E1093`.
@@ -910,14 +910,14 @@ Verifier-focused examples:
   - `>>` is arithmetic right shift; `>>>` is logical right shift.
   - Bool misuse diagnostics suggest `&&` / `||`.
 - Implementation files:
-  - `src/lexer.rs`
-  - `src/parser.rs`
-  - `src/typecheck.rs`
-  - `src/codegen/mod.rs`
+  - `compiler/aic/libs/lexer/src/main.aic`
+  - `compiler/aic/libs/parser/src/main.aic`
+  - `compiler/aic/libs/typecheck/src/main.aic`
+  - `compiler/aic/libs/backend_llvm/src/main.aic`
 - Verification:
-  - `src/lexer.rs` parser/lexer unit tests include hex + bitwise token coverage.
-  - `src/parser.rs` tests cover precedence and compound assignment desugaring.
-  - `src/typecheck.rs` tests cover accepted `Int` paths and rejected `Bool` misuse.
+  - `compiler/aic/libs/lexer/src/main.aic` parser/lexer unit tests include hex + bitwise token coverage.
+  - `compiler/aic/libs/parser/src/main.aic` tests cover precedence and compound assignment desugaring.
+  - `compiler/aic/libs/typecheck/src/main.aic` tests cover accepted `Int` paths and rejected `Bool` misuse.
   - `tests/execution_tests.rs` includes runtime validation of all operators.
 - Example:
   - `examples/data/bitwise_protocol.aic`
@@ -1119,7 +1119,7 @@ Examples are integrated into `scripts/ci/examples.sh`.
 2. Do not bypass checksum validation when lockfile is present.
 3. Keep offline mode conservative: fail fast on missing/corrupted cache.
 4. When changing std API surface, update baseline intentionally and review deprecations.
-5. Keep new diagnostics registered in `src/diagnostic_codes.rs`.
+5. Keep new diagnostics registered in `diagnostic registry`.
 6. Run `make ci` before commit.
 7. For E8 changes, update corpus/budget docs and ensure `make test-e8` remains deterministic.
 8. For E9 changes, run `make test-e9`, `make security-audit`, and `make repro-check`.

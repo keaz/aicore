@@ -1,6 +1,6 @@
 # Effect Protocol Verification
 
-This runbook documents resource protocol checks in `src/typecheck.rs`.
+This runbook documents resource protocol checks in `compiler/aic/libs/typecheck/src/main.aic`.
 
 ## Effect Rules
 

@@ -7,8 +7,8 @@ This document describes the current AICore compiler/runtime architecture as impl
 ## Repository Layers
 
 - CLI orchestration: `src/main.rs`, `src/cli_contract.rs`, `src/coverage.rs`, `src/impact.rs`, `src/profile.rs`
-- Frontend pipeline: `src/package_loader.rs`, `src/parser.rs`, `src/ir_builder.rs`, `src/effects.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/contracts.rs`
-- Backend/code generation: `src/codegen/mod.rs`
+- Frontend pipeline: `src/package_loader.rs`, `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/frontend/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`
+- Backend/code generation: `compiler/aic/libs/backend_llvm/src/main.aic`
 - Tooling surfaces: `src/lsp.rs`, `src/daemon.rs`, `src/docgen.rs`, `src/diag_fixes.rs`
 - Package/workspace workflows: `src/package_workflow.rs`, `src/package_registry.rs`
 - Verification and test harness support: `src/conformance.rs`, `src/differential.rs`, `src/fuzzing.rs`, `src/execution_matrix.rs`, `src/perf_gate.rs`, `src/test_harness.rs`
@@ -63,7 +63,7 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 - `aic check` / `aic diag`: frontend diagnostics, optional JSON/SARIF output (`src/sarif.rs`)
 - `aic impact`: frontend + typecheck call graph + test/contract cross-reference (`src/impact.rs`)
 - `aic coverage`: deterministic coverage JSON from scanned source functions + diagnostics (`src/coverage.rs`)
-- `aic fmt`: parse + IR format (`src/formatter.rs`)
+- `aic fmt`: parse + IR format (`canonical formatting implementation`)
 - `aic ir`: frontend + IR emit
 - `aic build`: frontend + contract lowering + codegen + clang
 - `aic run`: build pipeline + sandboxed process execution (`src/sandbox.rs`)
@@ -77,17 +77,17 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 ## Extension Points
 
 ### 1) Language grammar and AST
-- Edit: `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir_builder.rs`, `src/formatter.rs`
+- Edit: `compiler/aic/libs/lexer/src/main.aic`, `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ast/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `canonical formatting implementation`
 - Update reference docs: `docs/reference/*.md`
 - Validate with: `tests/golden_tests.rs`, `tests/unit_tests.rs`, `tests/e8_differential_tests.rs`
 
 ### 2) Type/effect/contracts semantics
-- Edit: `src/typecheck.rs`, `src/effects.rs`, `src/contracts.rs`, `src/resolver.rs`
-- Add/maintain diagnostic codes: `src/diagnostic_codes.rs`, `docs/diagnostic-codes.md`
+- Edit: `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/frontend/src/main.aic`
+- Add/maintain diagnostic codes: `diagnostic registry`, `docs/diagnostic-codes.md`
 - Validate with: `tests/unit_tests.rs`, `tests/e7_cli_tests.rs`, `tests/e8_conformance_tests.rs`
 
 ### 3) Backend lowering and runtime ABI
-- Edit: `src/codegen/mod.rs`
+- Edit: `compiler/aic/libs/backend_llvm/src/main.aic`
 - Keep behavior aligned with std APIs in `std/*.aic`
 - Validate with: `tests/execution_tests.rs`, `tests/e8_matrix_tests.rs`
 
@@ -107,12 +107,12 @@ For open language issues `#128`, `#130`, `#136`, `#137`, `#138`, `#139`, use
 
 | Issue | Primary implementation files | Minimum validation focus |
 | --- | --- | --- |
-| `#128` tuple types | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen/mod.rs` | `tests/golden_tests.rs`, `tests/unit_tests.rs`, compile-fail fixtures, `tests/execution_tests.rs` |
-| `#130` struct methods | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs`, `src/codegen/mod.rs` | parser/resolver/typecheck tests, method call execution tests |
-| `#136` trait methods + dispatch | `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/codegen/mod.rs` | trait conformance tests, generic bound call tests, dispatch-path execution tests |
-| `#137` borrow completeness | `src/typecheck.rs` (borrow model), supporting IR/type utilities | borrow compile-fail matrix + run-pass safety cases |
-| `#138` constraints + `where` | `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`, `src/ir.rs`, `src/ir_builder.rs`, `src/resolver.rs`, `src/typecheck.rs`, `src/formatter.rs` | generic-bound parser/typecheck tests and equivalence tests |
-| `#139` inference improvements | `src/typecheck.rs` (constraint solving/inference), related resolver/type utilities | inference-focused unit tests with ambiguity/failure cases |
+| `#128` tuple types | `compiler/aic/libs/lexer/src/main.aic`, `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ast/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `canonical formatting implementation`, `compiler/aic/libs/backend_llvm/src/main.aic` | `tests/golden_tests.rs`, `tests/unit_tests.rs`, compile-fail fixtures, `tests/execution_tests.rs` |
+| `#130` struct methods | `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ast/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/frontend/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `canonical formatting implementation`, `compiler/aic/libs/backend_llvm/src/main.aic` | parser/resolver/typecheck tests, method call execution tests |
+| `#136` trait methods + dispatch | `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ast/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/frontend/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/backend_llvm/src/main.aic` | trait conformance tests, generic bound call tests, dispatch-path execution tests |
+| `#137` borrow completeness | `compiler/aic/libs/typecheck/src/main.aic` (borrow model), supporting IR/type utilities | borrow compile-fail matrix + run-pass safety cases |
+| `#138` constraints + `where` | `compiler/aic/libs/lexer/src/main.aic`, `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ast/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/ir/src/main.aic`, `compiler/aic/libs/frontend/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `canonical formatting implementation` | generic-bound parser/typecheck tests and equivalence tests |
+| `#139` inference improvements | `compiler/aic/libs/typecheck/src/main.aic` (constraint solving/inference), related resolver/type utilities | inference-focused unit tests with ambiguity/failure cases |
 
 ## Test Infrastructure Map
 

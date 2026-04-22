@@ -2,7 +2,7 @@
 
 See also: [Syntax](./syntax.md), [Generics](./generics.md), [Memory](./memory.md), [Expressions](./expressions.md)
 
-This page describes the surface type grammar and the type relations enforced in `src/typecheck.rs`.
+This page describes the surface type grammar and the type relations enforced in `compiler/aic/libs/typecheck/src/main.aic`.
 
 ## Grammar
 

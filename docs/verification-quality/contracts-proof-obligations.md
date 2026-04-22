@@ -1,6 +1,6 @@
 # Contracts Proof Obligations
 
-This runbook documents the static verifier model in `src/contracts.rs`.
+This runbook documents the static verifier model in `compiler/aic/libs/typecheck/src/main.aic`.
 
 ## Obligation Types
 

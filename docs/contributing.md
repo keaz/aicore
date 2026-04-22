@@ -35,9 +35,9 @@ make init
 ## Development Workflow
 
 1. Identify subsystem ownership
-- Frontend grammar/parsing: `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`
-- Semantic checks: `src/resolver.rs`, `src/typecheck.rs`, `src/effects.rs`, `src/contracts.rs`
-- Backend/runtime lowering: `src/codegen/mod.rs`
+- Frontend grammar/parsing: `compiler/aic/libs/lexer/src/main.aic`, `compiler/aic/libs/parser/src/main.aic`, `compiler/aic/libs/ast/src/main.aic`
+- Semantic checks: `compiler/aic/libs/frontend/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/typecheck/src/main.aic`
+- Backend/runtime lowering: `compiler/aic/libs/backend_llvm/src/main.aic`
 - Package/workspace flows: `src/package_loader.rs`, `src/package_workflow.rs`, `src/package_registry.rs`
 
 2. Implement and keep docs synchronized
@@ -45,7 +45,7 @@ make init
 - Update `docs/spec.md` when externally visible guarantees change.
 
 3. Add or update diagnostics when needed
-- Register new diagnostic code in `src/diagnostic_codes.rs`.
+- Register new diagnostic code in `diagnostic registry`.
 - Update `docs/diagnostic-codes.md`.
 - Verify `aic explain <CODE>` coverage.
 
@@ -162,7 +162,7 @@ Golden workflow examples are documented in `docs/examples/test-golden-workflow.m
 
 ### Adding std/runtime APIs
 
-- Update std surface in `std/*.aic` and backend lowering in `src/codegen/mod.rs`.
+- Update std surface in `std/*.aic` and backend lowering in `compiler/aic/libs/backend_llvm/src/main.aic`.
 - Validate with execution tests and examples.
 - Keep compatibility/deprecation policies coherent (`aic std-compat --check`).
 

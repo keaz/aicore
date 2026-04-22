@@ -21,7 +21,7 @@ Key rules:
 Every intrinsic-backed API must satisfy all of the following:
 
 - Source declaration exists (`intrinsic fn ...;`).
-- Codegen lowering exists (`src/codegen/mod.rs` intrinsic binding table).
+- Codegen lowering exists (`compiler/aic/libs/backend_llvm/src/main.aic` intrinsic binding table).
 - Runtime symbol mapping exists and is non-empty.
 - Declared signature matches expected lowering signature.
 

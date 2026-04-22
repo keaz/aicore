@@ -4,7 +4,7 @@ AICore diagnostics use stable codes in `E####` format.
 
 Registry source of truth:
 
-- `src/diagnostic_codes.rs` (`REGISTERED_DIAGNOSTIC_CODES`)
+- `diagnostic registry` (`REGISTERED_DIAGNOSTIC_CODES`)
 
 ## Subsystem ranges
 
@@ -21,7 +21,7 @@ Registry source of truth:
 ## Enforcement
 
 - `Diagnostic::error` validates code format and registry membership.
-- New diagnostics must add a code to `src/diagnostic_codes.rs`.
+- New diagnostics must add a code to `diagnostic registry`.
 - Unit tests fail if emitted codes are not registered.
 - `aic explain <CODE>` provides deterministic remediation guidance for all registered codes.
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import subprocess
 import sys
@@ -26,6 +27,7 @@ DEFAULT_ALLOW_PATHS = {
     "docs/selfhost/rust-reference-retirement.v1.json",
 }
 GLOB_CHARS = "*?["
+PATH_CANDIDATE = re.compile(r"[A-Za-z0-9_./-]+")
 
 
 def default_repo_root() -> Path:
@@ -72,6 +74,25 @@ def token_from_pattern(pattern: str) -> str:
     if slash >= 0:
         return prefix[: slash + 1]
     return prefix or pattern
+
+
+def line_path_candidates(line: str) -> list[str]:
+    candidates: list[str] = []
+    for raw in PATH_CANDIDATE.findall(line):
+        candidate = raw.strip("`'\"()[]{}<>,;:")
+        if "/" not in candidate:
+            continue
+        candidates.append(candidate)
+    return candidates
+
+
+def line_matches_pattern(line: str, pattern: str) -> bool:
+    if not has_glob(pattern):
+        return pattern in line
+    for candidate in line_path_candidates(line):
+        if Path(candidate).match(pattern):
+            return True
+    return False
 
 
 def tracked_files(repo_root: Path) -> list[Path]:
@@ -185,6 +206,12 @@ def build_report(
     manifest = read_json(manifest_path)
     targets = retired_class_targets(manifest, problems)
     tokens = sorted({token for target in targets for token in target["reference_tokens"]})
+    pattern_entries = [
+        (pattern, token_from_pattern(pattern))
+        for target in targets
+        for pattern in target["patterns"]
+        if isinstance(pattern, str) and pattern
+    ]
     candidates, scan_problems = scan_file_candidates(repo_root, scan_roots, allow_paths)
     problems.extend(scan_problems)
 
@@ -198,8 +225,8 @@ def build_report(
             continue
         scanned_files += 1
         for line_number, line in enumerate(text.splitlines(), start=1):
-            for token in tokens:
-                if token in line:
+            for pattern, token in pattern_entries:
+                if line_matches_pattern(line, pattern):
                     findings.append(
                         {
                             "path": display_path(path, repo_root),

@@ -2,7 +2,7 @@
 
 See also: [Statements](./statements.md), [Pattern Matching](./pattern-matching.md), [Effects](./effects.md), [Memory](./memory.md)
 
-This page covers expression grammar and typing/effect rules implemented by `src/parser.rs` and `src/typecheck.rs`.
+This page covers expression grammar and typing/effect rules implemented by `compiler/aic/libs/parser/src/main.aic` and `compiler/aic/libs/typecheck/src/main.aic`.
 
 ## Grammar
 

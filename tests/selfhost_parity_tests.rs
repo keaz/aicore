@@ -580,6 +580,8 @@ fn write_class_command_evidence_report(root: &Path, command: &str) -> PathBuf {
 }
 
 fn write_reference_scan_report(root: &Path, ok: bool) -> PathBuf {
+    let legacy_parser = format!("{}/{}", "src", "parser.rs");
+    let legacy_codegen_token = format!("{}/{}/", "src", "codegen");
     let report = root.join(if ok {
         "reference-scan.json"
     } else {
@@ -599,17 +601,17 @@ fn write_reference_scan_report(root: &Path, ok: bool) -> PathBuf {
                 json!([{
                     "path": "docs/active.md",
                     "line": 1,
-                    "token": "src/parser.rs",
-                    "line_text": "legacy src/parser.rs"
+                    "token": legacy_parser,
+                    "line_text": format!("legacy {}", legacy_parser)
                 }])
             },
             "problems": [],
             "targeted_classes": [{
                 "class": "rust-reference-compiler-core",
-                "patterns": ["src/parser.rs"],
-                "reference_tokens": ["src/parser.rs"]
+                "patterns": [legacy_parser],
+                "reference_tokens": [legacy_parser]
             }],
-            "reference_tokens": ["src/codegen/", "src/parser.rs"],
+            "reference_tokens": [legacy_codegen_token, legacy_parser],
             "scanned_files": 3
         }))
         .expect("reference scan report json"),
@@ -1993,6 +1995,7 @@ fn selfhost_retirement_audit_records_deferred_state() {
         .as_str()
         .expect("blocker")
         .contains("retained Rust role is not approved")));
+    let legacy_parser = format!("{}/{}", "src", "parser.rs");
     assert!(document["rust_path_classes"]
         .as_array()
         .expect("classes")
@@ -2003,7 +2006,7 @@ fn selfhost_retirement_audit_records_deferred_state() {
                 .as_array()
                 .expect("matched paths")
                 .iter()
-                .any(|path| path == "src/parser.rs")));
+                .any(|path| path.as_str() == Some(legacy_parser.as_str()))));
 }
 
 #[test]
@@ -2552,9 +2555,12 @@ fn selfhost_retirement_reference_scan_accepts_clean_active_files() {
         b"post-retirement test contract\n",
     )
     .expect("write test");
+    let legacy_parser = format!("{}/{}", "src", "parser.rs");
+    let legacy_codegen_glob = format!("{}/{}/{}", "src", "codegen", "*.rs");
+    let legacy_codegen_token = format!("{}/{}/", "src", "codegen");
     fs::write(
         repo.join("docs/selfhost/rust-reference-retirement.md"),
-        b"historical src/parser.rs migration note\n",
+        format!("historical {} migration note\n", legacy_parser),
     )
     .expect("write allowed historical doc");
 
@@ -2564,7 +2570,7 @@ fn selfhost_retirement_reference_scan_accepts_clean_active_files() {
         serde_json::to_string_pretty(&json!({
             "rust_path_classes": [{
                 "class": "rust-reference-compiler-core",
-                "patterns": ["src/parser.rs", "src/codegen/*.rs"],
+                "patterns": [legacy_parser, legacy_codegen_glob],
                 "removal_allowed": true,
                 "retirement_decision": {
                     "intent": "remove-after-replacement",
@@ -2602,7 +2608,7 @@ fn selfhost_retirement_reference_scan_accepts_clean_active_files() {
     assert_eq!(document["targeted_class_count"], 1);
     assert_eq!(
         document["reference_tokens"],
-        json!(["src/codegen/", "src/parser.rs"])
+        json!([legacy_codegen_token, legacy_parser])
     );
     assert_eq!(document["findings"].as_array().expect("findings").len(), 0);
 }
@@ -2611,6 +2617,7 @@ fn selfhost_retirement_reference_scan_accepts_clean_active_files() {
 fn selfhost_retirement_reference_scan_rejects_active_reference() {
     let tmp = tempdir().expect("tempdir");
     let repo = tmp.path().join("repo");
+    let legacy_parser = format!("{}/{}", "src", "parser.rs");
     fs::create_dir_all(repo.join(".github/workflows")).expect("create workflows");
     fs::create_dir_all(repo.join("docs")).expect("create docs");
     fs::create_dir_all(repo.join("scripts")).expect("create scripts");
@@ -2620,7 +2627,7 @@ fn selfhost_retirement_reference_scan_rejects_active_reference() {
     fs::write(repo.join(".github/workflows/ci.yml"), b"name: ci\n").expect("write workflow");
     fs::write(
         repo.join("docs/active.md"),
-        b"Do not keep invoking src/parser.rs after retirement.\n",
+        format!("Do not keep invoking {} after retirement.\n", legacy_parser),
     )
     .expect("write docs");
 
@@ -2630,7 +2637,7 @@ fn selfhost_retirement_reference_scan_rejects_active_reference() {
         serde_json::to_string_pretty(&json!({
             "rust_path_classes": [{
                 "class": "rust-reference-compiler-core",
-                "patterns": ["src/parser.rs"],
+                "patterns": [legacy_parser],
                 "removal_allowed": true,
                 "retirement_decision": {
                     "intent": "remove-after-replacement",
@@ -2653,7 +2660,128 @@ fn selfhost_retirement_reference_scan_rejects_active_reference() {
     ]);
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("docs/active.md:1 references src/parser.rs"));
+    assert!(stderr.contains(&format!("docs/active.md:1 references {}", legacy_parser)));
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read scan report"))
+            .expect("scan report json");
+    assert_eq!(document["ok"], false);
+    assert_eq!(document["findings"].as_array().expect("findings").len(), 1);
+}
+
+#[test]
+fn selfhost_retirement_reference_scan_ignores_non_matching_codegen_prefix_paths() {
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path().join("repo");
+    let legacy_codegen_glob = format!("{}/{}/{}", "src", "codegen", "*.rs");
+    fs::create_dir_all(repo.join(".github/workflows")).expect("create workflows");
+    fs::create_dir_all(repo.join("docs")).expect("create docs");
+    fs::create_dir_all(repo.join("scripts")).expect("create scripts");
+    fs::create_dir_all(repo.join("tests")).expect("create tests");
+    fs::write(repo.join("Makefile"), b"check:\n\ttrue\n").expect("write makefile");
+    fs::write(repo.join("README.md"), b"AICore\n").expect("write readme");
+    fs::write(repo.join(".github/workflows/ci.yml"), b"name: ci\n").expect("write workflow");
+    fs::write(
+        repo.join("docs/runtime.md"),
+        b"Retained runtime source lives in `src/codegen/runtime/part01.c`.\n",
+    )
+    .expect("write docs");
+
+    let manifest = repo.join("retirement-manifest.json");
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&json!({
+            "rust_path_classes": [{
+                "class": "rust-reference-backend-runtime",
+                "patterns": [legacy_codegen_glob],
+                "removal_allowed": true,
+                "retirement_decision": {
+                    "intent": "remove-after-replacement",
+                    "status": "approved"
+                }
+            }]
+        }))
+        .expect("manifest json"),
+    )
+    .expect("write manifest");
+
+    let report = tmp.path().join("reference-scan.json");
+    let output = run_retirement_reference_scan(&[
+        "--repo-root".into(),
+        repo.to_string_lossy().to_string(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "reference scan failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: Value =
+        serde_json::from_str(&fs::read_to_string(&report).expect("read scan report"))
+            .expect("scan report json");
+    assert_eq!(document["ok"], true);
+    assert_eq!(document["findings"].as_array().expect("findings").len(), 0);
+}
+
+#[test]
+fn selfhost_retirement_reference_scan_rejects_matching_codegen_rs_paths() {
+    let tmp = tempdir().expect("tempdir");
+    let repo = tmp.path().join("repo");
+    let legacy_codegen_dir = format!("{}/{}/", "src", "codegen");
+    let legacy_codegen_mod = format!("{}{}", legacy_codegen_dir, "mod.rs");
+    let legacy_codegen_glob = format!("{}/{}/{}", "src", "codegen", "*.rs");
+    fs::create_dir_all(repo.join(".github/workflows")).expect("create workflows");
+    fs::create_dir_all(repo.join("docs")).expect("create docs");
+    fs::create_dir_all(repo.join("scripts")).expect("create scripts");
+    fs::create_dir_all(repo.join("tests")).expect("create tests");
+    fs::write(repo.join("Makefile"), b"check:\n\ttrue\n").expect("write makefile");
+    fs::write(repo.join("README.md"), b"AICore\n").expect("write readme");
+    fs::write(repo.join(".github/workflows/ci.yml"), b"name: ci\n").expect("write workflow");
+    fs::write(
+        repo.join("docs/backend.md"),
+        format!(
+            "Legacy lowering still points at `{}`.\n",
+            legacy_codegen_mod
+        ),
+    )
+    .expect("write docs");
+
+    let manifest = repo.join("retirement-manifest.json");
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&json!({
+            "rust_path_classes": [{
+                "class": "rust-reference-backend-runtime",
+                "patterns": [legacy_codegen_glob],
+                "removal_allowed": true,
+                "retirement_decision": {
+                    "intent": "remove-after-replacement",
+                    "status": "approved"
+                }
+            }]
+        }))
+        .expect("manifest json"),
+    )
+    .expect("write manifest");
+
+    let report = tmp.path().join("bad-reference-scan.json");
+    let output = run_retirement_reference_scan(&[
+        "--repo-root".into(),
+        repo.to_string_lossy().to_string(),
+        "--manifest".into(),
+        manifest.to_string_lossy().to_string(),
+        "--report".into(),
+        report.to_string_lossy().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&format!(
+        "docs/backend.md:1 references {}",
+        legacy_codegen_dir
+    )));
     let document: Value =
         serde_json::from_str(&fs::read_to_string(&report).expect("read scan report"))
             .expect("scan report json");

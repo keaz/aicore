@@ -2,7 +2,7 @@
 
 See also: [Types](./types.md), [Expressions](./expressions.md), [Statements](./statements.md), [Modules](./modules.md), [Frozen EBNF Artifact](../grammar.ebnf)
 
-This page documents the concrete grammar accepted by `src/lexer.rs` and `src/parser.rs`.
+This page documents the concrete grammar accepted by `compiler/aic/libs/lexer/src/main.aic` and `compiler/aic/libs/parser/src/main.aic`.
 The canonical machine-readable artifact is [`docs/grammar.ebnf`](../grammar.ebnf), sourced from the frozen contract in `docs/syntax.md`.
 
 ## Grammar

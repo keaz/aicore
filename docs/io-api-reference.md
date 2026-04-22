@@ -1,7 +1,7 @@
 # IO API Reference
 
 This file is the agent-facing reference for the current IO runtime surface.
-Source of truth is the current repository state in `std/*.aic` and runtime lowering in `src/codegen/mod.rs`.
+Source of truth is the current repository state in `std/*.aic` and runtime lowering in `compiler/aic/libs/backend_llvm/src/main.aic`.
 It includes the direct IO primitives plus the current control-plane modules used by app startup and request dispatch (`std.http_server`, `std.router`, and `std.config`).
 
 ## Scope
@@ -44,7 +44,7 @@ Covered modules:
 
 ## Effect Taxonomy
 
-Known effects (from `src/effects.rs`):
+Known effects (from `compiler/aic/libs/typecheck/src/main.aic`):
 
 - `io`
 - `fs`
@@ -59,7 +59,7 @@ Typechecking enforces direct and transitive effect declarations (`E2001`, `E2005
 
 ## Runtime Error Mapping
 
-The backend maps runtime status codes to typed error enums in `src/codegen/mod.rs`.
+The backend maps runtime status codes to typed error enums in `compiler/aic/libs/backend_llvm/src/main.aic`.
 
 | Module | Status-to-variant mapping |
 |---|---|

@@ -5,8 +5,8 @@ Purpose: map implemented AICore language features to practical AI-agent authorin
 Primary implementation references:
 - [`README.md`](../../README.md)
 - [`OriginalPrompt.md`](../../OriginalPrompt.md)
-- [`src/parser.rs`](../../src/parser.rs)
-- [`src/typecheck.rs`](../../src/typecheck.rs)
+- [`compiler/aic/libs/parser/src/main.aic`](../../compiler/aic/libs/parser/src/main.aic)
+- [`compiler/aic/libs/typecheck/src/main.aic`](../../compiler/aic/libs/typecheck/src/main.aic)
 - [`docs/reference/`](../reference/)
 - [`docs/diagnostic-codes.md`](../diagnostic-codes.md)
 
@@ -44,7 +44,7 @@ Use these features only when their verification and diagnostics loops are part o
 
 Guaranteed (ship-level) behavior comes from:
 - [`docs/reference/*.md`](../reference/)
-- [`src/parser.rs`](../../src/parser.rs) + [`src/typecheck.rs`](../../src/typecheck.rs)
+- [`compiler/aic/libs/parser/src/main.aic`](../../compiler/aic/libs/parser/src/main.aic) + [`compiler/aic/libs/typecheck/src/main.aic`](../../compiler/aic/libs/typecheck/src/main.aic)
 - [`docs/diagnostic-codes.md`](../diagnostic-codes.md)
 
 Open/future behavior must be treated as non-guaranteed backlog and verified before automation depends on it:

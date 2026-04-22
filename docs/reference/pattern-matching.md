@@ -2,7 +2,7 @@
 
 See also: [Expressions](./expressions.md), [Types](./types.md), [Generics](./generics.md)
 
-This page describes `match` patterns and coverage rules implemented in `src/parser.rs` and `src/typecheck.rs`.
+This page describes `match` patterns and coverage rules implemented in `compiler/aic/libs/parser/src/main.aic` and `compiler/aic/libs/typecheck/src/main.aic`.
 
 ## Grammar
 

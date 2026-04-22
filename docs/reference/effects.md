@@ -2,7 +2,7 @@
 
 See also: [Expressions](./expressions.md), [Contracts](./contracts.md), [Modules](./modules.md)
 
-This page documents declared effect syntax and enforcement in `src/effects.rs` and `src/typecheck.rs`.
+This page documents declared effect syntax and enforcement in `compiler/aic/libs/typecheck/src/main.aic` and `compiler/aic/libs/typecheck/src/main.aic`.
 
 ## Grammar
 

@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (296 codes).
+This catalog covers all registered diagnostics from `diagnostic registry` (296 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 

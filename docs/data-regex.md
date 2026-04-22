@@ -182,7 +182,7 @@ Behavior:
 
 ### Runtime Integration
 
-- URL parsing/normalization and HTTP validators are runtime-backed intrinsics in `src/codegen/mod.rs`.
+- URL parsing/normalization and HTTP validators are runtime-backed intrinsics in `compiler/aic/libs/backend_llvm/src/main.aic`.
 - `std.url.net_addr` is designed for direct use with `std.net` APIs (for example `tcp_listen`/`tcp_connect` address input).
 
 ### Example
