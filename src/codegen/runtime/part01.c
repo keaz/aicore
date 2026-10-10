@@ -58,7 +58,8 @@
 #ifdef _WIN32
 #define AIC_RT_WINDOWS_SHARED_RUNTIME 1
 
-#ifndef _TIMESPEC_DEFINED
+// The Universal CRT (`_UCRT`) declares `struct timespec` in <time.h>; older CRTs do not.
+#if !defined(_TIMESPEC_DEFINED) && !defined(_UCRT)
 #define _TIMESPEC_DEFINED
 struct timespec {
     time_t tv_sec;
@@ -224,6 +225,13 @@ static int pthread_mutex_lock(pthread_mutex_t* mutex) {
     }
     AcquireSRWLockExclusive(mutex);
     return 0;
+}
+
+static int pthread_mutex_trylock(pthread_mutex_t* mutex) {
+    if (mutex == NULL) {
+        return EINVAL;
+    }
+    return TryAcquireSRWLockExclusive(mutex) ? 0 : EBUSY;
 }
 
 static int pthread_mutex_unlock(pthread_mutex_t* mutex) {

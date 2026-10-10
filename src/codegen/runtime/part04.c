@@ -947,7 +947,8 @@ static long aic_rt_net_map_gai_error(int err) {
         case EAI_NONAME:
             return 1;  // NotFound
 #endif
-#ifdef EAI_NODATA
+#if defined(EAI_NODATA) && (!defined(EAI_NONAME) || EAI_NODATA != EAI_NONAME)
+        // Windows defines EAI_NODATA as an alias of EAI_NONAME.
         case EAI_NODATA:
             return 1;  // NotFound
 #endif

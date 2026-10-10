@@ -2722,3 +2722,58 @@ fn panic_runtime_and_ir_abi_match() {
     assert!(runtime_c_source().contains("void aic_rt_crypto_random_bytes("));
     assert!(runtime_c_source().contains("long aic_rt_crypto_secure_eq("));
 }
+
+/// Returns the conditional-compilation frames enclosing the first line containing `marker`,
+/// as (opening directive, inside `#else` branch) pairs from outermost to innermost.
+fn runtime_conditional_frames(source: &str, marker: &str) -> Vec<(String, bool)> {
+    let mut stack: Vec<(String, bool)> = Vec::new();
+    for line in source.lines() {
+        if line.contains(marker) && !line.trim_start().starts_with("//") {
+            return stack;
+        }
+        let directive = line.trim_start();
+        if directive.starts_with("#if") {
+            stack.push((directive.to_string(), false));
+        } else if directive.starts_with("#elif") || directive.starts_with("#else") {
+            let frame = stack.last_mut().expect("unbalanced #else in runtime source");
+            frame.1 = true;
+        } else if directive.starts_with("#endif") {
+            stack.pop().expect("unbalanced #endif in runtime source");
+        }
+    }
+    panic!("marker `{marker}` not found in runtime source");
+}
+
+#[test]
+fn runtime_windows_shim_is_active_only_under_win32() {
+    let source = runtime_c_source();
+    for marker in [
+        "#define AIC_RT_WINDOWS_SHARED_RUNTIME 1",
+        "typedef INIT_ONCE pthread_once_t;",
+        "#define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT",
+        "#define S_ISREG(mode)",
+        "#define S_ISDIR(mode)",
+    ] {
+        let frames = runtime_conditional_frames(source, marker);
+        assert!(
+            frames.iter().any(|(directive, _)| directive == "#ifdef _WIN32"),
+            "`{marker}` must be guarded by `#ifdef _WIN32`, frames: {frames:?}"
+        );
+        for (directive, in_else) in &frames {
+            let windows_branch = directive == "#ifdef _WIN32" && !in_else;
+            let include_guard = directive.starts_with("#ifndef ") && !in_else;
+            assert!(
+                windows_branch || include_guard,
+                "`{marker}` is reachable only through `{directive}` (else branch: {in_else}); \
+                 the Windows shim must not be nested under a POSIX branch"
+            );
+        }
+    }
+
+    let posix_frames = runtime_conditional_frames(source, "typedef int aic_rt_socket_t;");
+    assert_eq!(
+        posix_frames,
+        vec![("#ifdef _WIN32".to_string(), true)],
+        "POSIX socket typedef must be the `#else` branch of the top-level Windows shim"
+    );
+}

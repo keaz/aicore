@@ -166,6 +166,18 @@ Golden workflow examples are documented in `docs/examples/test-golden-workflow.m
 - Validate with execution tests and examples.
 - Keep compatibility/deprecation policies coherent (`aic std-compat --check`).
 
+## Continuous Integration Policy
+
+- `.github/workflows/ci.yml` must be green on `main` for Linux, macOS and Windows. Treat a red `main` as a release blocker and fix it before merging unrelated work.
+- Every job in `ci.yml` (Quality, Linux Full Validation, Execution Matrix, Cross Platform Build, Windows Runtime Smoke, Self-Host Bootstrap, VS Code Extension Build) is expected to be a required status check for `main`.
+- Run CI on a branch before merging with `gh workflow run ci.yml --ref <branch>`, or open a pull request against `main`.
+- Scheduled workflows (`nightly-fuzz.yml`, `security.yml`) are disabled by GitHub after 60 days without repository activity. Re-enable them with `gh workflow enable <file>` and confirm the next scheduled run passes.
+
+### Windows runtime notes
+
+- The Windows compatibility shim (pthread, clock, socket and `sys/stat.h` macros) lives near the top of `src/codegen/runtime/part01.c` under `#ifdef _WIN32`. It must stay outside the POSIX `#else` branch of the platform include block; `runtime_windows_shim_is_active_only_under_win32` in `src/codegen/tests.rs` enforces this.
+- The `aic` CLI runs on a dedicated thread with a 64 MiB stack (`src/main.rs`) because the default 1 MiB Windows main-thread stack is too small for the compiler.
+
 ## Final Pre-Submission Checklist
 
 - `make ci` passes.
