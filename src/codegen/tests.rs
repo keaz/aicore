@@ -2735,7 +2735,9 @@ fn runtime_conditional_frames(source: &str, marker: &str) -> Vec<(String, bool)>
         if directive.starts_with("#if") {
             stack.push((directive.to_string(), false));
         } else if directive.starts_with("#elif") || directive.starts_with("#else") {
-            let frame = stack.last_mut().expect("unbalanced #else in runtime source");
+            let frame = stack
+                .last_mut()
+                .expect("unbalanced #else in runtime source");
             frame.1 = true;
         } else if directive.starts_with("#endif") {
             stack.pop().expect("unbalanced #endif in runtime source");
@@ -2756,7 +2758,9 @@ fn runtime_windows_shim_is_active_only_under_win32() {
     ] {
         let frames = runtime_conditional_frames(source, marker);
         assert!(
-            frames.iter().any(|(directive, _)| directive == "#ifdef _WIN32"),
+            frames
+                .iter()
+                .any(|(directive, _)| directive == "#ifdef _WIN32"),
             "`{marker}` must be guarded by `#ifdef _WIN32`, frames: {frames:?}"
         );
         for (directive, in_else) in &frames {
