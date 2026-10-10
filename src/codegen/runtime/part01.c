@@ -48,7 +48,13 @@
 #ifdef __linux__
 #include <sys/epoll.h>
 #endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include <sys/event.h>
+#endif
+#endif
 
+// The Windows compatibility shim must sit outside the platform include block above:
+// it is the Windows-only branch, so nesting it under the POSIX `#else` removes it.
 #ifdef _WIN32
 #define AIC_RT_WINDOWS_SHARED_RUNTIME 1
 
@@ -80,6 +86,12 @@ struct timespec {
 #endif
 #ifndef SHUT_RDWR
 #define SHUT_RDWR SD_BOTH
+#endif
+#ifndef S_ISREG
+#define S_ISREG(mode) (((mode) & _S_IFMT) == _S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
 #endif
 
 typedef long suseconds_t;
@@ -469,10 +481,6 @@ static int pthread_setspecific(pthread_key_t key, const void* value) {
 #else
 typedef int aic_rt_socket_t;
 #define AIC_RT_INVALID_SOCKET (-1)
-#endif
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-#include <sys/event.h>
-#endif
 #endif
 
 #ifndef AIC_RT_TLS_OPENSSL

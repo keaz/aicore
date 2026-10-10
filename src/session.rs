@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -1452,11 +1451,11 @@ fn process_is_alive(pid: u32) -> Option<bool> {
         if pid == 0 || pid > i32::MAX as u32 {
             return Some(false);
         }
-        return Command::new("kill")
+        return std::process::Command::new("kill")
             .arg("-0")
             .arg(pid.to_string())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .ok()
             .map(|status| status.success());

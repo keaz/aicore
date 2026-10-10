@@ -971,8 +971,23 @@ impl SandboxProfileArg {
     }
 }
 
+/// Stack size for the compiler thread. The default Windows main-thread stack (1 MiB) is too
+/// small for the recursive front end and code generator, so run the CLI on a dedicated thread.
+const COMPILER_THREAD_STACK_BYTES: usize = 64 * 1024 * 1024;
+
 fn main() {
-    let exit = match run_cli() {
+    let worker = std::thread::Builder::new()
+        .name("aic-main".to_string())
+        .stack_size(COMPILER_THREAD_STACK_BYTES)
+        .spawn(run_cli);
+    let result = match worker {
+        Ok(handle) => match handle.join() {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        },
+        Err(err) => Err(anyhow::anyhow!("failed to start compiler thread: {err}")),
+    };
+    let exit = match result {
         Ok(code) => code,
         Err(err) => {
             eprintln!("internal error: {err:#}");
