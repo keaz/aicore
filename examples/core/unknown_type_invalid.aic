@@ -1,0 +1,12 @@
+module examples.core.unknown_type_invalid;
+
+// `I32` is not an AICore type. `aic check` reports
+// E1228 unknown type 'I32' with the hint "did you mean 'Int32'?",
+// so the typo never reaches code generation.
+fn double(x: I32) -> I32 {
+    x + x
+}
+
+fn main() -> Int {
+    0
+}

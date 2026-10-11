@@ -46,6 +46,7 @@ Recent core-language additions:
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.
 - `E1105`: conflicting duplicate trait impl.
+- `E1228`: unknown type name in a signature, field, payload, alias, annotation, impl header, or trait method signature. The help line suggests the closest known type (`I32` -> `Int32`, `Strng` -> `String`, `bool` -> `Bool`).
 - `E1256`: `await` used outside an async function.
 - `E1279`: `return` outside a function or closure body (contract expressions, constant initializers).
 - `E1257`: `await` operand is not `Async[T]`.

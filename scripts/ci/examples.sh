@@ -218,6 +218,7 @@ check_fail=(
   "examples/verify/qv_contract_proof_fail.aic"
   "examples/core/intrinsic_declaration_invalid_body.aic"
   "examples/core/trait_unsupported_members_invalid.aic"
+  "examples/core/unknown_type_invalid.aic"
 )
 run_pass=(
   "examples/option_match.aic"

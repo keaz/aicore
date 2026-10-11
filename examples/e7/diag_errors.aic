@@ -1,4 +1,4 @@
-fn use_io() -> Unit {
+fn use_io() -> () {
   print_int(1)
 }
 

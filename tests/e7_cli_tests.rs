@@ -5637,6 +5637,52 @@ fn check_reports_line_column_positions_once_per_diagnostic() {
 }
 
 #[test]
+fn check_and_build_reject_unknown_type_names_before_codegen() {
+    let check = run_aic(&["check", "examples/core/unknown_type_invalid.aic", "--json"]);
+    assert_eq!(check.status.code(), Some(1));
+    let diags: Value = serde_json::from_slice(&check.stdout).expect("diagnostics json");
+    let unknown: Vec<&Value> = diags
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter(|diag| diag["code"] == "E1228")
+        .collect();
+    assert_eq!(unknown.len(), 2, "param and return type: {diags:#}");
+    for diag in &unknown {
+        assert_eq!(diag["message"], "unknown type 'I32'");
+        assert!(
+            diag["help"]
+                .as_array()
+                .expect("help")
+                .iter()
+                .any(|help| help == "did you mean 'Int32'?"),
+            "{diag:#}"
+        );
+    }
+
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("unknown_type_bin");
+    let build = run_aic(&[
+        "build",
+        "examples/core/unknown_type_invalid.aic",
+        "-o",
+        &out.to_string_lossy(),
+    ]);
+    assert_ne!(build.status.code(), Some(0));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    assert!(text.contains("E1228"), "build output: {text}");
+    assert!(
+        !text.contains("E5019"),
+        "codegen must not be reached: {text}"
+    );
+    assert!(!out.exists());
+}
+
+#[test]
 fn test_harness_runs_categories_and_reports_json() {
     let all = run_aic(&["test", "examples/e7/harness", "--json"]);
     assert_eq!(all.status.code(), Some(0));

@@ -189,6 +189,9 @@ struct Checker<'a> {
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
     type_aliases: BTreeMap<String, AliasDef>,
+    // Generic parameters of the declaration being checked (function, struct,
+    // enum, trait, alias). Names in this set are valid type references.
+    type_params_in_scope: BTreeSet<String>,
     const_types: BTreeMap<String, String>,
     typed_holes: Vec<TypedHole>,
     let_binding_types: BTreeMap<ir::SymbolId, String>,
@@ -578,6 +581,7 @@ impl<'a> Checker<'a> {
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
             type_aliases,
+            type_params_in_scope: BTreeSet::new(),
             const_types,
             typed_holes: Vec::new(),
             fn_param_holes: BTreeMap::new(),
@@ -597,8 +601,12 @@ impl<'a> Checker<'a> {
         self.check_no_null_boundary();
         for (index, item) in self.program.items.iter().enumerate() {
             self.activate_item_file(index);
+            // Type names in struct, enum, trait and impl declarations resolve
+            // against the module that declares them.
+            self.current_module = Some(self.module_name_for_item(index));
             match item {
                 ir::Item::Function(func) => {
+                    self.type_params_in_scope = generic_names(&func.generics);
                     if decode_internal_type_alias(&func.name).is_some() {
                         self.check_type_alias_item(func);
                     } else if decode_internal_const(&func.name).is_some() {
@@ -607,18 +615,167 @@ impl<'a> Checker<'a> {
                         self.check_function(func);
                     }
                 }
-                ir::Item::Struct(strukt) => self.check_struct_invariant(strukt),
-                ir::Item::Enum(enm) => self.check_enum_definition(enm),
-                ir::Item::Trait(_) => {}
+                ir::Item::Struct(strukt) => {
+                    self.type_params_in_scope = generic_names(&strukt.generics);
+                    self.check_struct_invariant(strukt);
+                }
+                ir::Item::Enum(enm) => {
+                    self.type_params_in_scope = generic_names(&enm.generics);
+                    self.check_enum_definition(enm);
+                }
+                ir::Item::Trait(trait_def) => self.check_trait_signatures(trait_def),
                 ir::Item::Impl(impl_def) => {
+                    // Impl headers have no generic list of their own; their type
+                    // variables are the ones the methods declare
+                    // (`impl Iterator[Vec[T], T] { fn next[T](...) }`).
+                    let mut header_scope = BTreeSet::from(["Self".to_string()]);
                     for method in &impl_def.methods {
+                        header_scope.extend(generic_names(&method.generics));
+                    }
+                    self.type_params_in_scope = header_scope;
+                    for ty in &impl_def.trait_args {
+                        let ty = self
+                            .types
+                            .get(ty)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string());
+                        self.check_generic_arity(&ty, impl_def.span);
+                    }
+                    if impl_def.is_inherent {
+                        // `impl Option { ... }` names a generic type without
+                        // arguments, so only the name itself is checked.
+                        if let Some(target) = impl_def.target.and_then(|ty| self.types.get(&ty)) {
+                            let base = base_type_name(target).to_string();
+                            if parse_dyn_trait_name(&base).is_none() {
+                                self.check_type_name_known(&base, impl_def.span);
+                            }
+                        }
+                    }
+                    for method in &impl_def.methods {
+                        self.type_params_in_scope = generic_names(&method.generics);
                         self.check_function(method);
                     }
                 }
             }
         }
+        self.type_params_in_scope = BTreeSet::new();
         self.check_transitive_effects();
         self.check_capability_authority();
+    }
+
+    /// Trait method signatures are never type-checked as functions, so their
+    /// parameter and return types are validated here.
+    fn check_trait_signatures(&mut self, trait_def: &ir::TraitDef) {
+        for method in &trait_def.methods {
+            let mut scope = generic_names(&trait_def.generics);
+            scope.extend(generic_names(&method.generics));
+            scope.insert("Self".to_string());
+            self.type_params_in_scope = scope;
+            for param in &method.params {
+                let ty = self
+                    .types
+                    .get(&param.ty)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                self.check_generic_arity(&ty, param.span);
+            }
+            let ret = self
+                .types
+                .get(&method.ret_type)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.check_generic_arity(&ret, method.span);
+        }
+    }
+
+    /// Reports E1228 when `base` names no builtin, struct, enum, trait, type
+    /// alias, or generic parameter in scope, with a "did you mean" hint.
+    fn check_type_name_known(&mut self, base: &str, span: crate::span::Span) {
+        let base = canonical_builtin_type_name(base.trim());
+        if base.is_empty()
+            || base == "_"
+            || contains_unresolved_type(base)
+            || preflight_builtin_type_known(base)
+            || self.type_params_in_scope.contains(base)
+            || base.starts_with('(')
+            || base == NEVER_TYPE
+        {
+            return;
+        }
+        let unqualified = Self::unqualified_name(base);
+        let known = self.type_aliases.contains_key(base)
+            || self.type_aliases.contains_key(unqualified)
+            || self.visible_struct_info(base).is_some()
+            || self.visible_struct_info(unqualified).is_some()
+            || self.visible_enum_info(base).is_some()
+            || self.visible_enum_info(unqualified).is_some()
+            || self.resolution.traits.contains_key(base)
+            || self.resolution.traits.contains_key(unqualified);
+        if known {
+            return;
+        }
+        let mut diag =
+            Diagnostic::error("E1228", format!("unknown type '{}'", base), self.file, span);
+        match self.closest_type_name(unqualified) {
+            Some(suggested) => {
+                diag = diag.with_help(format!("did you mean '{}'?", suggested));
+            }
+            None => {
+                diag = diag.with_help(
+                    "use a builtin type, a generic parameter, or an imported struct, enum, trait, or type alias",
+                );
+            }
+        }
+        self.diagnostics.push(diag);
+    }
+
+    fn closest_type_name(&self, name: &str) -> Option<String> {
+        if let Some(mapped) = foreign_primitive_type_name(name) {
+            return Some(mapped.to_string());
+        }
+        let mut candidates: BTreeSet<String> = BUILTIN_TYPE_NAMES
+            .iter()
+            .map(|name| name.to_string())
+            .chain(
+                FIXED_WIDTH_INTEGER_PRIMITIVES
+                    .iter()
+                    .map(|name| name.to_string()),
+            )
+            .chain(self.type_params_in_scope.iter().cloned())
+            .collect();
+        for key in self
+            .resolution
+            .structs
+            .keys()
+            .chain(self.resolution.enums.keys())
+            .chain(self.resolution.traits.keys())
+            .chain(self.type_aliases.keys())
+        {
+            candidates.insert(Self::unqualified_name(key).to_string());
+        }
+        candidates.remove("()");
+        let lowered = name.to_ascii_lowercase();
+        if let Some(exact) = candidates
+            .iter()
+            .find(|candidate| candidate.to_ascii_lowercase() == lowered)
+        {
+            return Some(exact.clone());
+        }
+        let limit = match name.chars().count() {
+            0..=4 => 1,
+            5..=7 => 2,
+            _ => 3,
+        };
+        candidates
+            .into_iter()
+            .map(|candidate| {
+                let distance =
+                    Self::levenshtein_distance(&lowered, &candidate.to_ascii_lowercase());
+                (distance, candidate)
+            })
+            .filter(|(distance, _)| *distance <= limit)
+            .min()
+            .map(|(_, candidate)| candidate)
     }
 
     fn activate_item_file(&mut self, index: usize) {
@@ -7667,6 +7824,7 @@ impl<'a> Checker<'a> {
             }
             return;
         }
+        self.check_type_name_known(&base, span);
         let expected = self
             .visible_struct_info(&base)
             .map(|info| info.generics.len())
@@ -10424,6 +10582,67 @@ fn float_kind_type_name(kind: FloatKind) -> &'static str {
     }
 }
 
+const BUILTIN_TYPE_NAMES: &[&str] = &[
+    "()",
+    "Bool",
+    "String",
+    "Char",
+    "Bytes",
+    "ByteBuffer",
+    "JsonValue",
+    "Option",
+    "Result",
+    "Async",
+    "Ref",
+    "RefMut",
+    "Tuple",
+    "Vec",
+    "Map",
+    "Set",
+    "Deque",
+    "Int",
+    "Float",
+    "Float32",
+    "Float64",
+    "ISize",
+    "USize",
+    "UInt",
+];
+
+/// Maps primitive type spellings from other languages to AICore names.
+fn foreign_primitive_type_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "i8" => "Int8",
+        "i16" => "Int16",
+        "i32" | "I32" => "Int32",
+        "i64" | "I64" => "Int64",
+        "i128" | "I128" => "Int128",
+        "u8" | "U8" => "UInt8",
+        "u16" | "U16" => "UInt16",
+        "u32" | "U32" => "UInt32",
+        "u64" | "U64" => "UInt64",
+        "u128" | "U128" => "UInt128",
+        "isize" => "ISize",
+        "usize" => "USize",
+        "f32" | "F32" => "Float32",
+        "f64" | "F64" | "double" => "Float64",
+        "int" | "integer" | "Integer" => "Int",
+        "float" => "Float",
+        "bool" | "boolean" | "Boolean" => "Bool",
+        "str" | "string" | "Str" => "String",
+        "char" => "Char",
+        "Unit" | "unit" | "void" | "Void" => "()",
+        "List" | "Array" => "Vec",
+        "HashMap" | "Dict" | "Dictionary" => "Map",
+        "HashSet" => "Set",
+        _ => return None,
+    })
+}
+
+fn generic_names(generics: &[ir::GenericParam]) -> BTreeSet<String> {
+    generics.iter().map(|param| param.name.clone()).collect()
+}
+
 fn canonical_builtin_type_name(base: &str) -> &str {
     match base {
         "Float" => "Float64",
@@ -10835,6 +11054,130 @@ fn f(x: Int) -> Int requires x > 0 && match x { 0 => return false, _ => true } {
 }
 "#;
         assert!(error_codes(src).contains(&"E1279".to_string()));
+    }
+
+    fn unknown_type_messages(src: &str) -> Vec<(String, Vec<String>)> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _d2) = resolve(&ir, "test.aic");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == "E1228")
+            .map(|d| (d.message, d.help))
+            .collect()
+    }
+
+    #[test]
+    fn unknown_type_names_are_reported_with_suggestions() {
+        let cases = [
+            ("fn f(x: I32) -> Int { 0 }", "I32", Some("Int32")),
+            ("fn f() -> Bogus { 0 }", "Bogus", None),
+            ("struct S { field: Strng }", "Strng", Some("String")),
+            (
+                "fn f(x: Option[Integer]) -> Int { 0 }",
+                "Integer",
+                Some("Int"),
+            ),
+            (
+                "fn f(x: Vec[Map[String, Boool]]) -> Int { 0 }",
+                "Boool",
+                Some("Bool"),
+            ),
+            ("type Alias = Result[Int, Eror];", "Eror", None),
+            ("enum E { A(Flaot), B }", "Flaot", Some("Float")),
+            ("fn f() -> Int { let x: u8 = 1; 0 }", "u8", Some("UInt8")),
+            (
+                "fn f() -> Int { let g = |v: Usr| -> Int { 0 }; 0 }\nstruct User { id: Int }",
+                "Usr",
+                Some("User"),
+            ),
+            (
+                "trait Shape[T] { fn area(self: T) -> Flot64; }",
+                "Flot64",
+                Some("Float64"),
+            ),
+            (
+                "fn f(x: Fn(Int) -> Strin) -> Int { 0 }",
+                "Strin",
+                Some("String"),
+            ),
+            ("fn f(x: (Int, Chr)) -> Int { 0 }", "Chr", Some("Char")),
+        ];
+        for (body, name, suggestion) in cases {
+            let src = format!("{body}\nfn main() -> Int {{ 0 }}\n");
+            let found = unknown_type_messages(&src);
+            let expected = format!("unknown type '{name}'");
+            let Some((_, help)) = found.iter().find(|(message, _)| *message == expected) else {
+                panic!("missing {expected} in {found:#?} for {body}");
+            };
+            match suggestion {
+                Some(suggested) => assert!(
+                    help.iter()
+                        .any(|h| h == &format!("did you mean '{suggested}'?")),
+                    "{body}: help={help:?}"
+                ),
+                None => assert!(
+                    !help.iter().any(|h| h.starts_with("did you mean")),
+                    "{body}: unexpected suggestion {help:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn known_type_names_are_accepted() {
+        let src = r#"
+struct Wrapper[T] { inner: T }
+enum Choice[L, R] { Left(L), Right(R) }
+type Pair[A] = (A, A);
+trait Shape[T] {
+    fn area(self: T) -> Float;
+    fn same(self: T, other: T) -> Bool;
+}
+struct Square { side: Float }
+impl Shape[Square] {
+    fn area(self: Square) -> Float { self.side * self.side }
+    fn same(self: Square, other: Square) -> Bool { true }
+}
+impl Option {
+    fn is_thing[T](self: Option[T]) -> Bool { true }
+}
+fn id[T](x: T) -> T { x }
+fn uses(
+    w: Wrapper[Int],
+    c: Choice[String, Bool],
+    p: Pair[Int],
+    f: Fn(Int) -> Int,
+    b: Bytes,
+    v: Vec[Map[String, Int128]],
+    s: Set[Char],
+    t: (Int, String),
+) -> UInt8 {
+    let r: Result[Float64, String] = Ok(1.0);
+    let g = |x: USize| -> ISize { 0 };
+    0
+}
+fn main() -> Int { 0 }
+"#;
+        assert!(
+            unknown_type_messages(src).is_empty(),
+            "{:#?}",
+            unknown_type_messages(src)
+        );
+    }
+
+    #[test]
+    fn generic_parameters_do_not_leak_between_declarations() {
+        let src = r#"
+fn id[T](x: T) -> T { x }
+fn uses(x: T) -> Int { 0 }
+fn main() -> Int { 0 }
+"#;
+        let found = unknown_type_messages(src);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].0, "unknown type 'T'");
     }
 
     #[test]
