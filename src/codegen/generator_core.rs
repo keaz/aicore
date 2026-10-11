@@ -5666,6 +5666,19 @@ impl<'a> Generator<'a> {
             return result;
         }
 
+        if name == crate::ast::INDEX_PANIC_BUILTIN {
+            self.emit_static_panic(
+                "index_out_of_bounds{op:index}: index is out of bounds",
+                span,
+                fctx,
+            );
+            fctx.terminated = true;
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+
         if builtin_name == "panic" || name == "aic_io_panic_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(

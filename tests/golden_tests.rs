@@ -172,3 +172,8 @@ fn golden_case28_pattern_lets() {
 fn golden_case29_variant_fields() {
     run_golden_case("case29_variant_fields.aic");
 }
+
+#[test]
+fn golden_case30_indexing() {
+    run_golden_case("case30_indexing.aic");
+}

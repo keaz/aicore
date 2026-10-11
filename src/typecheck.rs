@@ -66,6 +66,11 @@ pub struct TypecheckOutput {
     /// Struct-like variant patterns (`Move { x, .. }`), by pattern node,
     /// with their rewritten form `Move(Shape__Move { x, .. })`.
     pub pattern_rewrites: BTreeMap<ir::NodeId, ir::Pattern>,
+    /// Expressions the checker type-checked in an equivalent std form, by
+    /// node: index expressions (`v[i]`), list literals (`[a, b]`) and
+    /// std method calls (`v.len()`). The driver substitutes them before
+    /// codegen; their nodes are the ones the checker recorded.
+    pub expr_rewrites: BTreeMap<ir::NodeId, ir::Expr>,
 }
 
 /// How to rewrite a struct-like variant construction.
@@ -331,6 +336,8 @@ struct Checker<'a> {
     variant_struct_inits: BTreeMap<ir::NodeId, VariantStructInit>,
     /// See `TypecheckOutput::pattern_rewrites`.
     pattern_rewrites: BTreeMap<ir::NodeId, ir::Pattern>,
+    /// See `TypecheckOutput::expr_rewrites`.
+    expr_rewrites: BTreeMap<ir::NodeId, ir::Expr>,
     /// Node ids for expressions and patterns the checker synthesizes,
     /// counting down from `u32::MAX` so they never meet parsed nodes.
     next_synthetic_node: u32,
@@ -856,6 +863,7 @@ impl<'a> Checker<'a> {
             variant_callees: BTreeMap::new(),
             variant_struct_inits: BTreeMap::new(),
             pattern_rewrites: BTreeMap::new(),
+            expr_rewrites: BTreeMap::new(),
             next_synthetic_node: u32::MAX,
             equality_type_params: BTreeMap::new(),
             generic_call_sites: Vec::new(),
@@ -1536,6 +1544,7 @@ impl<'a> Checker<'a> {
             variant_callees: self.variant_callees,
             variant_struct_inits: self.variant_struct_inits,
             pattern_rewrites: self.pattern_rewrites,
+            expr_rewrites: self.expr_rewrites,
         }
     }
 
@@ -5690,6 +5699,34 @@ impl<'a> Checker<'a> {
                 arg_names,
                 ..
             } => {
+                if let ir::ExprKind::Var(builtin) = &callee.kind {
+                    match builtin.as_str() {
+                        crate::ast::INDEX_BUILTIN => {
+                            return self.check_index_expr(
+                                expr,
+                                args,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                                expected_ty,
+                            );
+                        }
+                        crate::ast::VEC_LITERAL_BUILTIN => {
+                            return self.check_vec_literal(
+                                expr,
+                                args,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                                expected_ty,
+                            );
+                        }
+                        crate::ast::INDEX_PANIC_BUILTIN => return NEVER_TYPE.to_string(),
+                        _ => {}
+                    }
+                }
                 if let ir::ExprKind::FieldAccess { base, field } = &callee.kind {
                     if !self.is_module_qualified_callee(callee, locals) {
                         return self.check_method_call(
@@ -8621,6 +8658,20 @@ impl<'a> Checker<'a> {
             return ret;
         }
 
+        if let Some(ty) = self.check_std_method_call(
+            base,
+            field,
+            args,
+            &receiver_ty,
+            call_expr,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        ) {
+            return ty;
+        }
         self.diagnostics.push(
             Diagnostic::error(
                 "E1228",
@@ -10650,6 +10701,297 @@ impl<'a> Checker<'a> {
             }
         }
         name.to_string()
+    }
+
+    fn synthetic_expr(&mut self, kind: ir::ExprKind, span: crate::span::Span) -> ir::Expr {
+        ir::Expr {
+            node: self.synthetic_node(),
+            kind,
+            span,
+        }
+    }
+
+    /// `alias.name(args)`: a call of the std module function `name`.
+    fn synthetic_module_call(
+        &mut self,
+        alias: &str,
+        name: &str,
+        args: Vec<ir::Expr>,
+        span: crate::span::Span,
+    ) -> ir::Expr {
+        let module = self.synthetic_expr(ir::ExprKind::Var(alias.to_string()), span);
+        let callee = self.synthetic_expr(
+            ir::ExprKind::FieldAccess {
+                base: Box::new(module),
+                field: name.to_string(),
+            },
+            span,
+        );
+        self.synthetic_expr(
+            ir::ExprKind::Call {
+                callee: Box::new(callee),
+                args,
+                arg_names: Vec::new(),
+                symbol: None,
+            },
+            span,
+        )
+    }
+
+    /// Reports E1304 unless `module` is imported; `what` names the syntax.
+    fn require_std_module_for(
+        &mut self,
+        module: &str,
+        what: &str,
+        span: crate::span::Span,
+    ) -> bool {
+        if self.module_is_imported_in_current_scope(module) {
+            return true;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1304",
+                format!("{what} requires `import {module};`"),
+                self.file,
+                span,
+            )
+            .with_help(format!("add `import {module};` at the top of the file")),
+        );
+        false
+    }
+
+    /// `base[index]`: indexes a `Vec`, `Map`, `String` (one character) or
+    /// `Bytes` (one byte), panicking with `index_out_of_bounds` when the
+    /// element does not exist. It is checked (and later lowered) as
+    /// `match vec.get(base, index) { Some(v) => v, None => panic }` and the
+    /// like; `get`-style functions return the `Option` instead.
+    #[allow(clippy::too_many_arguments)]
+    fn check_index_expr(
+        &mut self,
+        expr: &ir::Expr,
+        args: &[ir::Expr],
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
+        let [base, index] = args else {
+            return "<?>".to_string();
+        };
+        let before = self.diagnostics.len();
+        let base_ty = self.check_expr(base, locals, allowed_effects, ctx, contract_mode);
+        if self.diagnostics.len() > before || contains_unresolved_type(&base_ty) {
+            self.check_expr(index, locals, allowed_effects, ctx, contract_mode);
+            return "<?>".to_string();
+        }
+        let normalized = self.normalize_type(&base_ty);
+        let (module, function, result_kind, label) = match base_type_name(&normalized) {
+            "Vec" => ("std.vec", "get", "Option", "a Vec"),
+            "Map" => ("std.map", "get", "Option", "a Map"),
+            "String" => ("std.string", "char_at", "Option", "a String"),
+            "Bytes" => ("std.bytes", "byte_at", "Result", "Bytes"),
+            _ => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1304",
+                        format!("type '{}' cannot be indexed", base_ty),
+                        self.file,
+                        expr.span,
+                    )
+                    .with_help("indexing works on Vec, Map, String and Bytes values"),
+                );
+                self.check_expr(index, locals, allowed_effects, ctx, contract_mode);
+                return "<?>".to_string();
+            }
+        };
+        if !self.require_std_module_for(module, &format!("indexing {label}"), expr.span) {
+            self.check_expr(index, locals, allowed_effects, ctx, contract_mode);
+            return "<?>".to_string();
+        }
+        let alias = module.rsplit('.').next().unwrap_or(module);
+        let span = expr.span;
+        let lookup =
+            self.synthetic_module_call(alias, function, vec![base.clone(), index.clone()], span);
+        let (found, missing) = if result_kind == "Option" {
+            ("Some", "None")
+        } else {
+            ("Ok", "Err")
+        };
+        let value_name = "$index_value".to_string();
+        let found_pattern = ir::Pattern {
+            node: self.synthetic_node(),
+            kind: ir::PatternKind::Variant {
+                name: found.to_string(),
+                args: vec![ir::Pattern {
+                    node: self.synthetic_node(),
+                    kind: ir::PatternKind::Var(value_name.clone()),
+                    span,
+                }],
+            },
+            span,
+        };
+        let missing_pattern = ir::Pattern {
+            node: self.synthetic_node(),
+            kind: if result_kind == "Option" {
+                ir::PatternKind::Variant {
+                    name: missing.to_string(),
+                    args: Vec::new(),
+                }
+            } else {
+                ir::PatternKind::Variant {
+                    name: missing.to_string(),
+                    args: vec![ir::Pattern {
+                        node: self.synthetic_node(),
+                        kind: ir::PatternKind::Wildcard,
+                        span,
+                    }],
+                }
+            },
+            span,
+        };
+        let value = self.synthetic_expr(ir::ExprKind::Var(value_name), span);
+        let panic_callee = self.synthetic_expr(
+            ir::ExprKind::Var(crate::ast::INDEX_PANIC_BUILTIN.to_string()),
+            span,
+        );
+        let panic = self.synthetic_expr(
+            ir::ExprKind::Call {
+                callee: Box::new(panic_callee),
+                args: Vec::new(),
+                arg_names: Vec::new(),
+                symbol: None,
+            },
+            span,
+        );
+        let rewritten = ir::Expr {
+            node: expr.node,
+            kind: ir::ExprKind::Match {
+                expr: Box::new(lookup),
+                arms: vec![
+                    ir::MatchArm {
+                        pattern: found_pattern,
+                        guard: None,
+                        body: value,
+                        span,
+                    },
+                    ir::MatchArm {
+                        pattern: missing_pattern,
+                        guard: None,
+                        body: panic,
+                        span,
+                    },
+                ],
+            },
+            span,
+        };
+        let ty = self.check_expr_with_expected(
+            &rewritten,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        );
+        self.expr_rewrites.insert(expr.node, rewritten);
+        ty
+    }
+
+    /// `[a, b, c]`: a `Vec` built as `vec.push(vec.push(vec.vec_of(a), b), c)`;
+    /// `[]` is `vec.new_vec()` and needs a known element type.
+    #[allow(clippy::too_many_arguments)]
+    fn check_vec_literal(
+        &mut self,
+        expr: &ir::Expr,
+        args: &[ir::Expr],
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
+        if !self.require_std_module_for("std.vec", "a list literal", expr.span) {
+            for arg in args {
+                self.check_expr(arg, locals, allowed_effects, ctx, contract_mode);
+            }
+            return "<?>".to_string();
+        }
+        let span = expr.span;
+        let mut built = match args.first() {
+            None => self.synthetic_module_call("vec", "new_vec", Vec::new(), span),
+            Some(first) => self.synthetic_module_call("vec", "vec_of", vec![first.clone()], span),
+        };
+        for arg in args.iter().skip(1) {
+            built = self.synthetic_module_call("vec", "push", vec![built, arg.clone()], span);
+        }
+        built.node = expr.node;
+        let ty = self.check_expr_with_expected(
+            &built,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        );
+        self.expr_rewrites.insert(expr.node, built);
+        ty
+    }
+
+    /// `value.method(args)` with no inherent or trait method: the std
+    /// function `method` of the receiver type's module, with the receiver as
+    /// its first argument (`v.len()` is `vec.len(v)`).
+    #[allow(clippy::too_many_arguments)]
+    fn check_std_method_call(
+        &mut self,
+        base: &ir::Expr,
+        field: &str,
+        args: &[ir::Expr],
+        receiver_ty: &str,
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> Option<String> {
+        let module = match base_type_name(receiver_ty) {
+            "Vec" => "std.vec",
+            "Map" => "std.map",
+            "Set" => "std.set",
+            "String" => "std.string",
+            "Bytes" => "std.bytes",
+            "Deque" => "std.deque",
+            _ => return None,
+        };
+        if !self.module_is_imported_in_current_scope(module) {
+            return None;
+        }
+        let alias = module.rsplit('.').next().unwrap_or(module);
+        // `v.len()` also finds module-prefixed names such as `vec_len`.
+        let prefixed = format!("{alias}_{field}");
+        let function = [field, prefixed.as_str()]
+            .into_iter()
+            .find(|name| {
+                self.module_functions
+                    .contains_key(&(module.to_string(), name.to_string()))
+            })?
+            .to_string();
+        let field = function.as_str();
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.push(base.clone());
+        call_args.extend(args.iter().cloned());
+        let mut rewritten = self.synthetic_module_call(alias, field, call_args, call_expr.span);
+        rewritten.node = call_expr.node;
+        let ty = self.check_expr_with_expected(
+            &rewritten,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        );
+        self.expr_rewrites.insert(call_expr.node, rewritten);
+        Some(ty)
     }
 
     fn synthetic_node(&mut self) -> ir::NodeId {
@@ -15024,6 +15366,31 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn index_expressions_require_indexable_types_and_imports() {
+        let cases = [
+            ("fn main() -> Int { let x = 5; let y = x[0]; 0 }", "E1304"),
+            // `Vec` operations come from std.vec.
+            (
+                "fn f(v: Vec[Int]) -> Int { v[0] } fn main() -> Int { 0 }",
+                "E1304",
+            ),
+            ("fn main() -> Int { let v = [1, 2]; 0 }", "E1304"),
+            // `Slice[T]` is not a type; use `Vec[T]`.
+            (
+                "fn f(s: Slice[Int]) -> Int { 0 } fn main() -> Int { 0 }",
+                "E1228",
+            ),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);

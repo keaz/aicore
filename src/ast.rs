@@ -488,6 +488,15 @@ pub struct Block {
     pub span: Span,
 }
 
+/// Builtin callee of an index expression: `base[index]` parses as
+/// `$index(base, index)`.
+pub const INDEX_BUILTIN: &str = "$index";
+/// Builtin callee of a list literal: `[a, b]` parses as `$vec_literal(a, b)`.
+pub const VEC_LITERAL_BUILTIN: &str = "$vec_literal";
+/// Builtin the checker uses on the failing arm of a rewritten index
+/// expression; it panics with `index_out_of_bounds`.
+pub const INDEX_PANIC_BUILTIN: &str = "$index_panic";
+
 /// Name of the hidden payload struct of the struct-like variant
 /// `Enum::Variant { .. }`.
 pub fn struct_variant_payload_name(enum_name: &str, variant_name: &str) -> String {

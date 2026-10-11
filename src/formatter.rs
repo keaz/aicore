@@ -1893,6 +1893,26 @@ impl<'a> Printer<'a> {
             ir::ExprKind::Unit => self.out.push_str("()"),
             ir::ExprKind::Var(v) => self.out.push_str(v),
             ir::ExprKind::Call { callee, args, .. }
+                if args.len() == 2
+                    && matches!(&callee.kind, ir::ExprKind::Var(name) if name == ast::INDEX_BUILTIN) =>
+            {
+                self.expr(&args[0], PREFIX_OPERAND_PREC, indent);
+                self.out.push('[');
+                self.expr(&args[1], 0, indent);
+                self.out.push(']');
+            }
+            ir::ExprKind::Call { callee, args, .. } if matches!(&callee.kind, ir::ExprKind::Var(name) if name == ast::VEC_LITERAL_BUILTIN) =>
+            {
+                self.out.push('[');
+                for (idx, arg) in args.iter().enumerate() {
+                    if idx > 0 {
+                        self.out.push_str(", ");
+                    }
+                    self.expr(arg, 0, indent);
+                }
+                self.out.push(']');
+            }
+            ir::ExprKind::Call { callee, args, .. }
                 if args.is_empty()
                     && matches!(&callee.kind, ir::ExprKind::Var(name) if name == "None") =>
             {
@@ -3100,6 +3120,12 @@ mod tests {
         let twice = format_source(&once, "test.aic").unwrap_or_else(|err| panic!("{err}"));
         assert_eq!(once, twice, "formatting is not idempotent");
         once
+    }
+
+    #[test]
+    fn index_expressions_and_list_literals_round_trip() {
+        let src = "import std.vec;\n\nfn f() -> Int {\n    let v = [[1, 2], [3]];\n    let empty: Vec[Int] = [];\n    v[1][0] + empty.len()\n}\n";
+        assert_eq!(fmt(src), src);
     }
 
     #[test]

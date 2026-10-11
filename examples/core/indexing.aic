@@ -1,0 +1,22 @@
+module examples.core.indexing;
+
+import std.io;
+import std.vec;
+import std.map;
+
+// Index expressions, list literals and method syntax on std collections.
+
+fn median(sorted: Vec[Int]) -> Int {
+    sorted[sorted.len() / 2]
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let scores = [3, 9, 27, 81];
+    let mut totals: Map[String, Int] = map.new_map();
+    totals = map.insert(totals, "first", scores[0]);
+    totals = map.insert(totals, "last", scores[scores.len() - 1]);
+    let grid = [[1, 2], [3, 4]];
+    // median 27 + first 3 + last 81 - 70 + grid 1 = 42
+    print_int(median(scores) + totals["first"] + totals["last"] - 70 + grid[0][0]);
+    0
+}

@@ -965,6 +965,13 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Indexing, List Literals and Std Method Syntax (SYNTAX-T8, #455)
+
+- Language surface: `v[i]`, `m[k]`, `s[i]`, `b[i]`, `[a, b, c]`, and `value.f(args)` on std collections. Rules: `docs/reference/expressions.md`.
+- Parser: `base[index]` → `$index(base, index)` and `[a, b]` → `$vec_literal(a, b)` (`ast::INDEX_BUILTIN`, `VEC_LITERAL_BUILTIN`), so every `Call` walker already handles them; the formatter prints them back.
+- Checker: `check_index_expr`, `check_vec_literal` and `check_std_method_call` type-check an equivalent std expression built from synthetic nodes (`match vec.get(v, i) { Some(x) => x, None => $index_panic() }`, `vec.push(vec.vec_of(a), b)`, `vec.vec_len(v)`) and record it in `TypecheckOutput::expr_rewrites`; the driver (`apply_expr_rewrites`) substitutes them before codegen, so codegen only adds `$index_panic` (`ast::INDEX_PANIC_BUILTIN`, a structured `index_out_of_bounds` panic).
+- Verification: `exec_index_expressions_list_literals_and_std_methods`, `exec_index_out_of_bounds_and_missing_key_panic`, `index_expressions_require_indexable_types_and_imports`, `parses_index_expressions_and_list_literals`, formatter test `index_expressions_and_list_literals_round_trip`, golden `case30_indexing.aic`, `examples/core/indexing.aic`.
+
 ## Multi-field and Struct-like Enum Variants (SYNTAX-T4, #454)
 
 - Language surface: `Rect(Int, Int)` and `Move { x: Int, y: Int }` variants, constructed as `Shape::Rect(2, 3)` / `Shape::Move { x: 1, y: 2 }` and matched as `Rect(w, h)` / `Move { x, .. }`. Rules: `docs/reference/pattern-matching.md`.

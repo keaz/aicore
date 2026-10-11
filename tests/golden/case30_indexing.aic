@@ -1,0 +1,8 @@
+import std.vec;
+
+fn main() -> Int {
+    let v = [1, 2, 3];
+    let grid = [[4, 5], [6]];
+    let empty: Vec[Int] = [];
+    v[0] + grid[1][0] + empty.len() + v.len()
+}

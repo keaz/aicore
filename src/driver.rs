@@ -199,6 +199,7 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_typed_hole_types(&mut ir, &typecheck.hole_types);
+    apply_expr_rewrites(&mut ir, &typecheck.expr_rewrites);
     apply_variant_callees(&mut ir, &typecheck.variant_callees);
     apply_struct_variants(
         &mut ir,
@@ -739,6 +740,23 @@ fn apply_call_target_modules(
             }
         }
     }
+}
+
+/// Substitutes the expressions the checker type-checked in an equivalent
+/// std form (`v[i]`, `[a, b]`, `v.len()`); see
+/// `TypecheckOutput::expr_rewrites`.
+fn apply_expr_rewrites(program: &mut ir::Program, rewrites: &BTreeMap<ir::NodeId, ir::Expr>) {
+    if rewrites.is_empty() {
+        return;
+    }
+    let mut pending = rewrites.clone();
+    ir::visit_exprs_mut(program, &mut |expr| {
+        // A replacement keeps the original node, so each one applies once;
+        // nested rewrites inside it are found as the walk descends.
+        if let Some(replacement) = pending.remove(&expr.node) {
+            *expr = replacement;
+        }
+    });
 }
 
 /// Canonicalizes variant expressions the checker resolved: a unit variant

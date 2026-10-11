@@ -3329,6 +3329,27 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            if self.at_kind(|k| matches!(k, TokenKind::LBracket)) {
+                // `base[index]` is the builtin `$index(base, index)`.
+                self.bump();
+                let index = self.parse_nested_expr()?;
+                let close = self.expect(
+                    |k| matches!(k, TokenKind::RBracket),
+                    "E1035",
+                    "expected ']' after index expression",
+                )?;
+                let span = Span::new(expr.span.start, close.end);
+                expr = Expr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(Expr::var(INDEX_BUILTIN.to_string(), span)),
+                        args: vec![expr, index],
+                        arg_names: Vec::new(),
+                    },
+                    span,
+                };
+                continue;
+            }
+
             if self.at_kind(|k| matches!(k, TokenKind::Question)) {
                 let end = self.current_span().end;
                 self.bump();
@@ -3487,6 +3508,33 @@ impl<'a> Parser<'a> {
                 Some(Expr {
                     span: Span::new(token.span.start, block.span.end),
                     kind: ExprKind::UnsafeBlock { block },
+                })
+            }
+            TokenKind::LBracket => {
+                // `[a, b, c]` is the builtin `$vec_literal(a, b, c)`.
+                self.bump();
+                let mut items = Vec::new();
+                while !self.at_kind(|k| matches!(k, TokenKind::RBracket)) {
+                    items.push(self.parse_nested_expr()?);
+                    if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+                let close = self.expect(
+                    |k| matches!(k, TokenKind::RBracket),
+                    "E1037",
+                    "expected ']' after list items",
+                )?;
+                let span = Span::new(token.span.start, close.end);
+                Some(Expr {
+                    kind: ExprKind::Call {
+                        callee: Box::new(Expr::var(VEC_LITERAL_BUILTIN.to_string(), span)),
+                        args: items,
+                        arg_names: Vec::new(),
+                    },
+                    span,
                 })
             }
             TokenKind::LBrace if !self.disallow_block_expr => {
@@ -5551,6 +5599,52 @@ mod tests {
         );
         assert!(
             matches!(&arms[1].pattern.kind, PatternKind::Struct { name, .. } if name == "Shape::Move")
+        );
+    }
+
+    #[test]
+    fn parses_index_expressions_and_list_literals() {
+        let (program, diagnostics) = parse(
+            "fn f(v: Vec[Vec[Int]]) -> Int { let w = [1, 2, 3]; let e = []; v[0][1] }",
+            "test.aic",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let callee_name = |expr: &Expr| match &expr.kind {
+            ExprKind::Call { callee, args, .. } => match &callee.kind {
+                ExprKind::Var(name) => (name.clone(), args.len()),
+                other => panic!("unexpected callee {other:?}"),
+            },
+            other => panic!("expected call, found {other:?}"),
+        };
+        let Stmt::Let { expr, .. } = &f.body.stmts[0] else {
+            panic!("expected let");
+        };
+        assert_eq!(
+            callee_name(expr),
+            (crate::ast::VEC_LITERAL_BUILTIN.to_string(), 3)
+        );
+        let Stmt::Let { expr, .. } = &f.body.stmts[1] else {
+            panic!("expected let");
+        };
+        assert_eq!(
+            callee_name(expr),
+            (crate::ast::VEC_LITERAL_BUILTIN.to_string(), 0)
+        );
+        let tail = f.body.tail.as_ref().expect("tail");
+        assert_eq!(
+            callee_name(tail),
+            (crate::ast::INDEX_BUILTIN.to_string(), 2)
+        );
+        let ExprKind::Call { args, .. } = &tail.kind else {
+            panic!("expected call");
+        };
+        assert_eq!(
+            callee_name(&args[0]),
+            (crate::ast::INDEX_BUILTIN.to_string(), 2)
         );
     }
 

@@ -18911,3 +18911,64 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "15\n207\n3\n35\n8\n34\n");
 }
+
+#[test]
+fn exec_index_expressions_list_literals_and_std_methods() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.map;
+import std.string;
+import std.bytes;
+
+fn total(v: Vec[Int]) -> Int {
+    let mut sum = 0;
+    let mut i = 0;
+    while i < v.len() {
+        sum += v[i];
+        i += 1;
+    }
+    sum
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let v = [10, 20, 30];
+    print_int(v[0] + v[2]);
+    print_int(total(v.push(40)));
+    let grid = [[1, 2], [3, 4]];
+    print_int(grid[1][0] * 10 + grid[0][1]);
+    let empty: Vec[Int] = [];
+    print_int(empty.len());
+    print_int(if v.contains(20) { 1 } else { 0 });
+    let mut ages: Map[String, Int] = map.new_map();
+    ages = map.insert(ages, "ada", 36);
+    print_int(ages["ada"]);
+    let word = "héllo";
+    print_str(word[1]);
+    print_str("\n");
+    let raw = bytes.from_string("AB");
+    let first: UInt8 = raw[1];
+    print_int(if first == 66u8 { 1 } else { 0 });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "40\n100\n32\n0\n1\n36\né\n1\n");
+}
+
+#[test]
+fn exec_index_out_of_bounds_and_missing_key_panic() {
+    for (body, expected_stdout) in [
+        ("let v = [1, 2]; print_int(v[1]); let i = 2; print_int(v[i]);", "2\n"),
+        ("let mut m: Map[String, Int] = map.new_map(); m = map.insert(m, \"a\", 1); print_int(m[\"a\"]); print_int(m[\"b\"]);", "1\n"),
+    ] {
+        let src = format!(
+            "import std.io;\nimport std.vec;\nimport std.map;\nfn main() -> Int effects {{ io }} capabilities {{ io }} {{\n    {body}\n    0\n}}\n"
+        );
+        let (code, stdout, stderr) = compile_and_run(&src);
+        assert_ne!(code, 0, "{body}");
+        assert_eq!(stdout, expected_stdout, "{body}: stderr={stderr}");
+        assert!(stderr.contains("index_out_of_bounds{op:index}"), "{body}: {stderr}");
+    }
+}

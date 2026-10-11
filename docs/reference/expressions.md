@@ -31,7 +31,9 @@ closure_expr   = "|" closure_params? "|" "->" type block ;
 closure_params = closure_param ("," closure_param)* ","? ;
 closure_param  = ident (":" type)? ;
 
-postfix_expr   = primary_expr (call_suffix | field_suffix | try_suffix)* ;
+postfix_expr   = primary_expr (call_suffix | field_suffix | index_suffix | try_suffix)* ;
+index_suffix   = "[" expr "]" ;
+list_literal   = "[" (expr ("," expr)* ","?)? "]" ;
 call_suffix    = "(" arg_list? ")" ;
 arg_list       = call_arg ("," call_arg)* ","? ;
 call_arg       = ident ":" expr | expr ;
@@ -96,6 +98,9 @@ hex_int        = "0x" hexdigit+ ;
 - `loop` and `break` are typed together: all breaks in one loop must agree on one break type.
 - `continue` and `break` are valid only inside loop contexts.
 - `if let PATTERN = expr { ... } else { ... }` runs the first block with the pattern's bindings when it matches, otherwise the `else` block (optional, as for `if`; `else if` and `else if let` chain). `while let PATTERN = expr { ... }` repeats while the pattern matches; `break` and `continue` work as in `loop`. A pattern that always matches is reported (`E1251`). Both are written back unchanged by `aic fmt`.
+- Indexing `base[index]` reads one element and panics with `index_out_of_bounds{op:index}` when it does not exist. It works on `Vec[T]` (`Int` index, element `T`), `Map[K, V]` (key `K`, value `V`; a missing key panics), `String` (`Int` character index, one-character `String`) and `Bytes` (`Int` byte index, `UInt8`). The operation comes from the type's std module, which must be imported (`E1304`). Use `vec.get`, `map.get`, `string.char_at` or `bytes.byte_at` for an `Option`/`Result` instead of a panic. Assignment `v[i] = x` is described in [Statements](./statements.md). There is no `Slice[T]` type (it is reported as unknown, `E1228`); use `Vec[T]`.
+- List literals `[a, b, c]` build a `Vec` (needs `import std.vec`); `[]` needs a known element type (`let empty: Vec[Int] = [];`).
+- Method syntax on std collections: when a `Vec`, `Map`, `Set`, `String`, `Bytes` or `Deque` value has no inherent method of that name, `value.f(args)` calls the std module function `f(value, args)`, or `<module>_f` (`v.len()` is `vec.vec_len(v)`, `v.push(x)` is `vec.push(v, x)`). The module must be imported.
 - Enum variants as values: a unit variant is written bare (`Red`, `None`) or qualified (`Color::Red`, `Option::None`); a payload variant is called (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`). A bare name that more than one visible enum declares needs a typed context or a qualifier (`E2104`). Local bindings shadow variant names. The legacy `None()` spelling is accepted, and `aic fmt` prints it as `None`.
 - Block expressions (`{ stmts; tail }`) open a new scope; bindings declared inside end with the block. The block's value is its tail expression, or `()` without one: `let x = { let a = 1; a + 1 };`.
 - `if cond { ... }` without `else` has type `()`: the branch's value must be `()` (end it with `;` to discard a value). Otherwise `E1220` reports "`if` without `else` has type '()'".

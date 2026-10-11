@@ -98,6 +98,7 @@ Recent core-language additions:
 - `E1301`: call to `len` from a module that does not import `std.string`.
 - `E1288`: const type/initializer mismatch, or a const without an initializer.
 - `E1313`: a std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. These types are not prelude types: code generation takes their layout from the std module. The help line names the `import` to add. A module loaded through another import (for example `std.vec` through `std.string`) is enough, and a user struct, enum, alias, or generic parameter with the same name is accepted.
+- `E1304`: an index expression on a type that cannot be indexed, or indexing / a list literal without importing the std module that provides it.
 - `E1302`: the `else` block of `let PATTERN = expr else { ... };` does not diverge (it must end in `return`, `break`, `continue` or `panic(...)`).
 - `E1110` (parser): refutable pattern in a plain `let` (`let Some(x) = o;`); use `let ... else` or `if let`.
 - `E1257`: `await` operand is not `Async[T]`.
@@ -243,6 +244,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E1298` | Assignment through a `Ref`/`RefMut` value. | Assign to a `let mut` binding, or to `self` in a `&mut self` method. |
 | `E1299` | `async` method with a `&mut self` receiver. | Take `self` and return the updated value. |
 | `E1303` | `&mut self` method used as a function value. | Call the method directly or wrap the call in a closure. |
+| `E1304` | Index expression on a non-indexable type, or indexing / list literal without the std module import. | Index a `Vec`, `Map`, `String` or `Bytes`, and import its std module (`import std.vec;`). |
 | `E1302` | `let ... else` block does not diverge. | End the block with `return`, `break`, `continue` or `panic(...)`. |
 | `E1110` | Refutable pattern in a plain `let`. | Use `let PATTERN = expr else { return ...; };` or `if let`. |
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
