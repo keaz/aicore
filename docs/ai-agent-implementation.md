@@ -965,6 +965,12 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Block Comments, Binary/Octal Literals and Digit Separators (SYNTAX-T13, #459)
+
+- Lexer: `lex_block_comment` records nested `/* */` comments in the comment list that `lex_with_comments` returns, so `aic fmt` keeps them like line comments (E0002 when unclosed). `lex_number` reads a radix prefix (`0x`, `0b`, `0o`) and `lex_digit_run` digits with `_` separators (E0003 for a digit outside the base or no digits). Tokens keep the source text in `raw_text`.
+- `lexer::parse_int_literal_text` turns that text into its value for every radix and separator; the checker's and the code generator's `parse_raw_int_literal_magnitude` use it.
+- Verification: `lexes_binary_octal_literals_and_digit_separators`, `lexes_nested_block_comments_as_comments`, formatter test `block_comments_and_new_literals_round_trip`, `exec_binary_octal_and_separated_literals`, `examples/core/number_literals.aic`.
+
 ## Ranges, Range Patterns and `@` Bindings (SYNTAX-T11, #458)
 
 - Language surface: range values `a..b` / `a..=b` (`std.range::Range[T]`), slices `v[a..b]` (and the open forms), range patterns `lo..=hi` / `lo..hi` / `lo..` / `..=hi`, negative and float literal patterns, `name @ pattern`. Rules: `docs/reference/expressions.md`, `docs/reference/pattern-matching.md`.

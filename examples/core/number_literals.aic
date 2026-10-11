@@ -1,0 +1,21 @@
+module examples.core.number_literals;
+
+import std.io;
+
+/* Number literal forms. Block comments may span lines
+   and /* nest */ inside each other. */
+
+fn main() -> Int effects { io } capabilities { io } {
+    let flags = 0b0010_1010;
+    let permissions = 0o52;
+    let color = 0x00_2A;
+    let budget = 1_000_042;
+    // 42 three ways, plus the 42 in one million and forty-two
+    let same = if flags == permissions && permissions == color {
+        1
+    } else {
+        0
+    };
+    print_int(same * (budget - 1_000_000));
+    0
+}

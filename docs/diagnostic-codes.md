@@ -99,6 +99,8 @@ Recent core-language additions:
 - `E1288`: const type/initializer mismatch, or a const without an initializer.
 - `E1313`: a std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. These types are not prelude types: code generation takes their layout from the std module. The help line names the `import` to add. A module loaded through another import (for example `std.vec` through `std.string`) is enough, and a user struct, enum, alias, or generic parameter with the same name is accepted.
 - `E1304`: an index expression on a type that cannot be indexed, or indexing / a list literal without importing the std module that provides it.
+- `E0002` (lexer): an unclosed block comment (`/*` without `*/`).
+- `E0003` (lexer): a digit the literal's base does not allow (`0b102`, `0o9`), or a `0x`/`0b`/`0o` prefix without digits.
 - `E1306` (parser): a loop label not followed by `:` and `while`, `loop` or `for`.
 - `E1307`: `break 'label` / `continue 'label` where no enclosing loop has that label.
 - `E1308`: a loop label that an enclosing loop already uses.

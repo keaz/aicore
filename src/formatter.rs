@@ -3390,6 +3390,12 @@ mod tests {
     }
 
     #[test]
+    fn block_comments_and_new_literals_round_trip() {
+        let src = "/* Header block\n   over two lines */\nfn f() -> Int {\n    /* before the binding */\n    let mask = 0b1010_0101;\n    let big = 1_000_000;\n    // line comment\n    mask + big + 0o17 + 0xFF_FF\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
     fn casts_round_trip() {
         let src = "fn f(x: Int32, y: UInt8) -> Float64 {\n    let a = -x as Int64;\n    let b = y as Int * 2;\n    let c = (x as Int64) as Float64;\n    let d = -(x as Int64);\n    let e = x.checked_to_u8();\n    (a + d) as Float64 + c + b.to_f64()\n}\n";
         assert_eq!(fmt(src), src);

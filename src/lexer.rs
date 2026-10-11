@@ -198,6 +198,23 @@ pub struct Comment {
     pub span: Span,
 }
 
+/// Value of an integer literal's digits as written: decimal, `0x`, `0b`
+/// or `0o`, with `_` separators (`1_000`, `0xFF_FF`, `0b1010_0101`).
+pub fn parse_int_literal_text(text: &str) -> Option<u128> {
+    let trimmed = text.trim();
+    let (digits, radix) = match trimmed.get(..2) {
+        Some("0x" | "0X") => (&trimmed[2..], 16),
+        Some("0b" | "0B") => (&trimmed[2..], 2),
+        Some("0o" | "0O") => (&trimmed[2..], 8),
+        _ => (trimmed, 10),
+    };
+    let cleaned = digits.replace('_', "");
+    if cleaned.is_empty() {
+        return None;
+    }
+    u128::from_str_radix(&cleaned, radix).ok()
+}
+
 pub fn lex(source: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
     let (tokens, _comments, diagnostics) = lex_with_comments(source, file);
     (tokens, diagnostics)
@@ -250,6 +267,7 @@ impl<'a> Lexer<'a> {
                         span: Span::new(start, start + text.len()),
                     });
                 }
+                '/' if self.peek_next() == Some('*') => self.lex_block_comment(),
                 'f' if self.peek_next() == Some('"') => self.lex_template_string(),
                 '$' if self.peek_next() == Some('"') => self.lex_template_string(),
                 'a'..='z' | 'A'..='Z' => self.lex_ident_or_keyword(),
@@ -539,77 +557,107 @@ impl<'a> Lexer<'a> {
         self.push(kind, Span::new(start, self.offset));
     }
 
-    fn lex_number(&mut self) {
+    /// `/* ... */`, nested comments included; kept as one comment.
+    fn lex_block_comment(&mut self) {
         let start = self.offset;
-        if self.peek() == Some('0') && matches!(self.peek_next(), Some('x' | 'X')) {
-            self.bump();
-            self.bump();
-            let digits_start = self.offset;
-            while let Some(c) = self.peek() {
-                if c.is_ascii_hexdigit() {
+        self.bump(); // /
+        self.bump(); // *
+        let mut depth = 1usize;
+        while depth > 0 {
+            match (self.peek(), self.peek_next()) {
+                (Some('*'), Some('/')) => {
                     self.bump();
-                } else {
-                    break;
+                    self.bump();
+                    depth -= 1;
+                }
+                (Some('/'), Some('*')) => {
+                    self.bump();
+                    self.bump();
+                    depth += 1;
+                }
+                (Some(_), _) => self.bump(),
+                (None, _) => {
+                    self.error(
+                        "E0002",
+                        "unterminated block comment: missing `*/`",
+                        Span::new(start, self.offset),
+                    );
+                    return;
                 }
             }
-            if digits_start == self.offset {
-                self.error(
-                    "E0004",
-                    "invalid hex integer literal",
-                    Span::new(start, self.offset),
-                );
-                return;
-            }
-            let raw_end = self.offset;
-            let text = &self.source[digits_start..raw_end];
-            let (suffix, consumed_suffix) = self.lex_integer_suffix();
-            match u128::from_str_radix(text, 16) {
-                Ok(raw_value) => {
-                    if raw_value > i64::MAX as u128
-                        && !matches!(
-                            suffix,
-                            Some(IntLiteralSuffixToken::I128 | IntLiteralSuffixToken::U128)
-                        )
-                    {
-                        self.error(
-                            "E0004",
-                            format!("invalid integer literal '0x{}'", text),
-                            Span::new(start, raw_end),
-                        );
-                        return;
-                    }
-                    let token = IntLiteralToken {
-                        value: raw_value as i64,
-                        raw_value_span: Span::new(start, raw_end),
-                        raw_text: self.source[start..raw_end].to_string(),
-                        suffix,
-                    };
-                    let end = if token.suffix.is_some() {
-                        self.offset
-                    } else {
-                        raw_end
-                    };
-                    if consumed_suffix && token.suffix.is_none() {
-                        self.push(TokenKind::Int(token), Span::new(start, raw_end));
-                    } else {
-                        self.push(TokenKind::Int(token), Span::new(start, end));
-                    }
-                }
-                Err(_) => self.error(
-                    "E0004",
-                    format!("invalid integer literal '0x{}'", text),
-                    Span::new(start, raw_end),
-                ),
-            }
-            return;
         }
+        self.comments.push(Comment {
+            text: self.source[start..self.offset].to_string(),
+            span: Span::new(start, self.offset),
+        });
+    }
+
+    /// Consumes digits of `radix` and `_` separators. Returns false (after
+    /// reporting E0003) when the run has no digit or a digit too large for
+    /// the radix.
+    fn lex_digit_run(&mut self, radix: u32, literal_start: usize) -> bool {
+        let mut digits = 0usize;
+        let mut valid = true;
         while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
+            if c == '_' {
+                // `1_000_i64`: a separator directly before a suffix is fine,
+                // but the separator must follow a digit or the prefix.
                 self.bump();
+            } else if c.is_digit(radix) {
+                digits += 1;
+                self.bump();
+            } else if radix < 10 && c.is_ascii_digit() {
+                let at = self.offset;
+                self.bump();
+                self.error(
+                    "E0003",
+                    format!("digit '{c}' is not valid in a base-{radix} literal"),
+                    Span::new(at, self.offset),
+                );
+                digits += 1;
+                valid = false;
             } else {
                 break;
             }
         }
+        if digits == 0 {
+            self.error(
+                "E0003",
+                format!(
+                    "number literal '{}' has no digits",
+                    &self.source[literal_start..self.offset]
+                ),
+                Span::new(literal_start, self.offset),
+            );
+        }
+        valid && digits > 0
+    }
+
+    fn lex_number(&mut self) {
+        let start = self.offset;
+        let radix = if self.peek() == Some('0') {
+            match self.peek_next() {
+                Some('x' | 'X') => 16,
+                Some('b' | 'B') => 2,
+                Some('o' | 'O') => 8,
+                _ => 10,
+            }
+        } else {
+            10
+        };
+        if radix != 10 {
+            self.bump();
+            self.bump();
+            if !self.lex_digit_run(radix, start) {
+                return;
+            }
+            let raw_end = self.offset;
+            let raw_text = self.source[start..raw_end].to_string();
+            let (suffix, consumed_suffix) = self.lex_integer_suffix();
+            self.push_int_literal(start, raw_end, raw_text, suffix, consumed_suffix);
+            return;
+        }
+        self.lex_digit_run(10, start);
         let mut is_float = false;
         if self.peek() == Some('.')
             && self
@@ -619,13 +667,7 @@ impl<'a> Lexer<'a> {
         {
             is_float = true;
             self.bump(); // '.'
-            while let Some(c) = self.peek() {
-                if c.is_ascii_digit() {
-                    self.bump();
-                } else {
-                    break;
-                }
-            }
+            self.lex_digit_run(10, start);
         }
         if matches!(self.peek(), Some('e' | 'E')) {
             let sign = self.peek_nth(1);
@@ -639,25 +681,20 @@ impl<'a> Lexer<'a> {
                 if matches!(self.peek(), Some('+' | '-')) {
                     self.bump();
                 }
-                while let Some(c) = self.peek() {
-                    if c.is_ascii_digit() {
-                        self.bump();
-                    } else {
-                        break;
-                    }
-                }
+                self.lex_digit_run(10, start);
             }
         }
         let raw_end = self.offset;
-        let text = &self.source[start..raw_end];
+        let raw_text = self.source[start..raw_end].to_string();
         if is_float {
             let (suffix, consumed_suffix) = self.lex_float_suffix();
+            let text = raw_text.replace('_', "");
             match text.parse::<f64>() {
                 Ok(value) => {
                     let token = FloatLiteralToken {
                         value,
                         raw_value_span: Span::new(start, raw_end),
-                        raw_text: self.source[start..raw_end].to_string(),
+                        raw_text,
                         suffix,
                     };
                     let end = if token.suffix.is_some() {
@@ -673,50 +710,61 @@ impl<'a> Lexer<'a> {
                 }
                 Err(_) => self.error(
                     "E0007",
-                    format!("invalid float literal '{}'", text),
+                    format!("invalid float literal '{}'", raw_text),
                     Span::new(start, raw_end),
                 ),
             }
         } else {
             let (suffix, consumed_suffix) = self.lex_integer_suffix();
-            match text.parse::<u128>() {
-                Ok(raw_value) => {
-                    if raw_value > i64::MAX as u128
-                        && !matches!(
-                            suffix,
-                            Some(IntLiteralSuffixToken::I128 | IntLiteralSuffixToken::U128)
-                        )
-                    {
-                        self.error(
-                            "E0004",
-                            format!("invalid integer literal '{}'", text),
-                            Span::new(start, raw_end),
-                        );
-                        return;
-                    }
-                    let token = IntLiteralToken {
-                        value: raw_value as i64,
-                        raw_value_span: Span::new(start, raw_end),
-                        raw_text: self.source[start..raw_end].to_string(),
-                        suffix,
-                    };
-                    let end = if token.suffix.is_some() {
-                        self.offset
-                    } else {
-                        raw_end
-                    };
-                    if consumed_suffix && token.suffix.is_none() {
-                        self.push(TokenKind::Int(token), Span::new(start, raw_end));
-                    } else {
-                        self.push(TokenKind::Int(token), Span::new(start, end));
-                    }
-                }
-                Err(_) => self.error(
-                    "E0004",
-                    format!("invalid integer literal '{}'", text),
-                    Span::new(start, raw_end),
-                ),
-            }
+            self.push_int_literal(start, raw_end, raw_text, suffix, consumed_suffix);
+        }
+    }
+
+    /// Pushes an integer token for `raw_text` (any radix, `_` separators).
+    fn push_int_literal(
+        &mut self,
+        start: usize,
+        raw_end: usize,
+        raw_text: String,
+        suffix: Option<IntLiteralSuffixToken>,
+        consumed_suffix: bool,
+    ) {
+        let Some(raw_value) = parse_int_literal_text(&raw_text) else {
+            self.error(
+                "E0004",
+                format!("invalid integer literal '{}'", raw_text),
+                Span::new(start, raw_end),
+            );
+            return;
+        };
+        if raw_value > i64::MAX as u128
+            && !matches!(
+                suffix,
+                Some(IntLiteralSuffixToken::I128 | IntLiteralSuffixToken::U128)
+            )
+        {
+            self.error(
+                "E0004",
+                format!("invalid integer literal '{}'", raw_text),
+                Span::new(start, raw_end),
+            );
+            return;
+        }
+        let token = IntLiteralToken {
+            value: raw_value as i64,
+            raw_value_span: Span::new(start, raw_end),
+            raw_text,
+            suffix,
+        };
+        let end = if token.suffix.is_some() {
+            self.offset
+        } else {
+            raw_end
+        };
+        if consumed_suffix && token.suffix.is_none() {
+            self.push(TokenKind::Int(token), Span::new(start, raw_end));
+        } else {
+            self.push(TokenKind::Int(token), Span::new(start, end));
         }
     }
 
@@ -1103,7 +1151,8 @@ impl<'a> Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        lex, lex_with_comments, Comment, FloatLiteralSuffixToken, IntLiteralSuffixToken, TokenKind,
+        lex, lex_with_comments, parse_int_literal_text, Comment, FloatLiteralSuffixToken,
+        IntLiteralSuffixToken, TokenKind,
     };
     use crate::span::Span;
 
@@ -1268,6 +1317,78 @@ mod tests {
         // A quoted word is still a malformed char literal, not a label.
         let (_, diags) = lex("let c = 'ab';", "test.aic");
         assert!(diags.iter().any(|d| d.code == "E0008"), "{diags:#?}");
+    }
+
+    #[test]
+    fn lexes_binary_octal_literals_and_digit_separators() {
+        let (tokens, diags) = lex(
+            "1_000_000 0b1010_0101 0xFF_FF 0o17 0B11 1_000_i64 1_000.5_5 2_5e1_0 0b1111u8",
+            "test.aic",
+        );
+        assert!(diags.is_empty(), "{diags:#?}");
+        let ints: Vec<(i64, String)> = tokens
+            .iter()
+            .filter_map(|t| match &t.kind {
+                TokenKind::Int(lit) => Some((lit.value, lit.raw_text.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            ints,
+            vec![
+                (1_000_000, "1_000_000".to_string()),
+                (0b1010_0101, "0b1010_0101".to_string()),
+                (0xFF_FF, "0xFF_FF".to_string()),
+                (0o17, "0o17".to_string()),
+                (3, "0B11".to_string()),
+                (1000, "1_000_".to_string()),
+                (15, "0b1111".to_string()),
+            ]
+        );
+        let floats: Vec<f64> = tokens
+            .iter()
+            .filter_map(|t| match &t.kind {
+                TokenKind::Float(lit) => Some(lit.value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(floats, vec![1000.55, 25e10]);
+        assert_eq!(parse_int_literal_text("0b1_0"), Some(2));
+        assert_eq!(parse_int_literal_text("0x"), None);
+
+        for (src, code, text) in [
+            ("0b102", "E0003", "not valid in a base-2 literal"),
+            ("0o9", "E0003", "not valid in a base-8 literal"),
+            ("0x_", "E0003", "has no digits"),
+            ("0b", "E0003", "has no digits"),
+            (
+                "1_000_000_000_000_000_000_000",
+                "E0004",
+                "invalid integer literal",
+            ),
+        ] {
+            let (_, diags) = lex(src, "test.aic");
+            assert!(
+                diags
+                    .iter()
+                    .any(|d| d.code == code && d.message.contains(text)),
+                "{src}: {diags:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lexes_nested_block_comments_as_comments() {
+        let src = "/* a /* nested */ b */ fn /* inline */ f() -> Int { 1 }";
+        let (tokens, comments, diags) = lex_with_comments(src, "test.aic");
+        assert!(diags.is_empty(), "{diags:#?}");
+        assert!(matches!(tokens[0].kind, TokenKind::KwFn));
+        assert_eq!(
+            comments.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            vec!["/* a /* nested */ b */", "/* inline */"]
+        );
+        let (_, diags) = lex("fn f() -> Int { 1 } /* never /* closed */", "test.aic");
+        assert!(diags.iter().any(|d| d.code == "E0002"), "{diags:#?}");
     }
 
     #[test]

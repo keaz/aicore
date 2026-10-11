@@ -78,8 +78,11 @@ struct_init    = ident "{" struct_field ("," struct_field)* ","? "}" ;
 struct_field   = ident ":" expr ;
 
 literal        = int | float | string | "true" | "false" ;
-int            = decimal_int | hex_int ;
-hex_int        = "0x" hexdigit+ ;
+int            = decimal_int | hex_int | binary_int | octal_int ;
+decimal_int    = digit (digit | "_")* ;
+hex_int        = ("0x" | "0X") (hexdigit | "_")+ ;   (* at least one digit *)
+binary_int     = ("0b" | "0B") ("0" | "1" | "_")+ ;
+octal_int      = ("0o" | "0O") ("0".."7" | "_")+ ;
 ```
 
 ## Semantics and Rules

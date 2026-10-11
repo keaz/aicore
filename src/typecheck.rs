@@ -5328,15 +5328,7 @@ impl<'a> Checker<'a> {
     }
 
     fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {
-        let trimmed = text.trim();
-        if let Some(hex) = trimmed
-            .strip_prefix("0x")
-            .or_else(|| trimmed.strip_prefix("0X"))
-        {
-            u128::from_str_radix(hex, 16).ok()
-        } else {
-            trimmed.parse::<u128>().ok()
-        }
+        crate::lexer::parse_int_literal_text(text)
     }
 
     fn non_negative_integer_literal_value(

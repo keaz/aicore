@@ -107,4 +107,5 @@ highest
 - `|` is overloaded with context:
   - in expressions, `|...| -> ... { ... }` starts a closure
   - in patterns, `p1 | p2` is an or-pattern
-- Line comments use `//` and run to end-of-line.
+- Line comments use `//` and run to end-of-line. Block comments are written `/* ... */`, may span lines and nest (`/* a /* b */ c */` is one comment); an unclosed block comment is `E0002`. `aic fmt` keeps every comment: a block comment between statements or items stays where it is, and one inside an expression moves to its own line before that statement.
+- Integer literals are decimal, hexadecimal (`0xFF`), binary (`0b1010`) or octal (`0o755`); `_` separates digits anywhere after the first digit or the prefix (`1_000_000`, `0b1010_0101`, `1_000_i64`, `1_000.5`). A digit that the base does not allow (`0b102`) or a prefix without digits (`0x_`) is `E0003`. `aic fmt` writes literals back as written.

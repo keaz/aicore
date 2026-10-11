@@ -19711,3 +19711,30 @@ fn exec_out_of_range_slices_panic() {
         );
     }
 }
+
+#[test]
+fn exec_binary_octal_and_separated_literals() {
+    let src = r#"
+import std.io;
+
+/* Literal forms /* nested */ in one program. */
+fn main() -> Int effects { io } capabilities { io } {
+    let million = 1_000_000;
+    let mask = 0b1010_0101;
+    let hex = 0xFF_FF;
+    let mode = 0o755;
+    let small = 0b1111_1111u8;
+    let wide = 0x7FFF_FFFF_FFFF_FFFF;
+    let ratio = 1_000.25;
+    print_int(million /* inline */ + mask + hex + mode);
+    print_int(small as Int);
+    print_int(if wide == 9223372036854775807 { 1 } else { 0 });
+    print_int((ratio * 4.0).saturating_to_int());
+    print_int(match 0b11 { 0b11 => 1, _ => 0 } + match 1_0 { 0..=0b1001 => 0, 0xA => 10, _ => 0 });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1066193\n255\n1\n4001\n11\n");
+}
