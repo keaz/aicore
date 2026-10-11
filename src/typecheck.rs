@@ -49,6 +49,9 @@ pub struct TypecheckOutput {
     pub call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
     pub call_symbols: BTreeMap<ir::NodeId, ir::SymbolId>,
     pub call_target_modules: BTreeMap<ir::NodeId, Vec<String>>,
+    /// Final types of call arguments whose generic instantiation was only
+    /// fixed by the enclosing call (see `ir::Program::expr_type_hints`).
+    pub expr_type_hints: BTreeMap<ir::NodeId, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +208,7 @@ struct Checker<'a> {
     call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
     call_symbols: BTreeMap<ir::NodeId, ir::SymbolId>,
     call_target_modules: BTreeMap<ir::NodeId, Vec<String>>,
+    expr_type_hints: BTreeMap<ir::NodeId, String>,
 }
 
 #[derive(Default)]
@@ -594,6 +598,7 @@ impl<'a> Checker<'a> {
             call_arg_orders: BTreeMap::new(),
             call_symbols: BTreeMap::new(),
             call_target_modules: BTreeMap::new(),
+            expr_type_hints: BTreeMap::new(),
         }
     }
 
@@ -857,6 +862,7 @@ impl<'a> Checker<'a> {
             call_arg_orders: self.call_arg_orders,
             call_symbols: self.call_symbols,
             call_target_modules: self.call_target_modules,
+            expr_type_hints: self.expr_type_hints,
         }
     }
 
@@ -5333,24 +5339,95 @@ impl<'a> Checker<'a> {
                         &param_to_arg,
                     );
 
-                    let mut arg_types = Vec::new();
+                    // Arguments are checked against the parameter types with
+                    // the callee's generic parameters replaced by what is known
+                    // so far (`<?>` otherwise), so a nested generic call or
+                    // struct literal never binds its own generics to the
+                    // callee's type-variable names. Arguments that still
+                    // contain holes afterwards are checked again once the
+                    // other arguments have fixed the bindings
+                    // (`vec.push(vec.new_vec(), 5)`).
+                    let generic_set = sig.generic_params.iter().cloned().collect::<BTreeSet<_>>();
+                    let mut generic_bindings = BTreeMap::new();
+                    let mut arg_types = vec!["<?>".to_string(); args.len()];
+                    let mut arg_diag_ranges = vec![(0usize, 0usize); args.len()];
                     for (arg_idx, arg) in args.iter().enumerate() {
-                        let expected_hint = arg_to_param.get(arg_idx).and_then(|mapped| {
-                            mapped.and_then(|param_idx| sig.params.get(param_idx))
-                        });
-                        let arg_ty = if let Some(expected_hint) = expected_hint {
-                            self.check_expr_with_expected(
-                                arg,
+                        let param_idx = arg_to_param.get(arg_idx).copied().flatten();
+                        let expected_hint =
+                            param_idx.and_then(|idx| sig.params.get(idx)).map(|param| {
+                                if generic_set.is_empty() {
+                                    param.clone()
+                                } else {
+                                    substitute_type_vars(param, &generic_bindings, &generic_set)
+                                }
+                            });
+                        let diag_start = self.diagnostics.len();
+                        let arg_ty = self.check_expr_with_expected(
+                            arg,
+                            locals,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            expected_hint.as_deref(),
+                        );
+                        arg_diag_ranges[arg_idx] = (diag_start, self.diagnostics.len());
+                        if let Some(param) = param_idx.and_then(|idx| sig.params.get(idx)) {
+                            if !generic_set.is_empty() {
+                                let expected_norm = self.normalize_type(param);
+                                let arg_norm = self.normalize_type(&arg_ty);
+                                let _ = infer_generic_bindings(
+                                    &expected_norm,
+                                    &arg_norm,
+                                    &generic_set,
+                                    &mut generic_bindings,
+                                );
+                            }
+                        }
+                        arg_types[arg_idx] = arg_ty;
+                    }
+                    if !generic_set.is_empty() {
+                        // Re-check in reverse order so the recorded diagnostic
+                        // ranges of earlier arguments stay valid.
+                        for arg_idx in (0..args.len()).rev() {
+                            if !contains_unresolved_type(&arg_types[arg_idx]) {
+                                continue;
+                            }
+                            let Some(param) = arg_to_param
+                                .get(arg_idx)
+                                .copied()
+                                .flatten()
+                                .and_then(|idx| sig.params.get(idx))
+                            else {
+                                continue;
+                            };
+                            let refined =
+                                substitute_type_vars(param, &generic_bindings, &generic_set);
+                            if contains_unresolved_type(&refined) {
+                                continue;
+                            }
+                            let (start, end) = arg_diag_ranges[arg_idx];
+                            self.diagnostics.drain(start..end);
+                            let arg_ty = self.check_expr_with_expected(
+                                &args[arg_idx],
                                 locals,
                                 allowed_effects,
                                 ctx,
                                 contract_mode,
-                                Some(expected_hint),
-                            )
-                        } else {
-                            self.check_expr(arg, locals, allowed_effects, ctx, contract_mode)
-                        };
-                        arg_types.push(arg_ty);
+                                Some(&refined),
+                            );
+                            let expected_norm = self.normalize_type(param);
+                            let arg_norm = self.normalize_type(&arg_ty);
+                            let _ = infer_generic_bindings(
+                                &expected_norm,
+                                &arg_norm,
+                                &generic_set,
+                                &mut generic_bindings,
+                            );
+                            if !contains_unresolved_type(&arg_norm) {
+                                self.expr_type_hints.insert(args[arg_idx].node, arg_norm);
+                            }
+                            arg_types[arg_idx] = arg_ty;
+                        }
                     }
 
                     if args.len() != sig.params.len() {
@@ -5365,30 +5442,6 @@ impl<'a> Checker<'a> {
                             self.file,
                             expr.span,
                         ));
-                    }
-
-                    let generic_set = sig.generic_params.iter().cloned().collect::<BTreeSet<_>>();
-                    let mut generic_bindings = BTreeMap::new();
-
-                    for (param_idx, maybe_arg_idx) in param_to_arg.iter().enumerate() {
-                        let Some(arg_idx) = maybe_arg_idx else {
-                            continue;
-                        };
-                        let Some(expected_raw) = sig.params.get(param_idx) else {
-                            continue;
-                        };
-                        let arg_ty = arg_types
-                            .get(*arg_idx)
-                            .cloned()
-                            .unwrap_or_else(|| "<?>".to_string());
-                        let expected_norm = self.normalize_type(expected_raw);
-                        let arg_norm = self.normalize_type(&arg_ty);
-                        let _ = infer_generic_bindings(
-                            &expected_norm,
-                            &arg_norm,
-                            &generic_set,
-                            &mut generic_bindings,
-                        );
                     }
 
                     if !sig.generic_params.is_empty() {
@@ -5435,7 +5488,13 @@ impl<'a> Checker<'a> {
                             .filter(|g| !generic_bindings.contains_key(*g))
                             .cloned()
                             .collect::<Vec<_>>();
-                        if !unresolved.is_empty() && expected_ty.is_some() {
+                        // With a partially known expected type (a nested argument
+                        // of another generic call) inference is deferred: the
+                        // enclosing call re-checks this one with a refined type.
+                        let expected_is_concrete = expected_ty
+                            .map(|expected| !contains_unresolved_type(expected))
+                            .unwrap_or(false);
+                        if !unresolved.is_empty() && expected_is_concrete {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     "E1212",
@@ -11586,6 +11645,57 @@ fn main() -> Int { 0 }
         let codes = error_codes(src);
         // The transitive capability check now follows the method body.
         assert!(codes.contains(&"E2009".to_string()), "{codes:?}");
+    }
+
+    const GENERIC_HELPERS: &str = r#"
+struct Box[T] { value: T }
+fn unbox[T](b: Box[T]) -> T { b.value }
+fn empty_box[T]() -> Option[Box[T]] { None() }
+fn fill[T](slot: Option[Box[T]], value: T) -> Box[T] { Box { value: value } }
+fn rewrap[T](b: Box[T]) -> Box[Box[T]] { Box { value: b } }
+"#;
+
+    #[test]
+    fn generic_struct_literal_argument_infers_from_fields() {
+        let src =
+            format!("{GENERIC_HELPERS}fn main() -> Int {{ unbox(Box {{ value: 41 }}) + 1 }}\n");
+        assert!(error_codes(&src).is_empty(), "{:?}", error_codes(&src));
+    }
+
+    #[test]
+    fn nested_generic_literals_and_calls_as_arguments_infer() {
+        let src = format!(
+            "{GENERIC_HELPERS}fn main() -> Int {{ unbox(unbox(rewrap(Box {{ value: 7 }}))) }}\n"
+        );
+        assert!(error_codes(&src).is_empty(), "{:?}", error_codes(&src));
+    }
+
+    #[test]
+    fn generic_constructor_argument_is_inferred_from_sibling_arguments() {
+        let src = format!("{GENERIC_HELPERS}fn main() -> Int {{ unbox(fill(empty_box(), 5)) }}\n");
+        assert!(error_codes(&src).is_empty(), "{:?}", error_codes(&src));
+    }
+
+    #[test]
+    fn deferred_inference_still_reports_real_mismatches() {
+        let src = format!(
+            "{GENERIC_HELPERS}fn main() -> Int {{ unbox(fill(Some(Box {{ value: \"s\" }}), 5)) }}\n"
+        );
+        assert!(
+            error_codes(&src).contains(&"E1214".to_string()),
+            "{:?}",
+            error_codes(&src)
+        );
+    }
+
+    #[test]
+    fn uninferable_generic_constructor_is_still_rejected() {
+        let src = format!("{GENERIC_HELPERS}fn main() -> Int {{ let b = empty_box(); 0 }}\n");
+        assert!(
+            error_codes(&src).contains(&"E1204".to_string()),
+            "{:?}",
+            error_codes(&src)
+        );
     }
 
     #[test]

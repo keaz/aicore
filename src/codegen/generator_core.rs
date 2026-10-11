@@ -4555,6 +4555,19 @@ impl<'a> Generator<'a> {
         expected_ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
+        // The checker records the type of expressions (such as a generic
+        // constructor nested in another generic call) that cannot be derived
+        // here from the surrounding code.
+        let hinted_ty = if expected_ty.is_none() {
+            self.program
+                .expr_type_hints
+                .get(&expr.node)
+                .cloned()
+                .and_then(|repr| self.parse_type_repr(&repr, expr.span))
+        } else {
+            None
+        };
+        let expected_ty = expected_ty.or(hinted_ty.as_ref());
         match &expr.kind {
             ir::ExprKind::Int(v) => {
                 let literal_ty = self

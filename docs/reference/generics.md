@@ -33,6 +33,10 @@ impl_decl        = "impl" type (";" | "{" impl_method* "}") ;
 - Function generic inference is constraint-based and deterministic:
   - from argument types
   - from expected return context when available
+- Generic arguments flow into nested expressions:
+  - an argument is checked against its parameter type with the callee's generic parameters replaced by what is already known, never by the callee's type-variable names
+  - a generic struct literal or generic call used directly as an argument is inferred from its own fields or arguments (`unbox(Box { value: 41 })`)
+  - an argument whose type is still incomplete after all arguments were checked is checked again once the sibling arguments have fixed the bindings, so generic constructors need no annotation: `vec.push(vec.new_vec(), 5)` is `Vec[Int]`
 - If generic inference is incomplete, checker reports inference failure and requests stronger type context.
 - Trait bounds on generic params are validated:
   - bound traits must exist

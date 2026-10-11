@@ -1,0 +1,21 @@
+module examples.core.generic_argument_inference;
+import std.io;
+import std.vec;
+
+// Generic literals and constructors used directly as arguments are inferred
+// from their fields or from sibling arguments; no annotations needed.
+struct Box[T] {
+    value: T,
+}
+
+fn unbox[T](b: Box[T]) -> T {
+    b.value
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let answer = unbox(Box { value: 41 }) + 1;
+    let xs = vec.push(vec.push(vec.new_vec(), answer), 8);
+    print_int(vec.vec_len(xs));
+    print_int(answer);
+    0
+}

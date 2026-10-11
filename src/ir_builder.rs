@@ -34,6 +34,7 @@ pub fn build(program: &ast::Program) -> ir::Program {
         symbols: builder.symbols,
         types: builder.types,
         generic_instantiations: Vec::new(),
+        expr_type_hints: Default::default(),
         span: program.span,
     }
 }

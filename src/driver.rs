@@ -117,6 +117,7 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
                 symbols: Vec::new(),
                 types: Vec::new(),
                 generic_instantiations: Vec::new(),
+                expr_type_hints: Default::default(),
                 span: crate::span::Span::new(0, 0),
             },
             resolution: Resolution {
@@ -199,6 +200,7 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_let_binding_types(&mut ir, &typecheck.let_binding_types);
+    ir.expr_type_hints = typecheck.expr_type_hints.clone();
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
     apply_call_symbols(&mut ir, &typecheck.call_symbols);
     apply_call_target_modules(&mut ir, &typecheck.call_target_modules);

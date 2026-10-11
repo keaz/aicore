@@ -7740,7 +7740,7 @@ fn main() -> Int effects { io, fs, net, time, rand, env, proc, concurrency } cap
     let _rb = random_bool();
     let _spawn_task = spawn_task(21, 1);
     let _join_task = join_task(Task { handle: 1 });
-    let _poll_value_task = poll_value_task(Task { handle: 1 });
+    let _poll_value_task: Result[Option[Int], ConcurrencyError] = poll_value_task(Task { handle: 1 });
     let _timeout_task = timeout_task(Task { handle: 1 }, 1);
     let _cancel_task = cancel_task(Task { handle: 1 });
     let _cancel_value_task = cancel_value_task(Task { handle: 1 });

@@ -14194,6 +14194,31 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn exec_nested_generic_arguments_infer_without_annotations() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.option;
+struct Box[T] { value: T }
+fn unbox[T](b: Box[T]) -> T { b.value }
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(unbox(Box { value: 41 }) + 1);
+    let xs = vec.push(vec.new_vec(), 5);
+    print_int(vec.vec_len(xs));
+    let ys: Vec[Int] = vec.push(vec.push(vec.new_vec(), 1), 2);
+    print_int(vec.vec_len(ys));
+    print_int(vec.vec_len(vec.push(vec.new_vec_with_capacity(4), 9)));
+    let names = vec.push(vec.new_vec(), "a");
+    print_int(vec.vec_len(names));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n1\n2\n1\n1\n");
+}
+
+#[test]
 fn exec_contract_failure() {
     let src = r#"
 import std.io;

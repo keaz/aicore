@@ -87,6 +87,12 @@ pub struct Program {
     #[serde(default)]
     pub generic_instantiations: Vec<GenericInstantiation>,
     pub span: Span,
+    /// Types the checker inferred for expressions whose type the code
+    /// generator cannot derive locally, such as a generic constructor nested
+    /// in another generic call (`vec.push(vec.new_vec(), 5)`). Filled by the
+    /// driver after type checking; not part of the serialized IR.
+    #[serde(skip)]
+    pub expr_type_hints: BTreeMap<NodeId, String>,
 }
 
 pub fn migrate_json_to_current(input: &str) -> anyhow::Result<Program> {
