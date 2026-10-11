@@ -141,6 +141,15 @@ jobs:
       - name: Reproducibility manifest check
         run: make repro-check
 
+      - name: Working tree stays clean
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "CI left changed or untracked files; ignore or remove them:"
+            git status --porcelain
+            exit 1
+          fi
+
       - name: Upload E8 perf report
         if: always()
         uses: actions/upload-artifact@v4

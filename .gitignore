@@ -1,1 +1,26 @@
 /target
+
+# Artefacts written by `aic build`, `aic test`, `aic testgen` and the
+# example/self-host scripts. `aic build` writes its manifest to
+# `build.json` in the working directory unless `--manifest` is given.
+build.json
+.aic/
+.aic-cache/
+.aic-replay/
+test_results.json
+/tests/generated/
+/.ci-local-bin/
+*.o
+__pycache__/
+
+# VS Code extension test downloads and generated fixture settings
+/tools/vscode-aic/.vscode-test/
+/tools/vscode-aic/src/test/fixtures/workspace/.vscode/
+
+# Editor, OS and local agent files
+.DS_Store
+.vscode/
+.codex/
+.claude/
+graphify-out/
+.codex_tmp_*

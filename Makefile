@@ -93,6 +93,7 @@ test:
 test-unit:
 	$(CARGO) test --locked --lib
 	$(CARGO) test --locked --test unit_tests
+	$(CARGO) test --locked --test repo_hygiene_tests
 
 test-golden:
 	$(CARGO) test --locked --test golden_tests

@@ -24,6 +24,7 @@ fn main() -> Int effects { io, fs, net, time, rand, env, concurrency } capabilit
     let _tmp_file = temp_file("std_smoke_");
     let _tmp_dir = fs.temp_dir("std_smoke_");
     delete("out-moved.txt");
+    delete("out.txt");
     let _listen = tcp_listen("127.0.0.1:0");
     let _local = tcp_local_addr(1);
     let _accept = tcp_accept(1, 1);

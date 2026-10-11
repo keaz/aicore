@@ -678,6 +678,14 @@ Additional targets:
 | `make test-e8-nightly-fuzz` | Nightly fuzz stress suite |
 | `make intrinsic-placeholder-guard` | Intrinsic stub policy gate |
 
+`make ci` and `make examples-run` must leave `git status` clean. Build and
+test artefacts (`build.json`, `.aic/`, `.aic-cache/`, `.aic-replay/`,
+`test_results.json`, `tests/generated/`, `*.o`) are ignored in `.gitignore`,
+`tests/repo_hygiene_tests.rs` pins those rules, and the CI workflow fails when
+a run leaves changed or untracked files. When a new tool or example writes a
+file inside the checkout, write it to a temporary directory instead, or add an
+ignore rule and a case to `tests/repo_hygiene_tests.rs`.
+
 Install git hooks:
 
 ```bash
