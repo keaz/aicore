@@ -211,10 +211,31 @@ fn normalize_ast_value(value: &mut Value) {
                     *name = ast::canonical_primitive_type_name(name).to_string();
                 }
             }
+            // `None()` is printed as `None`.
+            if is_none_call_kind(map) {
+                map.clear();
+                map.insert("Var".to_string(), Value::String("None".to_string()));
+                return;
+            }
             map.values_mut().for_each(normalize_ast_value);
         }
         _ => {}
     }
+}
+
+/// An expression kind `{"Call": ...}` for `None()`: a call of `None`
+/// without arguments.
+fn is_none_call_kind(map: &serde_json::Map<String, Value>) -> bool {
+    let Some(Value::Object(call)) = map.get("Call") else {
+        return false;
+    };
+    let no_args = matches!(call.get("args"), Some(Value::Array(args)) if args.is_empty());
+    let callee_is_none = call
+        .get("callee")
+        .and_then(|callee| callee.get("kind"))
+        .and_then(|kind| kind.get("Var"))
+        .is_some_and(|name| name == "None");
+    map.len() == 1 && no_args && callee_is_none
 }
 
 fn first_difference(left: &Value, right: &Value, path: &str) -> Option<String> {
@@ -1636,6 +1657,13 @@ impl<'a> Printer<'a> {
             }
             ir::ExprKind::Unit => self.out.push_str("()"),
             ir::ExprKind::Var(v) => self.out.push_str(v),
+            ir::ExprKind::Call { callee, args, .. }
+                if args.is_empty()
+                    && matches!(&callee.kind, ir::ExprKind::Var(name) if name == "None") =>
+            {
+                // Canonical form of the legacy `None()` spelling.
+                self.out.push_str("None");
+            }
             ir::ExprKind::Call {
                 callee,
                 args,
@@ -2883,7 +2911,7 @@ fn maybe_even(x: Int) -> Option[Int] {
     if x % 2 == 0 {
         Some(x)
     } else {
-        None()
+        None
     }
 }
 

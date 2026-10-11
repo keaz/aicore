@@ -18396,3 +18396,49 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "41\n1\n6\n101\n7\n8\n3\n");
 }
+
+#[test]
+fn exec_bare_and_qualified_unit_variants() {
+    let src = r#"
+import std.io;
+
+enum Light { Red, Yellow, Green }
+enum Signal { Red, Wave(Int) }
+
+fn next(l: Light) -> Light {
+    match l {
+        Light::Red => Light::Green,
+        Green => Yellow,
+        Light::Yellow => Red,
+    }
+}
+
+fn code(l: Light) -> Int {
+    match l { Red => 1, Yellow => 2, Green => 3 }
+}
+
+fn signal(s: Signal) -> Int {
+    match s { Signal::Red => 100, Signal::Wave(n) => n }
+}
+
+fn first(v: Option[Int]) -> Int {
+    match v { Option::Some(x) => x, None => -1 }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let start: Light = Red;
+    print_int(code(start) * 100 + code(next(start)) * 10 + code(next(next(start))));
+    print_int(signal(Signal::Red) + signal(Signal::Wave(5)));
+    let empty: Option[Int] = None;
+    let legacy: Option[Int] = None();
+    let qualified: Option[Int] = Option::None;
+    print_int(first(empty) + first(legacy) + first(qualified) + first(Option::Some(10)));
+    let r: Result[Int, Int] = Result::Err(4);
+    print_int(match r { Result::Ok(v) => v, Result::Err(e) => e * 10 });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "132\n105\n7\n40\n");
+}

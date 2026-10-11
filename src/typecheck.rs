@@ -55,6 +55,11 @@ pub struct TypecheckOutput {
     pub expr_type_hints: BTreeMap<ir::NodeId, String>,
     /// Inferred types of `_` holes in signatures and struct fields.
     pub hole_types: TypedHoleTypes,
+    /// Variant expressions to canonicalize before codegen, by node: a bare
+    /// or qualified unit variant value (`Red`, `Color::Red`, `None`) becomes
+    /// a zero-argument constructor call with this callee name, and a
+    /// qualified builtin constructor call (`Option::Some(x)`) is renamed.
+    pub variant_callees: BTreeMap<ir::NodeId, String>,
 }
 
 /// Types the checker inferred for `_` holes in function signatures and
@@ -186,6 +191,24 @@ impl MutableReceiverCall {
     }
 }
 
+/// Splits `Enum::Variant` into its enum and variant names.
+fn split_variant_path(name: &str) -> Option<(&str, &str)> {
+    let (enum_name, variant) = name.rsplit_once("::")?;
+    (!enum_name.is_empty() && !variant.is_empty()).then_some((enum_name, variant))
+}
+
+/// `Option::Some`, `Option::None`, `Result::Ok` and `Result::Err` name the
+/// builtin constructors `Some`, `None`, `Ok` and `Err`.
+fn builtin_variant_constructor(name: &str) -> Option<&'static str> {
+    match name {
+        "Option::Some" => Some("Some"),
+        "Option::None" => Some("None"),
+        "Result::Ok" => Some("Ok"),
+        "Result::Err" => Some("Err"),
+        _ => None,
+    }
+}
+
 fn projection_span(projection: &ir::PlaceProjection) -> crate::span::Span {
     match projection {
         ir::PlaceProjection::Field { span, .. } | ir::PlaceProjection::Index { span, .. } => *span,
@@ -264,6 +287,8 @@ struct Checker<'a> {
     /// Calls of `&mut self` methods, by call node. The borrow pass requires
     /// their receiver to be a mutable place.
     mutable_receiver_calls: BTreeMap<ir::NodeId, MutableReceiverCall>,
+    /// See `TypecheckOutput::variant_callees`.
+    variant_callees: BTreeMap<ir::NodeId, String>,
     // Type parameters each generic function compares with `==`/`!=`, and
     // the generic calls that bind them; `finish` checks that every concrete
     // binding supports equality (E1291).
@@ -783,6 +808,7 @@ impl<'a> Checker<'a> {
             struct_field_inferred: BTreeMap::new(),
             hole_function_symbols: BTreeMap::new(),
             mutable_receiver_calls: BTreeMap::new(),
+            variant_callees: BTreeMap::new(),
             equality_type_params: BTreeMap::new(),
             generic_call_sites: Vec::new(),
             current_param_positions: BTreeMap::new(),
@@ -1424,6 +1450,7 @@ impl<'a> Checker<'a> {
             call_target_modules: self.call_target_modules,
             expr_type_hints: self.expr_type_hints,
             hole_types,
+            variant_callees: self.variant_callees,
         }
     }
 
@@ -5536,6 +5563,33 @@ impl<'a> Checker<'a> {
                     }
                     return render_fn_type(&sig.params, &ret);
                 }
+                if let Some(callee) = self.unit_variant_callee(name) {
+                    // A unit variant used as a value (`Red`, `Color::Red`,
+                    // `None`) is a constructor call without arguments.
+                    let call = ir::Expr {
+                        node: expr.node,
+                        kind: ir::ExprKind::Call {
+                            callee: Box::new(ir::Expr {
+                                node: expr.node,
+                                kind: ir::ExprKind::Var(callee.clone()),
+                                span: expr.span,
+                            }),
+                            args: Vec::new(),
+                            arg_names: Vec::new(),
+                            symbol: None,
+                        },
+                        span: expr.span,
+                    };
+                    self.variant_callees.insert(expr.node, callee);
+                    return self.check_expr_with_expected(
+                        &call,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_ty,
+                    );
+                }
                 self.diagnostics.push(Diagnostic::error(
                     "E1208",
                     format!("unknown symbol '{}'", name),
@@ -5582,7 +5636,7 @@ impl<'a> Checker<'a> {
                         contract_mode,
                     );
                 };
-                let Some(name) = call_path.last().cloned() else {
+                let Some(mut name) = call_path.last().cloned() else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1209",
                         "callee path cannot be empty",
@@ -5592,6 +5646,13 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 };
                 let qualified = call_path.len() > 1;
+                if !qualified {
+                    if let Some(builtin) = builtin_variant_constructor(&name) {
+                        // `Option::Some(x)` is `Some(x)`.
+                        self.variant_callees.insert(expr.node, builtin.to_string());
+                        name = builtin.to_string();
+                    }
+                }
                 let rendered_path = call_path.join(".");
 
                 if self.is_user_written_intrinsic_use(&name, callee.span) {
@@ -6542,7 +6603,29 @@ impl<'a> Checker<'a> {
                 }
 
                 if !qualified {
-                    let mut candidates = self.find_variants(&name);
+                    let (enum_filter, variant_name) = match split_variant_path(&name) {
+                        Some((enum_name, variant)) => (Some(enum_name), variant),
+                        None => (None, name.as_str()),
+                    };
+                    let mut candidates = self.find_variants(variant_name);
+                    if let Some(enum_name) = enum_filter {
+                        candidates.retain(|c| {
+                            Self::unqualified_name(&c.enum_name)
+                                == Self::unqualified_name(enum_name)
+                        });
+                        if candidates.is_empty() && self.find_enum(enum_name).is_some() {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1244",
+                                format!(
+                                    "unknown variant '{}' for enum '{}'",
+                                    variant_name, enum_name
+                                ),
+                                self.file,
+                                callee.span,
+                            ));
+                            return "<?>".to_string();
+                        }
+                    }
                     if candidates.len() > 1 {
                         if let Some(expected_enum) = expected_ty
                             .and_then(|expected| self.extract_expected_enum_name(expected))
@@ -9656,6 +9739,34 @@ impl<'a> Checker<'a> {
                     return;
                 }
 
+                // `Enum::Variant` must name the scrutinee's enum; the rest of
+                // the check uses the variant name.
+                let name = match split_variant_path(name) {
+                    Some((enum_name, variant)) => {
+                        let scrutinee_enum = base_type_name(&normalized_scrutinee_ty);
+                        if Self::unqualified_name(enum_name)
+                            != Self::unqualified_name(scrutinee_enum)
+                        {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1245",
+                                format!(
+                                    "variant pattern '{}' not valid for type '{}'",
+                                    name, scrutinee_ty
+                                ),
+                                self.file,
+                                pattern.span,
+                            ));
+                            for arg in args {
+                                self.check_pattern(arg, "<?>", locals, bound_names);
+                            }
+                            return;
+                        }
+                        variant.to_string()
+                    }
+                    None => name.clone(),
+                };
+                let name = &name;
+
                 if normalized_scrutinee_ty.starts_with("Option[") {
                     match name.as_str() {
                         "None" => {
@@ -9853,7 +9964,8 @@ impl<'a> Checker<'a> {
                 let ctor = if name == TUPLE_INTERNAL_NAME {
                     Ctor::Tuple(args.len())
                 } else {
-                    Ctor::Variant(name.clone())
+                    let short = split_variant_path(name).map_or(name.as_str(), |(_, v)| v);
+                    Ctor::Variant(short.to_string())
                 };
                 let Some(all) = match_usefulness::PatternTypes::constructors(self, &ty) else {
                     return Pat::Wild;
@@ -10146,6 +10258,29 @@ impl<'a> Checker<'a> {
             return Some(Self::unqualified_name(base).to_string());
         }
         None
+    }
+
+    /// The constructor name for `name` used as a value when it names a unit
+    /// variant: `None`, `Option::None`, `Red` or `Color::Red`.
+    fn unit_variant_callee(&self, name: &str) -> Option<String> {
+        if let Some(builtin) = builtin_variant_constructor(name) {
+            return (builtin == "None").then(|| builtin.to_string());
+        }
+        if name == "None" {
+            return Some(name.to_string());
+        }
+        let (enum_filter, variant) = match split_variant_path(name) {
+            Some((enum_name, variant)) => (Some(enum_name), variant),
+            None => (None, name),
+        };
+        let is_unit = self.find_variants(variant).iter().any(|candidate| {
+            candidate.payload.is_none()
+                && enum_filter.is_none_or(|enum_name| {
+                    Self::unqualified_name(&candidate.enum_name)
+                        == Self::unqualified_name(enum_name)
+                })
+        });
+        is_unit.then(|| name.to_string())
     }
 
     fn find_variants(&self, name: &str) -> Vec<VariantMatch> {
@@ -14267,6 +14402,53 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bare_and_qualified_unit_variants_resolve() {
+        let ok = r#"
+enum Color { Red, Green, Blue(Int) }
+enum Light { Red, Off }
+fn pick(c: Color) -> Int {
+    match c {
+        Color::Red => 1,
+        Green => 2,
+        Color::Blue(n) => n,
+    }
+}
+fn main() -> Int {
+    let a: Color = Red;
+    let b = Color::Green;
+    let c = Color::Blue(3);
+    let l = Light::Red;
+    let n: Option[Int] = None;
+    let m: Option[Int] = Option::None;
+    let s = Option::Some(2);
+    let r: Result[Int, Int] = Result::Ok(1);
+    let legacy: Option[Int] = None();
+    let Green = 5;
+    pick(a) + pick(b) + pick(c) + Green
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // Ambiguous bare variant without a typed context.
+            ("enum A { X } enum B { X } fn main() -> Int { let v = X; 0 }", "E2104"),
+            // The qualifier must name an enum that has the variant.
+            ("enum A { X } fn main() -> Int { let v = A::Y; 0 }", "E1208"),
+            ("enum A { X(Int) } fn main() -> Int { let v = A::Y(1); 0 }", "E1244"),
+            // A qualified pattern must name the scrutinee's enum.
+            ("enum A { X } enum B { X } fn f(a: A) -> Int { match a { B::X => 1 } } fn main() -> Int { 0 }", "E1245"),
+            // Payload variants are not values.
+            ("enum A { X(Int) } fn main() -> Int { let v = A::X; 0 }", "E1208"),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);

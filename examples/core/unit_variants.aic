@@ -1,0 +1,60 @@
+module examples.core.unit_variants;
+
+import std.io;
+
+// Unit variants are values without parentheses, and any variant can be
+// qualified with its enum name.
+
+enum Light {
+    Red,
+    Yellow,
+    Green,
+}
+
+enum Alarm {
+    Red,
+    Off,
+}
+
+fn next(light: Light) -> Light {
+    match light {
+        Light::Red => Light::Green,
+        Green => Yellow,
+        Yellow => Red,
+    }
+}
+
+fn wait_seconds(light: Light) -> Int {
+    match light {
+        Red => 20,
+        Yellow => 2,
+        Green => 15,
+    }
+}
+
+fn alarm_level(alarm: Alarm) -> Int {
+    match alarm {
+        Alarm::Red => 5,
+        Alarm::Off => 0,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let start: Light = Red;
+    let mut total = 0;
+    let mut light = start;
+    let mut step = 0;
+    while step < 3 {
+        total += wait_seconds(light);
+        light = next(light);
+        step += 1;
+    }
+    let pending: Option[Int] = None;
+    let extra = match pending {
+        Option::Some(n) => n,
+        None => alarm_level(Alarm::Red),
+    };
+    // 20 + 15 + 2 + 5 = 42
+    print_int(total + extra);
+    0
+}

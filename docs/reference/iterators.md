@@ -98,7 +98,7 @@ impl Iterator[Counter, Int] {
             }
         } else {
             IterStep {
-                item: None(),
+                item: None,
                 iter: self,
             }
         }

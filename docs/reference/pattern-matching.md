@@ -23,8 +23,9 @@ pattern_atom    = "_"
                | variant_pattern ;
 
 tuple_pattern   = "(" pattern ("," pattern)+ ","? ")" ;
-variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
-               | ident ;
+variant_pattern = variant_path "(" pattern ("," pattern)* ","? ")"
+               | variant_path ;
+variant_path    = ident ("::" ident)? ;   (* `Red`, `Color::Red`, `Option::Some` *)
 ```
 
 ## Semantics and Rules
@@ -55,6 +56,7 @@ variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
   - identifier with payload syntax `Name(...)` is variant pattern
   - bare uppercase identifier is treated as zero-arg variant pattern
   - bare lowercase identifier is treated as variable-binding pattern
+  - a qualified path `Enum::Variant` (or `Option::Some`, `Result::Err`) is always a variant pattern; the enum must be the scrutinee's type (`E1245`)
 - Code generation lowers every pattern the checker accepts, so `aic check` and `aic build` agree on matches:
   - integer literals of every width and char literals compare with `icmp`; strings compare by content
   - enum variants test the tag; variant payloads, tuple elements, and struct fields are matched recursively to any depth (`Some(Some(Some(7)))`, `Rect((w, 0))`, `Pixel { lit: true, color: Red, level }`)

@@ -11,7 +11,7 @@ fn maybe_even(x: Int) -> Option[Int] {
     if x % 2 == 0 {
         Some(x)
     } else {
-        None()
+        None
     }
 }
 

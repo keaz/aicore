@@ -279,10 +279,10 @@ fn migrate_source_text(source: &str) -> (String, Vec<MigrationEdit>) {
             pending.push(PendingEdit {
                 start: token.span.start,
                 end: token.span.end,
-                replacement: "None()".to_string(),
+                replacement: "None".to_string(),
                 rule: "MIG002".to_string(),
                 risk: "high".to_string(),
-                description: "replace legacy null literal with Option form None()".to_string(),
+                description: "replace legacy null literal with Option form None".to_string(),
             });
         }
     }
@@ -417,7 +417,7 @@ fn main() -> Int {
 "#;
         let (rewritten, edits) = migrate_source_text(source);
         assert!(rewritten.contains("std.time.now_ms()"));
-        assert!(rewritten.contains("let b = None();"));
+        assert!(rewritten.contains("let b = None;"));
         assert_eq!(edits.len(), 2);
         assert!(edits.iter().any(|edit| edit.rule == "MIG001"));
         assert!(edits.iter().any(|edit| edit.rule == "MIG002"));

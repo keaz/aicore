@@ -199,6 +199,7 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_typed_hole_types(&mut ir, &typecheck.hole_types);
+    apply_variant_callees(&mut ir, &typecheck.variant_callees);
     apply_let_binding_types(&mut ir, &typecheck.let_binding_types);
     ir.expr_type_hints = typecheck.expr_type_hints.clone();
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
@@ -733,6 +734,42 @@ fn apply_call_target_modules(
             }
         }
     }
+}
+
+/// Canonicalizes variant expressions the checker resolved: a unit variant
+/// value (`Red`, `Color::Red`, `None`) becomes a constructor call without
+/// arguments, and `Option::Some(x)`-style calls use the builtin name.
+fn apply_variant_callees(program: &mut ir::Program, callees: &BTreeMap<ir::NodeId, String>) {
+    if callees.is_empty() {
+        return;
+    }
+    let mut pending = callees.clone();
+    ir::visit_exprs_mut(program, &mut |expr| {
+        // Each node is rewritten once; the new callee keeps the node id.
+        let Some(callee_name) = pending.remove(&expr.node) else {
+            return;
+        };
+        match &mut expr.kind {
+            ir::ExprKind::Var(_) => {
+                expr.kind = ir::ExprKind::Call {
+                    callee: Box::new(ir::Expr {
+                        node: expr.node,
+                        kind: ir::ExprKind::Var(callee_name),
+                        span: expr.span,
+                    }),
+                    args: Vec::new(),
+                    arg_names: Vec::new(),
+                    symbol: None,
+                };
+            }
+            ir::ExprKind::Call { callee, .. } => {
+                if let ir::ExprKind::Var(name) = &mut callee.kind {
+                    *name = callee_name;
+                }
+            }
+            _ => {}
+        }
+    });
 }
 
 fn apply_call_symbols(program: &mut ir::Program, symbols: &BTreeMap<ir::NodeId, ir::SymbolId>) {

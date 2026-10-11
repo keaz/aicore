@@ -931,6 +931,14 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Bare and Qualified Unit Variants (SYNTAX-T7, #451)
+
+- Language surface: unit variants as values (`Red`, `Color::Red`, `None`, `Option::None`), qualified constructor calls (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`), and qualified patterns (`Color::Red =>`, `Option::Some(x) =>`).
+- Checker: `unit_variant_callee` resolves a value name the scope does not bind; the `Var` is checked as a zero-argument constructor call and recorded in `TypecheckOutput::variant_callees`. Qualified calls filter `find_variants` by enum (`split_variant_path`); `builtin_variant_constructor` maps `Option::`/`Result::` names to the builtins. Qualified patterns must name the scrutinee's enum (`E1245`).
+- Driver: `apply_variant_callees` (using `ir::visit_exprs_mut`) rewrites those `Var`s into constructor calls before codegen; `gen_variant_constructor` filters candidates by the qualifier.
+- Formatter: prints `None()` as `None`, and its verifier treats the two as the same program.
+- Verification: `exec_bare_and_qualified_unit_variants`, `bare_and_qualified_unit_variants_resolve`, `parses_qualified_variant_patterns_and_values`, golden `case27_unit_variants.aic`, `examples/core/unit_variants.aic`, and the README examples.
+
 ## Block Expressions and `if` Without `else` (SYNTAX-T3, #450)
 
 - Language surface: `{ stmts; tail }` as an expression, `if cond { ... }` without `else`, block bodies in match arms (the arm comma is then optional), and block-like statements without `;`. Rules: `docs/reference/expressions.md`, `docs/reference/statements.md`.

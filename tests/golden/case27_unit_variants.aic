@@ -1,0 +1,20 @@
+enum Light {
+    Red,
+    Green,
+}
+
+fn flip(l: Light) -> Light {
+    match l {
+        Light::Red => Light::Green,
+        Green => Red,
+    }
+}
+
+fn main() -> Int {
+    let empty: Option[Int] = None;
+    let x = Option::Some(1);
+    match flip(Light::Red) {
+        Light::Green => 1,
+        Light::Red => 0,
+    }
+}
