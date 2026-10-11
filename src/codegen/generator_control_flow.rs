@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> Generator<'a> {
-    fn store_match_arm_value(
+    pub(super) fn store_match_arm_value(
         &mut self,
         value: Value,
         arm_span: crate::span::Span,
@@ -1483,6 +1483,9 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let scrutinee = self.gen_expr(scrutinee_expr, fctx)?;
+        if self.match_needs_general_lowering(&scrutinee.ty, arms) {
+            return self.gen_match_general(scrutinee, arms, expected_ty, scrutinee_expr.span, fctx);
+        }
 
         match scrutinee.ty.clone() {
             LType::Bool => self.gen_match_bool(scrutinee, arms, expected_ty, fctx),

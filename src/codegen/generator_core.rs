@@ -8106,7 +8106,7 @@ fn type_uses_generic(ty: &str, generic: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {
+pub(super) fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {
     let trimmed = text.trim();
     if let Some(hex) = trimmed
         .strip_prefix("0x")

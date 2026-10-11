@@ -14219,6 +14219,178 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn exec_match_lowers_literals_strings_chars_structs_and_nested_payloads() {
+    let src = r#"import std.io;
+import std.option;
+import std.result;
+enum Shape { Circle(Int), Rect((Int, Int)), Empty }
+enum Color { Red, Green, Blue }
+struct Pixel { lit: Bool, color: Color, level: Int }
+
+fn int_kind(n: Int) -> Int {
+    match n {
+        0 => 100,
+        1 | 2 | 3 => 101,
+        x if x < 0 => 102,
+        _ => 103,
+    }
+}
+
+fn small(n: Int8) -> Int {
+    match n {
+        0 => 1,
+        127 => 2,
+        _ => 3,
+    }
+}
+
+fn wide(n: UInt64) -> Int {
+    match n {
+        4000000000u64 => 1,
+        0 => 2,
+        _ => 3,
+    }
+}
+
+fn word(s: String) -> Int {
+    match s {
+        "" => 0,
+        "alpha" => 1,
+        "beta" | "gamma" => 2,
+        other => 3,
+    }
+}
+
+fn letter(c: Char) -> Int {
+    match c {
+        'a' => 1,
+        'é' => 2,
+        _ => 3,
+    }
+}
+
+fn nested(x: Option[Option[Option[Int]]]) -> Int {
+    match x {
+        Some(Some(Some(7))) => 7,
+        Some(Some(Some(v))) => v + 1000,
+        Some(Some(None)) => 2,
+        Some(None) => 1,
+        None => 0,
+    }
+}
+
+fn res(r: Result[Option[Int], String]) -> Int {
+    match r {
+        Ok(Some(3)) => 33,
+        Ok(Some(n)) if n > 10 => n,
+        Ok(Some(_)) => 1,
+        Ok(None) => 0,
+        Err("boom") => -1,
+        Err(_) => -2,
+    }
+}
+
+fn area(s: Shape) -> Int {
+    match s {
+        Circle(0) => 0,
+        Circle(r) => 3 * r * r,
+        Rect((w, 0)) => w,
+        Rect((w, h)) => w * h,
+        Empty => -1,
+    }
+}
+
+fn pix(p: Pixel) -> Int {
+    match p {
+        Pixel { lit: false, .. } => 0,
+        Pixel { lit: true, color: Red, level } => level,
+        Pixel { lit: true, color: Green | Blue, level: 9 } => 99,
+        Pixel { lit: true, level, .. } => level * 2,
+    }
+}
+
+fn pair(t: ((Color, Bool), Int)) -> Int {
+    match t {
+        ((Red, true), n) => n,
+        ((Red, false), _) => -1,
+        ((c, _), 0) => 50,
+        _ => 60,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(int_kind(0) + int_kind(2) + int_kind(-5) + int_kind(9));
+    print_int(small(0) * 100 + small(127) * 10 + small(5));
+    print_int(wide(4000000000u64) * 100 + wide(0) * 10 + wide(5));
+    print_int(word("") + word("alpha") * 10 + word("gamma") * 100 + word("zzz") * 1000);
+    print_int(letter('a') + letter('é') * 10 + letter('q') * 100);
+    print_int(nested(Some(Some(Some(7)))) + nested(Some(Some(Some(5)))) + nested(Some(Some(None()))) + nested(Some(None())) + nested(None()));
+    print_int(res(Ok(Some(3))) + res(Ok(Some(20))) + res(Ok(Some(4))) + res(Ok(None())) + res(Err("boom")) + res(Err("x")));
+    print_int(area(Circle(0)) + area(Circle(2)) + area(Rect((5, 0))) + area(Rect((2, 3))) + area(Empty()));
+    print_int(pix(Pixel { lit: false, color: Red(), level: 4 }) + pix(Pixel { lit: true, color: Red(), level: 4 }) + pix(Pixel { lit: true, color: Blue(), level: 9 }) + pix(Pixel { lit: true, color: Green(), level: 3 }));
+    print_int(pair(((Red(), true), 8)) + pair(((Red(), false), 8)) + pair(((Blue(), true), 0)) + pair(((Green(), false), 1)));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout, "406\n123\n123\n3210\n321\n1015\n51\n22\n109\n117\n",
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_match_every_integer_width_uses_literal_patterns() {
+    let mut functions = String::new();
+    let mut calls = String::new();
+    for ty in [
+        "Int", "Int8", "Int16", "Int32", "Int64", "Int128", "ISize", "UInt8", "UInt16", "UInt32",
+        "UInt64", "UInt128", "USize",
+    ] {
+        functions.push_str(&format!(
+            "fn pick_{ty}(n: {ty}) -> Int {{\n    match n {{\n        0 => 1,\n        7 | 9 => 2,\n        100 => 3,\n        _ => 4,\n    }}\n}}\n"
+        ));
+        calls.push_str(&format!(
+            "    let a_{ty}: {ty} = 0;\n    let b_{ty}: {ty} = 9;\n    let c_{ty}: {ty} = 100;\n    let d_{ty}: {ty} = 5;\n    total = total * 10 + pick_{ty}(a_{ty}) + pick_{ty}(b_{ty}) + pick_{ty}(c_{ty}) + pick_{ty}(d_{ty});\n"
+        ));
+    }
+    let src = format!(
+        "import std.io;\n{functions}fn main() -> Int effects {{ io }} capabilities {{ io }} {{\n    let mut total = 0;\n{calls}    print_int(total % 1000000007);\n    0\n}}\n"
+    );
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}\n{src}");
+    // Each width contributes 1 + 2 + 3 + 4 = 10 as one decimal digit step.
+    let mut expected: i64 = 0;
+    for _ in 0..13 {
+        expected = (expected * 10 + 10) % 1_000_000_007;
+    }
+    assert_eq!(stdout.trim(), expected.to_string());
+}
+
+#[test]
+fn exec_match_guards_see_bindings_and_fall_through() {
+    let src = r#"
+import std.io;
+fn classify(p: (Int, String)) -> Int {
+    match p {
+        (n, "skip") if n > 0 => 1,
+        (n, s) if n == 0 => 2,
+        (_, "skip") => 3,
+        (n, _) => n,
+    }
+}
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(classify((5, "skip")) * 1000 + classify((0, "x")) * 100 + classify((-1, "skip")) * 10 + classify((4, "y")));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1234\n");
+}
+
+#[test]
 fn exec_contract_failure() {
     let src = r#"
 import std.io;

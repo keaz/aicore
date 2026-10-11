@@ -27,6 +27,7 @@ mod generator_crypto_web;
 mod generator_fs_env;
 mod generator_io;
 mod generator_json_regex;
+mod generator_match;
 mod generator_net_tls_buffer;
 mod generator_path_proc;
 mod generator_string_math;

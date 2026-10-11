@@ -54,4 +54,9 @@ variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
   - identifier with payload syntax `Name(...)` is variant pattern
   - bare uppercase identifier is treated as zero-arg variant pattern
   - bare lowercase identifier is treated as variable-binding pattern
-- Backend note: guarded match arms lower for `Bool`, tuple, and enum-like ADT matches in the current LLVM backend coverage.
+- Code generation lowers every pattern the checker accepts, so `aic check` and `aic build` agree on matches:
+  - integer literals of every width and char literals compare with `icmp`; strings compare by content
+  - enum variants test the tag; variant payloads, tuple elements, and struct fields are matched recursively to any depth (`Some(Some(Some(7)))`, `Rect((w, 0))`, `Pixel { lit: true, color: Red, level }`)
+  - or-patterns, bindings at any depth, and guards are supported everywhere; a guard that fails falls through to the next arm
+  - arms are tried in order; matches whose arms are all flat (bindings, wildcards, `true`/`false`, variants with a binding or wildcard payload) use a single tag switch
+  - the checker proves exhaustiveness, so no arm matching is unreachable; if it ever happened at run time the program panics with `match_failure`
