@@ -98,6 +98,11 @@ struct Parser<'a> {
     stuck_at: Cell<usize>,
 }
 
+enum ReturnInBlock {
+    Stmt(Stmt),
+    Tail(Expr),
+}
+
 #[derive(Debug, Clone)]
 enum TupleLetPattern {
     Binding { name: String, span: Span },
@@ -2009,8 +2014,12 @@ impl<'a> Parser<'a> {
                 continue;
             }
             if self.at_kind(|k| matches!(k, TokenKind::KwReturn)) {
-                match self.parse_return_stmt() {
-                    Some(stmt) => stmts.push(stmt),
+                match self.parse_return_in_block() {
+                    Some(ReturnInBlock::Stmt(stmt)) => stmts.push(stmt),
+                    Some(ReturnInBlock::Tail(expr)) => {
+                        tail = Some(Box::new(expr));
+                        break;
+                    }
                     None => self.recover_statement(),
                 }
                 continue;
@@ -2277,37 +2286,45 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_return_stmt(&mut self) -> Option<Stmt> {
+    /// Parses `return [expr]` at statement position. With a trailing `;` it
+    /// is a return statement. Directly before the block's closing `}` it is the
+    /// block's tail expression (`if x > 0 { x } else { return 0 }`).
+    fn parse_return_in_block(&mut self) -> Option<ReturnInBlock> {
         let start = self.current_span().start;
-        self.bump();
-        let expr = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
-            None
-        } else {
-            Some(self.parse_expr()?)
+        let ret = self.parse_return_expr()?;
+        let ExprKind::Return { expr } = ret.kind else {
+            unreachable!("parse_return_expr builds a return expression");
         };
-        let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
-            let span = self.current_span();
+        if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+            let end = self.current_span().end;
             self.bump();
-            span.end
-        } else {
-            let span = self.current_span();
-            let insert_at = expr.as_ref().map(|e| e.span.end).unwrap_or(span.start);
-            self.diagnostics.push(
-                Diagnostic::error("E1034", "expected ';' after return", self.file, span).with_fix(
-                    crate::diagnostics::SuggestedFix {
-                        message: "insert ';' after return".to_string(),
-                        replacement: Some(";".to_string()),
-                        start: Some(insert_at),
-                        end: Some(insert_at),
-                    },
-                ),
-            );
-            insert_at
-        };
-        Some(Stmt::Return {
-            expr,
-            span: Span::new(start, end),
-        })
+            return Some(ReturnInBlock::Stmt(Stmt::Return {
+                expr: expr.map(|expr| *expr),
+                span: Span::new(start, end),
+            }));
+        }
+        if self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+            return Some(ReturnInBlock::Tail(Expr {
+                kind: ExprKind::Return { expr },
+                span: ret.span,
+            }));
+        }
+        let span = self.current_span();
+        let insert_at = expr.as_ref().map(|e| e.span.end).unwrap_or(ret.span.end);
+        self.diagnostics.push(
+            Diagnostic::error("E1034", "expected ';' after return", self.file, span).with_fix(
+                crate::diagnostics::SuggestedFix {
+                    message: "insert ';' after return".to_string(),
+                    replacement: Some(";".to_string()),
+                    start: Some(insert_at),
+                    end: Some(insert_at),
+                },
+            ),
+        );
+        Some(ReturnInBlock::Stmt(Stmt::Return {
+            expr: expr.map(|expr| *expr),
+            span: Span::new(start, insert_at),
+        }))
     }
 
     fn parse_expr(&mut self) -> Option<Expr> {
@@ -2936,6 +2953,7 @@ impl<'a> Parser<'a> {
             TokenKind::KwLoop => self.parse_loop_expr(),
             TokenKind::KwBreak => self.parse_break_expr(),
             TokenKind::KwContinue => self.parse_continue_expr(),
+            TokenKind::KwReturn => self.parse_return_expr(),
             TokenKind::KwMatch => self.parse_match_expr(),
             TokenKind::KwUnsafe => {
                 self.bump();
@@ -3109,6 +3127,26 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|| self.previous_span().end);
         Some(Expr {
             kind: ExprKind::Break { expr },
+            span: Span::new(start, end),
+        })
+    }
+
+    /// `return` used as an expression, for example `None => return 0,`.
+    /// Statement-level `return expr;` is parsed by the statement parser.
+    fn parse_return_expr(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        self.bump(); // return
+        let expr = if self.break_has_value_start() {
+            Some(Box::new(self.parse_expr()?))
+        } else {
+            None
+        };
+        let end = expr
+            .as_ref()
+            .map(|expr| expr.span.end)
+            .unwrap_or_else(|| self.previous_span().end);
+        Some(Expr {
+            kind: ExprKind::Return { expr },
             span: Span::new(start, end),
         })
     }
@@ -4744,7 +4782,8 @@ fn f(v: Vec[Int], n: Int) -> Int {
 fn bad() -> Int {
     let x = ;
     let y = ;
-    return
+    return 1
+    let z = 2;
 }
 
 fn ok() -> Int { 1 }
@@ -5910,5 +5949,66 @@ fn main() -> Int { 0 }
         assert!(!stats.budget_exhausted);
         assert_eq!(stats.budget, super::parser_step_budget(stats.tokens));
         assert!(stats.steps < stats.budget / 4, "stats={stats:?}");
+    }
+
+    #[test]
+    fn return_parses_as_expression_in_arms_and_block_tails() {
+        let src = r#"
+fn f(x: Option[Int]) -> Int {
+    let a = match x {
+        Some(v) => v,
+        None => return 0,
+    };
+    if a > 1 { a } else { return -1 }
+}
+
+fn g() -> () {
+    if true { return } else { () }
+}
+"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected fn");
+        };
+        let Stmt::Let { expr, .. } = &f.body.stmts[0] else {
+            panic!("expected let");
+        };
+        let ExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match");
+        };
+        assert!(matches!(
+            &arms[1].body.kind,
+            ExprKind::Return { expr: Some(value) } if matches!(value.kind, ExprKind::Int(0))
+        ));
+        let ExprKind::If { else_block, .. } = &f.body.tail.as_ref().expect("tail").kind else {
+            panic!("expected if tail");
+        };
+        assert!(else_block.stmts.is_empty());
+        assert!(matches!(
+            else_block.tail.as_deref().map(|e| &e.kind),
+            Some(ExprKind::Return { expr: Some(_) })
+        ));
+        let Item::Function(g) = &program.items[1] else {
+            panic!("expected fn");
+        };
+        let ExprKind::If { then_block, .. } = &g.body.tail.as_ref().expect("tail").kind else {
+            panic!("expected if tail");
+        };
+        assert!(matches!(
+            then_block.tail.as_deref().map(|e| &e.kind),
+            Some(ExprKind::Return { expr: None })
+        ));
+    }
+
+    #[test]
+    fn return_statement_without_semicolon_mid_block_still_reports_e1034() {
+        let src = "fn f() -> Int {\n    return 1\n    let x = 2;\n    x\n}\n";
+        let (_program, diagnostics) = parse(src, "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1034"),
+            "{diagnostics:#?}"
+        );
     }
 }

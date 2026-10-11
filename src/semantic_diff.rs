@@ -470,6 +470,10 @@ fn render_expr(expr: &Expr) -> String {
             Some(expr) => format!("break {}", render_expr(expr)),
             None => "break".to_string(),
         },
+        ExprKind::Return { expr } => match expr {
+            Some(expr) => format!("return {}", render_expr(expr)),
+            None => "return".to_string(),
+        },
         ExprKind::Continue => "continue".to_string(),
         ExprKind::Match { expr, arms } => {
             let rendered_arms = arms

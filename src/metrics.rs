@@ -395,7 +395,7 @@ impl ComplexityAnalyzer {
                 self.bump_decision(depth);
                 self.visit_block(body, depth + 1);
             }
-            ExprKind::Break { expr } => {
+            ExprKind::Break { expr } | ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.visit_expr(expr, depth);
                 }

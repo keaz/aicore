@@ -439,6 +439,9 @@ pub enum ExprKind {
         expr: Option<Box<Expr>>,
     },
     Continue,
+    Return {
+        expr: Option<Box<Expr>>,
+    },
     Match {
         expr: Box<Expr>,
         arms: Vec<MatchArm>,

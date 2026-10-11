@@ -209,6 +209,13 @@ impl TemplateLowerer {
                 },
                 span: expr.span,
             },
+            ir::ExprKind::Return { expr: inner } => ir::Expr {
+                node: expr.node,
+                kind: ir::ExprKind::Return {
+                    expr: inner.as_ref().map(|value| Box::new(self.lower_expr(value))),
+                },
+                span: expr.span,
+            },
             ir::ExprKind::Match {
                 expr: matched,
                 arms,
@@ -490,7 +497,7 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
             max = max.max(max_node_block(body));
         }
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
             if let Some(value) = expr {
                 max = max.max(max_node_expr(value));
             }
@@ -675,6 +682,7 @@ fn main(name: String) -> String {
             | ir::ExprKind::While { .. }
             | ir::ExprKind::Loop { .. }
             | ir::ExprKind::Break { .. }
+            | ir::ExprKind::Return { .. }
             | ir::ExprKind::Continue
             | ir::ExprKind::UnsafeBlock { .. } => false,
         }

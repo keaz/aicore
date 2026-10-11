@@ -7,6 +7,11 @@ use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo}
 use crate::std_policy::find_deprecated_api;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
+/// Type of expressions that never produce a value: `return`, `break`,
+/// `continue`, `panic(...)`, and blocks that end in one of them. It is
+/// compatible with every type, so a diverging branch never constrains the
+/// type of the other branch.
+const NEVER_TYPE: &str = "!";
 const FIXED_WIDTH_INTEGER_PRIMITIVES: [&str; 13] = [
     "Int8", "Int16", "Int32", "Int64", "Int128", "UInt8", "UInt16", "UInt32", "UInt64", "UInt128",
     "ISize", "USize", "UInt",
@@ -203,6 +208,9 @@ struct Checker<'a> {
 struct ExprContext {
     effects_used: BTreeSet<String>,
     loop_stack: Vec<LoopContext>,
+    /// Return type of the innermost enclosing function or closure. `None` in
+    /// contract and constant expressions, where `return` is not allowed.
+    fn_ret: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1364,7 +1372,10 @@ impl<'a> Checker<'a> {
             }
         }
 
-        let mut body_ctx = ExprContext::default();
+        let mut body_ctx = ExprContext {
+            fn_ret: Some(ret_type.clone()),
+            ..ExprContext::default()
+        };
         let body_ty = self.check_block(
             &func.body,
             &mut locals,
@@ -2738,7 +2749,7 @@ impl<'a> Checker<'a> {
                 let mut loop_binding_types = binding_types.clone();
                 self.check_resource_protocol_block(body, &mut loop_state, &mut loop_binding_types);
             }
-            ir::ExprKind::Break { expr } => {
+            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.check_resource_protocol_expr_mode(expr, state, binding_types, false);
                 }
@@ -3232,7 +3243,7 @@ impl<'a> Checker<'a> {
                 );
                 Vec::new()
             }
-            ir::ExprKind::Break { expr } => {
+            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.check_borrow_expr(expr, mutability, state, binding_types)
                 } else {
@@ -3887,6 +3898,10 @@ impl<'a> Checker<'a> {
         let mut scope = locals.clone();
         let mut pending_unresolved_lets: Vec<(String, crate::span::Span)> = Vec::new();
         let expected_ret_ty = self.normalize_type(ret_type);
+        // `return` targets the enclosing function, not this block's expected type.
+        let fn_ret_ty = ctx.fn_ret.clone().unwrap_or_else(|| ret_type.to_string());
+        let expected_fn_ret_ty = self.normalize_type(&fn_ret_ty);
+        let mut diverges = false;
 
         for stmt in &block.stmts {
             match stmt {
@@ -3943,8 +3958,14 @@ impl<'a> Checker<'a> {
                         self.let_binding_types.insert(*symbol, binding_ty.clone());
                         scope.insert(name.clone(), binding_ty);
                     } else {
-                        let expr_ty =
+                        let mut expr_ty =
                             self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
+                        if self.is_never_type(&expr_ty) {
+                            // `let x = return 1;` never binds; code after it is
+                            // unreachable, so give the binding a concrete type.
+                            diverges = true;
+                            expr_ty = "()".to_string();
+                        }
                         if contains_unresolved_type(&expr_ty) {
                             pending_unresolved_lets.push((name.clone(), *span));
                         }
@@ -3986,32 +4007,23 @@ impl<'a> Checker<'a> {
                     }
                 }
                 ir::Stmt::Expr { expr, .. } => {
-                    self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
+                    let ty = self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
+                    if self.is_never_type(&ty) {
+                        diverges = true;
+                    }
                 }
                 ir::Stmt::Return { expr, span } => {
-                    let ty = if let Some(expr) = expr {
-                        self.check_expr_with_expected(
-                            expr,
-                            &mut scope,
-                            allowed_effects,
-                            ctx,
-                            contract_mode,
-                            Some(&expected_ret_ty),
-                        )
-                    } else {
-                        "()".to_string()
-                    };
-                    if !self.types_compatible(ret_type, &ty) {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E1205",
-                            format!(
-                                "return type '{}' does not match function return '{}'",
-                                ty, ret_type
-                            ),
-                            self.file,
-                            *span,
-                        ));
-                    }
+                    self.check_return(
+                        expr.as_ref(),
+                        *span,
+                        &mut scope,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        &fn_ret_ty,
+                        &expected_fn_ret_ty,
+                    );
+                    diverges = true;
                 }
                 ir::Stmt::Assert { expr, span, .. } => {
                     let ty = self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
@@ -4036,6 +4048,8 @@ impl<'a> Checker<'a> {
                 contract_mode,
                 Some(&expected_ret_ty),
             )
+        } else if diverges {
+            NEVER_TYPE.to_string()
         } else {
             "()".to_string()
         };
@@ -4060,6 +4074,60 @@ impl<'a> Checker<'a> {
         }
 
         result_ty
+    }
+
+    fn is_never_type(&self, ty: &str) -> bool {
+        ty == NEVER_TYPE
+    }
+
+    /// Checks `return [expr]` (statement or expression) against the return
+    /// type of the enclosing function or closure.
+    #[allow(clippy::too_many_arguments)]
+    fn check_return(
+        &mut self,
+        expr: Option<&ir::Expr>,
+        span: crate::span::Span,
+        scope: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        fn_ret_ty: &str,
+        expected_fn_ret_ty: &str,
+    ) {
+        if ctx.fn_ret.is_none() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1279",
+                    "`return` is only allowed inside a function or closure body",
+                    self.file,
+                    span,
+                )
+                .with_help("contracts and constant initializers must be plain expressions"),
+            );
+        }
+        let ty = if let Some(expr) = expr {
+            self.check_expr_with_expected(
+                expr,
+                scope,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                Some(expected_fn_ret_ty),
+            )
+        } else {
+            "()".to_string()
+        };
+        if ctx.fn_ret.is_some() && !self.types_compatible(fn_ret_ty, &ty) {
+            self.diagnostics.push(Diagnostic::error(
+                "E1205",
+                format!(
+                    "return type '{}' does not match function return '{}'",
+                    ty, fn_ret_ty
+                ),
+                self.file,
+                span,
+            ));
+        }
     }
 
     fn check_expr(
@@ -4910,6 +4978,10 @@ impl<'a> Checker<'a> {
                         }
                     }
 
+                    if resolved_name == "panic" && resolved_module.as_deref() == Some("std.io") {
+                        // `panic` aborts the program, so the call diverges.
+                        sig.ret = NEVER_TYPE.to_string();
+                    }
                     if let Some(module_name) = resolved_module.as_deref() {
                         if let Some(entry) = find_deprecated_api(module_name, &resolved_name) {
                             self.diagnostics.push(
@@ -5571,6 +5643,10 @@ impl<'a> Checker<'a> {
                     closure_param_tys.push(param_ty);
                 }
 
+                // `return` in a closure leaves the closure, and `break`/`continue`
+                // cannot target loops outside it.
+                let outer_fn_ret = ctx.fn_ret.replace(declared_ret.clone());
+                let outer_loops = std::mem::take(&mut ctx.loop_stack);
                 let body_ty = self.check_block(
                     body,
                     &mut closure_locals,
@@ -5579,6 +5655,8 @@ impl<'a> Checker<'a> {
                     ctx,
                     contract_mode,
                 );
+                ctx.fn_ret = outer_fn_ret;
+                ctx.loop_stack = outer_loops;
                 if !self.types_compatible(&declared_ret, &body_ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1281",
@@ -5665,7 +5743,7 @@ impl<'a> Checker<'a> {
                     ctx,
                     contract_mode,
                 );
-                if !self.types_compatible(&then_ty, &else_ty) {
+                if !self.is_never_type(&then_ty) && !self.types_compatible(&then_ty, &else_ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1220",
                         format!(
@@ -5704,7 +5782,9 @@ impl<'a> Checker<'a> {
                 ctx.loop_stack.push(LoopContext { break_ty: None });
                 let _ = self.check_block(body, locals, "()", allowed_effects, ctx, contract_mode);
                 let loop_ctx = ctx.loop_stack.pop().unwrap_or_default();
-                loop_ctx.break_ty.unwrap_or_else(|| "()".to_string())
+                // A `loop` without `break` only exits through `return` or a
+                // panic, so it never produces a value.
+                loop_ctx.break_ty.unwrap_or_else(|| NEVER_TYPE.to_string())
             }
             ir::ExprKind::Break { expr: break_expr } => {
                 if ctx.loop_stack.is_empty() {
@@ -5727,6 +5807,11 @@ impl<'a> Checker<'a> {
                 };
 
                 let loop_ctx = ctx.loop_stack.last_mut().expect("checked non-empty stack");
+                let break_ty = if break_ty == NEVER_TYPE {
+                    "()".to_string()
+                } else {
+                    break_ty
+                };
                 match &loop_ctx.break_ty {
                     Some(expected) => {
                         if !self.types_compatible(expected, &break_ty) {
@@ -5743,13 +5828,14 @@ impl<'a> Checker<'a> {
                                 .with_help("ensure every `break` in the loop has the same type"),
                             );
                         }
-                        expected.clone()
                     }
                     None => {
-                        loop_ctx.break_ty = Some(break_ty.clone());
-                        break_ty
+                        loop_ctx.break_ty = Some(break_ty);
                     }
                 }
+                // `break` transfers control to the loop exit; the expression
+                // itself never produces a value.
+                NEVER_TYPE.to_string()
             }
             ir::ExprKind::Continue => {
                 if ctx.loop_stack.is_empty() {
@@ -5764,7 +5850,22 @@ impl<'a> Checker<'a> {
                     );
                     return "<?>".to_string();
                 }
-                "()".to_string()
+                NEVER_TYPE.to_string()
+            }
+            ir::ExprKind::Return { expr: value } => {
+                let fn_ret_ty = ctx.fn_ret.clone().unwrap_or_else(|| "()".to_string());
+                let expected_fn_ret_ty = self.normalize_type(&fn_ret_ty);
+                self.check_return(
+                    value.as_deref(),
+                    expr.span,
+                    locals,
+                    allowed_effects,
+                    ctx,
+                    contract_mode,
+                    &fn_ret_ty,
+                    &expected_fn_ret_ty,
+                );
+                NEVER_TYPE.to_string()
             }
             ir::ExprKind::Match {
                 expr: scrutinee,
@@ -5841,7 +5942,14 @@ impl<'a> Checker<'a> {
 
                 self.check_exhaustive(expr.span, &scrutinee_ty, &seen, wildcard_seen);
 
-                if arm_types.is_empty() {
+                // Arms that diverge (`return`, `break`, `panic(...)`) do not
+                // constrain the match type.
+                let all_arms_diverge =
+                    !arm_types.is_empty() && arm_types.iter().all(|ty| self.is_never_type(ty));
+                arm_types.retain(|ty| !self.is_never_type(ty));
+                if all_arms_diverge {
+                    NEVER_TYPE.to_string()
+                } else if arm_types.is_empty() {
                     "()".to_string()
                 } else {
                     let first = arm_types[0].clone();
@@ -9190,6 +9298,9 @@ impl<'a> Checker<'a> {
     }
 
     fn types_compatible_with_dyn(&self, expected: &str, found: &str) -> bool {
+        if found == NEVER_TYPE {
+            return true;
+        }
         if expected == found
             || expected == "<?>"
             || found == "<?>"
@@ -9244,6 +9355,12 @@ impl<'a> Checker<'a> {
 
     fn merge_compatible_types(&self, left: &str, right: &str) -> String {
         if left == right {
+            return left.to_string();
+        }
+        if left == NEVER_TYPE {
+            return right.to_string();
+        }
+        if right == NEVER_TYPE {
             return left.to_string();
         }
         if !self.types_compatible(left, right) {
@@ -10546,6 +10663,179 @@ mod tests {
     use super::{
         await_bridge_submit_type, check, extract_generic_args, merge_types, split_top_level,
     };
+
+    fn error_codes(src: &str) -> Vec<String> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, d2) = resolve(&ir, "test.aic");
+        assert!(d2.is_empty(), "resolve diagnostics: {d2:#?}");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| matches!(d.severity, Severity::Error))
+            .map(|d| d.code)
+            .collect()
+    }
+
+    #[test]
+    fn nested_return_is_checked_against_function_return_type() {
+        let ok = r#"
+fn f(x: Int) -> Int {
+    while x > 0 {
+        if x > 5 { return x; } else { () };
+        return 0;
+    };
+    loop {
+        match x {
+            0 => return 1,
+            _ => break,
+        }
+    };
+    x
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+
+        let wrong_stmt = r#"
+fn f(x: Int) -> Int {
+    if x > 0 { return true; } else { () };
+    x
+}
+"#;
+        assert_eq!(error_codes(wrong_stmt), vec!["E1205"]);
+
+        let wrong_expr = r#"
+fn f(x: Int) -> Int {
+    match x {
+        0 => return "zero",
+        _ => x,
+    }
+}
+"#;
+        assert_eq!(error_codes(wrong_expr), vec!["E1205"]);
+    }
+
+    #[test]
+    fn diverging_branches_unify_with_any_type() {
+        let src = r#"
+fn f(x: Int) -> Int {
+    let a = if x > 0 { x } else { return 0 };
+    let b = loop {
+        if a > 10 { break a } else { continue }
+    };
+    let c = match b {
+        1 => return 2,
+        _ => b + 1,
+    };
+    let d: String = if c > 3 { "big" } else { return 4 };
+    c
+}
+"#;
+        assert!(error_codes(src).is_empty(), "{:?}", error_codes(src));
+    }
+
+    #[test]
+    fn non_diverging_branches_still_must_agree() {
+        let src = r#"
+fn f(x: Int) -> Int {
+    if x > 0 { 1 } else { "no" }
+}
+"#;
+        assert!(error_codes(src).contains(&"E1220".to_string()));
+
+        let arms = r#"
+fn f(x: Int) -> Int {
+    match x {
+        0 => return 0,
+        1 => 1,
+        _ => "many",
+    }
+}
+"#;
+        assert!(error_codes(arms).contains(&"E1221".to_string()));
+    }
+
+    #[test]
+    fn block_ending_in_return_diverges() {
+        let src = r#"
+fn f(x: Int) -> Int {
+    if x > 0 {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+fn g() -> Int {
+    loop {
+        return 3;
+    }
+}
+"#;
+        assert!(error_codes(src).is_empty(), "{:?}", error_codes(src));
+
+        let missing = r#"
+fn f(x: Int) -> Int {
+    if x > 0 {
+        return 1;
+    } else {
+        ()
+    }
+}
+"#;
+        assert!(!error_codes(missing).is_empty());
+    }
+
+    #[test]
+    fn closure_return_uses_closure_return_type() {
+        let ok = r#"
+fn f(x: Int) -> String {
+    let g = |v: Int| -> Int {
+        if v > 0 { return v; } else { () };
+        0
+    };
+    if g(x) > 0 { "pos" } else { "zero" }
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+
+        let wrong = r#"
+fn f(x: Int) -> String {
+    let g = |v: Int| -> Int {
+        return "text";
+    };
+    "done"
+}
+"#;
+        assert!(error_codes(wrong).contains(&"E1205".to_string()));
+    }
+
+    #[test]
+    fn break_inside_closure_cannot_target_outer_loop() {
+        let src = r#"
+fn f() -> Int {
+    loop {
+        let g = |v: Int| -> Int {
+            break;
+            v
+        };
+        return g(1);
+    }
+}
+"#;
+        assert!(error_codes(src).contains(&"E1275".to_string()));
+    }
+
+    #[test]
+    fn return_in_contract_is_rejected() {
+        let src = r#"
+fn f(x: Int) -> Int requires x > 0 && match x { 0 => return false, _ => true } {
+    x
+}
+"#;
+        assert!(error_codes(src).contains(&"E1279".to_string()));
+    }
 
     #[test]
     fn option_match_exhaustive() {

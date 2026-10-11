@@ -566,6 +566,9 @@ impl Builder {
                 expr: expr.as_ref().map(|expr| Box::new(self.lower_expr(expr))),
             },
             ast::ExprKind::Continue => ir::ExprKind::Continue,
+            ast::ExprKind::Return { expr } => ir::ExprKind::Return {
+                expr: expr.as_ref().map(|expr| Box::new(self.lower_expr(expr))),
+            },
             ast::ExprKind::Match { expr, arms } => ir::ExprKind::Match {
                 expr: Box::new(self.lower_expr(expr)),
                 arms: arms

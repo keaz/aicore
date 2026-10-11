@@ -1086,6 +1086,7 @@ impl<'a> Generator<'a> {
             result_ty: None,
             result_slot: None,
             scope_depth: saved_drop_scopes.len(),
+            broken: false,
         });
 
         fctx.vars = saved_scope.clone();
@@ -1164,6 +1165,7 @@ impl<'a> Generator<'a> {
             result_ty: None,
             result_slot: None,
             scope_depth: saved_drop_scopes.len(),
+            broken: false,
         });
 
         fctx.vars = saved_scope.clone();
@@ -1182,6 +1184,17 @@ impl<'a> Generator<'a> {
         fctx.terminated = saved_terminated;
         fctx.lines.push(format!("{}:", exit_label));
         fctx.current_label = exit_label;
+
+        if !frame.broken {
+            // No `break` targets this loop: the exit block is unreachable and
+            // the loop only leaves through `return` or a panic.
+            fctx.lines.push("  unreachable".to_string());
+            fctx.terminated = true;
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
 
         if let (Some(slot), Some(result_ty)) = (frame.result_slot, frame.result_ty) {
             let reg = self.new_temp();
@@ -1221,6 +1234,7 @@ impl<'a> Generator<'a> {
         }
 
         let loop_index = fctx.loop_stack.len() - 1;
+        fctx.loop_stack[loop_index].broken = true;
         if let Some(break_expr) = break_expr {
             let value = self.gen_expr(break_expr, fctx)?;
             if fctx.loop_stack[loop_index].result_slot.is_none() {
@@ -2979,11 +2993,16 @@ impl<'a> Generator<'a> {
                 ));
                 None
             }
-            ir::ExprKind::Break { .. } => {
+            ir::ExprKind::Break { .. } | ir::ExprKind::Return { .. } => {
+                let keyword = if matches!(expr.kind, ir::ExprKind::Break { .. }) {
+                    "break"
+                } else {
+                    "return"
+                };
                 self.diagnostics.push(Diagnostic::error(
                     "E5023",
                     format!(
-                        "const '{}' initializer uses unsupported `break` expression in LLVM backend",
+                        "const '{}' initializer uses unsupported `{keyword}` expression in LLVM backend",
                         const_name
                     ),
                     self.file,

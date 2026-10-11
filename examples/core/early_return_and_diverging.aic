@@ -1,0 +1,50 @@
+module examples.core.early_return_and_diverging;
+import std.io;
+import std.option;
+import std.vec;
+
+// `return` works at any nesting depth and as an expression in match arms and
+// branch tails. Diverging expressions (`return`, `break`, `continue`,
+// `panic(...)`) do not constrain the type of the other branches.
+fn first_negative(xs: Vec[Int]) -> Int {
+    for x in xs {
+        if x < 0 {
+            return x;
+        } else {
+            ()
+        };
+    };
+    0
+}
+
+fn value_or_default(v: Option[Int]) -> Int {
+    let n = match v {
+        Some(n) => n,
+        None => return 0,
+    };
+    n * 2
+}
+
+fn sign(x: Int) -> Int {
+    if x > 0 { 1 } else { return -1 }
+}
+
+fn first_over(limit: Int) -> Int {
+    let mut i = 0;
+    loop {
+        i = i + 1;
+        if i * i > limit { break i } else { continue }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut xs: Vec[Int] = new_vec();
+    xs = push(xs, 4);
+    xs = push(xs, -2);
+    print_int(first_negative(xs));
+    print_int(value_or_default(None()));
+    print_int(value_or_default(Some(21)));
+    print_int(sign(-5));
+    print_int(first_over(50));
+    0
+}

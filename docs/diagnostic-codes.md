@@ -47,6 +47,7 @@ Recent core-language additions:
 - `E1104`: trait impl arity mismatch.
 - `E1105`: conflicting duplicate trait impl.
 - `E1256`: `await` used outside an async function.
+- `E1279`: `return` outside a function or closure body (contract expressions, constant initializers).
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.
 - `E1259`: invalid or unknown trait bound declaration.

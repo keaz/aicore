@@ -1099,7 +1099,7 @@ fn collect_match_expr_candidates_from_expr(expr: &Expr, out: &mut Vec<MatchExprC
             collect_match_expr_candidates_from_block(body, out);
         }
         ExprKind::Loop { body } => collect_match_expr_candidates_from_block(body, out),
-        ExprKind::Break { expr } => {
+        ExprKind::Break { expr } | ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_match_expr_candidates_from_expr(expr, out);
             }

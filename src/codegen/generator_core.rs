@@ -2319,7 +2319,7 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
                 self.collect_async_locals_in_block(body, locals)?;
             }
-            ir::ExprKind::Break { expr } => {
+            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.collect_async_locals_in_expr(expr, locals)?;
                 }
@@ -2716,88 +2716,8 @@ impl<'a> Generator<'a> {
                 ir::Stmt::Expr { expr, .. } => {
                     let _ = self.gen_expr(expr, fctx);
                 }
-                ir::Stmt::Return { expr, .. } => {
-                    if let Some(expr) = expr {
-                        let ret_hint = fctx.ret_ty.clone();
-                        if self.type_needs_explicit_drop(&ret_hint) {
-                            self.mark_moved_resource_locals_in_expr(expr, fctx);
-                        }
-                        if self.try_emit_musttail_return(expr, fctx) {
-                            continue;
-                        }
-                        if let Some(value) =
-                            self.gen_expr_with_expected(expr, Some(&ret_hint), fctx)
-                        {
-                            self.emit_scope_drops_to_depth(0, fctx);
-                            if fctx.async_poll_ctx.is_some() {
-                                self.emit_async_poll_return(value, expr.span, fctx);
-                            } else if let Some(async_inner) = fctx.async_inner_ret.clone() {
-                                let Some(value) = self.coerce_value_to_expected(
-                                    value,
-                                    &async_inner,
-                                    expr.span,
-                                    fctx,
-                                ) else {
-                                    fctx.terminated = true;
-                                    continue;
-                                };
-                                let async_value =
-                                    self.build_ready_async_value(value, &async_inner, fctx);
-                                let repr = async_value
-                                    .repr
-                                    .unwrap_or_else(|| default_value(&async_value.ty));
-                                fctx.lines.push(format!(
-                                    "  ret {} {}",
-                                    llvm_type(&async_value.ty),
-                                    repr
-                                ));
-                            } else {
-                                let Some(value) = self
-                                    .coerce_value_to_expected(value, &ret_hint, expr.span, fctx)
-                                else {
-                                    fctx.terminated = true;
-                                    continue;
-                                };
-                                let repr = coerce_repr(&value, &ret_hint);
-                                fctx.lines
-                                    .push(format!("  ret {} {}", llvm_type(&ret_hint), repr));
-                            }
-                            fctx.terminated = true;
-                        }
-                    } else {
-                        self.emit_scope_drops_to_depth(0, fctx);
-                        if fctx.async_poll_ctx.is_some() {
-                            self.emit_async_poll_return(
-                                Value {
-                                    ty: LType::Unit,
-                                    repr: None,
-                                },
-                                block.span,
-                                fctx,
-                            );
-                        } else if let Some(async_inner) = fctx.async_inner_ret.clone() {
-                            let ready = self.build_ready_async_value(
-                                Value {
-                                    ty: async_inner.clone(),
-                                    repr: if async_inner == LType::Unit {
-                                        None
-                                    } else {
-                                        Some(default_value(&async_inner))
-                                    },
-                                },
-                                &async_inner,
-                                fctx,
-                            );
-                            fctx.lines.push(format!(
-                                "  ret {} {}",
-                                llvm_type(&ready.ty),
-                                ready.repr.unwrap_or_else(|| default_value(&ready.ty))
-                            ));
-                        } else {
-                            fctx.lines.push("  ret void".to_string());
-                        }
-                        fctx.terminated = true;
-                    }
+                ir::Stmt::Return { expr, span } => {
+                    self.gen_return(expr.as_ref(), *span, fctx);
                 }
                 ir::Stmt::Assert { expr, message, .. } => {
                     if let Some(cond) = self.gen_expr(expr, fctx) {
@@ -4869,6 +4789,13 @@ impl<'a> Generator<'a> {
             } => self.gen_if(cond, then_block, else_block, expected_ty, fctx),
             ir::ExprKind::While { cond, body } => self.gen_while(cond, body, fctx),
             ir::ExprKind::Loop { body } => self.gen_loop(body, fctx),
+            ir::ExprKind::Return { expr: value } => {
+                self.gen_return(value.as_deref(), expr.span, fctx);
+                Some(Value {
+                    ty: LType::Unit,
+                    repr: None,
+                })
+            }
             ir::ExprKind::Break { expr: break_expr } => {
                 self.gen_break(break_expr.as_deref(), expr.span, fctx)
             }
@@ -4988,6 +4915,88 @@ impl<'a> Generator<'a> {
             self.emit_panic_call(&ptr, &len, &cap, span, fctx);
         }
         fctx.lines.push("  unreachable".to_string());
+    }
+
+    /// Emits `return [expr]` for a return statement or a `return` expression
+    /// and marks the current block terminated.
+    pub(super) fn gen_return(
+        &mut self,
+        expr: Option<&ir::Expr>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) {
+        if let Some(expr) = expr {
+            let ret_hint = fctx.ret_ty.clone();
+            if self.type_needs_explicit_drop(&ret_hint) {
+                self.mark_moved_resource_locals_in_expr(expr, fctx);
+            }
+            if self.try_emit_musttail_return(expr, fctx) {
+                return;
+            }
+            if let Some(value) = self.gen_expr_with_expected(expr, Some(&ret_hint), fctx) {
+                self.emit_scope_drops_to_depth(0, fctx);
+                if fctx.async_poll_ctx.is_some() {
+                    self.emit_async_poll_return(value, expr.span, fctx);
+                } else if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                    let Some(value) =
+                        self.coerce_value_to_expected(value, &async_inner, expr.span, fctx)
+                    else {
+                        fctx.terminated = true;
+                        return;
+                    };
+                    let async_value = self.build_ready_async_value(value, &async_inner, fctx);
+                    let repr = async_value
+                        .repr
+                        .unwrap_or_else(|| default_value(&async_value.ty));
+                    fctx.lines
+                        .push(format!("  ret {} {}", llvm_type(&async_value.ty), repr));
+                } else {
+                    let Some(value) =
+                        self.coerce_value_to_expected(value, &ret_hint, expr.span, fctx)
+                    else {
+                        fctx.terminated = true;
+                        return;
+                    };
+                    let repr = coerce_repr(&value, &ret_hint);
+                    fctx.lines
+                        .push(format!("  ret {} {}", llvm_type(&ret_hint), repr));
+                }
+                fctx.terminated = true;
+            }
+        } else {
+            self.emit_scope_drops_to_depth(0, fctx);
+            if fctx.async_poll_ctx.is_some() {
+                self.emit_async_poll_return(
+                    Value {
+                        ty: LType::Unit,
+                        repr: None,
+                    },
+                    span,
+                    fctx,
+                );
+            } else if let Some(async_inner) = fctx.async_inner_ret.clone() {
+                let ready = self.build_ready_async_value(
+                    Value {
+                        ty: async_inner.clone(),
+                        repr: if async_inner == LType::Unit {
+                            None
+                        } else {
+                            Some(default_value(&async_inner))
+                        },
+                    },
+                    &async_inner,
+                    fctx,
+                );
+                fctx.lines.push(format!(
+                    "  ret {} {}",
+                    llvm_type(&ready.ty),
+                    ready.repr.unwrap_or_else(|| default_value(&ready.ty))
+                ));
+            } else {
+                fctx.lines.push("  ret void".to_string());
+            }
+            fctx.terminated = true;
+        }
     }
 
     pub(super) fn gen_binary(

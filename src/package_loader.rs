@@ -746,7 +746,7 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
             expr_uses_compiler_iterator_helpers(cond) || block_uses_compiler_iterator_helpers(body)
         }
         ast::ExprKind::Loop { body } => block_uses_compiler_iterator_helpers(body),
-        ast::ExprKind::Break { expr } => expr
+        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => expr
             .as_ref()
             .map(|value| expr_uses_compiler_iterator_helpers(value))
             .unwrap_or(false),

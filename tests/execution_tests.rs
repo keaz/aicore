@@ -13661,6 +13661,219 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn exec_early_return_from_nested_blocks_and_diverging_branches() {
+    let src = r#"import std.io;
+import std.option;
+import std.vec;
+
+fn first_negative(xs: Vec[Int]) -> Int {
+    for x in xs {
+        if x < 0 {
+            return x;
+        } else {
+            ()
+        };
+    };
+    0
+}
+
+fn while_find(limit: Int) -> Int {
+    let mut i = 0;
+    while i < limit {
+        if i * i > 50 {
+            return i;
+        } else {
+            ()
+        };
+        i = i + 1;
+    };
+    -1
+}
+
+fn loop_find() -> Int {
+    let mut i = 0;
+    loop {
+        i = i + 1;
+        if i == 7 {
+            return i * 10;
+        } else {
+            ()
+        };
+    }
+}
+
+fn unwrap_or_zero(v: Option[Int]) -> Int {
+    let x = match v {
+        Some(n) => n,
+        None => return 0,
+    };
+    x + 100
+}
+
+fn nested(a: Int, b: Int) -> Int {
+    if a > 0 {
+        if b > 0 {
+            return 1;
+        } else {
+            ()
+        };
+        2
+    } else {
+        3
+    }
+}
+
+fn branch_value(x: Int) -> Int {
+    if x > 0 { x } else { return -1 }
+}
+
+fn loop_break_or_continue() -> Int {
+    let mut i = 0;
+    let found = loop {
+        i = i + 1;
+        if i > 4 { break i * 2 } else { continue }
+    };
+    found
+}
+
+fn checked(x: Int) -> Int effects { io } capabilities { io } {
+    if x >= 0 { x } else { panic("negative input") }
+}
+
+fn closure_return(x: Int) -> Int {
+    let f = |v: Int| -> Int {
+        if v > 10 {
+            return 10;
+        } else {
+            ()
+        };
+        v
+    };
+    f(x) + 1
+}
+
+fn unit_early(x: Int) -> () effects { io } capabilities { io } {
+    if x == 0 {
+        return;
+    } else {
+        ()
+    };
+    print_int(x);
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut xs: Vec[Int] = new_vec();
+    xs = push(xs, 3);
+    xs = push(xs, -4);
+    xs = push(xs, -9);
+    print_int(first_negative(xs));
+    print_int(while_find(100));
+    print_int(loop_find());
+    print_int(unwrap_or_zero(Some(5)));
+    print_int(unwrap_or_zero(None()));
+    print_int(nested(1, 1));
+    print_int(nested(1, 0));
+    print_int(nested(0, 1));
+    print_int(branch_value(4));
+    print_int(branch_value(-4));
+    print_int(loop_break_or_continue());
+    print_int(checked(8));
+    print_int(closure_return(50));
+    print_int(closure_return(3));
+    unit_early(0);
+    unit_early(9);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout, "-4\n8\n70\n105\n0\n1\n2\n3\n4\n-1\n10\n8\n11\n4\n9\n",
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_issue_repro_early_return_in_if_returns_six() {
+    let src = r#"
+fn f(x: Int) -> Int {
+    if x < 0 {
+        return 0;
+    } else {
+        ()
+    };
+    x + 1
+}
+fn main() -> Int { f(5) }
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 6, "stderr={stderr}");
+}
+
+#[test]
+fn exec_panic_in_one_branch_diverges() {
+    let src = r#"
+import std.io;
+fn checked(x: Int) -> Int effects { io } capabilities { io } {
+    if x >= 0 { x } else { panic("negative input") }
+}
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(checked(3));
+    print_int(checked(-1));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "3\n");
+    assert!(stderr.contains("negative input"), "stderr={stderr}");
+}
+
+#[test]
+fn exec_ensures_checks_return_expressions_in_match_arms() {
+    let src = r#"
+import std.option;
+fn pick(v: Option[Int]) -> Int ensures result >= 0 {
+    match v {
+        Some(n) => n,
+        None => return -1,
+    }
+}
+fn main() -> Int {
+    pick(None())
+}
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert!(
+        stderr.contains("contract_violation{kind:ensures,owner:pick}"),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_closure_return_does_not_trigger_outer_ensures() {
+    let src = r#"
+fn outer(x: Int) -> Int ensures result >= 100 {
+    let clamp = |v: Int| -> Int {
+        if v < 0 {
+            return 0;
+        } else {
+            ()
+        };
+        v
+    };
+    clamp(x) + 100
+}
+fn main() -> Int {
+    outer(-5) - 100
+}
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+}
+
+#[test]
 fn exec_contract_failure() {
     let src = r#"
 import std.io;

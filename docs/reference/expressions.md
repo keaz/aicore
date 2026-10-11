@@ -48,6 +48,7 @@ primary_expr   = literal
                | loop_expr
                | break_expr
                | continue_expr
+               | return_expr
                | match_expr
                | unsafe_block ;
 
@@ -56,6 +57,7 @@ while_expr     = "while" expr block ;
 loop_expr      = "loop" block ;
 break_expr     = "break" expr? ;
 continue_expr  = "continue" ;
+return_expr    = "return" expr? ;
 match_expr     = "match" expr "{" match_arm ("," match_arm)* ","? "}" ;
 match_arm      = pattern ("if" expr)? "=>" expr ;
 unsafe_block   = "unsafe" block ;
@@ -91,6 +93,13 @@ hex_int        = "0x" hexdigit+ ;
 - `while` requires a `Bool` condition. Its expression type is unit unless broken with typed flow.
 - `loop` and `break` are typed together: all breaks in one loop must agree on one break type.
 - `continue` and `break` are valid only inside loop contexts.
+- Diverging expressions: `return`, `break`, `continue`, `panic(...)`, a `loop` without `break`, and a block whose statements end with one of them never produce a value. Their type is the bottom type (written `!` in diagnostics), which is compatible with every type:
+  - an `if` branch or `match` arm that diverges does not constrain the type of the other branches (`if x > 0 { x } else { return 0 }` has type `Int`)
+  - `let v = match opt { Some(n) => n, None => return 0 };` binds `v: Int`
+  - `if c { break v } else { continue }` is valid inside a loop
+- `return expr` can appear anywhere an expression can, including match arms and block tails (`else { return -1 }`). It always exits the innermost enclosing function or closure and is checked against that return type.
+- Inside a closure, `return` leaves the closure, and `break`/`continue` cannot target loops outside the closure (`E1275`/`E1276`).
+- `return` is not allowed in contract expressions or constant initializers (`E1279`).
 - Function calls support:
   - direct function names
   - qualified module calls (`module.symbol(...)`)

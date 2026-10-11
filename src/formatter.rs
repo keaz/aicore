@@ -730,6 +730,13 @@ fn format_expr(
                 format_expr(out, expr, 0, type_map, indent);
             }
         }
+        ir::ExprKind::Return { expr } => {
+            out.push_str("return");
+            if let Some(expr) = expr {
+                out.push(' ');
+                format_expr(out, expr, 0, type_map, indent);
+            }
+        }
         ir::ExprKind::Continue => out.push_str("continue"),
         ir::ExprKind::Match { expr, arms } => {
             out.push_str("match ");
@@ -1329,6 +1336,25 @@ mod tests {
     use crate::{ir_builder::build, parser::parse};
 
     use super::format_program;
+
+    #[test]
+    fn return_expressions_round_trip() {
+        let src = "fn f(x: Option[Int]) -> Int {\n    let a = match x { Some(v) => v, None => return 0 };\n    if a > 1 { a } else { return }\n}\n";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let formatted = format_program(&build(&program.expect("program")));
+        assert!(formatted.contains("None => return 0"), "{formatted}");
+        assert!(
+            formatted.contains("return\n") || formatted.contains("return }"),
+            "{formatted}"
+        );
+        let (reparsed, diagnostics) = parse(&formatted, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}\n{formatted}");
+        assert_eq!(
+            format_program(&build(&reparsed.expect("program"))),
+            formatted
+        );
+    }
 
     #[test]
     fn deterministic_formatting() {

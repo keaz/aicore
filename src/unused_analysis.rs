@@ -325,7 +325,7 @@ impl<'a> Analyzer<'a> {
                 self.visit_block(body, module_name, caller);
             }
             ast::ExprKind::Loop { body } => self.visit_block(body, module_name, caller),
-            ast::ExprKind::Break { expr } => {
+            ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.visit_expr(expr, module_name, caller);
                 }
@@ -789,7 +789,7 @@ impl<'a> VariableAnalyzer<'a> {
                 self.visit_block(body);
             }
             ast::ExprKind::Loop { body } => self.visit_block(body),
-            ast::ExprKind::Break { expr } => {
+            ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.visit_expr(expr);
                 }

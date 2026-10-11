@@ -225,7 +225,7 @@ fn collect_bound_names_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
         ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
             collect_bound_names_in_block(body, out);
         }
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_bound_names_in_expr(expr, out);
             }

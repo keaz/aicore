@@ -3389,6 +3389,8 @@ struct LoopFrame {
     result_ty: Option<LType>,
     result_slot: Option<String>,
     scope_depth: usize,
+    // Set when a `break` targets this loop; a `loop` without one never exits.
+    broken: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3551,7 +3553,7 @@ fn collect_closure_captures_expr(
         ir::ExprKind::Loop { body } => {
             collect_closure_captures_block(body, scopes, captures, known_functions);
         }
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_closure_captures_expr(expr, scopes, captures, known_functions);
             }

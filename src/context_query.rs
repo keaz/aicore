@@ -687,7 +687,7 @@ fn collect_expr_call_names(
         ast::ExprKind::Loop { body } => {
             collect_block_call_names(body, caller_name, call_graph);
         }
-        ast::ExprKind::Break { expr } => {
+        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_call_names(expr, caller_name, call_graph);
             }

@@ -416,6 +416,12 @@ fn collect_expr_paths(expr: &ir::Expr, env: &RangeEnv) -> Option<Vec<TailPath>> 
             }
             Some(out)
         }
+        // `return e` in tail position exits with `e`; a bare `return` yields
+        // unit like a missing tail.
+        ir::ExprKind::Return { expr: value } => Some(vec![TailPath {
+            env: env.clone(),
+            result_expr: value.as_deref().cloned(),
+        }]),
         _ => Some(vec![TailPath {
             env: env.clone(),
             result_expr: Some(expr.clone()),
@@ -978,7 +984,7 @@ fn rewrite_struct_inits_in_expr(
         ir::ExprKind::Loop { body } => {
             rewrite_struct_inits_in_block(body, helper_names, field_orders, alloc);
         }
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
             }
@@ -1149,9 +1155,9 @@ fn lower_ensures_in_expr(
                 lower_ensures_in_expr(arg, ensures, ret_type, function_name, alloc);
             }
         }
-        ir::ExprKind::Closure { body, .. } => {
-            lower_ensures_in_block(body, ensures, ret_type, function_name, alloc, false);
-        }
+        // `return` inside a closure leaves the closure, not the function, so
+        // the function's `ensures` does not apply there.
+        ir::ExprKind::Closure { .. } => {}
         ir::ExprKind::If {
             cond,
             then_block,
@@ -1172,6 +1178,40 @@ fn lower_ensures_in_expr(
             if let Some(expr) = expr {
                 lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
             }
+        }
+        ir::ExprKind::Return { expr: value } => {
+            // `return e` in expression position becomes
+            // `return { let r = e; assert ensures(r); r }`. The block is an
+            // `UnsafeBlock` because lowered IR has no other block expression;
+            // lowering runs after type and effect checking, so the marker only
+            // means "evaluate these statements, then the tail".
+            let span = expr.span;
+            let mut stmts = lower_exit_with_ensures(
+                value.take().map(|value| *value),
+                span,
+                ensures,
+                ret_type,
+                function_name,
+                alloc,
+            );
+            let Some(ir::Stmt::Return {
+                expr: Some(result), ..
+            }) = stmts.pop()
+            else {
+                unreachable!("lower_exit_with_ensures ends with `return result`");
+            };
+            *value = Some(Box::new(ir::Expr {
+                node: ir::NodeId(alloc.next_node()),
+                kind: ir::ExprKind::UnsafeBlock {
+                    block: ir::Block {
+                        node: ir::NodeId(alloc.next_node()),
+                        stmts,
+                        tail: Some(Box::new(result)),
+                        span,
+                    },
+                },
+                span,
+            }));
         }
         ir::ExprKind::Continue => {}
         ir::ExprKind::Match { expr, arms } => {
@@ -1454,7 +1494,31 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         ir::ExprKind::FieldAccess { base, .. } => {
             max = max.max(max_node_expr(base));
         }
-        _ => {}
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                max = max.max(max_node_expr(arg));
+            }
+        }
+        ir::ExprKind::While { cond, body } => {
+            max = max.max(max_node_expr(cond));
+            max = max.max(max_node_block(body));
+        }
+        ir::ExprKind::Loop { body } => {
+            max = max.max(max_node_block(body));
+        }
+        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+            if let Some(expr) = expr {
+                max = max.max(max_node_expr(expr));
+            }
+        }
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit
+        | ir::ExprKind::Var(_)
+        | ir::ExprKind::Continue => {}
     }
     max
 }
@@ -1472,7 +1536,18 @@ fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
                 max = max.max(max_node_pattern(arg));
             }
         }
-        _ => {}
+        ir::PatternKind::Struct { fields, .. } => {
+            for field in fields {
+                max = max.max(max_node_pattern(&field.pattern));
+            }
+        }
+        ir::PatternKind::Wildcard
+        | ir::PatternKind::Var(_)
+        | ir::PatternKind::Int(_)
+        | ir::PatternKind::Bool(_)
+        | ir::PatternKind::Char(_)
+        | ir::PatternKind::String(_)
+        | ir::PatternKind::Unit => {}
     }
     max
 }
@@ -1527,6 +1602,9 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             body: clone_block(body, alloc),
         },
         ir::ExprKind::Break { expr } => ir::ExprKind::Break {
+            expr: expr.as_ref().map(|expr| Box::new(clone_expr(expr, alloc))),
+        },
+        ir::ExprKind::Return { expr } => ir::ExprKind::Return {
             expr: expr.as_ref().map(|expr| Box::new(clone_expr(expr, alloc))),
         },
         ir::ExprKind::Continue => ir::ExprKind::Continue,
@@ -1731,6 +1809,11 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
             body: clone_block(body, alloc),
         },
         ir::ExprKind::Break { expr } => ir::ExprKind::Break {
+            expr: expr
+                .as_ref()
+                .map(|expr| Box::new(substitute_result_var(expr, result_name, alloc))),
+        },
+        ir::ExprKind::Return { expr } => ir::ExprKind::Return {
             expr: expr
                 .as_ref()
                 .map(|expr| Box::new(substitute_result_var(expr, result_name, alloc))),
@@ -2185,7 +2268,7 @@ fn make(x: Int) -> NonEmpty {
                 count_asserts_in_expr(cond) + count_asserts_in_block(body)
             }
             ir::ExprKind::Loop { body } => count_asserts_in_block(body),
-            ir::ExprKind::Break { expr } => {
+            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
                 expr.as_ref().map_or(0, |expr| count_asserts_in_expr(expr))
             }
             ir::ExprKind::Continue => 0,

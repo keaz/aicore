@@ -325,7 +325,7 @@ fn collect_requires_from_expr(
         ExprKind::UnsafeBlock { block } => {
             collect_requires_from_block(block, param_names, requires)
         }
-        ExprKind::Break { expr } => {
+        ExprKind::Break { expr } | ExprKind::Return { expr } => {
             if let Some(expr) = expr.as_deref() {
                 collect_requires_from_expr(expr, param_names, requires);
             }
@@ -502,6 +502,10 @@ fn collect_explicit_returns_from_expr<'a>(
                 collect_explicit_returns_from_expr(value, observations);
             }
         }
+        ExprKind::Return { expr } => match expr.as_deref() {
+            Some(value) => observations.push(ReturnObservation::Expr(value)),
+            None => observations.push(ReturnObservation::Unit),
+        },
         ExprKind::Closure { .. }
         | ExprKind::Continue
         | ExprKind::Int(_)
@@ -635,7 +639,7 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
                 collect_value_vars(value, VarContext::Value, out);
             }
         }
-        ExprKind::Break { expr } => {
+        ExprKind::Break { expr } | ExprKind::Return { expr } => {
             if let Some(value) = expr.as_deref() {
                 collect_value_vars(value, VarContext::Value, out);
             }
@@ -804,6 +808,7 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
         | ExprKind::Match { .. }
         | ExprKind::Closure { .. }
         | ExprKind::Break { .. }
+        | ExprKind::Return { .. }
         | ExprKind::Continue
         | ExprKind::UnsafeBlock { .. } => None,
     }

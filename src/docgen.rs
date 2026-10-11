@@ -918,6 +918,13 @@ fn render_expr(expr: &ir::Expr) -> String {
                 "break".to_string()
             }
         }
+        ir::ExprKind::Return { expr } => {
+            if let Some(expr) = expr {
+                format!("return {}", render_expr(expr))
+            } else {
+                "return".to_string()
+            }
+        }
         ir::ExprKind::Continue => "continue".to_string(),
         ir::ExprKind::Match { expr, .. } => format!("match {} {{ ... }}", render_expr(expr)),
         ir::ExprKind::Binary { op, lhs, rhs } => {

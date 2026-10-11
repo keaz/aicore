@@ -1811,7 +1811,7 @@ fn collect_expr_semantic_tokens(
         ast::ExprKind::Loop { body } => {
             collect_block_semantic_tokens(tokens, source, body, effectful_functions);
         }
-        ast::ExprKind::Break { expr } => {
+        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
             }
@@ -2582,7 +2582,7 @@ fn collect_expr_call_sites(
                 call_sites_by_caller,
             );
         }
-        ast::ExprKind::Break { expr } => {
+        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_call_sites(
                     expr,
@@ -2981,7 +2981,7 @@ fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<
             collect_block_folding_ranges(body, source, ranges);
         }
         ast::ExprKind::Loop { body } => collect_block_folding_ranges(body, source, ranges),
-        ast::ExprKind::Break { expr } => {
+        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_folding_ranges(expr, source, ranges);
             }
@@ -3418,7 +3418,7 @@ fn collect_expr_selection_spans(
         ast::ExprKind::Loop { body } => {
             collect_block_selection_spans(body, offset, stmt_spans, block_spans, expr_spans);
         }
-        ast::ExprKind::Break { expr } => {
+        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
             }
@@ -4034,6 +4034,7 @@ fn collect_expr_inlay_hints(
             );
         }
         ast::ExprKind::Break { expr: Some(value) }
+        | ast::ExprKind::Return { expr: Some(value) }
         | ast::ExprKind::Await { expr: value }
         | ast::ExprKind::Try { expr: value }
         | ast::ExprKind::Unary { expr: value, .. }
@@ -4084,6 +4085,7 @@ fn collect_expr_inlay_hints(
             collect_expr_inlay_hints(base, source, show_effect_hints, signature_lookup, hints);
         }
         ast::ExprKind::Break { expr: None }
+        | ast::ExprKind::Return { expr: None }
         | ast::ExprKind::Continue
         | ast::ExprKind::Int(_)
         | ast::ExprKind::Float(_)

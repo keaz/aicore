@@ -621,6 +621,11 @@ pub enum ExprKind {
         expr: Option<Box<Expr>>,
     },
     Continue,
+    /// `return` in expression position (match arms, branch tails). It never
+    /// produces a value: control leaves the enclosing function.
+    Return {
+        expr: Option<Box<Expr>>,
+    },
     Match {
         expr: Box<Expr>,
         arms: Vec<MatchArm>,

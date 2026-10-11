@@ -184,11 +184,13 @@ fn collect_ir_call_paths(expr: &aicore::ir::Expr, out: &mut Vec<String>) {
         }
         aicore::ir::ExprKind::Loop { body } => collect_ir_call_paths_in_block(body, out),
         aicore::ir::ExprKind::Break { expr: Some(inner) }
+        | aicore::ir::ExprKind::Return { expr: Some(inner) }
         | aicore::ir::ExprKind::Borrow { expr: inner, .. }
         | aicore::ir::ExprKind::Await { expr: inner }
         | aicore::ir::ExprKind::Try { expr: inner }
         | aicore::ir::ExprKind::Unary { expr: inner, .. } => collect_ir_call_paths(inner, out),
         aicore::ir::ExprKind::Break { expr: None }
+        | aicore::ir::ExprKind::Return { expr: None }
         | aicore::ir::ExprKind::Continue
         | aicore::ir::ExprKind::Int(_)
         | aicore::ir::ExprKind::Float(_)
@@ -280,6 +282,7 @@ fn collect_ir_call_paths_and_symbols(
             collect_ir_call_paths_and_symbols_in_block(body, out)
         }
         aicore::ir::ExprKind::Break { expr: Some(inner) }
+        | aicore::ir::ExprKind::Return { expr: Some(inner) }
         | aicore::ir::ExprKind::Borrow { expr: inner, .. }
         | aicore::ir::ExprKind::Await { expr: inner }
         | aicore::ir::ExprKind::Try { expr: inner }
@@ -287,6 +290,7 @@ fn collect_ir_call_paths_and_symbols(
             collect_ir_call_paths_and_symbols(inner, out)
         }
         aicore::ir::ExprKind::Break { expr: None }
+        | aicore::ir::ExprKind::Return { expr: None }
         | aicore::ir::ExprKind::Continue
         | aicore::ir::ExprKind::Int(_)
         | aicore::ir::ExprKind::Float(_)
