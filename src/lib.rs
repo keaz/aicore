@@ -27,6 +27,7 @@ pub mod ir_builder;
 pub mod lexer;
 pub mod lsp;
 pub mod machine_paths;
+pub mod match_usefulness;
 pub mod metrics;
 pub mod migration;
 pub mod package_loader;

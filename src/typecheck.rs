@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::ast::{decode_internal_const, decode_internal_type_alias, BinOp, Visibility};
 use crate::diagnostics::{Diagnostic, DiagnosticSpan, SuggestedFix};
 use crate::ir;
+use crate::match_usefulness;
 use crate::resolver::{EnumInfo, FunctionInfo, Resolution, StructInfo, TraitInfo};
 use crate::std_policy::find_deprecated_api;
 
@@ -344,6 +345,120 @@ struct ResourceProtocolOp {
     api: &'static str,
     first_param_base_type: &'static str,
     required_effect: &'static str,
+}
+
+impl match_usefulness::PatternTypes for Checker<'_> {
+    fn constructors(&self, ty: &str) -> Option<Vec<match_usefulness::Ctor>> {
+        use match_usefulness::Ctor;
+        let ty = self.normalize_type(ty);
+        if ty == "Bool" {
+            return Some(vec![Ctor::Bool(false), Ctor::Bool(true)]);
+        }
+        if ty == "()" {
+            return Some(vec![Ctor::Unit]);
+        }
+        if ty.starts_with("Option[") {
+            return Some(vec![
+                Ctor::Variant("None".to_string()),
+                Ctor::Variant("Some".to_string()),
+            ]);
+        }
+        if ty.starts_with("Result[") {
+            return Some(vec![
+                Ctor::Variant("Err".to_string()),
+                Ctor::Variant("Ok".to_string()),
+            ]);
+        }
+        if base_type_name(&ty) == TUPLE_INTERNAL_NAME {
+            let arity = extract_generic_args(&ty)
+                .map(|args| args.len())
+                .unwrap_or(0);
+            return Some(vec![Ctor::Tuple(arity)]);
+        }
+        if let Some(enum_info) = self.find_enum(&ty) {
+            return Some(
+                enum_info
+                    .variants
+                    .keys()
+                    .map(|name| Ctor::Variant(name.clone()))
+                    .collect(),
+            );
+        }
+        if self.find_struct(&ty).is_some() {
+            return Some(vec![Ctor::Struct(base_type_name(&ty).to_string())]);
+        }
+        None
+    }
+
+    fn field_types(&self, ty: &str, ctor: &match_usefulness::Ctor) -> Vec<String> {
+        use match_usefulness::Ctor;
+        let ty = self.normalize_type(ty);
+        let args = extract_generic_args(&ty).unwrap_or_default();
+        let nth = |idx: usize| args.get(idx).cloned().unwrap_or_else(|| "<?>".to_string());
+        match ctor {
+            Ctor::Variant(name) if ty.starts_with("Option[") => {
+                if name == "Some" {
+                    vec![nth(0)]
+                } else {
+                    Vec::new()
+                }
+            }
+            Ctor::Variant(name) if ty.starts_with("Result[") => match name.as_str() {
+                "Ok" => vec![nth(0)],
+                "Err" => vec![nth(1)],
+                _ => Vec::new(),
+            },
+            Ctor::Variant(name) => {
+                let Some(enum_info) = self.find_enum(&ty) else {
+                    return Vec::new();
+                };
+                let Some(Some(payload)) = enum_info.variants.get(name) else {
+                    return Vec::new();
+                };
+                let bindings =
+                    bindings_from_applied_type(&ty, &enum_info.generics).unwrap_or_default();
+                let generic_set = enum_info.generics.iter().cloned().collect::<BTreeSet<_>>();
+                let raw = self
+                    .types
+                    .get(payload)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                vec![self.normalize_type(&substitute_type_vars(&raw, &bindings, &generic_set))]
+            }
+            Ctor::Tuple(_) => args,
+            Ctor::Struct(_) => {
+                let Some(struct_info) = self.find_struct(&ty) else {
+                    return Vec::new();
+                };
+                let bindings =
+                    bindings_from_applied_type(&ty, &struct_info.generics).unwrap_or_default();
+                let generic_set = struct_info
+                    .generics
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                struct_info
+                    .fields
+                    .values()
+                    .map(|field_ty| {
+                        let raw = self
+                            .types
+                            .get(field_ty)
+                            .cloned()
+                            .unwrap_or_else(|| "<?>".to_string());
+                        self.normalize_type(&substitute_type_vars(&raw, &bindings, &generic_set))
+                    })
+                    .collect()
+            }
+            Ctor::Bool(_) | Ctor::Unit | Ctor::Literal(_) => Vec::new(),
+        }
+    }
+
+    fn struct_field_names(&self, ty: &str) -> Vec<String> {
+        self.find_struct(&self.normalize_type(ty))
+            .map(|info| info.fields.keys().cloned().collect())
+            .unwrap_or_default()
+    }
 }
 
 impl<'a> Checker<'a> {
@@ -6199,12 +6314,19 @@ impl<'a> Checker<'a> {
                     self.check_expr(scrutinee, locals, allowed_effects, ctx, contract_mode);
                 self.record_instantiation_from_applied_type(&scrutinee_ty, expr.span);
                 let mut arm_types = Vec::new();
-                let mut seen = BTreeSet::new();
-                let mut wildcard_seen = false;
+                let match_ty = self.normalize_type(&scrutinee_ty);
+                let column = vec![match_ty.clone()];
+                // Unguarded arms seen so far, as rows of the usefulness matrix.
+                let mut covered: Vec<Vec<match_usefulness::Pat>> = Vec::new();
 
                 for arm in arms {
-                    let redundant = self.coverage_is_complete(&scrutinee_ty, &seen, wildcard_seen)
-                        || self.arm_is_redundant(&arm.pattern, &scrutinee_ty, &seen, wildcard_seen);
+                    let arm_pat = self.pattern_to_usefulness(&arm.pattern, &match_ty);
+                    let redundant = !match_usefulness::is_useful(
+                        &covered,
+                        std::slice::from_ref(&arm_pat),
+                        &column,
+                        self,
+                    );
                     if redundant {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -6246,12 +6368,7 @@ impl<'a> Checker<'a> {
                             );
                         }
                     } else {
-                        self.record_pattern_coverage(
-                            &arm.pattern,
-                            &scrutinee_ty,
-                            &mut seen,
-                            &mut wildcard_seen,
-                        );
+                        covered.push(vec![arm_pat]);
                     }
                     let body_ty = self.check_expr_with_expected(
                         &arm.body,
@@ -6264,7 +6381,7 @@ impl<'a> Checker<'a> {
                     arm_types.push(body_ty);
                 }
 
-                self.check_exhaustive(expr.span, &scrutinee_ty, &seen, wildcard_seen);
+                self.report_missing_match_patterns(expr.span, &match_ty, &covered);
 
                 // Arms that diverge (`return`, `break`, `panic(...)`) do not
                 // constrain the match type.
@@ -8830,249 +8947,179 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn record_pattern_coverage(
-        &self,
-        pattern: &ir::Pattern,
-        scrutinee_ty: &str,
-        seen: &mut BTreeSet<String>,
-        wildcard_seen: &mut bool,
-    ) {
-        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
+    /// Converts a checked pattern into the usefulness representation.
+    /// Patterns that do not fit the scrutinee type (already reported by
+    /// `check_pattern`) become wildcards so they add no spurious
+    /// exhaustiveness or reachability diagnostics.
+    fn pattern_to_usefulness(&self, pattern: &ir::Pattern, ty: &str) -> match_usefulness::Pat {
+        use match_usefulness::{Ctor, Pat};
+        let ty = self.normalize_type(ty);
         match &pattern.kind {
-            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => {
-                *wildcard_seen = true;
+            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Pat::Wild,
+            ir::PatternKind::Int(value) => {
+                let text = pattern
+                    .int_literal_metadata()
+                    .map(|meta| format!("{}{}", meta.raw_literal_text, meta.suffix_text))
+                    .unwrap_or_else(|| value.to_string());
+                Pat::Ctor(Ctor::Literal(text), Vec::new())
             }
-            ir::PatternKind::Int(v) => {
-                if parse_integer_kind(&normalized_scrutinee_ty).is_some() {
-                    seen.insert(format!("int:{v}"));
-                }
+            ir::PatternKind::Char(value) => {
+                Pat::Ctor(Ctor::Literal(format!("{value:?}")), Vec::new())
             }
-            ir::PatternKind::Char(v) => {
-                if normalized_scrutinee_ty == "Char" {
-                    seen.insert(format!("char:{}", *v as u32));
-                }
+            ir::PatternKind::String(value) => {
+                Pat::Ctor(Ctor::Literal(format!("{value:?}")), Vec::new())
             }
-            ir::PatternKind::String(v) => {
-                if normalized_scrutinee_ty == "String" {
-                    seen.insert(format!("string:{v:?}"));
+            ir::PatternKind::Bool(value) => Pat::Ctor(Ctor::Bool(*value), Vec::new()),
+            ir::PatternKind::Unit => Pat::Ctor(Ctor::Unit, Vec::new()),
+            ir::PatternKind::Or { patterns } => Pat::Or(
+                patterns
+                    .iter()
+                    .map(|part| self.pattern_to_usefulness(part, &ty))
+                    .collect(),
+            ),
+            ir::PatternKind::Variant { name, args } => {
+                let ctor = if name == TUPLE_INTERNAL_NAME {
+                    Ctor::Tuple(args.len())
+                } else {
+                    Ctor::Variant(name.clone())
+                };
+                let Some(all) = match_usefulness::PatternTypes::constructors(self, &ty) else {
+                    return Pat::Wild;
+                };
+                if !all.contains(&ctor) {
+                    return Pat::Wild;
                 }
+                let fields = match_usefulness::PatternTypes::field_types(self, &ty, &ctor);
+                let sub = args
+                    .iter()
+                    .zip(fields.iter())
+                    .map(|(arg, field_ty)| self.pattern_to_usefulness(arg, field_ty))
+                    .collect();
+                Pat::Ctor(ctor, sub)
             }
-            ir::PatternKind::Bool(v) => {
-                if normalized_scrutinee_ty == "Bool" {
-                    seen.insert(if *v { "true" } else { "false" }.to_string());
-                }
-            }
-            ir::PatternKind::Unit => {
-                if normalized_scrutinee_ty == "()" {
-                    seen.insert("()".to_string());
-                }
-            }
-            ir::PatternKind::Or { patterns } => {
-                for part in patterns {
-                    self.record_pattern_coverage(part, scrutinee_ty, seen, wildcard_seen);
-                }
-            }
-            ir::PatternKind::Struct { .. } => {}
-            ir::PatternKind::Variant { name, .. } => {
-                if base_type_name(&normalized_scrutinee_ty) == TUPLE_INTERNAL_NAME
-                    && name == TUPLE_INTERNAL_NAME
-                {
-                    return;
-                }
-                if normalized_scrutinee_ty.starts_with("Option[") {
-                    if name == "None" || name == "Some" {
-                        seen.insert(name.clone());
-                    }
-                    return;
-                }
-                if normalized_scrutinee_ty.starts_with("Result[") {
-                    if name == "Ok" || name == "Err" {
-                        seen.insert(name.clone());
-                    }
-                    return;
-                }
-                if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty) {
-                    if enum_info.variants.contains_key(name) {
-                        seen.insert(name.clone());
-                    }
-                }
+            ir::PatternKind::Struct { fields, .. } => {
+                let Some(struct_info) = self.find_struct(&ty) else {
+                    return Pat::Wild;
+                };
+                let ctor = Ctor::Struct(base_type_name(&ty).to_string());
+                let field_types = match_usefulness::PatternTypes::field_types(self, &ty, &ctor);
+                let sub = struct_info
+                    .fields
+                    .keys()
+                    .zip(field_types.iter())
+                    .map(|(field_name, field_ty)| {
+                        fields
+                            .iter()
+                            .find(|field| &field.name == field_name)
+                            .map(|field| self.pattern_to_usefulness(&field.pattern, field_ty))
+                            .unwrap_or(Pat::Wild)
+                    })
+                    .collect();
+                Pat::Ctor(ctor, sub)
             }
         }
     }
 
-    fn check_exhaustive(
+    /// Reports values that no unguarded arm matches, with witness patterns
+    /// such as `Some(Blue)` or `(Red, false)`.
+    fn report_missing_match_patterns(
         &mut self,
         span: crate::span::Span,
-        scrutinee_ty: &str,
-        seen: &BTreeSet<String>,
-        wildcard_seen: bool,
+        ty: &str,
+        covered: &[Vec<match_usefulness::Pat>],
     ) {
-        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
-        if wildcard_seen {
+        let column = vec![ty.to_string()];
+        let missing =
+            match_usefulness::missing_rows(covered, &column, self, match_usefulness::MAX_WITNESSES);
+        if missing.is_empty() {
             return;
         }
-
-        if normalized_scrutinee_ty == "Bool" {
-            let mut missing = Vec::new();
-            if !seen.contains("true") {
-                missing.push("true");
-            }
-            if !seen.contains("false") {
-                missing.push("false");
-            }
-            if !missing.is_empty() {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E1246",
-                        format!("non-exhaustive bool match; missing: {}", missing.join(", ")),
-                        self.file,
-                        span,
-                    )
-                    .with_help("add missing `true` or `false` arm, or `_` wildcard"),
-                );
-            }
-            return;
-        }
-
-        if normalized_scrutinee_ty.starts_with("Option[") {
-            let mut missing = Vec::new();
-            if !seen.contains("None") {
-                missing.push("None".to_string());
-            }
-            if !seen.contains("Some") {
-                missing.push("Some".to_string());
-            }
-            if !missing.is_empty() {
-                let mut diagnostic = Diagnostic::error(
-                    "E1247",
-                    Self::format_missing_variant_message(&missing),
-                    self.file,
-                    span,
-                )
-                .with_help("add missing variant arms or `_` wildcard");
-                if let Some(fix) = self.missing_variants_fix(&normalized_scrutinee_ty, &missing) {
-                    diagnostic = diagnostic.with_fix(fix);
-                }
-                self.diagnostics.push(diagnostic);
-            }
-            return;
-        }
-
-        if normalized_scrutinee_ty.starts_with("Result[") {
-            let mut missing = Vec::new();
-            if !seen.contains("Ok") {
-                missing.push("Ok".to_string());
-            }
-            if !seen.contains("Err") {
-                missing.push("Err".to_string());
-            }
-            if !missing.is_empty() {
-                let mut diagnostic = Diagnostic::error(
-                    "E1248",
-                    Self::format_missing_variant_message(&missing),
-                    self.file,
-                    span,
-                )
-                .with_help("add missing variant arms or `_` wildcard");
-                if let Some(fix) = self.missing_variants_fix(&normalized_scrutinee_ty, &missing) {
-                    diagnostic = diagnostic.with_fix(fix);
-                }
-                self.diagnostics.push(diagnostic);
-            }
-            return;
-        }
-
-        if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty) {
-            let missing = enum_info
-                .variants
-                .keys()
-                .filter(|name| !seen.contains(*name))
-                .cloned()
-                .collect::<Vec<_>>();
-            if !missing.is_empty() {
-                let mut diagnostic = Diagnostic::error(
-                    "E1249",
-                    Self::format_missing_variant_message(&missing),
-                    self.file,
-                    span,
-                )
-                .with_help("add missing variant arms or `_` wildcard");
-                if let Some(fix) = self.missing_variants_fix(&normalized_scrutinee_ty, &missing) {
-                    diagnostic = diagnostic.with_fix(fix);
-                }
-                self.diagnostics.push(diagnostic);
-            }
-        }
-    }
-
-    fn arm_is_redundant(
-        &self,
-        pattern: &ir::Pattern,
-        scrutinee_ty: &str,
-        seen: &BTreeSet<String>,
-        wildcard_seen: bool,
-    ) -> bool {
-        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
-        if wildcard_seen {
-            return true;
-        }
-
-        match &pattern.kind {
-            ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => {
-                self.coverage_is_complete(scrutinee_ty, seen, wildcard_seen)
-            }
-            ir::PatternKind::Int(v) => seen.contains(&format!("int:{v}")),
-            ir::PatternKind::Char(v) => seen.contains(&format!("char:{}", *v as u32)),
-            ir::PatternKind::String(v) => seen.contains(&format!("string:{v:?}")),
-            ir::PatternKind::Bool(v) => seen.contains(if *v { "true" } else { "false" }),
-            ir::PatternKind::Unit => seen.contains("()"),
-            ir::PatternKind::Or { patterns } => patterns
-                .iter()
-                .all(|p| self.arm_is_redundant(p, scrutinee_ty, seen, wildcard_seen)),
-            ir::PatternKind::Struct { .. } => false,
-            ir::PatternKind::Variant { name, .. } => {
-                if base_type_name(&normalized_scrutinee_ty) == TUPLE_INTERNAL_NAME
-                    && name == TUPLE_INTERNAL_NAME
+        let witnesses = missing
+            .iter()
+            .map(|row| match_usefulness::render(&row[0], ty, self))
+            .collect::<Vec<_>>();
+        // A missing value is a "bare variant" when it is a constructor whose
+        // payload is unconstrained (`Blue`, `Some(_)`); those keep the
+        // variant-oriented message.
+        let bare_variants = missing
+            .iter()
+            .map(|row| match &row[0] {
+                match_usefulness::Pat::Ctor(match_usefulness::Ctor::Variant(name), args)
+                    if args.iter().all(|arg| *arg == match_usefulness::Pat::Wild) =>
                 {
-                    return false;
+                    Some(name.clone())
                 }
-                if normalized_scrutinee_ty.starts_with("Option[") {
-                    return (name == "None" || name == "Some") && seen.contains(name);
-                }
-                if normalized_scrutinee_ty.starts_with("Result[") {
-                    return (name == "Ok" || name == "Err") && seen.contains(name);
-                }
-                if self.find_enum(&normalized_scrutinee_ty).is_some() {
-                    return seen.contains(name);
-                }
-                false
-            }
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        let (code, message, help) = if ty == "Bool" {
+            (
+                "E1246",
+                format!(
+                    "non-exhaustive bool match; missing: {}",
+                    witnesses.join(", ")
+                ),
+                "add missing `true` or `false` arm, or `_` wildcard",
+            )
+        } else {
+            let code = if ty.starts_with("Option[") {
+                "E1247"
+            } else if ty.starts_with("Result[") {
+                "E1248"
+            } else if self.find_enum(ty).is_some() {
+                "E1249"
+            } else {
+                "E1290"
+            };
+            let message = match &bare_variants {
+                Some(names) if code != "E1290" => Self::format_missing_variant_message(names),
+                _ => Self::format_missing_patterns_message(&witnesses),
+            };
+            let help = if code == "E1290" {
+                "add arms for the missing patterns, or a `_` wildcard arm"
+            } else {
+                "add missing variant arms or `_` wildcard"
+            };
+            (code, message, help)
+        };
+        let mut diagnostic = Diagnostic::error(code, message, self.file, span).with_help(help);
+        if let Some(fix) = Self::missing_patterns_fix(&witnesses) {
+            diagnostic = diagnostic.with_fix(fix);
+        }
+        self.diagnostics.push(diagnostic);
+    }
+
+    fn format_missing_patterns_message(witnesses: &[String]) -> String {
+        let rendered = witnesses
+            .iter()
+            .map(|witness| format!("`{witness}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if witnesses.len() == 1 {
+            format!("non-exhaustive match: missing pattern {rendered}")
+        } else {
+            format!("non-exhaustive match: missing patterns {rendered}")
         }
     }
 
-    fn coverage_is_complete(
-        &self,
-        scrutinee_ty: &str,
-        seen: &BTreeSet<String>,
-        wildcard_seen: bool,
-    ) -> bool {
-        let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
-        if wildcard_seen {
-            return true;
+    fn missing_patterns_fix(witnesses: &[String]) -> Option<SuggestedFix> {
+        if witnesses.is_empty() {
+            return None;
         }
-        if normalized_scrutinee_ty == "Bool" {
-            return seen.contains("true") && seen.contains("false");
-        }
-        if normalized_scrutinee_ty.starts_with("Option[") {
-            return seen.contains("None") && seen.contains("Some");
-        }
-        if normalized_scrutinee_ty.starts_with("Result[") {
-            return seen.contains("Ok") && seen.contains("Err");
-        }
-        if let Some(enum_info) = self.find_enum(&normalized_scrutinee_ty) {
-            return enum_info.variants.keys().all(|name| seen.contains(name));
-        }
-        false
+        let arms = witnesses
+            .iter()
+            .map(|witness| format!("{witness} => todo(),"))
+            .collect::<Vec<_>>();
+        Some(SuggestedFix {
+            message: if arms.len() == 1 {
+                "insert missing match arm".to_string()
+            } else {
+                "insert missing match arms".to_string()
+            },
+            replacement: Some(arms.join("\n")),
+            start: None,
+            end: None,
+        })
     }
 
     fn format_missing_variant_message(missing: &[String]) -> String {
@@ -9085,51 +9132,6 @@ impl<'a> Checker<'a> {
             .collect::<Vec<_>>()
             .join(", ");
         format!("non-exhaustive match: missing variants {rendered}")
-    }
-
-    fn missing_variants_fix(&self, scrutinee_ty: &str, missing: &[String]) -> Option<SuggestedFix> {
-        let arms = missing
-            .iter()
-            .filter_map(|variant| self.missing_variant_arm(scrutinee_ty, variant))
-            .collect::<Vec<_>>();
-        if arms.is_empty() {
-            return None;
-        }
-        let message = if arms.len() == 1 {
-            "insert missing match arm".to_string()
-        } else {
-            "insert missing match arms".to_string()
-        };
-        Some(SuggestedFix {
-            message,
-            replacement: Some(arms.join("\n")),
-            start: None,
-            end: None,
-        })
-    }
-
-    fn missing_variant_arm(&self, scrutinee_ty: &str, variant: &str) -> Option<String> {
-        if scrutinee_ty.starts_with("Option[") {
-            return Some(match variant {
-                "None" => "None => todo(),".to_string(),
-                "Some" => "Some(_) => todo(),".to_string(),
-                _ => return None,
-            });
-        }
-        if scrutinee_ty.starts_with("Result[") {
-            return Some(match variant {
-                "Ok" => "Ok(_) => todo(),".to_string(),
-                "Err" => "Err(_) => todo(),".to_string(),
-                _ => return None,
-            });
-        }
-        let enum_info = self.find_enum(scrutinee_ty)?;
-        let payload = enum_info.variants.get(variant)?;
-        if payload.is_some() {
-            Some(format!("{variant}(_) => todo(),"))
-        } else {
-            Some(format!("{variant} => todo(),"))
-        }
     }
 
     fn check_no_null_boundary(&mut self) {
@@ -11695,6 +11697,184 @@ fn rewrap[T](b: Box[T]) -> Box[Box[T]] { Box { value: b } }
             error_codes(&src).contains(&"E1204".to_string()),
             "{:?}",
             error_codes(&src)
+        );
+    }
+
+    fn match_diagnostics(src: &str) -> Vec<(String, String)> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _d2) = resolve(&ir, "test.aic");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| matches!(d.severity, Severity::Error))
+            .map(|d| (d.code, d.message))
+            .collect()
+    }
+
+    #[test]
+    fn nested_variant_arms_are_reachable_and_missing_payloads_are_witnessed() {
+        let src = r#"
+enum Color { Red, Green, Blue }
+fn f(c: Option[Color]) -> Int {
+    match c {
+        Some(Red) => 1,
+        Some(Green) => 2,
+        None => 0,
+    }
+}
+"#;
+        assert_eq!(
+            match_diagnostics(src),
+            vec![(
+                "E1247".to_string(),
+                "non-exhaustive match: missing pattern `Some(Blue)`".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn tuple_and_literal_matches_report_exact_witnesses() {
+        let src = r#"
+enum Color { Red, Green, Blue }
+fn g(t: (Color, Bool)) -> Int {
+    match t {
+        (Red, true) => 1,
+        (Green, _) => 2,
+        (Blue, _) => 3,
+    }
+}
+fn h(x: Option[Int]) -> Int {
+    match x {
+        Some(1) => 1,
+        Some(_) => 2,
+        None => 0,
+    }
+}
+fn i(n: Int) -> Int {
+    match n {
+        1 => 1,
+        2 => 2,
+    }
+}
+fn j(s: String) -> Int {
+    match s {
+        "a" => 1,
+        _ => 0,
+    }
+}
+"#;
+        assert_eq!(
+            match_diagnostics(src),
+            vec![
+                (
+                    "E1290".to_string(),
+                    "non-exhaustive match: missing pattern `(Red, false)`".to_string()
+                ),
+                (
+                    "E1290".to_string(),
+                    "non-exhaustive match: missing pattern `_`".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn unreachable_arms_are_found_through_nesting_and_or_patterns() {
+        let src = r#"
+enum Color { Red, Green, Blue }
+fn f(c: Option[Color]) -> Int {
+    match c {
+        Some(Red | Green) => 1,
+        Some(_) => 2,
+        Some(Blue) => 3,
+        None => 0,
+        _ => 4,
+    }
+}
+"#;
+        let codes: Vec<String> = match_diagnostics(src)
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect();
+        assert_eq!(codes, vec!["E1251", "E1251"]);
+    }
+
+    #[test]
+    fn guarded_arms_do_not_count_toward_exhaustiveness() {
+        let src = r#"
+enum Color { Red, Green, Blue }
+fn f(c: Color, flag: Bool) -> Int {
+    match c {
+        Red => 1,
+        Green if flag => 2,
+        Blue => 3,
+    }
+}
+"#;
+        assert_eq!(
+            match_diagnostics(src),
+            vec![(
+                "E1249".to_string(),
+                "non-exhaustive match: missing variant `Green`".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn struct_patterns_are_checked_field_by_field() {
+        let src = r#"
+enum Color { Red, Green, Blue }
+struct Pixel { lit: Bool, color: Color }
+fn f(p: Pixel) -> Int {
+    match p {
+        Pixel { lit: true, .. } => 1,
+        Pixel { lit: false, color: Red } => 2,
+    }
+}
+"#;
+        let diagnostics = match_diagnostics(src);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+        assert_eq!(diagnostics[0].0, "E1290");
+        assert!(
+            diagnostics[0]
+                .1
+                .contains("`Pixel { color: Blue, lit: false }`")
+                && diagnostics[0]
+                    .1
+                    .contains("`Pixel { color: Green, lit: false }`"),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn bool_and_result_matches_keep_their_codes() {
+        let src = r#"
+fn b(x: Bool) -> Int {
+    match x {
+        true => 1,
+    }
+}
+fn r(x: Result[Int, Bool]) -> Int {
+    match x {
+        Ok(_) => 1,
+        Err(true) => 2,
+    }
+}
+"#;
+        assert_eq!(
+            match_diagnostics(src),
+            vec![
+                (
+                    "E1246".to_string(),
+                    "non-exhaustive bool match; missing: false".to_string()
+                ),
+                (
+                    "E1248".to_string(),
+                    "non-exhaustive match: missing pattern `Err(false)`".to_string()
+                ),
+            ]
         );
     }
 

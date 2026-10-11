@@ -1,0 +1,21 @@
+module examples.core.match_missing_witness_invalid;
+
+// `aic check` reports E1247 "non-exhaustive match: missing pattern
+// `Some(Blue)`": the nested `Blue` case has no arm.
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fn shade(c: Option[Color]) -> Int {
+    match c {
+        Some(Red) => 1,
+        Some(Green) => 2,
+        None => 0,
+    }
+}
+
+fn main() -> Int {
+    shade(None())
+}

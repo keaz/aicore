@@ -1,0 +1,42 @@
+module examples.core.match_exhaustiveness;
+import std.io;
+
+// Exhaustiveness looks inside payloads, tuples and literals. Removing any
+// arm below makes `aic check` report the uncovered value, for example
+// `Some(Blue)` or `(Red, false)`.
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fn shade(c: Option[Color]) -> Int {
+    match c {
+        Some(Red) => 1,
+        Some(Green) => 2,
+        Some(Blue) => 3,
+        None => 0,
+    }
+}
+
+fn mix(pair: (Color, Bool)) -> Int {
+    match pair {
+        (Red, true) => 10,
+        (Red, false) => 11,
+        (Green, _) => 20,
+        (Blue, _) => 30,
+    }
+}
+
+fn code(n: Int) -> Int {
+    match n {
+        0 => 100,
+        1 => 101,
+        _ => 199,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(shade(Some(Blue())) + mix((Red(), false)) + code(7));
+    0
+}

@@ -169,6 +169,7 @@ check_pass=(
   "examples/core/closure_capture_by_value.aic"
   "examples/core/std_name_shadowing.aic"
   "examples/core/generic_argument_inference.aic"
+  "examples/core/match_exhaustiveness.aic"
   "examples/core/vec_value_semantics.aic"
   "examples/core/integer_division_by_zero.aic"
   "examples/core/trait_members_workaround.aic"
@@ -224,6 +225,7 @@ check_fail=(
   "examples/core/trait_unsupported_members_invalid.aic"
   "examples/core/unknown_type_invalid.aic"
   "examples/core/closure_capture_mutation_invalid.aic"
+  "examples/core/match_missing_witness_invalid.aic"
 )
 run_pass=(
   "examples/option_match.aic"
