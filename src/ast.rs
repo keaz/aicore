@@ -488,6 +488,13 @@ pub struct Block {
     pub span: Span,
 }
 
+/// Prefix of the builtin callee of a cast: `x as UInt8` parses as
+/// `$as:UInt8(x)`.
+pub const CAST_BUILTIN_PREFIX: &str = "$as:";
+/// Prefix of the builtin callee of a numeric conversion method
+/// (`x.checked_to_u8()` is checked as `$convert:checked:UInt8(x)`).
+pub const CONVERT_BUILTIN_PREFIX: &str = "$convert:";
+
 /// Builtin callee of an index expression: `base[index]` parses as
 /// `$index(base, index)`.
 pub const INDEX_BUILTIN: &str = "$index";

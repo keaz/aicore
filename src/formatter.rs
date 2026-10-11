@@ -1789,6 +1789,14 @@ impl<'a> Printer<'a> {
     }
 
     fn expr(&mut self, expr: &ir::Expr, parent_prec: u8, indent: usize) {
+        // A prefix operator or a negative literal before `.field`, a call,
+        // an index or `?` needs parens: `(-1).abs()`, not `-1.abs()`.
+        if parent_prec >= POSTFIX_OPERAND_PREC && starts_with_prefix_operator(expr) {
+            self.out.push('(');
+            self.expr(expr, 0, indent);
+            self.out.push(')');
+            return;
+        }
         if let Some(rendered_for) = extract_for_syntax(expr) {
             self.out.push_str("for ");
             self.out.push_str(&rendered_for.binding);
@@ -1893,10 +1901,32 @@ impl<'a> Printer<'a> {
             ir::ExprKind::Unit => self.out.push_str("()"),
             ir::ExprKind::Var(v) => self.out.push_str(v),
             ir::ExprKind::Call { callee, args, .. }
+                if args.len() == 1
+                    && matches!(&callee.kind, ir::ExprKind::Var(name) if name.starts_with(ast::CAST_BUILTIN_PREFIX)) =>
+            {
+                let ir::ExprKind::Var(name) = &callee.kind else {
+                    return;
+                };
+                // `as` binds tighter than binary operators and looser than
+                // unary ones; parenthesize wherever an operand of either is
+                // expected, so the printed form always parses back the same.
+                let needs_parens = parent_prec >= PREFIX_OPERAND_PREC;
+                if needs_parens {
+                    self.out.push('(');
+                }
+                self.expr(&args[0], PREFIX_OPERAND_PREC, indent);
+                self.out.push_str(" as ");
+                self.out
+                    .push_str(&format_type_repr(&name[ast::CAST_BUILTIN_PREFIX.len()..]));
+                if needs_parens {
+                    self.out.push(')');
+                }
+            }
+            ir::ExprKind::Call { callee, args, .. }
                 if args.len() == 2
                     && matches!(&callee.kind, ir::ExprKind::Var(name) if name == ast::INDEX_BUILTIN) =>
             {
-                self.expr(&args[0], PREFIX_OPERAND_PREC, indent);
+                self.expr(&args[0], POSTFIX_OPERAND_PREC, indent);
                 self.out.push('[');
                 self.expr(&args[1], 0, indent);
                 self.out.push(']');
@@ -1925,7 +1955,7 @@ impl<'a> Printer<'a> {
                 arg_names,
                 ..
             } => {
-                self.expr(callee, PREFIX_OPERAND_PREC, indent);
+                self.expr(callee, POSTFIX_OPERAND_PREC, indent);
                 self.out.push('(');
                 for (idx, arg) in args.iter().enumerate() {
                     if idx > 0 {
@@ -2110,7 +2140,12 @@ impl<'a> Printer<'a> {
                 if needs_paren {
                     self.out.push('(');
                 }
-                self.expr(expr, 10, indent);
+                let prec = if needs_paren {
+                    10
+                } else {
+                    POSTFIX_OPERAND_PREC
+                };
+                self.expr(expr, prec, indent);
                 if needs_paren {
                     self.out.push(')');
                 }
@@ -2156,7 +2191,7 @@ impl<'a> Printer<'a> {
                 }
             }
             ir::ExprKind::FieldAccess { base, field } => {
-                self.expr(base, PREFIX_OPERAND_PREC, indent);
+                self.expr(base, POSTFIX_OPERAND_PREC, indent);
                 self.out.push('.');
                 self.out.push_str(field);
             }
@@ -3084,6 +3119,22 @@ fn type_map(program: &ir::Program) -> BTreeMap<ir::TypeId, String> {
 /// calls: above every binary operator, so a binary operand keeps its parens.
 const PREFIX_OPERAND_PREC: u8 = 11;
 
+/// Parent precedence for the operand of `.field`, a call, an index or `?`:
+/// prefix operators there need parens too.
+const POSTFIX_OPERAND_PREC: u8 = 12;
+
+/// Expressions printed with a leading prefix operator.
+fn starts_with_prefix_operator(expr: &ir::Expr) -> bool {
+    match &expr.kind {
+        ir::ExprKind::Unary { .. } | ir::ExprKind::Borrow { .. } | ir::ExprKind::Await { .. } => {
+            true
+        }
+        ir::ExprKind::Int(v, ..) => *v < 0,
+        ir::ExprKind::Float(v, ..) => v.is_sign_negative(),
+        _ => false,
+    }
+}
+
 fn binop_info(op: BinOp) -> (u8, &'static str) {
     match op {
         BinOp::Or => (1, "||"),
@@ -3125,6 +3176,18 @@ mod tests {
     #[test]
     fn index_expressions_and_list_literals_round_trip() {
         let src = "import std.vec;\n\nfn f() -> Int {\n    let v = [[1, 2], [3]];\n    let empty: Vec[Int] = [];\n    v[1][0] + empty.len()\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn prefix_operators_before_postfix_operators_keep_parens() {
+        let src = "fn f(x: Int, o: Option[Int]) -> Option[Int] {\n    let a = (-1).checked_to_u32();\n    let b = (-x).saturating_to_u8();\n    let c = (-2.5).saturating_to_int();\n    let d = -x.wrapping_to_u8();\n    let e = (x as Int64).wrapping_to_int();\n    o\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn casts_round_trip() {
+        let src = "fn f(x: Int32, y: UInt8) -> Float64 {\n    let a = -x as Int64;\n    let b = y as Int * 2;\n    let c = (x as Int64) as Float64;\n    let d = -(x as Int64);\n    let e = x.checked_to_u8();\n    (a + d) as Float64 + c + b.to_f64()\n}\n";
         assert_eq!(fmt(src), src);
     }
 

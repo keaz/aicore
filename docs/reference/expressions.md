@@ -17,7 +17,8 @@ eq_expr        = cmp_expr (("==" | "!=") cmp_expr)* ;
 cmp_expr       = shift_expr (("<" | "<=" | ">" | ">=") shift_expr)* ;
 shift_expr     = add_expr (("<<" | ">>" | ">>>") add_expr)* ;
 add_expr       = mul_expr (("+" | "-") mul_expr)* ;
-mul_expr       = unary_expr (("*" | "/" | "%") unary_expr)* ;
+mul_expr       = cast_expr (("*" | "/" | "%") cast_expr)* ;
+cast_expr      = unary_expr ("as" type)* ;
 
 unary_expr     = closure_expr
                | "&" "mut"? unary_expr
@@ -99,6 +100,14 @@ hex_int        = "0x" hexdigit+ ;
 - `continue` and `break` are valid only inside loop contexts.
 - `if let PATTERN = expr { ... } else { ... }` runs the first block with the pattern's bindings when it matches, otherwise the `else` block (optional, as for `if`; `else if` and `else if let` chain). `while let PATTERN = expr { ... }` repeats while the pattern matches; `break` and `continue` work as in `loop`. A pattern that always matches is reported (`E1251`). Both are written back unchanged by `aic fmt`.
 - Indexing `base[index]` reads one element and panics with `index_out_of_bounds{op:index}` when it does not exist. It works on `Vec[T]` (`Int` index, element `T`), `Map[K, V]` (key `K`, value `V`; a missing key panics), `String` (`Int` character index, one-character `String`) and `Bytes` (`Int` byte index, `UInt8`). The operation comes from the type's std module, which must be imported (`E1304`). Use `vec.get`, `map.get`, `string.char_at` or `bytes.byte_at` for an `Option`/`Result` instead of a panic. Assignment `v[i] = x` is described in [Statements](./statements.md). There is no `Slice[T]` type (it is reported as unknown, `E1228`); use `Vec[T]`.
+- Numeric casts `x as T` convert between numeric types only when every value of the source type is kept exactly: integer widening that keeps the sign (`Int8` to `Int16`, `UInt8` to `Int16`, `UInt32` to `UInt64`), integers of 16 bits or fewer to `Float32`, integers of 32 bits or fewer to `Float64`, and `Float32` to `Float64`. Every other pair, and any non-numeric type, is `E1305`, whose help names the method to use. `as` binds tighter than the binary operators and looser than the unary ones (`-x as Int64` is `(-x) as Int64`; `a * b as Int` is `a * (b as Int)`). `as` is a contextual keyword, so it is still usable as a name.
+- Numeric conversion methods state what happens to values that do not fit. They exist on every integer and float type, with a target suffix `int`, `isize`, `usize`, `i8`..`i128`, `u8`..`u128`, `f32` or `f64`:
+  - `x.checked_to_<int>()` returns `Option[T]`: `None` when the value does not fit, and for NaN and infinities.
+  - `x.saturating_to_<int>()` clamps to the target range; NaN becomes `0`.
+  - `x.wrapping_to_<int>()` (integers only) keeps the low bits in two's complement (`300.wrapping_to_u8()` is `44`, `(-1).wrapping_to_u8()` is `255`).
+  - `x.to_f32()` / `x.to_f64()` round to the nearest float; `Float64` values beyond the `Float32` range become infinities, and NaN stays NaN.
+  - A float converted to an integer truncates toward zero (`3.9.saturating_to_i8()` is `3`, `(-0.5).checked_to_u8()` is `Some(0)`).
+  - Methods that do not exist for a target (`to_int`, `checked_to_f64`, `wrapping_to_` from or to a float) are `E1305`; an unknown suffix is an unknown method (`E1228`). `aic fmt` writes casts and conversion methods back unchanged.
 - List literals `[a, b, c]` build a `Vec` (needs `import std.vec`); `[]` needs a known element type (`let empty: Vec[Int] = [];`).
 - Method syntax on std collections: when a `Vec`, `Map`, `Set`, `String`, `Bytes` or `Deque` value has no inherent method of that name, `value.f(args)` calls the std module function `f(value, args)`, or `<module>_f` (`v.len()` is `vec.vec_len(v)`, `v.push(x)` is `vec.push(v, x)`). The module must be imported.
 - Enum variants as values: a unit variant is written bare (`Red`, `None`) or qualified (`Color::Red`, `Option::None`); a payload variant is called (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`). A bare name that more than one visible enum declares needs a typed context or a qualifier (`E2104`). Local bindings shadow variant names. The legacy `None()` spelling is accepted, and `aic fmt` prints it as `None`.

@@ -896,45 +896,20 @@ fn net_one_u32() -> UInt32 {
 
 /// `net_u8_to_u32` in `std.net`.
 fn net_u8_to_u32(value: UInt8) -> UInt32 {
-    let mut out: UInt32 = net_zero_u32();
-    let mut current: UInt8 = net_zero_u8();
-    let one_u8 = net_one_u8();
-    let one_u32 = net_one_u32();
-    while current != value {
-        current = current + one_u8;
-        out = out + one_u32;
-    };
-    out
+    value as UInt32
 }
 
 /// `net_int_to_u16` in `std.net`.
 fn net_int_to_u16(value: Int) -> Result[NetPortU16, NetError] {
-    if value < 0 {
-        Err(InvalidInput())
-    } else if value > 65535 {
-        Err(InvalidInput())
-    } else {
-        let mut out: UInt16 = net_zero_u16();
-        let mut remaining = value;
-        let one_u16 = net_one_u16();
-        while remaining > 0 {
-            out = out + one_u16;
-            remaining = remaining - 1;
-        };
-        Ok(out)
+    match value.checked_to_u16() {
+        Some(out) => Ok(out),
+        None => Err(InvalidInput()),
     }
 }
 
 /// `net_u16_to_int` in `std.net`.
 fn net_u16_to_int(value: NetPortU16) -> Int {
-    let mut out = 0;
-    let mut remaining = value;
-    let one_u16 = net_one_u16();
-    while remaining > net_zero_u16() {
-        out = out + 1;
-        remaining = remaining - one_u16;
-    };
-    out
+    value as Int
 }
 
 /// `net_format_host_port` in `std.net`.
@@ -976,19 +951,9 @@ fn net_parse_host_port(endpoint: String) -> Result[(String, NetPortU16), NetErro
 
 /// `net_int_to_u32` in `std.net`.
 fn net_int_to_u32(value: Int) -> Result[UInt32, NetError] {
-    if value < 0 {
-        Err(InvalidInput())
-    } else if value > 4294967295 {
-        Err(InvalidInput())
-    } else {
-        let mut out: UInt32 = net_zero_u32();
-        let mut remaining = value;
-        let one_u32 = net_one_u32();
-        while remaining > 0 {
-            out = out + one_u32;
-            remaining = remaining - 1;
-        };
-        Ok(out)
+    match value.checked_to_u32() {
+        Some(out) => Ok(out),
+        None => Err(InvalidInput()),
     }
 }
 
@@ -1002,27 +967,13 @@ fn net_u32_to_int(value: UInt32) -> Result[Int, NetError] {
     if value > net_u32_int_max() {
         Err(InvalidInput())
     } else {
-        let mut out = 0;
-        let mut remaining = value;
-        let one_u32 = net_one_u32();
-        while remaining > net_zero_u32() {
-            out = out + 1;
-            remaining = remaining - one_u32;
-        };
-        Ok(out)
+        Ok(value as Int)
     }
 }
 
 /// `net_u8_to_int` in `std.net`.
 fn net_u8_to_int(value: UInt8) -> Int {
-    let mut out = 0;
-    let mut current: UInt8 = net_zero_u8();
-    let one = net_one_u8();
-    while current != value {
-        current = current + one;
-        out = out + 1;
-    };
-    out
+    value as Int
 }
 
 /// `tcp_stream_frame_byte_to_int` in `std.net`.

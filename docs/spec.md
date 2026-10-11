@@ -197,7 +197,7 @@ Status summary (`current` -> `target`):
 - `#317` 128-bit integer primitives: fixed-width family up to 64-bit -> add `Int128`/`UInt128` with deterministic literal/range/type-operator semantics.
 - `#318` size-family integers: no dedicated size-typed integer family -> add deterministic `ISize`/`USize` with `UInt` aliasing `USize`.
 - `#319` float-width primitives: single `Float` primitive only -> add `Float32`/`Float64` while keeping `Float` as alias to `Float64` with deterministic literal/operator policy.
-- `#320` numeric stdlib surface: no dedicated numeric module -> add `std.numeric` for explicit conversion/overflow-policy APIs without changing implicit-cast policy.
+- `#320` numeric conversion surface: provided by `x as T` (lossless only) and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods (#456) instead of a `std.numeric` module; implicit-cast policy is unchanged.
 
 ## 3. Canonical IR
 
@@ -265,7 +265,7 @@ Program {
 
 ### 4.2 Integer conversion policy
 
-- There is no explicit numeric cast operator in MVP.
+- `x as T` converts between numeric types when every source value is kept exactly (integer widening, small integers to floats, `Float32` to `Float64`); other conversions use `checked_to_*`, `saturating_to_*`, `wrapping_to_*`, `to_f32` or `to_f64` (`E1305` otherwise).
 - Implicit integer conversion is permitted only when lossless (source range is fully contained in target range).
 - Lossless conversion applies at typed boundaries such as let/assignment/function argument/function return checking.
 - `UInt` and `USize` are equivalent for compatibility/operator-kind checks because `UInt` aliases `USize`.
@@ -323,12 +323,12 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
   - Literal suffixes include `i8/i16/i32/i64/i128/u8/u16/u32/u64/u128`.
   - Built-in float primitives include `Float32` and `Float64`; `Float` aliases `Float64`.
   - Float literals default to `Float` (`Float64`) and support explicit `f32`/`f64` suffixes.
-  - No dedicated `std.numeric` module is part of the documented standard library surface.
+  - Numeric conversions are language-level (`as` and conversion methods); there is no `std.numeric` module.
 - Target behavior (remaining contract scope):
   - Keep `ISize`/`USize` deterministic (64-bit) and keep `UInt` as an alias of `USize`.
   - Keep `Float` as compatibility alias to `Float64` and keep `Float32`/`Float64` mixed-width diagnostics deterministic.
-  - Preserve existing implicit conversion policy: only lossless conversions are allowed; there is still no general cast operator.
-  - Add `std.numeric` as the explicit numeric-conversion/overflow-policy module (checked/wrapping/saturating style helpers and cross-width conversion helpers), keeping arithmetic type rules deterministic.
+  - Preserve existing implicit conversion policy: only lossless conversions are implicit; `as` is the explicit form of the same lossless conversions.
+  - Explicit narrowing, sign changes and float conversions use the checked/saturating/wrapping conversion methods (#456), keeping arithmetic type rules deterministic.
   - Keep diagnostic categories stable: out-of-range/type-mismatch diagnostics remain deterministic and continue to use the integer diagnostic families already documented in this spec.
 
 ## 5. Effect system

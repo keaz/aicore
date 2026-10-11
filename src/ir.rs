@@ -27,6 +27,24 @@ pub struct TypeId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub u32);
 
+impl NodeId {
+    /// Ids at or above this value belong to nodes the type checker
+    /// synthesizes (counting down from `u32::MAX`, e.g. for indexing and
+    /// numeric conversion rewrites).
+    pub const SYNTHETIC_FLOOR: u32 = 1 << 31;
+
+    /// The id for computing where a later pass may allocate fresh ids:
+    /// synthetic ids count as 0, so fresh ids start above the parsed ones
+    /// and never overflow.
+    pub fn allocation_id(self) -> u32 {
+        if self.0 >= Self::SYNTHETIC_FLOOR {
+            0
+        } else {
+            self.0
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Program {
     #[serde(default = "default_schema_version")]

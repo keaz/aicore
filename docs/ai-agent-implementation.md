@@ -965,6 +965,16 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Numeric Casts and Conversion Methods (SYNTAX-T9, #456)
+
+- Language surface: `x as T` (lossless numeric conversions only) and `checked_to_<t>()` (`Option[T]`), `saturating_to_<t>()`, `wrapping_to_<t>()`, `to_f32()`, `to_f64()` on every integer and float type. Rules: `docs/reference/expressions.md`.
+- Parser: `parse_cast` sits between `parse_factor` and `parse_unary` (`as` is contextual) and produces the builtin call `$as:<Type>(x)` (`ast::CAST_BUILTIN_PREFIX`); the formatter prints it back as `x as T`.
+- Checker: `check_cast` accepts a pair only when `NumericKind::converts_exactly_to` holds, otherwise `E1305` with a help naming the method. `check_numeric_conversion_method` handles the methods (receiver types are normalized, so aliases such as `type Port = UInt16` work) and records `$convert:<mode>:<Target>(x)` in `expr_rewrites`; `checked` types as `Option[Target]`.
+- Codegen: `src/codegen/generator_convert.rs` (`gen_numeric_conversion`); `gen_call` dispatches both prefixes first. LLVM intrinsics it needs are declared through `Generator::llvm_intrinsic_decls`.
+- Node ids: checker rewrites carry synthetic node ids counting down from `u32::MAX`, and std now contains such rewrites in every program. Passes that allocate fresh ids after checking (`contracts.rs`, `template_lowering.rs`) start above the largest parsed id via `ir::NodeId::allocation_id`, which counts ids at or above `NodeId::SYNTHETIC_FLOOR` as 0.
+- Std: the counting/bit loops that converted between `Int` and fixed-width integers in `std.buffer`, `std.concurrent`, `std.env`, `std.http`, `std.http_server`, `std.net`, `std.proc`, `std.tls` and `std.url` now use `as` and the conversion methods; signatures are unchanged.
+- Verification: `exec_integer_conversions_match_two_complement_semantics` and `exec_float_conversions_round_truncate_and_saturate` (generated matrices checked against a Rust reference, including MIN/MAX, NaN and infinities), `numeric_casts_and_conversion_methods_are_checked`, `parses_casts_between_unary_and_binary_operators`, formatter test `casts_round_trip`, golden `case31_numeric_casts.aic`, `examples/core/numeric_conversions.aic`.
+
 ## Indexing, List Literals and Std Method Syntax (SYNTAX-T8, #455)
 
 - Language surface: `v[i]`, `m[k]`, `s[i]`, `b[i]`, `[a, b, c]`, and `value.f(args)` on std collections. Rules: `docs/reference/expressions.md`.

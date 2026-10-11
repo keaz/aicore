@@ -1,0 +1,8 @@
+fn main() -> Int {
+    let small: Int8 = -5;
+    let wide = small as Int64;
+    let narrow = 300.saturating_to_u8();
+    let fits = 200.checked_to_i8();
+    let ratio = wide as Float64 / narrow.to_f64();
+    -small as Int + wide.wrapping_to_int()
+}

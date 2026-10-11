@@ -172,27 +172,12 @@ fn has_explicit_port(url: UrlView) -> Bool {
 /// `url_port_from_int` bridges runtime sentinel/`Int` ports to bounded public representation.
 fn url_port_from_int(port: Int) -> Result[Option[UInt16], UrlError] {
     if port < 0 {
-        Ok(None())
-    } else if port > 65535 {
-        Err(InvalidPort())
+        Ok(None)
     } else {
-        let mut remaining = port;
-        let mut out: UInt16 = 0;
-        let mut bit: UInt16 = 1;
-        while remaining > 0 {
-            if (remaining % 2) == 1 {
-                out = out + bit;
-            } else {
-                ()
-            };
-            remaining = remaining / 2;
-            if remaining > 0 {
-                bit = bit + bit;
-            } else {
-                ()
-            };
-        };
-        Ok(Some(out))
+        match port.checked_to_u16() {
+            Some(out) => Ok(Some(out)),
+            None => Err(InvalidPort()),
+        }
     }
 }
 
@@ -216,15 +201,7 @@ fn url_one_u16() -> UInt16 {
 
 /// `url_u16_to_int` converts bounded URL port values to runtime `Int`.
 fn url_u16_to_int(value: UInt16) -> Int {
-    let mut out = 0;
-    let mut remaining = value;
-    let zero = url_zero_u16();
-    let one = url_one_u16();
-    while remaining > zero {
-        remaining = remaining - one;
-        out = out + 1;
-    };
-    out
+    value as Int
 }
 
 /// `url_from_raw` converts runtime URL payloads to bounded public models.

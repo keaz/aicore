@@ -474,19 +474,9 @@ fn buffer_u32_int_max() -> UInt32 {
 
 /// Converts Int to UInt32 and returns InvalidInput on out-of-range values.
 fn buffer_int_to_u32(value: Int) -> Result[UInt32, BufferError] {
-    if value < 0 {
-        Err(InvalidInput())
-    } else if value > 4294967295 {
-        Err(InvalidInput())
-    } else {
-        let mut out: UInt32 = buffer_zero_u32();
-        let mut remaining = value;
-        let one_u32 = buffer_one_u32();
-        while remaining > 0 {
-            out = out + one_u32;
-            remaining = remaining - 1;
-        };
-        Ok(out)
+    match value.checked_to_u32() {
+        Some(out) => Ok(out),
+        None => Err(InvalidInput()),
     }
 }
 
@@ -495,14 +485,7 @@ fn buffer_u32_to_int(value: UInt32) -> Result[Int, BufferError] {
     if value > buffer_u32_int_max() {
         Err(InvalidInput())
     } else {
-        let mut out = 0;
-        let mut remaining = value;
-        let one_u32 = buffer_one_u32();
-        while remaining > buffer_zero_u32() {
-            out = out + 1;
-            remaining = remaining - one_u32;
-        };
-        Ok(out)
+        Ok(value as Int)
     }
 }
 

@@ -21,17 +21,17 @@ This guide covers practical migration from `Int`/`Float` usage to fixed-width pr
 
 - Current behavior:
   - Fixed-width families are available up to 64-bit (`Int64`/`UInt64`).
-  - No dedicated `std.numeric` helper module is documented.
+  - Explicit conversions use `as` (lossless) and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods (#456); there is no `std.numeric` module.
 - Target behavior:
   - Add `Int128`/`UInt128` for explicit 128-bit storage and arithmetic boundaries.
   - Keep `Int` unchanged as the general signed 64-bit integer.
-  - Introduce `std.numeric` for explicit numeric-boundary operations where source code must state overflow/conversion policy.
+  - State overflow/conversion policy at numeric boundaries with the conversion methods.
 
 Migration guidance for Wave 1:
 
 1. Use `Int128`/`UInt128` only at boundaries that require >64-bit range (ledger ids, hash-partition counters, high-range protocol values).
 2. Keep existing `Int`/`Int64` signatures where 64-bit range is sufficient to avoid unnecessary ABI churn.
-3. Move risky conversion points to explicit `std.numeric` helper calls rather than relying on implicit boundary checks.
+3. Move risky conversion points to explicit conversion methods (`value.checked_to_u32()`, `value.saturating_to_i16()`, `value.wrapping_to_u8()`) rather than relying on implicit boundary checks.
 4. Keep deterministic policy at call sites:
    - checked conversion path for fallible narrowing/sign-change
    - saturating path where upper/lower clamp is business-correct

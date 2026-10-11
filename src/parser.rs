@@ -71,6 +71,24 @@ fn collect_pattern_binding_names(pattern: &Pattern, out: &mut Vec<String>) {
     }
 }
 
+/// Source text of a type: `Int64`, `Option[UInt8]`.
+fn type_repr_text(ty: &TypeExpr) -> String {
+    match &ty.kind {
+        TypeKind::Named { name, args } if args.is_empty() => name.clone(),
+        TypeKind::Named { name, args } => format!(
+            "{}[{}]",
+            name,
+            args.iter()
+                .map(type_repr_text)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeKind::Unit => "()".to_string(),
+        TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
+        TypeKind::Hole => "_".to_string(),
+    }
+}
+
 /// Expressions that end in a block: they can be statements without `;`,
 /// and a match arm with such a body needs no trailing comma.
 fn is_block_like(expr: &Expr) -> bool {
@@ -3038,7 +3056,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_factor(&mut self) -> Option<Expr> {
-        let mut expr = self.parse_unary()?;
+        let mut expr = self.parse_cast()?;
         loop {
             let op = if self.at_kind(|k| matches!(k, TokenKind::Star)) {
                 Some(BinOp::Mul)
@@ -3051,13 +3069,36 @@ impl<'a> Parser<'a> {
             };
             let Some(op) = op else { break };
             self.bump();
-            let rhs = self.parse_unary()?;
+            let rhs = self.parse_cast()?;
             let span = expr.span.join(rhs.span);
             expr = Expr {
                 kind: ExprKind::Binary {
                     op,
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
+                },
+                span,
+            };
+        }
+        Some(expr)
+    }
+
+    /// `operand as Type`: binds tighter than binary operators and looser
+    /// than unary ones (`-x as Int64` is `(-x) as Int64`). `as` is a
+    /// contextual keyword, so it stays usable as an identifier elsewhere.
+    /// The cast is the builtin call `$as:Type(operand)`.
+    fn parse_cast(&mut self) -> Option<Expr> {
+        let mut expr = self.parse_unary()?;
+        while matches!(&self.current().kind, TokenKind::Ident(name) if name == "as") {
+            self.bump();
+            let ty = self.parse_type()?;
+            let span = Span::new(expr.span.start, ty.span.end);
+            let callee = format!("{}{}", CAST_BUILTIN_PREFIX, type_repr_text(&ty));
+            expr = Expr {
+                kind: ExprKind::Call {
+                    callee: Box::new(Expr::var(callee, ty.span)),
+                    args: vec![expr],
+                    arg_names: Vec::new(),
                 },
                 span,
             };
@@ -5646,6 +5687,51 @@ mod tests {
             callee_name(&args[0]),
             (crate::ast::INDEX_BUILTIN.to_string(), 2)
         );
+    }
+
+    #[test]
+    fn parses_casts_between_unary_and_binary_operators() {
+        let (program, diagnostics) = parse(
+            "fn f(x: Int32, as: Int) -> Int64 { let a = -x as Int64; let b = as * x as Int; a }",
+            "test.aic",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let cast_of = |expr: &Expr| match &expr.kind {
+            ExprKind::Call { callee, args, .. } => match &callee.kind {
+                ExprKind::Var(name) => (name.clone(), args[0].clone()),
+                other => panic!("unexpected callee {other:?}"),
+            },
+            other => panic!("expected cast call, found {other:?}"),
+        };
+        // `-x as Int64` is `(-x) as Int64`.
+        let Stmt::Let { expr, .. } = &f.body.stmts[0] else {
+            panic!("expected let");
+        };
+        let (callee, operand) = cast_of(expr);
+        assert_eq!(callee, format!("{}Int64", crate::ast::CAST_BUILTIN_PREFIX));
+        assert!(
+            matches!(operand.kind, ExprKind::Unary { .. }),
+            "{operand:?}"
+        );
+        // `as * x as Int` is `as * (x as Int)`; `as` is still an identifier.
+        let Stmt::Let { expr, .. } = &f.body.stmts[1] else {
+            panic!("expected let");
+        };
+        let ExprKind::Binary { lhs, rhs, .. } = &expr.kind else {
+            panic!("expected binary, found {expr:?}");
+        };
+        assert!(matches!(&lhs.kind, ExprKind::Var(name) if name == "as"));
+        assert_eq!(
+            cast_of(rhs).0,
+            format!("{}Int", crate::ast::CAST_BUILTIN_PREFIX)
+        );
+
+        let (_, diagnostics) = parse("fn f(x: Int) -> Int { x as }", "test.aic");
+        assert!(!diagnostics.is_empty(), "a cast needs a target type");
     }
 
     #[test]

@@ -391,26 +391,9 @@ fn pipe_chain(stages: Vec[String]) -> Result[ProcResult, ProcError] effects { pr
 
 /// `proc_handle_from_int` validates runtime process handles and converts them to `UInt32`.
 fn proc_handle_from_int(value: Int) -> Result[ProcHandle, ProcError] {
-    if value < 0 || value > 4294967295 {
-        Err(InvalidInput())
-    } else {
-        let mut remaining = value;
-        let mut out: ProcHandle = 0;
-        let mut bit: ProcHandle = 1;
-        while remaining > 0 {
-            if (remaining % 2) == 1 {
-                out = out + bit;
-            } else {
-                ()
-            };
-            remaining = remaining / 2;
-            if remaining > 0 {
-                bit = bit + bit;
-            } else {
-                ()
-            };
-        };
-        Ok(out)
+    match value.checked_to_u32() {
+        Some(out) => Ok(out),
+        None => Err(InvalidInput()),
     }
 }
 
@@ -426,51 +409,19 @@ fn proc_one_u32() -> ProcHandle {
 
 /// `proc_handle_to_int` converts bounded public handles back to runtime `Int`.
 fn proc_handle_to_int(value: ProcHandle) -> Int {
-    let mut out = 0;
-    let mut remaining = value;
-    let zero = proc_zero_u32();
-    let one = proc_one_u32();
-    while remaining > zero {
-        remaining = remaining - one;
-        out = out + 1;
-    };
-    out
+    value as Int
 }
 
 /// `proc_nonnegative_int_to_i32` converts a non-negative bounded `Int` into `Int32`.
 fn proc_nonnegative_int_to_i32(value: Int) -> ProcExitStatus {
-    let mut remaining = value;
-    let mut out: ProcExitStatus = 0;
-    let mut bit: ProcExitStatus = 1;
-    while remaining > 0 {
-        if (remaining % 2) == 1 {
-            out = out + bit;
-        } else {
-            ()
-        };
-        remaining = remaining / 2;
-        if remaining > 0 {
-            bit = bit + bit;
-        } else {
-            ()
-        };
-    };
-    out
+    value.saturating_to_i32()
 }
 
 /// `proc_exit_status_from_int` validates and converts runtime `Int` status to bounded `Int32`.
 fn proc_exit_status_from_int(value: Int) -> Result[ProcExitStatus, ProcError] {
-    if value < -2147483648 || value > 2147483647 {
-        Err(InvalidInput())
-    } else if value == -2147483648 {
-        let min_value: ProcExitStatus = -2147483648;
-        Ok(min_value)
-    } else if value < 0 {
-        let magnitude = proc_nonnegative_int_to_i32(0 - value);
-        let zero: ProcExitStatus = 0;
-        Ok(zero - magnitude)
-    } else {
-        Ok(proc_nonnegative_int_to_i32(value))
+    match value.checked_to_i32() {
+        Some(out) => Ok(out),
+        None => Err(InvalidInput()),
     }
 }
 

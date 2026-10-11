@@ -104,7 +104,7 @@ Wave numeric contract (`#317`, `#318`, `#319`, `#320`):
 
 - `ISize`/`USize` extern surfaces lower as `i64` with signedness-aware op selection, and `UInt` canonicalizes to `USize`.
 - `Float32` extern surfaces lower as `float`; `Float64` and `Float` lower as `double`.
-- `std.numeric`-driven conversion/overflow helper calls are lowered as ordinary resolved stdlib calls; no backend-only implicit conversion paths are introduced.
+- Explicit numeric conversions (`x as T` and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods) reach codegen as `$as:T` / `$convert:<mode>:T` builtin calls and are lowered in `src/codegen/generator_convert.rs`: `sext`/`zext`/`trunc`, a clamp in a wider integer for saturation, a range check plus `Option` wrapping for `checked`, `sitofp`/`uitofp`/`fpext`/`fptrunc`, and `llvm.fptosi.sat` / `llvm.fptoui.sat` for saturating float-to-integer. No implicit conversion paths are introduced.
 
 ### Runtime scalar ABI policy
 

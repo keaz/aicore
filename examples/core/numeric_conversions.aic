@@ -1,0 +1,26 @@
+module examples.core.numeric_conversions;
+
+import std.io;
+
+// `as` for conversions that keep every value; a method that names the
+// policy (checked, saturating, wrapping, rounding) for everything else.
+
+fn average(total: Int32, count: Int) -> Float64 {
+    total as Float64 / count.to_f64()
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let clamped = 300.saturating_to_u8() as Int;
+    let low_bits = 8080.wrapping_to_u8() as Int;
+    let rejected = match (-1).checked_to_u32() {
+        Some(_) => 0,
+        None => 1,
+    };
+    let truncated = 7.9.saturating_to_int();
+    let small: Int8 = -7;
+    let widened = small as Int;
+    let mean = average(84, 2).saturating_to_int();
+    // 255 - 144 - 70 + 1 + 7 - 7 = 42, averaged with 42
+    print_int((clamped - low_bits - 70 + rejected + truncated + widened + mean) / 2);
+    0
+}

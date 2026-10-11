@@ -196,6 +196,19 @@ fn empty_reader() -> RequestBodyReader {
     }
 }
 
+/// Bytes in the full response once its header has arrived: the header
+/// plus `content-length: 11`; a larger bound until the header is complete.
+fn wire_len_expected(wire: Bytes) -> Int {
+    let text = match bytes.to_string(wire) {
+        Ok(value) => value,
+        Err(_) => "",
+    };
+    match string.index_of(text, "\r\n\r\n") {
+        Some(end) => end + 4 + 11,
+        None => len(text) + 1,
+    }
+}
+
 fn main() -> Int effects { io, net } capabilities { io, net } {
     let listener = match listen("127.0.0.1:0") {
         Ok(handle) => handle,
@@ -272,9 +285,16 @@ fn main() -> Int effects { io, net } capabilities { io, net } {
         Err(_) => 0,
     };
 
-    let wire = match tcp_recv(client, 4096, 1000) {
-        Ok(value) => value,
-        Err(_) => bytes.empty(),
+    // TCP may deliver the header and the body chunks in separate reads.
+    let mut wire = bytes.empty();
+    let mut reads = 0;
+    while reads < 20 && bytes.byte_len(wire) < wire_len_expected(wire) {
+        let part = match tcp_recv(client, 4096, 1000) {
+            Ok(value) => value,
+            Err(_) => bytes.empty(),
+        };
+        wire = bytes.concat(wire, part);
+        reads = reads + 1;
     };
     let wire_text = match bytes.to_string(wire) {
         Ok(value) => value,

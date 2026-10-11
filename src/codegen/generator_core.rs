@@ -74,6 +74,7 @@ impl<'a> Generator<'a> {
             async_counter: 0,
             deferred_fn_defs: Vec::new(),
             mutable_receiver_fns,
+            llvm_intrinsic_decls: BTreeSet::new(),
             async_ready_helpers: BTreeMap::new(),
             fn_value_adapters: BTreeMap::new(),
             function_modules_by_symbol,
@@ -94,6 +95,10 @@ impl<'a> Generator<'a> {
             text.push_str(&format!("source_filename = \"{}\"\n", source_file));
         }
         text.push_str("declare void @llvm.lifetime.end.p0i8(i64, i8*)\n");
+        for decl in &self.llvm_intrinsic_decls {
+            text.push_str(decl);
+            text.push('\n');
+        }
         text.push_str("declare void @aic_rt_print_int(i64)\n");
         text.push_str("declare void @aic_rt_print_float(double)\n");
         text.push_str("declare void @aic_rt_print_str(i8*, i64, i64)\n");
@@ -5666,6 +5671,13 @@ impl<'a> Generator<'a> {
             return result;
         }
 
+        if let Some(target) = name.strip_prefix(crate::ast::CAST_BUILTIN_PREFIX) {
+            return self.gen_numeric_conversion_call("exact", target, args, span, fctx);
+        }
+        if let Some(rest) = name.strip_prefix(crate::ast::CONVERT_BUILTIN_PREFIX) {
+            let (mode, target) = rest.split_once(':').unwrap_or((rest, ""));
+            return self.gen_numeric_conversion_call(mode, target, args, span, fctx);
+        }
         if name == crate::ast::INDEX_PANIC_BUILTIN {
             self.emit_static_panic(
                 "index_out_of_bounds{op:index}: index is out of bounds",

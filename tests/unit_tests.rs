@@ -3164,12 +3164,8 @@ fn unit_std_env_public_apis_delegate_to_runtime_intrinsics() {
         "std/env.aic must expose Int32->Int exit bridge helper"
     );
     assert!(
-        env_source.contains("if value < zero_i32"),
-        "std/env.aic must preserve signed Int32 conversion branches"
-    );
-    assert!(
-        env_source.contains("0 - out"),
-        "std/env.aic must preserve negative Int32 conversion semantics"
+        env_source.contains("    value as Int\n"),
+        "std/env.aic must widen Int32 exit codes to Int with a lossless cast"
     );
 }
 
@@ -3462,24 +3458,12 @@ fn unit_std_proc_public_apis_delegate_to_runtime_intrinsics() {
         "std/proc.aic must validate Int->Int32 runtime boundary conversions"
     );
     assert!(
-        proc_source.contains("if value < 0 || value > 4294967295"),
+        proc_source.contains("match value.checked_to_u32()"),
         "std/proc.aic must enforce UInt32 handle bounds"
     );
     assert!(
-        proc_source.contains("if value < -2147483648 || value > 2147483647"),
-        "std/proc.aic must enforce Int32 exit-status bounds"
-    );
-    assert!(
-        proc_source.contains("if value == -2147483648"),
-        "std/proc.aic must preserve Int32 minimum boundary handling"
-    );
-    assert!(
-        proc_source.contains("else if value < 0"),
-        "std/proc.aic must preserve negative status conversion path"
-    );
-    assert!(
-        proc_source.contains("Ok(zero - magnitude)"),
-        "std/proc.aic must convert negative statuses without widening public type"
+        proc_source.contains("match value.checked_to_i32()"),
+        "std/proc.aic must enforce Int32 exit-status bounds (including the minimum)"
     );
 
     for (name, arity) in [
@@ -3943,16 +3927,8 @@ fn unit_std_net_typed_endpoint_port_wrappers_and_boundaries_are_declared() {
     );
 
     assert!(
-        net_source.contains("65535"),
-        "std/net.aic typed endpoint conversion boundary must enforce UInt16 max bound"
-    );
-    assert!(
-        net_source.contains("value < 0"),
-        "std/net.aic typed endpoint conversion boundary must reject negative Int values"
-    );
-    assert!(
-        net_source.contains("value > 65535"),
-        "std/net.aic typed endpoint conversion boundary must reject out-of-range Int values"
+        net_source.contains("match value.checked_to_u16()"),
+        "std/net.aic typed endpoint conversion boundary must reject negative and out-of-range Int values"
     );
     assert!(
         net_source.contains("Err(InvalidInput())"),
@@ -4296,11 +4272,11 @@ fn unit_std_url_public_apis_delegate_to_runtime_intrinsics() {
         "std/url.aic must preserve no-port semantics without negative sentinel in public model"
     );
     assert!(
-        url_source.contains("port > 65535"),
+        url_source.contains("match port.checked_to_u16()"),
         "std/url.aic must enforce UInt16 port bounds"
     );
     assert!(
-        url_source.contains("Ok(None())"),
+        url_source.contains("Ok(None)"),
         "std/url.aic must preserve no-port sentinel mapping at the runtime bridge"
     );
     assert!(
@@ -6404,7 +6380,7 @@ fn unit_std_http_public_apis_delegate_to_runtime_intrinsics() {
         "std/http.aic must expose UInt16->Int runtime status bridge"
     );
     assert!(
-        http_source.contains("if status < 0 || status > 65535"),
+        http_source.contains("match status.checked_to_u16()"),
         "std/http.aic must enforce UInt16 status bounds"
     );
 }
@@ -6486,7 +6462,7 @@ fn unit_std_http_server_public_apis_delegate_to_runtime_intrinsics() {
         "std/http_server.aic must expose UInt16->Int runtime status bridge"
     );
     assert!(
-        source.contains("if status < 0 || status > 65535"),
+        source.contains("match status.checked_to_u16()"),
         "std/http_server.aic must enforce UInt16 status bounds"
     );
     assert_delegate_call(

@@ -884,26 +884,9 @@ fn http_server_net_error_to_server_error(err: NetError) -> ServerError {
 
 /// `http_server_status_from_int` validates and converts runtime `Int` status to bounded `UInt16`.
 fn http_server_status_from_int(status: Int) -> Result[UInt16, ServerError] {
-    if status < 0 || status > 65535 {
-        Err(Internal())
-    } else {
-        let mut remaining = status;
-        let mut out: UInt16 = 0;
-        let mut bit: UInt16 = 1;
-        while remaining > 0 {
-            if (remaining % 2) == 1 {
-                out = out + bit;
-            } else {
-                ()
-            };
-            remaining = remaining / 2;
-            if remaining > 0 {
-                bit = bit + bit;
-            } else {
-                ()
-            };
-        };
-        Ok(out)
+    match status.checked_to_u16() {
+        Some(out) => Ok(out),
+        None => Err(Internal()),
     }
 }
 
@@ -940,15 +923,7 @@ fn http_server_one_u16() -> UInt16 {
 
 /// `http_server_status_to_int` converts bounded HTTP status values to runtime `Int`.
 fn http_server_status_to_int(status: UInt16) -> Int {
-    let mut out = 0;
-    let mut remaining = status;
-    let zero = http_server_zero_u16();
-    let one = http_server_one_u16();
-    while remaining > zero {
-        remaining = remaining - one;
-        out = out + 1;
-    };
-    out
+    status as Int
 }
 
 /// `async_serve_connection` serves one async request/response exchange and always closes the accepted connection.

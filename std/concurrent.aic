@@ -1023,18 +1023,7 @@ fn conc_one_u32() -> UInt32 {
 
 /// `conc_int_to_u32` in `std.concurrent`.
 fn conc_int_to_u32(value: Int) -> Option[UInt32] {
-    if value < 0 || value > 4294967295 {
-        None()
-    } else {
-        let mut out: UInt32 = conc_zero_u32();
-        let mut remaining = value;
-        let one_u32 = conc_one_u32();
-        while remaining > 0 {
-            out = out + one_u32;
-            remaining = remaining - 1;
-        };
-        Some(out)
-    }
+    value.checked_to_u32()
 }
 
 /// `conc_int_to_u32_result` in `std.concurrent`.
@@ -1061,16 +1050,9 @@ fn conc_u32_to_int_result(value: UInt32) -> Result[Int, ConcurrencyError] {
 /// `conc_u32_to_int` in `std.concurrent`.
 fn conc_u32_to_int(value: UInt32) -> Option[Int] {
     if value > conc_u32_int_max() {
-        None()
+        None
     } else {
-        let mut out = 0;
-        let mut remaining = value;
-        let one_u32 = conc_one_u32();
-        while remaining > conc_zero_u32() {
-            out = out + 1;
-            remaining = remaining - one_u32;
-        };
-        Some(out)
+        Some(value as Int)
     }
 }
 

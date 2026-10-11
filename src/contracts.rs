@@ -1428,7 +1428,7 @@ fn max_node(program: &ir::Program) -> u32 {
 }
 
 fn max_node_block(block: &ir::Block) -> u32 {
-    let mut max = block.node.0;
+    let mut max = block.node.allocation_id();
     for stmt in &block.stmts {
         match stmt {
             ir::Stmt::Let { expr, .. } => max = max.max(max_node_expr(expr)),
@@ -1449,7 +1449,7 @@ fn max_node_block(block: &ir::Block) -> u32 {
 }
 
 fn max_node_expr(expr: &ir::Expr) -> u32 {
-    let mut max = expr.node.0;
+    let mut max = expr.node.allocation_id();
     match &expr.kind {
         ir::ExprKind::Call { callee, args, .. } => {
             max = max.max(max_node_expr(callee));
@@ -1533,7 +1533,7 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
 }
 
 fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
-    let mut max = pattern.node.0;
+    let mut max = pattern.node.allocation_id();
     match &pattern.kind {
         ir::PatternKind::Or { patterns } => {
             for part in patterns {

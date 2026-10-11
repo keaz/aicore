@@ -5724,6 +5724,18 @@ impl<'a> Checker<'a> {
                             );
                         }
                         crate::ast::INDEX_PANIC_BUILTIN => return NEVER_TYPE.to_string(),
+                        name if name.starts_with(crate::ast::CAST_BUILTIN_PREFIX) => {
+                            let target = &name[crate::ast::CAST_BUILTIN_PREFIX.len()..];
+                            return self.check_cast(
+                                expr,
+                                args,
+                                target,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                            );
+                        }
                         _ => {}
                     }
                 }
@@ -8658,6 +8670,11 @@ impl<'a> Checker<'a> {
             return ret;
         }
 
+        if let Some(ty) =
+            self.check_numeric_conversion_method(base, field, args, &receiver_ty, call_expr)
+        {
+            return ty;
+        }
         if let Some(ty) = self.check_std_method_call(
             base,
             field,
@@ -10994,7 +11011,157 @@ impl<'a> Checker<'a> {
         Some(ty)
     }
 
+    /// `operand as Target`: a conversion between numeric types that keeps
+    /// every value exactly (integer widening, integer to a float wide
+    /// enough, `Float32` to `Float64`). Others need a conversion method.
+    #[allow(clippy::too_many_arguments)]
+    fn check_cast(
+        &mut self,
+        expr: &ir::Expr,
+        args: &[ir::Expr],
+        target: &str,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+    ) -> String {
+        let [operand] = args else {
+            return "<?>".to_string();
+        };
+        let source = self.check_expr(operand, locals, allowed_effects, ctx, contract_mode);
+        if contains_unresolved_type(&source) {
+            return target.to_string();
+        }
+        let source_norm = self.normalize_type(&source);
+        let target_norm = self.normalize_type(target);
+        let (Some(from), Some(to)) = (numeric_kind(&source_norm), numeric_kind(&target_norm))
+        else {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1305",
+                    format!(
+                        "`as` converts between numeric types only, found '{}' as '{}'",
+                        source, target
+                    ),
+                    self.file,
+                    expr.span,
+                )
+                .with_help("use a conversion function for other types"),
+            );
+            return target.to_string();
+        };
+        if !from.converts_exactly_to(to) {
+            let suffix = numeric_method_suffix(&target_norm).unwrap_or("int");
+            let help = if to.is_float() {
+                format!("use `.to_{suffix}()` to round to the nearest `{target}`")
+            } else {
+                format!(
+                    "use `.checked_to_{suffix}()` (Option), `.saturating_to_{suffix}()` or `.wrapping_to_{suffix}()`"
+                )
+            };
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1305",
+                    format!(
+                        "cannot convert '{}' to '{}' with `as`: some values would change",
+                        source, target
+                    ),
+                    self.file,
+                    expr.span,
+                )
+                .with_help(help),
+            );
+        }
+        target_norm
+    }
+
+    /// Numeric conversion methods: `x.checked_to_u8()` (`Option[UInt8]`),
+    /// `x.saturating_to_i32()`, `x.wrapping_to_u16()`, `x.to_f64()`. They
+    /// are recorded as `$convert:<mode>:<Target>(x)` for codegen.
+    fn check_numeric_conversion_method(
+        &mut self,
+        base: &ir::Expr,
+        field: &str,
+        args: &[ir::Expr],
+        receiver_ty: &str,
+        call_expr: &ir::Expr,
+    ) -> Option<String> {
+        let from = numeric_kind(receiver_ty)?;
+        let (mode, suffix) = if let Some(suffix) = field.strip_prefix("to_") {
+            ("round", suffix)
+        } else {
+            let (mode, suffix) = field.split_once("_to_")?;
+            (mode, suffix)
+        };
+        let target = numeric_type_for_suffix(suffix)?;
+        let to = numeric_kind(target)?;
+        if !matches!(mode, "round" | "checked" | "saturating" | "wrapping") {
+            return None;
+        }
+        let problem = match mode {
+            "round" if !to.is_float() => Some(
+                "`to_<int>` does not exist; use `checked_to_`, `saturating_to_` or `wrapping_to_`",
+            ),
+            "checked" | "saturating" if to.is_float() => {
+                Some("float targets use `to_f32()` / `to_f64()`")
+            }
+            "wrapping" if to.is_float() || from.is_float() => {
+                Some("`wrapping_to_` converts between integer types")
+            }
+            _ => None,
+        };
+        if let Some(problem) = problem {
+            self.diagnostics.push(Diagnostic::error(
+                "E1305",
+                format!(
+                    "conversion method '{}' is not available on '{}': {}",
+                    field, receiver_ty, problem
+                ),
+                self.file,
+                call_expr.span,
+            ));
+            return Some("<?>".to_string());
+        }
+        if !args.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!("conversion method '{}' takes no arguments", field),
+                self.file,
+                call_expr.span,
+            ));
+            return Some("<?>".to_string());
+        }
+        let callee = self.synthetic_expr(
+            ir::ExprKind::Var(format!(
+                "{}{}:{}",
+                crate::ast::CONVERT_BUILTIN_PREFIX,
+                mode,
+                target
+            )),
+            call_expr.span,
+        );
+        self.expr_rewrites.insert(
+            call_expr.node,
+            ir::Expr {
+                node: call_expr.node,
+                kind: ir::ExprKind::Call {
+                    callee: Box::new(callee),
+                    args: vec![base.clone()],
+                    arg_names: Vec::new(),
+                    symbol: None,
+                },
+                span: call_expr.span,
+            },
+        );
+        Some(if mode == "checked" {
+            format!("Option[{target}]")
+        } else {
+            target.to_string()
+        })
+    }
+
     fn synthetic_node(&mut self) -> ir::NodeId {
+        debug_assert!(self.next_synthetic_node > ir::NodeId::SYNTHETIC_FLOOR);
         self.next_synthetic_node -= 1;
         ir::NodeId(self.next_synthetic_node)
     }
@@ -12570,6 +12737,107 @@ fn integer_conversion_is_lossless(expected: IntegerKind, found: IntegerKind) -> 
 
 fn integer_kinds_match_exact(left: IntegerKind, right: IntegerKind) -> bool {
     left == right
+}
+
+/// A numeric type for conversions: integer width and signedness, or float
+/// width (`Int`, `ISize` and `USize` are 64-bit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NumericKind {
+    Integer { signed: bool, bits: u32 },
+    Float { bits: u32 },
+}
+
+impl NumericKind {
+    fn is_float(self) -> bool {
+        matches!(self, NumericKind::Float { .. })
+    }
+
+    /// Every value of `self` is exactly representable in `to`.
+    fn converts_exactly_to(self, to: NumericKind) -> bool {
+        match (self, to) {
+            (
+                NumericKind::Integer {
+                    signed: s1,
+                    bits: b1,
+                },
+                NumericKind::Integer {
+                    signed: s2,
+                    bits: b2,
+                },
+            ) => (s1 == s2 && b2 >= b1) || (!s1 && s2 && b2 > b1),
+            // A float holds integers up to its mantissa width exactly.
+            (NumericKind::Integer { bits, .. }, NumericKind::Float { bits: 32 }) => bits <= 16,
+            (NumericKind::Integer { bits, .. }, NumericKind::Float { .. }) => bits <= 32,
+            (NumericKind::Float { bits: b1 }, NumericKind::Float { bits: b2 }) => b2 >= b1,
+            (NumericKind::Float { .. }, NumericKind::Integer { .. }) => false,
+        }
+    }
+}
+
+fn numeric_kind(ty: &str) -> Option<NumericKind> {
+    if let Some(kind) = parse_integer_kind(ty) {
+        return Some(match kind {
+            IntegerKind::Int | IntegerKind::ISize => NumericKind::Integer {
+                signed: true,
+                bits: 64,
+            },
+            IntegerKind::USize => NumericKind::Integer {
+                signed: false,
+                bits: 64,
+            },
+            IntegerKind::Fixed { signed, bits } => NumericKind::Integer {
+                signed,
+                bits: u32::from(bits),
+            },
+        });
+    }
+    parse_float_kind(ty).map(|kind| NumericKind::Float {
+        bits: if kind == FloatKind::F32 { 32 } else { 64 },
+    })
+}
+
+/// Target type of a conversion method suffix (`u8` in `checked_to_u8`).
+fn numeric_type_for_suffix(suffix: &str) -> Option<&'static str> {
+    Some(match suffix {
+        "int" => "Int",
+        "isize" => "ISize",
+        "usize" => "USize",
+        "i8" => "Int8",
+        "i16" => "Int16",
+        "i32" => "Int32",
+        "i64" => "Int64",
+        "i128" => "Int128",
+        "u8" => "UInt8",
+        "u16" => "UInt16",
+        "u32" => "UInt32",
+        "u64" => "UInt64",
+        "u128" => "UInt128",
+        "f32" => "Float32",
+        "f64" => "Float64",
+        _ => return None,
+    })
+}
+
+/// Conversion method suffix of a numeric type (`UInt8` → `u8`).
+fn numeric_method_suffix(ty: &str) -> Option<&'static str> {
+    Some(match base_type_name(ty) {
+        "Int" => "int",
+        "ISize" => "isize",
+        "USize" | "UInt" => "usize",
+        "Int8" => "i8",
+        "Int16" => "i16",
+        "Int32" => "i32",
+        "Int64" => "i64",
+        "Int128" => "i128",
+        "UInt8" => "u8",
+        "UInt16" => "u16",
+        "UInt32" => "u32",
+        "UInt64" => "u64",
+        "UInt128" => "u128",
+        "Float32" => "f32",
+        "Float64" | "Float" => "f64",
+        _ => return None,
+    })
 }
 
 fn parse_float_kind(ty: &str) -> Option<FloatKind> {
@@ -15399,6 +15667,70 @@ fn main() -> Int {
                 "{src}: expected {code}, got {codes:?}"
             );
         }
+    }
+
+    #[test]
+    fn numeric_casts_and_conversion_methods_are_checked() {
+        let ok = r#"
+type Port = UInt16;
+fn widen(a: Int8, b: UInt8, c: Int32, d: UInt32, p: Port, f: Float32) -> Float64 {
+    let w1: Int16 = a as Int16;
+    let w2: Int = c as Int;
+    let w3: Int64 = d as Int64;
+    let w4: UInt128 = d as UInt128;
+    let w5: Int16 = b as Int16;
+    let w6: Float32 = b as Float32;
+    let w7: Int = p as Int;
+    let n1: Option[UInt8] = c.checked_to_u8();
+    let n2: Int8 = w2.saturating_to_i8();
+    let n3: UInt16 = w4.wrapping_to_u16();
+    let n4: Option[Int] = f.checked_to_int();
+    let n5: UInt8 = f.saturating_to_u8();
+    let n6: Float32 = w2.to_f32();
+    let n7: Option[UInt8] = p.checked_to_u8();
+    w1.to_f64() + (c as Float64) + (f as Float64) + d.to_f64()
+}
+fn main() -> Int { 0 }
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // Narrowing, sign changes and 64-bit integers to Float64 can change values.
+            "fn f(x: Int) -> Int32 { x as Int32 }",
+            "fn f(x: Int8) -> UInt8 { x as UInt8 }",
+            "fn f(x: UInt64) -> Int { x as Int }",
+            "fn f(x: Int64) -> Float64 { x as Float64 }",
+            "fn f(x: Int32) -> Float32 { x as Float32 }",
+            "fn f(x: Float64) -> Float32 { x as Float32 }",
+            "fn f(x: Float64) -> Int { x as Int }",
+            // `as` is for numeric types only.
+            "fn f(x: Bool) -> Int { x as Int }",
+            "fn f(x: Int) -> Bool { x as Bool }",
+            "fn f(x: String) -> Int { x as Int }",
+            // Methods that do not exist for these targets.
+            "fn f(x: Int) -> Int { x.to_int() }",
+            "fn f(x: Float64) -> Int { x.wrapping_to_int() }",
+            "fn f(x: Int) -> Float64 { x.checked_to_f64() }",
+            "fn f(x: Int) -> Float32 { x.saturating_to_f32() }",
+        ];
+        for case in cases {
+            let src = format!("{case} fn main() -> Int {{ 0 }}");
+            let codes = error_codes(&src);
+            assert!(codes.contains(&"E1305".to_string()), "{case}: {codes:?}");
+        }
+        let codes =
+            error_codes("fn f(x: Int) -> UInt8 { x.wrapping_to_u8(1) } fn main() -> Int { 0 }");
+        assert!(codes.contains(&"E1213".to_string()), "{codes:?}");
+        // Unknown suffixes are ordinary unknown methods.
+        let codes =
+            error_codes("fn f(x: Int) -> Int { x.saturating_to_bogus() } fn main() -> Int { 0 }");
+        assert!(codes.contains(&"E1228".to_string()), "{codes:?}");
+        // `checked_to_*` returns an Option.
+        let codes =
+            error_codes("fn f(x: Int) -> UInt8 { x.checked_to_u8() } fn main() -> Int { 0 }");
+        assert!(
+            !codes.is_empty(),
+            "checked conversion must not type as UInt8"
+        );
     }
 
     #[test]

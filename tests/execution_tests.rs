@@ -18972,3 +18972,478 @@ fn exec_index_out_of_bounds_and_missing_key_panic() {
         assert!(stderr.contains("index_out_of_bounds{op:index}"), "{body}: {stderr}");
     }
 }
+
+/// Integer types for the conversion matrix: (type, method suffix, signed, bits).
+const CONVERSION_INT_TYPES: [(&str, &str, bool, u32); 12] = [
+    ("Int8", "i8", true, 8),
+    ("Int16", "i16", true, 16),
+    ("Int32", "i32", true, 32),
+    ("Int64", "i64", true, 64),
+    ("Int128", "i128", true, 128),
+    ("Int", "int", true, 64),
+    ("UInt8", "u8", false, 8),
+    ("UInt16", "u16", false, 16),
+    ("UInt32", "u32", false, 32),
+    ("UInt64", "u64", false, 64),
+    ("UInt128", "u128", false, 128),
+    ("USize", "usize", false, 64),
+];
+
+/// An integer value as sign and magnitude, wide enough for every Int128
+/// and UInt128 value.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ConvValue {
+    neg: bool,
+    mag: u128,
+}
+
+impl ConvValue {
+    fn small(v: i64) -> Self {
+        ConvValue {
+            neg: v < 0,
+            mag: u128::from(v.unsigned_abs()),
+        }
+    }
+
+    fn type_max(signed: bool, bits: u32) -> Self {
+        let mag = match (signed, bits) {
+            (false, 128) => u128::MAX,
+            (false, b) => (1u128 << b) - 1,
+            (true, b) => (1u128 << (b - 1)) - 1,
+        };
+        ConvValue { neg: false, mag }
+    }
+
+    fn type_min(signed: bool, bits: u32) -> Self {
+        if signed {
+            ConvValue {
+                neg: true,
+                mag: 1u128 << (bits - 1),
+            }
+        } else {
+            ConvValue { neg: false, mag: 0 }
+        }
+    }
+
+    fn fits(self, signed: bool, bits: u32) -> bool {
+        if self.neg {
+            signed && self.mag <= Self::type_min(signed, bits).mag
+        } else {
+            self.mag <= Self::type_max(signed, bits).mag
+        }
+    }
+
+    fn saturate(self, signed: bool, bits: u32) -> Self {
+        if self.fits(signed, bits) {
+            self
+        } else if self.neg {
+            Self::type_min(signed, bits)
+        } else {
+            Self::type_max(signed, bits)
+        }
+    }
+
+    /// Two's complement truncation to `bits`, read back as `signed`.
+    fn wrap(self, signed: bool, bits: u32) -> Self {
+        let mask = if bits == 128 {
+            u128::MAX
+        } else {
+            (1u128 << bits) - 1
+        };
+        let repr = if self.neg {
+            self.mag.wrapping_neg()
+        } else {
+            self.mag
+        } & mask;
+        if signed && repr >> (bits - 1) & 1 == 1 {
+            ConvValue {
+                neg: true,
+                mag: repr.wrapping_neg() & mask,
+            }
+        } else {
+            ConvValue {
+                neg: false,
+                mag: repr,
+            }
+        }
+    }
+
+    /// An AICore expression of type `ty` with this value. Literals hold
+    /// 64-bit values, so larger magnitudes are built from base-2^32 digits.
+    fn expr(self, ty: &str) -> String {
+        if self.mag <= i64::MAX as u128 {
+            return format!("({}{})", if self.neg { "-" } else { "" }, self.mag);
+        }
+        if self.neg && self.mag == i64::MAX as u128 + 1 {
+            return format!("((-{}) - 1)", i64::MAX);
+        }
+        let suffix = match ty {
+            "UInt64" | "USize" => "u64",
+            "UInt128" => "u128",
+            "Int128" => "i128",
+            other => panic!("unexpected wide value for {other}"),
+        };
+        let digits_of = |mut v: u128| {
+            let mut digits = Vec::new();
+            while v > 0 {
+                digits.push(v & 0xffff_ffff);
+                v >>= 32;
+            }
+            digits
+        };
+        let build = |v: u128| {
+            let digits = digits_of(v);
+            let mut out = format!("{}{suffix}", digits[digits.len() - 1]);
+            for d in digits.iter().rev().skip(1) {
+                out = format!("({out} * 4294967296{suffix} + {d}{suffix})");
+            }
+            out
+        };
+        if ty == "USize" {
+            // `USize` has no literal suffix; widen from UInt64.
+            return format!("({} as USize)", build(self.mag));
+        }
+        if self.neg {
+            // `-(2^127)` has no positive counterpart: subtract one last.
+            format!("((0{suffix} - {}) - 1{suffix})", build(self.mag - 1))
+        } else {
+            format!("({})", build(self.mag))
+        }
+    }
+}
+
+#[test]
+fn exec_integer_conversions_match_two_complement_semantics() {
+    let mut src = String::from("import std.io;\n\n");
+    for (ty, suffix, _, _) in CONVERSION_INT_TYPES {
+        src.push_str(&format!(
+            "fn ck_{suffix}(got: {ty}, want: {ty}, id: Int) -> () effects {{ io }} capabilities {{ io }} {{\n    if got != want {{ print_int(id); }}\n}}\n\n\
+             fn cko_{suffix}(got: Option[{ty}], some: Bool, want: {ty}, id: Int) -> () effects {{ io }} capabilities {{ io }} {{\n    match got {{\n        Some(v) => if !some || v != want {{ print_int(id); }},\n        None => if some {{ print_int(id); }},\n    }}\n}}\n\n"
+        ));
+    }
+    let mut cases = 0usize;
+    let mut fns = Vec::new();
+    for (src_ty, src_suffix, src_signed, src_bits) in CONVERSION_INT_TYPES {
+        let mut values = vec![
+            ConvValue::type_min(src_signed, src_bits),
+            ConvValue::small(-1),
+            ConvValue::small(0),
+            ConvValue::small(1),
+            ConvValue::small(300),
+            ConvValue::small(-300),
+            ConvValue::type_max(src_signed, src_bits),
+        ];
+        values.retain(|v| v.fits(src_signed, src_bits));
+        values.dedup();
+        let fn_name = format!("from_{src_suffix}");
+        let mut body = String::new();
+        for value in values {
+            body.push_str(&format!("    let v: {src_ty} = {};\n", value.expr(src_ty)));
+            for (ty, suffix, signed, bits) in CONVERSION_INT_TYPES {
+                let wrapped = value.wrap(signed, bits);
+                let saturated = value.saturate(signed, bits);
+                let fits = value.fits(signed, bits);
+                cases += 1;
+                body.push_str(&format!(
+                    "    ck_{suffix}(v.wrapping_to_{suffix}(), {}, {cases});\n",
+                    wrapped.expr(ty)
+                ));
+                cases += 1;
+                body.push_str(&format!(
+                    "    ck_{suffix}(v.saturating_to_{suffix}(), {}, {cases});\n",
+                    saturated.expr(ty)
+                ));
+                cases += 1;
+                body.push_str(&format!(
+                    "    cko_{suffix}(v.checked_to_{suffix}(), {fits}, {}, {cases});\n",
+                    if fits {
+                        value.expr(ty)
+                    } else {
+                        "0".to_string()
+                    }
+                ));
+                // `as` is accepted exactly when no value of the source type changes.
+                let exact = ConvValue::type_min(src_signed, src_bits).fits(signed, bits)
+                    && ConvValue::type_max(src_signed, src_bits).fits(signed, bits);
+                if exact {
+                    cases += 1;
+                    body.push_str(&format!(
+                        "    ck_{suffix}(v as {ty}, {}, {cases});\n",
+                        value.expr(ty)
+                    ));
+                }
+            }
+        }
+        src.push_str(&format!(
+            "fn {fn_name}() -> () effects {{ io }} capabilities {{ io }} {{\n{body}}}\n\n"
+        ));
+        fns.push(fn_name);
+    }
+    src.push_str("fn main() -> Int effects { io } capabilities { io } {\n");
+    for name in &fns {
+        src.push_str(&format!("    {name}();\n"));
+    }
+    src.push_str("    print_str(\"done\");\n    0\n}\n");
+    assert!(cases > 1500, "matrix too small: {cases}");
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout, "done",
+        "failing case ids (see generated source):\n{stdout}"
+    );
+}
+
+/// An AICore Float64 expression with exactly this value.
+fn conv_f64_expr(x: f64) -> String {
+    if x.is_nan() {
+        "f64_nan()".to_string()
+    } else if x.is_infinite() {
+        if x > 0.0 {
+            "f64_inf()"
+        } else {
+            "(0.0 - f64_inf())"
+        }
+        .to_string()
+    } else {
+        let text = format!("{:e}", x.abs());
+        let (mantissa, exponent) = text.split_once('e').expect("exponent");
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_string()
+        } else {
+            format!("{mantissa}.0")
+        };
+        format!(
+            "({}{mantissa}e{exponent})",
+            if x < 0.0 { "0.0 - " } else { "" }
+        )
+    }
+}
+
+fn conv_f32_expr(x: f32) -> String {
+    format!("{}.to_f32()", conv_f64_expr(f64::from(x)))
+}
+
+/// Saturating and checked float-to-integer results: truncation toward
+/// zero, NaN saturates to 0 and is `None` when checked.
+fn conv_float_to_int(x: f64, signed: bool, bits: u32) -> (ConvValue, Option<ConvValue>) {
+    if x.is_nan() {
+        return (ConvValue::small(0), None);
+    }
+    let t = x.trunc();
+    let lower = if signed {
+        -(2f64.powi(bits as i32 - 1))
+    } else {
+        0.0
+    };
+    let upper = if signed {
+        2f64.powi(bits as i32 - 1)
+    } else {
+        2f64.powi(bits as i32)
+    };
+    if t < lower {
+        (ConvValue::type_min(signed, bits), None)
+    } else if t >= upper {
+        (ConvValue::type_max(signed, bits), None)
+    } else {
+        let value = ConvValue {
+            neg: t < 0.0,
+            mag: t.abs() as u128,
+        };
+        (value, Some(value))
+    }
+}
+
+fn conv_int_to_f64(v: ConvValue) -> f64 {
+    if v.neg {
+        -(v.mag as f64)
+    } else {
+        v.mag as f64
+    }
+}
+
+fn conv_int_to_f32(v: ConvValue) -> f32 {
+    if v.neg {
+        -(v.mag as f32)
+    } else {
+        v.mag as f32
+    }
+}
+
+#[test]
+fn exec_float_conversions_round_truncate_and_saturate() {
+    let mut src = String::from(
+        "import std.io;\n\n\
+         fn f64_inf() -> Float64 {\n    let zero = 0.0;\n    1.0 / zero\n}\n\n\
+         fn f64_nan() -> Float64 {\n    let zero = 0.0;\n    zero / zero\n}\n\n",
+    );
+    for (ty, suffix, _, _) in CONVERSION_INT_TYPES {
+        src.push_str(&format!(
+            "fn ck_{suffix}(got: {ty}, want: {ty}, id: Int) -> () effects {{ io }} capabilities {{ io }} {{\n    if got != want {{ print_int(id); }}\n}}\n\n\
+             fn cko_{suffix}(got: Option[{ty}], some: Bool, want: {ty}, id: Int) -> () effects {{ io }} capabilities {{ io }} {{\n    match got {{\n        Some(v) => if !some || v != want {{ print_int(id); }},\n        None => if some {{ print_int(id); }},\n    }}\n}}\n\n"
+        ));
+    }
+    for ty in ["Float32", "Float64"] {
+        let suffix = if ty == "Float32" { "f32" } else { "f64" };
+        // NaN is expected exactly when the result must be NaN.
+        src.push_str(&format!(
+            "fn ck_{suffix}(got: {ty}, want: {ty}, id: Int) -> () effects {{ io }} capabilities {{ io }} {{\n    let ok = if want != want {{ got != got }} else {{ got == want }};\n    if !ok {{ print_int(id); }}\n}}\n\n"
+        ));
+    }
+    let floats: [f64; 34] = [
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        0.0,
+        -0.0,
+        0.5,
+        -0.5,
+        0.99,
+        -0.99,
+        3.9,
+        -3.9,
+        127.9,
+        128.0,
+        -128.9,
+        -129.0,
+        255.5,
+        256.0,
+        65535.9,
+        65536.0,
+        2147483647.0,
+        2147483648.0,
+        -2147483648.9,
+        -2147483649.0,
+        4294967296.0,
+        9.2e18,
+        -9.3e18,
+        1.8e19,
+        2e19,
+        1e30,
+        1.7e38,
+        -1.7e38,
+        3.0e38,
+        1e300,
+        -1e300,
+    ];
+    let mut cases = 0usize;
+    let mut body = String::new();
+    for x in floats {
+        let x32 = x as f32;
+        body.push_str(&format!("    let v = {};\n", conv_f64_expr(x)));
+        body.push_str(&format!("    let w: Float32 = {};\n", conv_f32_expr(x32)));
+        cases += 1;
+        body.push_str(&format!(
+            "    ck_f32(v.to_f32(), {}, {cases});\n",
+            conv_f32_expr(x32)
+        ));
+        cases += 1;
+        body.push_str(&format!(
+            "    ck_f64(w as Float64, {}, {cases});\n",
+            conv_f64_expr(f64::from(x32))
+        ));
+        cases += 1;
+        body.push_str(&format!(
+            "    ck_f64(w.to_f64(), {}, {cases});\n",
+            conv_f64_expr(f64::from(x32))
+        ));
+        for (ty, suffix, signed, bits) in CONVERSION_INT_TYPES {
+            for (var, value) in [("v", x), ("w", f64::from(x32))] {
+                let (saturated, checked) = conv_float_to_int(value, signed, bits);
+                cases += 1;
+                body.push_str(&format!(
+                    "    ck_{suffix}({var}.saturating_to_{suffix}(), {}, {cases});\n",
+                    saturated.expr(ty)
+                ));
+                cases += 1;
+                body.push_str(&format!(
+                    "    cko_{suffix}({var}.checked_to_{suffix}(), {}, {}, {cases});\n",
+                    checked.is_some(),
+                    checked.map_or("0".to_string(), |v| v.expr(ty))
+                ));
+            }
+        }
+    }
+    src.push_str(&format!(
+        "fn from_floats() -> () effects {{ io }} capabilities {{ io }} {{\n{body}}}\n\n"
+    ));
+    let mut body = String::new();
+    for (src_ty, src_suffix, src_signed, src_bits) in CONVERSION_INT_TYPES {
+        let mut values = vec![
+            ConvValue::type_min(src_signed, src_bits),
+            ConvValue::small(-1),
+            ConvValue::small(0),
+            ConvValue::small(16_777_217),
+            ConvValue::small(-16_777_217),
+            ConvValue::small(9_007_199_254_740_993),
+            ConvValue::type_max(src_signed, src_bits),
+        ];
+        values.retain(|v| v.fits(src_signed, src_bits));
+        values.dedup();
+        for value in values {
+            body.push_str(&format!(
+                "    let i_{src_suffix}: {src_ty} = {};\n",
+                value.expr(src_ty)
+            ));
+            cases += 1;
+            body.push_str(&format!(
+                "    ck_f32(i_{src_suffix}.to_f32(), {}, {cases});\n",
+                conv_f32_expr(conv_int_to_f32(value))
+            ));
+            cases += 1;
+            body.push_str(&format!(
+                "    ck_f64(i_{src_suffix}.to_f64(), {}, {cases});\n",
+                conv_f64_expr(conv_int_to_f64(value))
+            ));
+            if src_bits <= 16 {
+                cases += 1;
+                body.push_str(&format!(
+                    "    ck_f32(i_{src_suffix} as Float32, {}, {cases});\n",
+                    conv_f32_expr(conv_int_to_f32(value))
+                ));
+            }
+            if src_bits <= 32 {
+                cases += 1;
+                body.push_str(&format!(
+                    "    ck_f64(i_{src_suffix} as Float64, {}, {cases});\n",
+                    conv_f64_expr(conv_int_to_f64(value))
+                ));
+            }
+        }
+    }
+    src.push_str(&format!(
+        "fn from_ints() -> () effects {{ io }} capabilities {{ io }} {{\n{body}}}\n\n"
+    ));
+    src.push_str(
+        "fn main() -> Int effects { io } capabilities { io } {\n    from_floats();\n    from_ints();\n    print_str(\"done\");\n    0\n}\n",
+    );
+    assert!(cases > 1500, "matrix too small: {cases}");
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout, "done",
+        "failing case ids (see generated source):\n{stdout}"
+    );
+}
+
+#[test]
+fn exec_contracts_lower_alongside_checker_rewrites() {
+    // Conversion methods and indexing are checker rewrites with synthetic
+    // node ids; contract lowering must still allocate fresh ids.
+    let src = r#"
+import std.io;
+import std.vec;
+
+fn low_byte(x: Int) -> Int requires x >= 0 ensures result < 256 {
+    x.wrapping_to_u8() as Int
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let v = [low_byte(300), low_byte(255)];
+    print_int(v[0] + v[1]);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "299\n");
+}

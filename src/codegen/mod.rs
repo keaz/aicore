@@ -22,6 +22,7 @@ use self::divisor_facts::DivisorFact;
 mod generator_collections;
 mod generator_concurrency;
 mod generator_control_flow;
+mod generator_convert;
 mod generator_core;
 mod generator_crypto_web;
 mod generator_fs_env;
@@ -3522,6 +3523,9 @@ struct Generator<'a> {
     /// Functions whose first parameter is a `&mut self` receiver. They take
     /// the receiver as a pointer to the caller's storage.
     mutable_receiver_fns: BTreeSet<String>,
+    /// Declarations of LLVM intrinsics used by the module (for example
+    /// `llvm.fptosi.sat.i8.f64`), emitted once in the header.
+    llvm_intrinsic_decls: BTreeSet<String>,
     async_ready_helpers: BTreeMap<String, (String, String)>,
     fn_value_adapters: BTreeMap<String, String>,
     function_modules_by_symbol: BTreeMap<ir::SymbolId, String>,

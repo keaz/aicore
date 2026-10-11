@@ -177,3 +177,8 @@ fn golden_case29_variant_fields() {
 fn golden_case30_indexing() {
     run_golden_case("case30_indexing.aic");
 }
+
+#[test]
+fn golden_case31_numeric_casts() {
+    run_golden_case("case31_numeric_casts.aic");
+}
