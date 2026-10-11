@@ -754,10 +754,25 @@ fn sample(a: Float32, b: Float64) -> Int {
 }
 
 #[test]
-fn unit_typecheck_rejects_string_ordering_with_stable_diagnostic() {
+fn unit_typecheck_orders_strings_and_rejects_mixed_comparisons() {
+    let ok = r#"
+fn main() -> Bool {
+    "alpha" < "beta" && "b" >= "a"
+}
+"#;
+    let ir = lower(ok);
+    let (res, resolve_diags) = resolve(&ir, "unit.aic");
+    assert!(resolve_diags.is_empty(), "resolve={resolve_diags:#?}");
+    let out = check(&ir, &res, "unit.aic");
+    assert!(
+        !out.diagnostics.iter().any(|d| d.is_error()),
+        "diags={:#?}",
+        out.diagnostics
+    );
+
     let src = r#"
 fn main() -> Bool {
-    "alpha" < "beta"
+    "alpha" < 1
 }
 "#;
     let ir = lower(src);
@@ -767,7 +782,7 @@ fn main() -> Bool {
     assert!(
         out.diagnostics.iter().any(|d| d.code == "E1232"
             && d.message.contains(
-                "comparison operators require matching integer, float, or Char operands"
+                "comparison operators require matching integer, float, Char or String operands"
             )),
         "diags={:#?}",
         out.diagnostics
@@ -1707,7 +1722,7 @@ fn sum(n: Int) -> Int {
 }
 
 #[test]
-fn unit_template_literal_requires_string_interpolation_values() {
+fn unit_template_literal_shows_scalars_and_rejects_other_values() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("main.aic");
     fs::write(
@@ -1715,23 +1730,34 @@ fn unit_template_literal_requires_string_interpolation_values() {
         r#"
 import std.string;
 
-fn sample(age: Int) -> String {
-    f"age={age}"
+fn sample(age: Int, ok: Bool) -> String {
+    f"age={age} ok={ok}"
 }
 "#,
     )
     .expect("write source");
     let front = run_frontend(&path).expect("frontend");
     assert!(
-        has_errors(&front.diagnostics),
+        !has_errors(&front.diagnostics),
         "diags={:#?}",
         front.diagnostics
     );
+
+    fs::write(
+        &path,
+        r#"
+import std.string;
+
+fn sample(pair: (Int, Int)) -> String {
+    f"pair={pair}"
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&path).expect("frontend");
     assert!(
-        front
-            .diagnostics
-            .iter()
-            .any(|d| d.message.contains("expected 'String'") && d.message.contains("found 'Int'")),
+        front.diagnostics.iter().any(|d| d.code == "E1204"
+            && d.message.contains("cannot show a value of type")),
         "diags={:#?}",
         front.diagnostics
     );

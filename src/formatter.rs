@@ -3445,6 +3445,12 @@ mod tests {
     }
 
     #[test]
+    fn raw_and_multiline_strings_round_trip() {
+        let src = "fn f(n: Int) -> String {\n    let path = r\"C:\\dir\";\n    let quote = r#\"say \"hi\"\"#;\n    let poem = \"\"\"\n        one\n        two\n        \"\"\";\n    path + quote + poem + f\"{n}\"\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
     fn tuple_and_unit_structs_round_trip() {
         let src = "struct Meters(Int);\n\npub struct Pair[T](T, pub T);\n\nstruct Origin;\n\nfn f(p: Pair[Int], o: Origin) -> Int {\n    let m = Meters(2);\n    let z = Origin;\n    match p {\n        Pair(a, b) => a + b + m.0,\n    }\n}\n";
         assert_eq!(fmt(src), src);

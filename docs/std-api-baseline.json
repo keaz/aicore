@@ -6894,6 +6894,11 @@
     {
       "module": "std.string",
       "kind": "fn",
+      "signature": "byte_count(s: String) -> Int"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
       "signature": "byte_length(s: String) -> Int"
     },
     {
@@ -6910,6 +6915,16 @@
       "module": "std.string",
       "kind": "fn",
       "signature": "char_at(s: String, index: Int) -> Option[String]"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "char_count(s: String) -> Int"
+    },
+    {
+      "module": "std.string",
+      "kind": "fn",
+      "signature": "compare(a: String, b: String) -> Int"
     },
     {
       "module": "std.string",

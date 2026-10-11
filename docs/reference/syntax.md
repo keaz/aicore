@@ -107,5 +107,6 @@ highest
 - `|` is overloaded with context:
   - in expressions, `|...| -> ... { ... }` starts a closure
   - in patterns, `p1 | p2` is an or-pattern
+- String literals: `"..."` with escapes (`\n`, `\t`, `\"`, `\\`, `\0`, `\u{..}`); raw strings `r"C:\dir"` and `r#"say "hi""#` (any number of `#`, matched by the closing quote) have no escapes; multiline strings `"""..."""` may span lines and contain `"`, keep escapes, drop a line break right after the opening quotes, and when the closing quotes start their own line, remove that line's indentation from every line. An unterminated literal of any kind is `E0006`. `aic fmt` writes literals back as written.
 - Line comments use `//` and run to end-of-line. Block comments are written `/* ... */`, may span lines and nest (`/* a /* b */ c */` is one comment); an unclosed block comment is `E0002`. `aic fmt` keeps every comment: a block comment between statements or items stays where it is, and one inside an expression moves to its own line before that statement.
 - Integer literals are decimal, hexadecimal (`0xFF`), binary (`0b1010`) or octal (`0o755`); `_` separates digits anywhere after the first digit or the prefix (`1_000_000`, `0b1010_0101`, `1_000_i64`, `1_000.5`). A digit that the base does not allow (`0b102`) or a prefix without digits (`0x_`) is `E0003`. `aic fmt` writes literals back as written.

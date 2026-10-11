@@ -1,0 +1,13 @@
+fn label(n: Int, name: String) -> String {
+    let prefix = "item " + name;
+    if prefix < "z" {
+        f"{prefix}: {n}"
+    } else {
+        prefix
+    }
+}
+
+fn main() -> Int {
+    let text = label(42, "answer");
+    0
+}

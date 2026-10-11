@@ -965,6 +965,15 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## String Ergonomics (SYNTAX-T12, #463)
+
+- Language surface: `String + String`, string ordering, raw (`r"..."`, `r#"..."#`) and multiline (`"""..."""`) literals, interpolation of numbers, `Bool` and `Char`; `std.string` gains `byte_count`, `char_count` and `compare` (`byte_len`/`concat` would clash with `std.bytes` names in modules that import both). Rules: `docs/reference/expressions.md`, `docs/reference/syntax.md`.
+- Lexer: `lex_raw_string` (`raw_string_hashes`) and `lex_multiline_string` (`dedent_multiline`) produce ordinary `String` tokens.
+- Checker: `check_binary` types `String + String` as `String` and accepts string ordering. An interpolation argument of a scalar type is wrapped in the `$display` builtin (`ast::DISPLAY_BUILTIN`, recorded in `expr_rewrites`).
+- Codegen/runtime: `gen_string_concat` calls `aic_rt_string_concat` (explicit lengths, so embedded NUL bytes survive); ordering compares the result of `aic_rt_string_compare`; `gen_display` widens integers to `i128` for `aic_rt_string_i128_to_string` (signed or unsigned) and uses `aic_rt_string_float_to_string`, `aic_rt_string_bool_to_string` and `aic_rt_string_from_char` (UTF-8).
+- Not covered: interpolating user types, which depends on the core `Display` trait (TRAIT-T5, #481).
+- Verification: `exec_string_concatenation_ordering_literals_and_interpolation`, `string_concatenation_ordering_and_interpolation_are_checked`, `unit_typecheck_orders_strings_and_rejects_mixed_comparisons`, `unit_template_literal_shows_scalars_and_rejects_other_values`, `lexes_raw_and_multiline_strings`, formatter test `raw_and_multiline_strings_round_trip`, golden `case37_strings.aic`, `examples/core/string_ergonomics.aic`.
+
 ## Tuple Structs and Unit Structs (SYNTAX-T16, #462)
 
 - Language surface: `struct Meters(Int);`, `struct Origin;`, construction `Meters(5)` / `Origin`, `.0` access, patterns `Meters(x)` / `Origin`, `self.0` in invariants. Rules: `docs/reference/types.md`.

@@ -19913,3 +19913,47 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(stdout, "1\n");
     assert!(stderr.contains("Positive"), "stderr={stderr}");
 }
+
+#[test]
+fn exec_string_concatenation_ordering_literals_and_interpolation() {
+    let src = r##"
+import std.io;
+import std.string;
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut greeting = "hello" + ", ";
+    greeting += "world";
+    print_str(greeting + "\n");
+    print_int(if "apple" < "banana" && "b" > "abc" && "x" <= "x" && "é" > "z" { 1 } else { 0 });
+    print_int(string.compare("a", "b") + string.compare("b", "b") * 10 + string.compare("c", "b") * 100);
+    print_int(string.char_count("héllo") * 10 + string.byte_count("héllo"));
+    let path = r"C:\temp\new";
+    let quoted = r#"she said "hi""#;
+    print_str(path + "|" + quoted + "\n");
+    let poem = """
+        roses "are" red
+          violets\tblue
+        """;
+    print_str(poem + "|\n");
+    let n = 42;
+    let big = (0 - 1).wrapping_to_u64();
+    let small: Int8 = -128;
+    let wide = 0i128 - 170141183460469231731687303715884105727i128 - 1i128;
+    let ratio = 2.5;
+    let half: Float32 = 0.5f32;
+    let ok = true;
+    let letter = 'é';
+    print_str(f"{n} {big} {small} {wide}\n");
+    print_str(f"{ratio} {half} {ok} {letter} {greeting}\n");
+    let nul = "a\0b" + "c";
+    print_int(string.byte_count(nul));
+    0
+}
+"##;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout,
+        "hello, world\n1\n99\n56\nC:\\temp\\new|she said \"hi\"\nroses \"are\" red\n  violets\tblue|\n42 18446744073709551615 -128 -170141183460469231731687303715884105728\n2.5 0.5 true é hello, world\n4\n"
+    );
+}

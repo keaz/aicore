@@ -1,0 +1,28 @@
+module examples.core.string_ergonomics;
+
+import std.io;
+import std.string;
+
+// String concatenation and ordering, raw and multiline literals, and
+// interpolation of numbers, Bool and Char.
+
+fn main() -> Int effects { io } capabilities { io } {
+    let name = "Ada" + " " + "Lovelace";
+    let first_in_order = if "Ada" < "Grace" {
+        "Ada"
+    } else {
+        "Grace"
+    };
+    let pattern = r"\d+";
+    let banner = """
+        |
+        |  multiline
+        """;
+    let year = 1843;
+    let ada_first = first_in_order == "Ada";
+    let line = f"{name} ({year}) {ada_first} {pattern} {banner}";
+    print_str(line + "\n");
+    // 43 characters, one of them the line break inside the banner
+    print_int(string.char_count(line) - 1);
+    0
+}

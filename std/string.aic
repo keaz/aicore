@@ -6,6 +6,7 @@
 /// ```
 module std.string;
 
+import std.char;
 import std.option;
 import std.result;
 import std.vec;
@@ -59,9 +60,67 @@ enum EncodingError {
 /// Returns module-defined error variants when the operation fails.
 intrinsic fn aic_string_len_intrinsic(s: String) -> Int;
 
-/// Return string length in bytes.
+/// Return string length in bytes (the size of the UTF-8 encoding); the
+/// same as `byte_count`. Indexes of `substring`, `char_at` and `s[i]`
+/// count characters: use `char_count` for their bound.
 fn len(s: String) -> Int {
     aic_string_len_intrinsic(s)
+}
+
+/// `byte_count` returns the number of bytes of the UTF-8 encoding.
+///
+/// ## Example
+/// ```aic
+/// // `string.byte_count("héllo")` is 6.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn byte_count(s: String) -> Int {
+    aic_string_len_intrinsic(s)
+}
+
+/// `char_count` returns the number of characters (Unicode scalar values),
+/// the bound of the character indexes `substring` and `char_at` use.
+///
+/// ## Example
+/// ```aic
+/// // `string.char_count("héllo")` is 5.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn char_count(s: String) -> Int {
+    vec_len(chars(s))
+}
+
+/// `compare` orders two strings byte-wise (the order of `<` on strings,
+/// which keeps Unicode code point order): negative, 0 or positive.
+///
+/// ## Example
+/// ```aic
+/// // `string.compare("apple", "banana")` is negative.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn compare(a: String, b: String) -> Int {
+    if a < b {
+        -1
+    } else if a == b {
+        0
+    } else {
+        1
+    }
 }
 
 /// Return true when the string is empty.

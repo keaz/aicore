@@ -525,6 +525,10 @@ pub const RANGE_TO_BUILTIN: &str = "$range_to";
 pub const RANGE_TO_INCLUSIVE_BUILTIN: &str = "$range_to_inclusive";
 pub const RANGE_FULL_BUILTIN: &str = "$range_full";
 
+/// Builtin callee the checker wraps around a non-String interpolation
+/// argument (`f"{n}"` with an `Int`): it renders the value as text.
+pub const DISPLAY_BUILTIN: &str = "$display";
+
 /// Builtin callee of an index expression: `base[index]` parses as
 /// `$index(base, index)`.
 pub const INDEX_BUILTIN: &str = "$index";

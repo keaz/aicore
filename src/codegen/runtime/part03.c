@@ -231,6 +231,100 @@ int64_t aic_rt_string_compare(
     return (int64_t)aic_rt_map_key_compare_raw(lhs_ptr, lhs_len, rhs_ptr, rhs_len);
 }
 
+void aic_rt_string_concat(
+    const char* lhs_ptr,
+    int64_t lhs_len,
+    int64_t lhs_cap,
+    const char* rhs_ptr,
+    int64_t rhs_len,
+    int64_t rhs_cap,
+    char** out_ptr,
+    int64_t* out_len
+) {
+    (void)lhs_cap;
+    (void)rhs_cap;
+    size_t left = aic_rt_string_slice_valid(lhs_ptr, lhs_len) ? (size_t)lhs_len : 0;
+    size_t right = aic_rt_string_slice_valid(rhs_ptr, rhs_len) ? (size_t)rhs_len : 0;
+    char* joined = (char*)malloc(left + right + 1);
+    if (joined == NULL) {
+        aic_rt_string_runtime_panic("concat", "ALLOC_FAILURE", "output-allocation");
+        return;
+    }
+    if (left > 0) {
+        memcpy(joined, lhs_ptr, left);
+    }
+    if (right > 0) {
+        memcpy(joined + left, rhs_ptr, right);
+    }
+    joined[left + right] = '\0';
+    if (out_len != NULL) {
+        *out_len = (int64_t)(left + right);
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = joined;
+    } else {
+        free(joined);
+    }
+}
+
+void aic_rt_string_i128_to_string(__int128 value, int64_t is_unsigned, char** out_ptr, int64_t* out_len) {
+    char buffer[48];
+    size_t pos = sizeof(buffer);
+    buffer[--pos] = '\0';
+    unsigned __int128 magnitude;
+    int negative = 0;
+    if (is_unsigned) {
+        magnitude = (unsigned __int128)value;
+    } else if (value < 0) {
+        negative = 1;
+        magnitude = (unsigned __int128)0 - (unsigned __int128)value;
+    } else {
+        magnitude = (unsigned __int128)value;
+    }
+    do {
+        buffer[--pos] = (char)('0' + (int)(magnitude % 10));
+        magnitude /= 10;
+    } while (magnitude != 0);
+    if (negative) {
+        buffer[--pos] = '-';
+    }
+    aic_rt_string_write_out_or_panic(
+        "display",
+        "output-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(buffer + pos, sizeof(buffer) - 1 - pos)
+    );
+}
+
+void aic_rt_string_from_char(int32_t code, char** out_ptr, int64_t* out_len) {
+    char buffer[4];
+    size_t n = 0;
+    uint32_t c = (uint32_t)code;
+    if (c < 0x80) {
+        buffer[n++] = (char)c;
+    } else if (c < 0x800) {
+        buffer[n++] = (char)(0xC0 | (c >> 6));
+        buffer[n++] = (char)(0x80 | (c & 0x3F));
+    } else if (c < 0x10000) {
+        buffer[n++] = (char)(0xE0 | (c >> 12));
+        buffer[n++] = (char)(0x80 | ((c >> 6) & 0x3F));
+        buffer[n++] = (char)(0x80 | (c & 0x3F));
+    } else {
+        buffer[n++] = (char)(0xF0 | (c >> 18));
+        buffer[n++] = (char)(0x80 | ((c >> 12) & 0x3F));
+        buffer[n++] = (char)(0x80 | ((c >> 6) & 0x3F));
+        buffer[n++] = (char)(0x80 | (c & 0x3F));
+    }
+    aic_rt_string_write_out_or_panic(
+        "display",
+        "output-copy-allocation",
+        out_ptr,
+        out_len,
+        aic_rt_copy_bytes(buffer, n)
+    );
+}
+
 int64_t aic_rt_bytes_byte_at(const char* data_ptr, int64_t data_len, int64_t data_cap, int64_t index) {
     (void)data_cap;
     if (!aic_rt_string_slice_valid(data_ptr, data_len) || index < 0 || index >= data_len) {

@@ -88,6 +88,11 @@ octal_int      = ("0o" | "0O") ("0".."7" | "_")+ ;
 ## Semantics and Rules
 
 - Binary operators are left-associative at each precedence tier.
+- Strings:
+  - `a + b` (and `s += t`) concatenates two `String` values; `+` with a String and another type is `E1230` (use interpolation)
+  - `<`, `<=`, `>`, `>=` order strings byte-wise, which for UTF-8 is Unicode code point order (`"apple" < "banana"`, `"é" > "z"`); `string.compare(a, b)` returns the same order as a negative, zero or positive `Int`
+  - interpolation `f"{x}"` shows `String`, integer (every width, unsigned values in full), float, `Bool` and `Char` values; other types are `E1204` (showing user types needs the core `Display` trait, TRAIT-T5)
+  - lengths and indexes: `string.len` and `string.byte_count` count bytes of the UTF-8 encoding; `substring`, `char_at`, `s[i]` and string slices count characters, whose total is `string.char_count`
 - Arithmetic:
   - `+ - * /` require matching numeric operands (`Int` with `Int`, or `Float` with `Float`)
   - `%` requires `Int` operands

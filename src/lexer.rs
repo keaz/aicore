@@ -215,6 +215,30 @@ pub fn parse_int_literal_text(text: &str) -> Option<u128> {
     u128::from_str_radix(&cleaned, radix).ok()
 }
 
+/// The value of a multiline string from its raw contents: see
+/// `Lexer::lex_multiline_string`.
+fn dedent_multiline(raw: &str) -> String {
+    let body = raw
+        .strip_prefix("\r\n")
+        .or_else(|| raw.strip_prefix('\n'))
+        .unwrap_or(raw);
+    let Some(last_break) = body.rfind('\n') else {
+        return body.to_string();
+    };
+    let indent = &body[last_break + 1..];
+    if !indent.chars().all(|c| c == ' ' || c == '\t') {
+        return body.to_string();
+    }
+    let content = body[..last_break]
+        .strip_suffix('\r')
+        .unwrap_or(&body[..last_break]);
+    content
+        .split('\n')
+        .map(|line| line.strip_prefix(indent).unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn lex(source: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
     let (tokens, _comments, diagnostics) = lex_with_comments(source, file);
     (tokens, diagnostics)
@@ -269,6 +293,8 @@ impl<'a> Lexer<'a> {
                 }
                 '/' if self.peek_next() == Some('*') => self.lex_block_comment(),
                 'f' if self.peek_next() == Some('"') => self.lex_template_string(),
+                // `r"..."`, `r#"..."#`: raw strings.
+                'r' if self.raw_string_hashes().is_some() => self.lex_raw_string(),
                 '$' if self.peek_next() == Some('"') => self.lex_template_string(),
                 'a'..='z' | 'A'..='Z' => self.lex_ident_or_keyword(),
                 '_' => {
@@ -285,6 +311,9 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 '0'..='9' => self.lex_number(),
+                '"' if self.source[self.offset..].starts_with("\"\"\"") => {
+                    self.lex_multiline_string()
+                }
                 '"' => self.lex_string(),
                 '\'' => self.lex_char(),
                 '(' => self.single(TokenKind::LParen),
@@ -885,6 +914,77 @@ impl<'a> Lexer<'a> {
         self.push(TokenKind::String(out), Span::new(start, self.offset));
     }
 
+    /// The number of `#` of a raw string starting here (`r"`, `r#"`).
+    fn raw_string_hashes(&self) -> Option<usize> {
+        let rest = self.source[self.offset..].strip_prefix('r')?;
+        let hashes = rest.chars().take_while(|c| *c == '#').count();
+        rest[hashes..].starts_with('"').then_some(hashes)
+    }
+
+    /// `r"C:\dir"` or `r#"say "hi""#`: no escapes; the closing quote is
+    /// followed by as many `#` as the opening one.
+    fn lex_raw_string(&mut self) {
+        let start = self.offset;
+        let hashes = self.raw_string_hashes().unwrap_or(0);
+        self.offset += 1 + hashes + 1; // r, #..., "
+        let content_start = self.offset;
+        let closing = format!("\"{}", "#".repeat(hashes));
+        match self.source[content_start..].find(&closing) {
+            Some(len) => {
+                let value = self.source[content_start..content_start + len].to_string();
+                self.offset = content_start + len + closing.len();
+                self.push(TokenKind::String(value), Span::new(start, self.offset));
+            }
+            None => {
+                self.offset = self.source.len();
+                self.error(
+                    "E0006",
+                    format!("unterminated raw string literal: missing `{closing}`"),
+                    Span::new(start, self.offset),
+                );
+            }
+        }
+    }
+
+    /// `""".."""`: may span lines and contain `"`; escapes work as in
+    /// `"..."`. A line break right after the opening quotes is dropped, and
+    /// when the closing quotes start their own line, that line's indentation
+    /// is removed from every line (and the final line break is dropped).
+    fn lex_multiline_string(&mut self) {
+        let start = self.offset;
+        self.offset += 3;
+        let mut out = String::new();
+        let mut terminated = false;
+        while let Some(c) = self.peek() {
+            if self.source[self.offset..].starts_with("\"\"\"") {
+                self.offset += 3;
+                terminated = true;
+                break;
+            }
+            if c == '\\' {
+                self.bump();
+                if let Some(value) = self.lex_escape_sequence() {
+                    out.push(value);
+                }
+            } else {
+                self.bump();
+                out.push(c);
+            }
+        }
+        if !terminated {
+            self.error(
+                "E0006",
+                "unterminated multiline string literal: missing `\"\"\"`",
+                Span::new(start, self.offset),
+            );
+            return;
+        }
+        self.push(
+            TokenKind::String(dedent_multiline(&out)),
+            Span::new(start, self.offset),
+        );
+    }
+
     fn lex_template_string(&mut self) {
         let start = self.offset;
         self.bump(); // template prefix
@@ -1317,6 +1417,38 @@ mod tests {
         // A quoted word is still a malformed char literal, not a label.
         let (_, diags) = lex("let c = 'ab';", "test.aic");
         assert!(diags.iter().any(|d| d.code == "E0008"), "{diags:#?}");
+    }
+
+    #[test]
+    fn lexes_raw_and_multiline_strings() {
+        let src = "r\"C:\\\\dir\\n\" r#\"say \"hi\"\"# \"\"\"\n    a \"b\"\n      c\\td\n    \"\"\" \"\"\"x\"\"\"";
+        let (tokens, diags) = lex(src, "test.aic");
+        assert!(diags.is_empty(), "{diags:#?}");
+        let strings: Vec<String> = tokens
+            .iter()
+            .filter_map(|t| match &t.kind {
+                TokenKind::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            strings,
+            vec![
+                "C:\\\\dir\\n".to_string(),
+                "say \"hi\"".to_string(),
+                "a \"b\"\n  c\td".to_string(),
+                "x".to_string(),
+            ]
+        );
+        // `r` alone is still an identifier.
+        let (tokens, _) = lex("let r = 1;", "test.aic");
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "r")));
+        for src in ["r\"open", "r#\"open\"", "\"\"\"open"] {
+            let (_, diags) = lex(src, "test.aic");
+            assert!(diags.iter().any(|d| d.code == "E0006"), "{src}: {diags:#?}");
+        }
     }
 
     #[test]

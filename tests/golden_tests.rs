@@ -207,3 +207,8 @@ fn golden_case35_type_arguments() {
 fn golden_case36_tuple_structs() {
     run_golden_case("case36_tuple_structs.aic");
 }
+
+#[test]
+fn golden_case37_strings() {
+    run_golden_case("case37_strings.aic");
+}

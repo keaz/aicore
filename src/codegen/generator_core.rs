@@ -137,6 +137,11 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_string_char_at(i8*, i64, i64, i64, i8**, i64*)\n");
         text.push_str("declare i64 @aic_rt_string_compare(i8*, i64, i64, i8*, i64, i64)\n");
         text.push_str(
+            "declare void @aic_rt_string_concat(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
+        );
+        text.push_str("declare void @aic_rt_string_i128_to_string(i128, i64, i8**, i64*)\n");
+        text.push_str("declare void @aic_rt_string_from_char(i32, i8**, i64*)\n");
+        text.push_str(
             "declare void @aic_rt_string_split(i8*, i64, i64, i8*, i64, i64, i8**, i64*)\n",
         );
         text.push_str(
@@ -5067,6 +5072,121 @@ impl<'a> Generator<'a> {
         }
     }
 
+    /// `$display(x)`: the text of an integer, float, `Bool` or `Char` (the
+    /// interpolation `f"{x}"` of a non-String value).
+    fn gen_display(
+        &mut self,
+        args: &[ir::Expr],
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let [arg] = args else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5010",
+                "display expects one argument",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let value = self.gen_expr(arg, fctx)?;
+        if value.ty == LType::String {
+            return Some(value);
+        }
+        let repr = value
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&value.ty));
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        let ty = llvm_type(&value.ty);
+        if let Some(bits) = integer_width_bits(&value.ty) {
+            let unsigned = is_unsigned_integer_type(&value.ty);
+            let wide = if bits == 128 {
+                repr
+            } else {
+                let reg = self.new_temp();
+                let ext = if unsigned { "zext" } else { "sext" };
+                fctx.lines
+                    .push(format!("  {reg} = {ext} {ty} {repr} to i128"));
+                reg
+            };
+            fctx.lines.push(format!(
+                "  call void @aic_rt_string_i128_to_string(i128 {}, i64 {}, i8** {}, i64* {})",
+                wide,
+                i64::from(unsigned),
+                out_ptr_slot,
+                out_len_slot
+            ));
+        } else if let Some(bits) = float_width_bits(&value.ty) {
+            let double = if bits == 32 {
+                let reg = self.new_temp();
+                fctx.lines
+                    .push(format!("  {reg} = fpext float {repr} to double"));
+                reg
+            } else {
+                repr
+            };
+            fctx.lines.push(format!(
+                "  call void @aic_rt_string_float_to_string(double {}, i8** {}, i64* {})",
+                double, out_ptr_slot, out_len_slot
+            ));
+        } else if value.ty == LType::Bool {
+            let wide = self.new_temp();
+            fctx.lines.push(format!("  {wide} = zext i1 {repr} to i64"));
+            fctx.lines.push(format!(
+                "  call void @aic_rt_string_bool_to_string(i64 {}, i8** {}, i64* {})",
+                wide, out_ptr_slot, out_len_slot
+            ));
+        } else if value.ty == LType::Char {
+            fctx.lines.push(format!(
+                "  call void @aic_rt_string_from_char({} {}, i8** {}, i64* {})",
+                ty, repr, out_ptr_slot, out_len_slot
+            ));
+        } else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "cannot display a value of type '{}' in codegen",
+                    render_type(&value.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
+    /// `a + b` on strings: a new string with both byte sequences.
+    fn gen_string_concat(&mut self, lhs: Value, rhs: Value, fctx: &mut FnCtx) -> Option<Value> {
+        let mut parts = Vec::new();
+        for value in [&lhs, &rhs] {
+            let repr = value
+                .repr
+                .clone()
+                .unwrap_or_else(|| default_value(&value.ty));
+            let ty = llvm_type(&value.ty);
+            for idx in 0..3 {
+                let reg = self.new_temp();
+                fctx.lines
+                    .push(format!("  {reg} = extractvalue {ty} {repr}, {idx}"));
+                parts.push(reg);
+            }
+        }
+        let out_ptr_slot = self.new_temp();
+        let out_len_slot = self.new_temp();
+        fctx.lines.push(format!("  {} = alloca i8*", out_ptr_slot));
+        fctx.lines.push(format!("  {} = alloca i64", out_len_slot));
+        fctx.lines.push(format!(
+            "  call void @aic_rt_string_concat(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {}, i8** {}, i64* {})",
+            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], out_ptr_slot, out_len_slot
+        ));
+        self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
+    }
+
     pub(super) fn gen_binary(
         &mut self,
         op: BinOp,
@@ -5077,6 +5197,9 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
     ) -> Option<Value> {
         match op {
+            BinOp::Add if lhs.ty == LType::String && rhs.ty == LType::String => {
+                self.gen_string_concat(lhs, rhs, fctx)
+            }
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 let mut lhs = lhs;
                 let mut rhs = rhs;
@@ -5280,15 +5403,6 @@ impl<'a> Generator<'a> {
                     }
                 }
                 if lhs.ty == LType::String && rhs.ty == LType::String {
-                    if !matches!(op, BinOp::Eq | BinOp::Ne) {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E5006",
-                            "string ordering comparisons are unsupported; typecheck must reject them",
-                            self.file,
-                            span,
-                        ));
-                        return None;
-                    }
                     let lhs_repr = lhs.repr.unwrap_or_else(|| default_value(&lhs.ty));
                     let rhs_repr = rhs.repr.unwrap_or_else(|| default_value(&rhs.ty));
                     let lhs_ptr = self.new_temp();
@@ -5328,7 +5442,15 @@ impl<'a> Generator<'a> {
                         "  {} = call i64 @aic_rt_string_compare(i8* {}, i64 {}, i64 {}, i8* {}, i64 {}, i64 {})",
                         cmp, lhs_ptr, lhs_len, lhs_cap, rhs_ptr, rhs_len, rhs_cap
                     ));
-                    let pred = if matches!(op, BinOp::Eq) { "eq" } else { "ne" };
+                    // Byte-wise lexicographic order (UTF-8 keeps code point order).
+                    let pred = match op {
+                        BinOp::Eq => "eq",
+                        BinOp::Ne => "ne",
+                        BinOp::Lt => "slt",
+                        BinOp::Le => "sle",
+                        BinOp::Gt => "sgt",
+                        _ => "sge",
+                    };
                     let reg = self.new_temp();
                     fctx.lines
                         .push(format!("  {} = icmp {} i64 {}, 0", reg, pred, cmp));
@@ -5678,6 +5800,9 @@ impl<'a> Generator<'a> {
 
         if let Some(target) = name.strip_prefix(crate::ast::CAST_BUILTIN_PREFIX) {
             return self.gen_numeric_conversion_call("exact", target, args, span, fctx);
+        }
+        if name == crate::ast::DISPLAY_BUILTIN {
+            return self.gen_display(args, span, fctx);
         }
         if let Some(rest) = name.strip_prefix(crate::ast::CONVERT_BUILTIN_PREFIX) {
             let (mode, target) = rest.split_once(':').unwrap_or((rest, ""));

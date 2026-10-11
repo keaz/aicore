@@ -5573,17 +5573,48 @@ impl<'a> Checker<'a> {
                         contract_mode,
                         Some("String"),
                     );
-                    if !self.types_compatible("String", &arg_ty) {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E1204",
-                            format!(
-                                "template interpolation {} expected 'String', found '{}'",
-                                idx + 1,
-                                arg_ty
-                            ),
-                            self.file,
+                    // Integers, floats, Bool and Char are shown as text.
+                    let arg_norm = self.normalize_type(&arg_ty);
+                    if parse_integer_kind(&arg_norm).is_some()
+                        || parse_float_kind(&arg_norm).is_some()
+                        || matches!(arg_norm.as_str(), "Bool" | "Char")
+                    {
+                        let callee = self.synthetic_expr(
+                            ir::ExprKind::Var(crate::ast::DISPLAY_BUILTIN.to_string()),
                             arg.span,
-                        ));
+                        );
+                        self.expr_rewrites.insert(
+                            arg.node,
+                            ir::Expr {
+                                node: arg.node,
+                                kind: ir::ExprKind::Call {
+                                    callee: Box::new(callee),
+                                    args: vec![arg.clone()],
+                                    arg_names: Vec::new(),
+                                    symbol: None,
+                                    type_args: Vec::new(),
+                                },
+                                span: arg.span,
+                            },
+                        );
+                        continue;
+                    }
+                    if !self.types_compatible("String", &arg_ty) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1204",
+                                format!(
+                                    "template interpolation {} cannot show a value of type '{}'",
+                                    idx + 1,
+                                    arg_ty
+                                ),
+                                self.file,
+                                arg.span,
+                            )
+                            .with_help(
+                                "interpolation shows String, integer, float, Bool and Char values; convert other values to String first",
+                            ),
+                        );
                     }
                 }
                 "String".to_string()
@@ -9807,6 +9838,31 @@ impl<'a> Checker<'a> {
                     BinOp::Div => "/",
                     _ => unreachable!(),
                 };
+                // `a + b` concatenates two strings.
+                if op == BinOp::Add && lhs_norm == "String" && rhs_norm == "String" {
+                    return "String".to_string();
+                }
+                if op == BinOp::Add
+                    && (lhs_norm == "String" || rhs_norm == "String")
+                    && !contains_unresolved_type(&lhs_norm)
+                    && !contains_unresolved_type(&rhs_norm)
+                {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1230",
+                            format!(
+                                "'+' concatenates two Strings, found '{}' and '{}'",
+                                lhs, rhs
+                            ),
+                            self.file,
+                            span,
+                        )
+                        .with_help(
+                            "convert the other value first, or use interpolation: f\"{a}{b}\"",
+                        ),
+                    );
+                    return "<?>".to_string();
+                }
                 if let (Some(lhs_float), Some(rhs_float)) = (lhs_float, rhs_float) {
                     if lhs_float == rhs_float {
                         float_kind_type_name(lhs_float).to_string()
@@ -10016,10 +10072,11 @@ impl<'a> Checker<'a> {
                             span,
                         ));
                     }
-                } else if !(lhs_norm == rhs_norm && lhs_norm == "Char") {
+                } else if !(lhs_norm == rhs_norm && matches!(lhs_norm.as_str(), "Char" | "String"))
+                {
                     self.diagnostics.push(Diagnostic::error(
                         "E1232",
-                        "comparison operators require matching integer, float, or Char operands",
+                        "comparison operators require matching integer, float, Char or String operands",
                         self.file,
                         span,
                     ));
@@ -14561,6 +14618,43 @@ fn f(x: Int) -> Int {
 }
 "#;
         assert!(!error_codes(missing).is_empty());
+    }
+
+    #[test]
+    fn string_concatenation_ordering_and_interpolation_are_checked() {
+        let ok = r#"
+fn main() -> Int {
+    let a = "x" + "y";
+    let mut b = a;
+    b += "z";
+    let ordered = "a" < "b" && b >= a;
+    let n = 3;
+    let f = 1.5;
+    let c = 'q';
+    let i8v: Int8 = -1;
+    let text = f"{a}{n}{f}{ordered}{c}{i8v}";
+    0
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_messages(ok));
+        let cases = [
+            ("fn main() -> Int { let s = \"a\" + 1; 0 }", "E1230"),
+            ("fn main() -> Int { let s = 1 + \"a\"; 0 }", "E1230"),
+            ("fn main() -> Int { let s = \"a\" - \"b\"; 0 }", "E1230"),
+            ("fn main() -> Int { let s = \"a\" < 'b'; 0 }", "E1232"),
+            (
+                "fn main() -> Int { let v = (1, 2); let s = f\"{v}\"; 0 }",
+                "E1204",
+            ),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {:?}",
+                error_messages(src)
+            );
+        }
     }
 
     #[test]
