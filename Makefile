@@ -273,8 +273,11 @@ test-command-style-guard:
 	python3 scripts/ci/test_command_style_guard.py
 
 verify-intrinsics:
-	./target/debug/aic verify-intrinsics std --json >/tmp/aic-verify-intrinsics.json
-	python3 -m json.tool /tmp/aic-verify-intrinsics.json >/dev/null
+	@set -e; \
+	tmp_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/aic-verify-intrinsics.XXXXXX")"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	./target/debug/aic verify-intrinsics std --json >"$$tmp_dir/report.json"; \
+	python3 -m json.tool "$$tmp_dir/report.json" >/dev/null
 
 std-doc-check:
 	python3 scripts/ci/std_doc_coverage.py --check
@@ -474,8 +477,8 @@ docs-check:
 	@./target/debug/aic release lts --check >/dev/null
 
 no-null-lint:
-	@if rg -n --glob '*.aic' --glob '!examples/ops/migration_v1_to_v2/**' '\bnull\b' examples std tests/golden >/tmp/aic-no-null-lint.out; then \
+	@if matches="$$(rg -n --glob '*.aic' --glob '!examples/ops/migration_v1_to_v2/**' '\bnull\b' examples std tests/golden)"; then \
 		echo "forbidden 'null' token found in AIC source files:" >&2; \
-		cat /tmp/aic-no-null-lint.out >&2; \
+		printf '%s\n' "$$matches" >&2; \
 		exit 1; \
 	fi

@@ -1126,7 +1126,12 @@ Verifier-focused examples:
 - `examples/data/template_literals.aic`
 - `examples/io/tcp_echo_client.aic`
 
-Examples are integrated into `scripts/ci/examples.sh`.
+Examples are integrated into `scripts/ci/examples.sh`. The script writes all
+scratch output (including captured stdout/stderr of each example) under its
+per-run `ARTIFACT_DIR` (`mktemp -d`, removed by an `EXIT` trap); use
+`"$EXAMPLE_OUT"`, `"$EXAMPLE_ERR"`, or a path under `"$ARTIFACT_DIR"` for new
+checks, never a fixed `/tmp/...` path, so concurrent runs from different
+worktrees stay isolated.
 
 ## Safe Extension Checklist
 

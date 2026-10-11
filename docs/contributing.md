@@ -59,6 +59,13 @@ make init
 - `make examples-check`
 - `make examples-run`
 
+These gates are safe to run at the same time from several checkouts or
+worktrees. `scripts/ci/examples.sh` and the Makefile targets keep every
+scratch file in a per-run `mktemp -d` directory (under `$TMPDIR`, else `/tmp`)
+and remove it on exit, so one run never reads another run's output. New CI
+scripts and Makefile targets must follow the same rule: never write to a fixed
+`/tmp/...` path.
+
 ## Open Language Issue Workflow
 
 For open language issues `#128`, `#130`, `#136`, `#137`, `#138`, `#139`, use:

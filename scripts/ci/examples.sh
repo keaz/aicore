@@ -8,6 +8,10 @@ cd "$ROOT_DIR"
 AIC=(cargo run --quiet --bin aic --)
 ARTIFACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aic-examples.XXXXXX")"
 trap 'rm -rf "$ARTIFACT_DIR"' EXIT
+# Per-run scratch files live under ARTIFACT_DIR so concurrent runs from other
+# checkouts or worktrees never read each other's output.
+EXAMPLE_OUT="$ARTIFACT_DIR/example.out"
+EXAMPLE_ERR="$ARTIFACT_DIR/example.err"
 INCLUDE_PROTOCOL_EXAMPLES="${AIC_INCLUDE_PROTOCOL_EXAMPLES:-0}"
 
 check_pass=(
@@ -492,10 +496,10 @@ done
 
 expect_check_fail() {
   local file="$1"
-  if "${AIC[@]}" check "$file" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if "${AIC[@]}" check "$file" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     echo "expected check failure but passed: $file" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 }
@@ -505,13 +509,13 @@ expect_fmt_roundtrip() {
   local copy="$ARTIFACT_DIR/fmt-roundtrip/${file//\//__}"
   mkdir -p "$ARTIFACT_DIR/fmt-roundtrip"
   cp "$file" "$copy"
-  if ! "${AIC[@]}" fmt "$copy" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if ! "${AIC[@]}" fmt "$copy" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     echo "aic fmt failed for: $file" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
-  if ! "${AIC[@]}" fmt "$copy" --check >/dev/null 2>/tmp/aic-example.err; then
+  if ! "${AIC[@]}" fmt "$copy" --check >/dev/null 2>"$EXAMPLE_ERR"; then
     echo "aic fmt is not idempotent for: $file" >&2
     exit 1
   fi
@@ -547,24 +551,24 @@ PY
 expect_run_fail() {
   local file="$1"
   local marker="${2:-ensures failed}"
-  if "${AIC[@]}" run "$file" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if "${AIC[@]}" run "$file" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     echo "expected run failure but passed: $file" >&2
     exit 1
   fi
-  if ! grep -q "$marker" /tmp/aic-example.err && ! grep -q "$marker" /tmp/aic-example.out; then
+  if ! grep -q "$marker" "$EXAMPLE_ERR" && ! grep -q "$marker" "$EXAMPLE_OUT"; then
     echo "expected contract failure marker not found for: $file" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 }
 
 expect_run_success() {
   local file="$1"
-  if ! "${AIC[@]}" run "$file" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if ! "${AIC[@]}" run "$file" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     echo "expected run success but failed: $file" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 }
@@ -572,12 +576,12 @@ expect_run_success() {
 expect_run_value() {
   local file="$1"
   local expected="$2"
-  "${AIC[@]}" run "$file" >/tmp/aic-example.out
+  "${AIC[@]}" run "$file" >"$EXAMPLE_OUT"
   local got
-  got="$(tr -d '\r' </tmp/aic-example.out | tail -n 1)"
+  got="$(tr -d '\r' <"$EXAMPLE_OUT" | tail -n 1)"
   if [[ "$got" != "$expected" ]]; then
     echo "unexpected output for $file: expected '$expected' got '$got'" >&2
-    cat /tmp/aic-example.out >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
     exit 1
   fi
 }
@@ -586,15 +590,15 @@ expect_run_exit_code() {
   local file="$1"
   local expected="$2"
   local binary="$ARTIFACT_DIR/$(basename "$file" .aic).exit_check"
-  "${AIC[@]}" build "$file" -o "$binary" >/tmp/aic-example.out
+  "${AIC[@]}" build "$file" -o "$binary" >"$EXAMPLE_OUT"
   set +e
-  "$binary" >/tmp/aic-example.out 2>/tmp/aic-example.err
+  "$binary" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"
   local got=$?
   set -e
   if [[ "$got" != "$expected" ]]; then
     echo "unexpected exit code for $file: expected '$expected' got '$got'" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 }
@@ -717,7 +721,7 @@ main().catch((err) => {
   process.exit(1);
 });
 JS
-  node "$harness" "$wasm" >/tmp/aic-example.out 2>/tmp/aic-example.err
+  node "$harness" "$wasm" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"
 }
 
 run_pure_wasm_with_wasmtime() {
@@ -728,24 +732,24 @@ fn main() -> Int {
     0
 }
 AIC
-  if ! "${AIC[@]}" build "$source" --target wasm32 -o "$wasm" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if ! "${AIC[@]}" build "$source" --target wasm32 -o "$wasm" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     return 1
   fi
-  wasmtime --invoke aic_main "$wasm" >/tmp/aic-example.out 2>/tmp/aic-example.err
+  wasmtime --invoke aic_main "$wasm" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"
 }
 
 validate_wasm_example() {
   local file="examples/interop/wasm_hello_world.aic"
   local wasm="$ARTIFACT_DIR/wasm_hello_world.wasm"
   local manifest="$ARTIFACT_DIR/wasm_hello_world.build.json"
-  if ! "${AIC[@]}" build "$file" --target wasm32 -o "$wasm" --manifest "$manifest" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
-    if wasm_target_unavailable /tmp/aic-example.err; then
+  if ! "${AIC[@]}" build "$file" --target wasm32 -o "$wasm" --manifest "$manifest" >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
+    if wasm_target_unavailable "$EXAMPLE_ERR"; then
       echo "note: skipping wasm example validation (toolchain lacks wasm32 prerequisites)" >&2
       return 0
     fi
     echo "wasm example build failed: $file" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 
@@ -760,8 +764,8 @@ validate_wasm_example() {
       return 0
     fi
     echo "node wasm runtime validation failed for $file" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 
@@ -770,8 +774,8 @@ validate_wasm_example() {
       return 0
     fi
     echo "wasmtime wasm runtime validation failed" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 
@@ -781,16 +785,16 @@ validate_wasm_example() {
 
 expect_verify_intrinsics_pass() {
   local target="$1"
-  if ! "${AIC[@]}" verify-intrinsics "$target" --json >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if ! "${AIC[@]}" verify-intrinsics "$target" --json >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     echo "expected verify-intrinsics success but failed: $target" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
-  python3 -m json.tool /tmp/aic-example.out >/dev/null
-  if ! grep -q '"ok": true' /tmp/aic-example.out; then
+  python3 -m json.tool "$EXAMPLE_OUT" >/dev/null
+  if ! grep -q '"ok": true' "$EXAMPLE_OUT"; then
     echo "verify-intrinsics success report missing ok=true: $target" >&2
-    cat /tmp/aic-example.out >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
     exit 1
   fi
 }
@@ -798,17 +802,17 @@ expect_verify_intrinsics_pass() {
 expect_verify_intrinsics_fail() {
   local target="$1"
   local marker="$2"
-  if "${AIC[@]}" verify-intrinsics "$target" --json >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+  if "${AIC[@]}" verify-intrinsics "$target" --json >"$EXAMPLE_OUT" 2>"$EXAMPLE_ERR"; then
     echo "expected verify-intrinsics failure but passed: $target" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
-  python3 -m json.tool /tmp/aic-example.out >/dev/null
-  if ! grep -q "$marker" /tmp/aic-example.out; then
+  python3 -m json.tool "$EXAMPLE_OUT" >/dev/null
+  if ! grep -q "$marker" "$EXAMPLE_OUT"; then
     echo "verify-intrinsics failure marker not found for $target: $marker" >&2
-    cat /tmp/aic-example.out >&2 || true
-    cat /tmp/aic-example.err >&2 || true
+    cat "$EXAMPLE_OUT" >&2 || true
+    cat "$EXAMPLE_ERR" >&2 || true
     exit 1
   fi
 }
@@ -1006,12 +1010,12 @@ case "$MODE" in
     fi
     python3 -m json.tool "$ARTIFACT_DIR/diag_errors.sarif" >/dev/null
     "${AIC[@]}" explain "E2001" >/dev/null
-    if "${AIC[@]}" explain "E9999" >/tmp/aic-example.out; then
+    if "${AIC[@]}" explain "E9999" >"$EXAMPLE_OUT"; then
       echo "expected explain unknown-code failure but passed" >&2
       exit 1
     fi
-    "${AIC[@]}" contract --json >/tmp/aic-example.out
-    python3 -m json.tool /tmp/aic-example.out >/dev/null
+    "${AIC[@]}" contract --json >"$EXAMPLE_OUT"
+    python3 -m json.tool "$EXAMPLE_OUT" >/dev/null
     "${AIC[@]}" context --project "examples/e7/context_query" --for function process_user --depth 2 --limit 3 --json >"$ARTIFACT_DIR/context_report.json"
     python3 -m json.tool "$ARTIFACT_DIR/context_report.json" >/dev/null
     grep -q '"phase": "context"' "$ARTIFACT_DIR/context_report.json"
