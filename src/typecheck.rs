@@ -1672,6 +1672,33 @@ impl<'a> Checker<'a> {
         self.resolution.module_ambiguous_import_aliases.get(&module)
     }
 
+    /// Applies the shadowing order for an unqualified name visible from
+    /// several modules: a definition in the current module wins, then a
+    /// definition in a non-std (user or package) module, and only then std.
+    /// More than one candidate at the winning level stays ambiguous.
+    fn prefer_local_callable_modules(&self, candidates: Vec<String>) -> Vec<String> {
+        if candidates.len() <= 1 {
+            return candidates;
+        }
+        let local = candidates
+            .iter()
+            .filter(|module| self.module_matches_current(module))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !local.is_empty() {
+            return local;
+        }
+        let user = candidates
+            .iter()
+            .filter(|module| !is_std_module_name(module))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !user.is_empty() {
+            return user;
+        }
+        candidates
+    }
+
     fn module_is_imported_in_current_scope(&self, module: &str) -> bool {
         self.module_matches_current(module) || self.imports_for_current_module().contains(module)
     }
@@ -1689,24 +1716,41 @@ impl<'a> Checker<'a> {
         Self::qualified_function_key(module, name)
     }
 
+    /// Looks up the signature for a call-graph key built by
+    /// `qualified_function_key`: `module::name` for module functions, a bare
+    /// name for root-module functions. `name` may itself contain `::` for
+    /// methods (`Type::method`), so the module is split off at the first
+    /// `::`, and a key that is not module-qualified is tried as a root-module
+    /// function or method name. There is no fallback to an unrelated
+    /// function that merely shares the final name segment.
     fn fn_sig_for_key(&self, key: &str) -> Option<&FnSig> {
-        if let Some((module, name)) = key.rsplit_once("::") {
-            return self
+        if let Some((module, name)) = key.split_once("::") {
+            if let Some(sig) = self
                 .module_functions
                 .get(&(module.to_string(), name.to_string()))
-                .or_else(|| self.functions.get(name));
+            {
+                return Some(sig);
+            }
         }
-        self.functions.get(key)
+        self.module_functions
+            .get(&("<root>".to_string(), key.to_string()))
+            .or_else(|| self.functions.get(key))
     }
 
     fn resolution_has_function_key(&self, key: &str) -> bool {
-        if let Some((module, name)) = key.rsplit_once("::") {
-            return self
+        if let Some((module, name)) = key.split_once("::") {
+            if self
                 .resolution
                 .module_function_infos
-                .contains_key(&(module.to_string(), name.to_string()));
+                .contains_key(&(module.to_string(), name.to_string()))
+            {
+                return true;
+            }
         }
-        self.resolution.functions.contains_key(key)
+        self.resolution
+            .module_function_infos
+            .contains_key(&("<root>".to_string(), key.to_string()))
+            || self.resolution.functions.contains_key(key)
     }
 
     fn visibility_allows_cross_module_access(&self, visibility: Visibility) -> bool {
@@ -4625,53 +4669,66 @@ impl<'a> Checker<'a> {
                 }
                 let internal_intrinsic_use =
                     self.is_compiler_internal_intrinsic_use(name, expr.span);
-                if let Some(sig) = self.functions.get(name) {
-                    if self
-                        .resolution
-                        .function_modules
-                        .get(name)
-                        .map(|mods| mods.len() > 1)
-                        .unwrap_or(false)
-                    {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                "E2104",
-                                format!("ambiguous callable '{}' from multiple modules", name),
-                                self.file,
-                                expr.span,
-                            )
-                            .with_help("qualify the function or add a type annotation"),
-                        );
-                        return "<?>".to_string();
-                    }
-
-                    if let Some(modules) = self.resolution.function_modules.get(name) {
-                        if let Some(module_name) = modules.iter().next() {
-                            if let Some(info) = self
-                                .resolution
-                                .module_function_infos
-                                .get(&(module_name.clone(), name.clone()))
+                let value_candidates = self
+                    .resolution
+                    .function_modules
+                    .get(name)
+                    .map(|modules| {
+                        modules
+                            .iter()
+                            .filter(|module| self.module_is_imported_in_current_scope(module))
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let value_candidates = self.prefer_local_callable_modules(value_candidates);
+                if value_candidates.len() > 1 {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E2104",
+                            format!("ambiguous callable '{}' from multiple modules", name),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help("qualify the function or add a type annotation"),
+                    );
+                    return "<?>".to_string();
+                }
+                let value_module = value_candidates.into_iter().next();
+                let value_sig = value_module
+                    .as_ref()
+                    .and_then(|module| {
+                        self.module_functions
+                            .get(&(module.clone(), name.clone()))
+                            .cloned()
+                    })
+                    .or_else(|| self.functions.get(name).cloned());
+                if let Some(sig) = value_sig {
+                    if let Some(module_name) = value_module.as_ref() {
+                        if let Some(info) = self
+                            .resolution
+                            .module_function_infos
+                            .get(&(module_name.clone(), name.clone()))
+                        {
+                            if !internal_intrinsic_use
+                                && !self.function_is_accessible_from_current(module_name, info)
                             {
-                                if !internal_intrinsic_use
-                                    && !self.function_is_accessible_from_current(module_name, info)
-                                {
-                                    self.diagnostics.push(
-                                        Diagnostic::error(
-                                            "E2102",
-                                            format!(
-                                                "symbol '{}.{}' is private and not accessible from this module",
-                                                module_name, name
-                                            ),
-                                            self.file,
-                                            expr.span,
-                                        )
-                                        .with_help(format!(
-                                            "mark '{}.{}' as `pub fn` or call it within module '{}'.",
-                                            module_name, name, module_name
-                                        )),
-                                    );
-                                    return "<?>".to_string();
-                                }
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "E2102",
+                                        format!(
+                                            "symbol '{}.{}' is private and not accessible from this module",
+                                            module_name, name
+                                        ),
+                                        self.file,
+                                        expr.span,
+                                    )
+                                    .with_help(format!(
+                                        "mark '{}.{}' as `pub fn` or call it within module '{}'.",
+                                        module_name, name, module_name
+                                    )),
+                                );
+                                return "<?>".to_string();
                             }
                         }
                     }
@@ -5073,6 +5130,8 @@ impl<'a> Checker<'a> {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
+                    let visible_candidate_modules =
+                        self.prefer_local_callable_modules(visible_candidate_modules);
 
                     if visible_candidate_modules.len() > 1 {
                         self.diagnostics.push(
@@ -5201,10 +5260,15 @@ impl<'a> Checker<'a> {
                         }
                     }
 
-                    if resolved_name == "print_int"
-                        || resolved_name == "print_str"
-                        || resolved_name == "print_float"
-                        || resolved_name == "panic"
+                    let resolves_to_std = resolved_module
+                        .as_deref()
+                        .map(is_std_module_name)
+                        .unwrap_or(true);
+                    if resolves_to_std
+                        && (resolved_name == "print_int"
+                            || resolved_name == "print_str"
+                            || resolved_name == "print_float"
+                            || resolved_name == "panic")
                     {
                         if !self.imports_for_current_module().contains("std.io") {
                             self.diagnostics.push(
@@ -5219,6 +5283,7 @@ impl<'a> Checker<'a> {
                         }
                     }
                     if resolved_name == "len"
+                        && resolves_to_std
                         && !self.imports_for_current_module().contains("std.string")
                     {
                         self.diagnostics.push(
@@ -10859,6 +10924,10 @@ fn collect_pattern_bindings(pattern: &ir::Pattern, out: &mut BTreeSet<String>) {
     }
 }
 
+fn is_std_module_name(module: &str) -> bool {
+    module == "std" || module.starts_with("std.")
+}
+
 fn generic_names(generics: &[ir::GenericParam]) -> BTreeSet<String> {
     generics.iter().map(|param| param.name.clone()).collect()
 }
@@ -11494,6 +11563,29 @@ fn main() -> Int { 0 }
             e1289_messages(returned),
             vec!["closure cannot assign to captured variable 'count'"]
         );
+    }
+
+    #[test]
+    fn method_effects_propagate_through_the_call_graph() {
+        // The method key `Probe::read` used to be split into module `Probe`
+        // and function `read`, so the method body was never followed.
+        let src = r#"
+import std.io;
+struct Probe { n: Int }
+impl Probe {
+    fn read(self: Probe) -> Int effects { io } capabilities { io } {
+        print_int(self.n);
+        self.n
+    }
+}
+fn caller(p: Probe) -> Int {
+    p.read()
+}
+fn main() -> Int { 0 }
+"#;
+        let codes = error_codes(src);
+        // The transitive capability check now follows the method body.
+        assert!(codes.contains(&"E2009".to_string()), "{codes:?}");
     }
 
     #[test]

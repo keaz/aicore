@@ -5418,7 +5418,19 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
-        let builtin_name = qualified_builtin_intrinsic(call_path).unwrap_or(name);
+        // An unqualified call that the checker resolved to a user (non-std)
+        // function must reach that function, even when std lowers a builtin
+        // with the same bare name (`size`, `get`, `count`, ...).
+        let resolves_to_user_function = call_path.len() == 1
+            && call_symbol
+                .and_then(|symbol| self.function_modules_by_symbol.get(&symbol))
+                .map(|module| module != "std" && !module.starts_with("std."))
+                .unwrap_or(false);
+        let builtin_name = if resolves_to_user_function {
+            ""
+        } else {
+            qualified_builtin_intrinsic(call_path).unwrap_or(name)
+        };
         let exact_sig = call_symbol.and_then(|symbol| self.fn_sigs_by_symbol.get(&symbol).cloned());
         let _sig_guard = if let Some(sig) = exact_sig.clone() {
             self.call_sig_overrides.push(CallSigOverride {
@@ -5447,7 +5459,7 @@ impl<'a> Generator<'a> {
             return self.gen_for_next_iter_call(args, span, expected_ty, fctx);
         }
 
-        if name == "print_int" || name == "aic_io_print_int_intrinsic" {
+        if builtin_name == "print_int" || name == "aic_io_print_int_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -5477,7 +5489,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if name == "print_str" || name == "aic_io_print_str_intrinsic" {
+        if builtin_name == "print_str" || name == "aic_io_print_str_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -5508,7 +5520,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if name == "print_float" || name == "aic_io_print_float_intrinsic" {
+        if builtin_name == "print_float" || name == "aic_io_print_float_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -5538,7 +5550,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        if name == "len" {
+        if builtin_name == "len" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -5580,7 +5592,7 @@ impl<'a> Generator<'a> {
             return result;
         }
 
-        if name == "panic" || name == "aic_io_panic_intrinsic" {
+        if builtin_name == "panic" || name == "aic_io_panic_intrinsic" {
             if args.len() != 1 {
                 self.diagnostics.push(Diagnostic::error(
                     "E5010",
@@ -7271,13 +7283,7 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        let has_definition = self.program.items.iter().any(|item| {
-            matches!(
-                item,
-                ir::Item::Function(func) if func.generics.is_empty() && func.name == name
-            )
-        });
-        if !has_definition {
+        let Some(symbol) = self.resolve_function_value_symbol(name, fctx) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5034",
                 format!(
@@ -7288,17 +7294,75 @@ impl<'a> Generator<'a> {
                 span,
             ));
             return None;
-        }
-
-        let adapter = self.ensure_fn_value_adapter(name, sig);
-        let layout = self.fn_layout_from_signature(sig);
+        };
+        let sig = self
+            .fn_sigs_by_symbol
+            .get(&symbol)
+            .cloned()
+            .unwrap_or_else(|| sig.clone());
+        let target = self
+            .fn_llvm_names
+            .get(&symbol)
+            .cloned()
+            .unwrap_or_else(|| mangle(name));
+        let adapter = self.ensure_fn_value_adapter(name, &target, &sig);
+        let layout = self.fn_layout_from_signature(&sig);
         self.build_fn_value_from_symbol(&adapter, &layout, "null", fctx)
     }
 
-    pub(super) fn ensure_fn_value_adapter(&mut self, name: &str, sig: &FnSig) -> String {
+    /// Picks the function a bare name refers to when used as a value, with
+    /// the checker's shadowing order: the current function's module first,
+    /// then non-std modules, then std.
+    pub(super) fn resolve_function_value_symbol(
+        &self,
+        name: &str,
+        fctx: &FnCtx,
+    ) -> Option<ir::SymbolId> {
+        let candidates = self
+            .program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ir::Item::Function(func) if func.generics.is_empty() && func.name == name => {
+                    Some(func.symbol)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() <= 1 {
+            return candidates.into_iter().next();
+        }
+        let module_of = |symbol: &ir::SymbolId| self.function_modules_by_symbol.get(symbol);
+        let current_module = self
+            .fn_llvm_names
+            .iter()
+            .find(|(_, llvm)| **llvm == fctx.current_fn_llvm_name)
+            .and_then(|(symbol, _)| module_of(symbol));
+        if let Some(current) = current_module {
+            if let Some(symbol) = candidates.iter().find(|s| module_of(s) == Some(current)) {
+                return Some(*symbol);
+            }
+        }
+        candidates
+            .iter()
+            .find(|s| {
+                module_of(s)
+                    .map(|module| module != "std" && !module.starts_with("std."))
+                    .unwrap_or(true)
+            })
+            .or_else(|| candidates.first())
+            .copied()
+    }
+
+    pub(super) fn ensure_fn_value_adapter(
+        &mut self,
+        name: &str,
+        target: &str,
+        sig: &FnSig,
+    ) -> String {
         let key = format!(
             "{}({})->{}",
-            name,
+            target,
             sig.params
                 .iter()
                 .map(render_type)
@@ -7310,7 +7374,6 @@ impl<'a> Generator<'a> {
             return existing.clone();
         }
 
-        let target = mangle(name);
         let adapter = format!(
             "__aic_fn_adapter_{}_{}",
             mangle(name),

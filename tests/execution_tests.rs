@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 use aicore::codegen::{
     compile_with_clang, compile_with_clang_artifact, compile_with_clang_artifact_with_options,
-    emit_llvm, emit_llvm_with_options, ArtifactKind, CodegenOptions, CompileOptions, LinkOptions,
-    OptimizationLevel,
+    emit_llvm, emit_llvm_with_options, emit_llvm_with_resolution_and_options, ArtifactKind,
+    CodegenOptions, CompileOptions, LinkOptions, OptimizationLevel,
 };
 use aicore::contracts::lower_runtime_asserts;
 use aicore::driver::{has_errors, run_frontend};
@@ -48,7 +48,13 @@ where
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
 
     let exe = dir.path().join("app");
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
@@ -112,7 +118,13 @@ where
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
 
     let exe = dir.path().join("app");
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
@@ -180,7 +192,12 @@ fn compile_and_run_or_backend_diags(
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = match emit_llvm(&lowered, &src.to_string_lossy()) {
+    let llvm = match emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    ) {
         Ok(llvm) => llvm,
         Err(diags) => return Err(diags),
     };
@@ -327,7 +344,13 @@ fn compile_to_llvm(path: &std::path::Path, source: &str) -> String {
         front.diagnostics
     );
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &path.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &path.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
     llvm.llvm_ir
 }
 
@@ -13316,7 +13339,13 @@ fn main() -> Int effects { io } capabilities { io  } {
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
 
     let exe_o0 = dir.path().join("bench_o0");
     let exe_o2 = dir.path().join("bench_o2");
@@ -13494,7 +13523,13 @@ fn main() -> Int effects { io } capabilities { io  } {
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
 
     let levels = [
         OptimizationLevel::O0,
@@ -14097,6 +14132,68 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn exec_user_functions_named_like_std_symbols_resolve_to_user_definitions() {
+    let src = r#"import std.io;
+import std.vec;
+import std.map;
+import std.string;
+import std.env;
+fn count(x: Int) -> Int { x + 1 }
+fn size(x: Int) -> Int { x + 2 }
+fn len(x: Int) -> Int { x + 3 }
+fn get(x: Int) -> Int { x + 4 }
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(count(1) + size(1) + len(1) + get(1));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "14\n");
+}
+
+#[test]
+fn exec_user_methods_named_like_std_symbols_resolve_to_methods() {
+    let src = r#"import std.io;
+import std.env;
+import std.vec;
+struct Bag { n: Int }
+impl Bag {
+    fn get(self: Bag) -> Int { self.n }
+    fn count(self: Bag) -> Int { self.n * 2 }
+    fn len(self: Bag) -> Int { self.n * 3 }
+    fn size(self: Bag) -> Int { self.n * 4 }
+}
+fn main() -> Int effects { io } capabilities { io } {
+    let b = Bag { n: 5 };
+    print_int(b.get() + b.count() + b.len() + b.size());
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "50\n");
+}
+
+#[test]
+fn exec_user_function_values_shadow_std_names() {
+    let src = r#"import std.io;
+import std.vec;
+fn count(x: Int) -> Int { x * 10 }
+fn apply(f: Fn(Int) -> Int, v: Int) -> Int { f(v) }
+fn main() -> Int effects { io } capabilities { io } {
+    let f = count;
+    print_int(apply(f, 2));
+    print_int(apply(count, 3));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "20\n30\n");
+}
+
+#[test]
 fn exec_contract_failure() {
     let src = r#"
 import std.io;
@@ -14305,7 +14402,13 @@ fn main() -> Int effects { io } capabilities { io  } {
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
 
     let c_fixture = dir.path().join("ffi_string_view.c");
     fs::write(
@@ -14513,7 +14616,13 @@ fn main() -> Int effects { io, proc } capabilities { io, proc  } {
     );
 
     let lowered = lower_runtime_asserts(&front.ir);
-    let llvm = emit_llvm(&lowered, &src.to_string_lossy()).expect("emit llvm");
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .expect("emit llvm");
 
     let exe = dir.path().join("signal_wait");
     compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");

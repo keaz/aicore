@@ -1,0 +1,41 @@
+module examples.core.std_name_shadowing;
+import std.io;
+import std.map;
+import std.vec;
+
+// Functions defined in this module shadow std functions with the same name,
+// and methods never resolve to std free functions. `vec.get(...)` still
+// reaches std through its module qualifier.
+struct Inventory {
+    items: Int,
+}
+
+impl Inventory {
+    fn get(self: Inventory) -> Int {
+        self.items
+    }
+
+    fn count(self: Inventory) -> Int {
+        self.items * 2
+    }
+}
+
+fn size(x: Int) -> Int {
+    x + 1
+}
+
+fn count(x: Int) -> Int {
+    x * 10
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let inv = Inventory { items: 3 };
+    let empty: Vec[Int] = vec.new_vec();
+    let xs = vec.push(empty, 7);
+    let first = match vec.get(xs, 0) {
+        Some(v) => v,
+        None => 0,
+    };
+    print_int(size(1) + count(2) + inv.get() + inv.count() + first);
+    0
+}

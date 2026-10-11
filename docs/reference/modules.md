@@ -46,6 +46,12 @@ unqualified_call = ident "(" arg_list? ")" ;
   - entry module sees symbols from itself plus directly imported modules
   - transitive imports are not re-exported automatically
 - Qualified module calls must reference directly imported modules.
+- Unqualified function names resolve with a fixed shadowing order, so user code can reuse names that std also defines (`count`, `size`, `len`, `get`, ...):
+  1. a function defined in the current module
+  2. a function from an imported user or package (non-std) module
+  3. a function from an imported std module
+  If more than one candidate remains at the winning level (for example two imported user modules both define `size`, or `std.vec` and `std.map` both provide `get` and the program defines none), the call is ambiguous (`E2104`); qualify it as `module.name(...)`. The same order applies to a function used as a value (`apply(count, 1)`).
+- Method calls (`value.get()`) resolve to methods of the receiver's type and never to a free function from another module; effect and capability checks follow the method's own body.
 - Unqualified callable names become diagnostics when ambiguous across imported modules.
 - Import tail alias collisions are tracked; ambiguous aliases are rejected and require explicit full qualification.
 

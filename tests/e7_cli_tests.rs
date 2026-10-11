@@ -5716,6 +5716,78 @@ fn check_rejects_closure_assignment_to_captured_variable() {
 }
 
 #[test]
+fn module_shadowing_order_local_then_user_then_std() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    fs::create_dir_all(root.join("src")).expect("mkdir src");
+    fs::write(
+        root.join("aic.toml"),
+        "[package]\nname = \"proj\"\nmain = \"src/main.aic\"\n",
+    )
+    .expect("write manifest");
+    fs::write(
+        root.join("src/util.aic"),
+        "module app.util;\npub fn count(x: Int) -> Int { x + 100 }\npub fn size(x: Int) -> Int { x + 200 }\n",
+    )
+    .expect("write util");
+    fs::write(
+        root.join("src/other.aic"),
+        "module app.other;\npub fn size(x: Int) -> Int { x + 300 }\n",
+    )
+    .expect("write other");
+
+    // A user module beats std; the local definition beats both.
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module app.main;\n",
+            "import std.io;\n",
+            "import std.vec;\n",
+            "import app.util;\n",
+            "fn len(x: Int) -> Int { x + 1 }\n",
+            "fn main() -> Int effects { io } capabilities { io } {\n",
+            "    print_int(count(1));\n",
+            "    print_int(len(1));\n",
+            "    print_int(util.count(2));\n",
+            "    0\n",
+            "}\n",
+        ),
+    )
+    .expect("write main");
+    let run = run_aic_in_dir(root, &["run", "."]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "101\n2\n102\n");
+
+    // Two user modules with the same name are still ambiguous.
+    fs::write(
+        root.join("src/main.aic"),
+        concat!(
+            "module app.main;\n",
+            "import app.util;\n",
+            "import app.other;\n",
+            "fn main() -> Int { size(1) }\n",
+        ),
+    )
+    .expect("write ambiguous main");
+    let check = run_aic_in_dir(root, &["check", ".", "--json"]);
+    assert_eq!(check.status.code(), Some(1));
+    let diags: Value = serde_json::from_slice(&check.stdout).expect("diagnostics json");
+    assert!(
+        diags
+            .as_array()
+            .expect("array")
+            .iter()
+            .any(|diag| diag["code"] == "E2104"),
+        "{diags:#}"
+    );
+}
+
+#[test]
 fn test_harness_runs_categories_and_reports_json() {
     let all = run_aic(&["test", "examples/e7/harness", "--json"]);
     assert_eq!(all.status.code(), Some(0));
