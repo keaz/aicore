@@ -1,5 +1,5 @@
 
-long aic_rt_conc_mutex_unlock(long handle, long value) {
+int64_t aic_rt_conc_mutex_unlock(int64_t handle, int64_t value) {
     AicConcMutexSlot* slot = aic_rt_conc_get_mutex(handle);
     if (slot == NULL) {
         return 1;
@@ -23,7 +23,7 @@ long aic_rt_conc_mutex_unlock(long handle, long value) {
     return 0;
 }
 
-long aic_rt_conc_mutex_close(long handle) {
+int64_t aic_rt_conc_mutex_close(int64_t handle) {
     AicConcMutexSlot* slot = aic_rt_conc_get_mutex(handle);
     if (slot == NULL) {
         return 1;
@@ -39,13 +39,13 @@ long aic_rt_conc_mutex_close(long handle) {
     return 0;
 }
 
-long aic_rt_conc_rwlock_int(long initial, long* out_handle) {
+int64_t aic_rt_conc_rwlock_int(int64_t initial, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_RWLOCK_CAP; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < AIC_RT_CONC_RWLOCK_CAP; ++i) {
         if (!aic_rt_conc_rwlocks[i].active) {
             slot_index = i;
             break;
@@ -76,7 +76,7 @@ long aic_rt_conc_rwlock_int(long initial, long* out_handle) {
     return 0;
 }
 
-long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_conc_rwlock_read(int64_t handle, int64_t timeout_ms, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -88,7 +88,7 @@ long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
         return 1;
     }
 
-    long started_ms = aic_rt_time_monotonic_ms();
+    int64_t started_ms = aic_rt_time_monotonic_ms();
     if (started_ms < 0) {
         started_ms = 0;
     }
@@ -109,7 +109,7 @@ long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
             if (timeout_ms == 0) {
                 return 2;
             }
-            long now_ms = aic_rt_time_monotonic_ms();
+            int64_t now_ms = aic_rt_time_monotonic_ms();
             if (now_ms < 0) {
                 now_ms = started_ms;
             }
@@ -132,11 +132,11 @@ long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
         pthread_rwlock_unlock(&slot->rwlock);
         return 6;
     }
-    long payload_id = slot->value;
+    int64_t payload_id = slot->value;
     pthread_mutex_unlock(&slot->meta_mutex);
 
-    long cloned_payload_id = 0;
-    long clone_rc = aic_rt_conc_payload_clone_internal(payload_id, &cloned_payload_id);
+    int64_t cloned_payload_id = 0;
+    int64_t clone_rc = aic_rt_conc_payload_clone_internal(payload_id, &cloned_payload_id);
     pthread_rwlock_unlock(&slot->rwlock);
     if (clone_rc != 0) {
         return clone_rc;
@@ -147,7 +147,7 @@ long aic_rt_conc_rwlock_read(long handle, long timeout_ms, long* out_value) {
     return 0;
 }
 
-long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_conc_rwlock_write_lock(int64_t handle, int64_t timeout_ms, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -159,7 +159,7 @@ long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value
         return 1;
     }
 
-    long started_ms = aic_rt_time_monotonic_ms();
+    int64_t started_ms = aic_rt_time_monotonic_ms();
     if (started_ms < 0) {
         started_ms = 0;
     }
@@ -180,7 +180,7 @@ long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value
             if (timeout_ms == 0) {
                 return 2;
             }
-            long now_ms = aic_rt_time_monotonic_ms();
+            int64_t now_ms = aic_rt_time_monotonic_ms();
             if (now_ms < 0) {
                 now_ms = started_ms;
             }
@@ -204,7 +204,7 @@ long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value
         return 6;
     }
     slot->write_locked = 1;
-    long payload_id = slot->value;
+    int64_t payload_id = slot->value;
     pthread_mutex_unlock(&slot->meta_mutex);
     if (out_value != NULL) {
         *out_value = payload_id;
@@ -212,7 +212,7 @@ long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value
     return 0;
 }
 
-long aic_rt_conc_rwlock_write_unlock(long handle, long value) {
+int64_t aic_rt_conc_rwlock_write_unlock(int64_t handle, int64_t value) {
     AicConcRwLockSlot* slot = aic_rt_conc_get_rwlock(handle);
     if (slot == NULL) {
         return 1;
@@ -237,7 +237,7 @@ long aic_rt_conc_rwlock_write_unlock(long handle, long value) {
     return 0;
 }
 
-long aic_rt_conc_rwlock_close(long handle) {
+int64_t aic_rt_conc_rwlock_close(int64_t handle) {
     AicConcRwLockSlot* slot = aic_rt_conc_get_rwlock(handle);
     if (slot == NULL) {
         return 1;
@@ -251,11 +251,11 @@ long aic_rt_conc_rwlock_close(long handle) {
     return 0;
 }
 
-long aic_rt_conc_payload_store(
+int64_t aic_rt_conc_payload_store(
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_payload_id
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_payload_id
 ) {
     (void)payload_cap;
     if (out_payload_id != NULL) {
@@ -264,7 +264,7 @@ long aic_rt_conc_payload_store(
     if (payload_ptr == NULL || payload_len < 0) {
         return 4;
     }
-    if ((unsigned long)payload_len > SIZE_MAX - 1UL) {
+    if ((uint64_t)payload_len > SIZE_MAX - 1UL) {
         return 4;
     }
 
@@ -273,8 +273,8 @@ long aic_rt_conc_payload_store(
         return aic_rt_conc_map_errno(lock_rc);
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_PAYLOAD_CAP; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < AIC_RT_CONC_PAYLOAD_CAP; ++i) {
         if (!aic_rt_conc_payloads[i].active) {
             slot_index = i;
             break;
@@ -307,7 +307,7 @@ long aic_rt_conc_payload_store(
     return 0;
 }
 
-long aic_rt_conc_payload_take(long payload_id, char** out_ptr, long* out_len) {
+int64_t aic_rt_conc_payload_take(int64_t payload_id, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -343,7 +343,7 @@ long aic_rt_conc_payload_take(long payload_id, char** out_ptr, long* out_len) {
     return 0;
 }
 
-long aic_rt_conc_payload_drop(long payload_id, long* out_dropped) {
+int64_t aic_rt_conc_payload_drop(int64_t payload_id, int64_t* out_dropped) {
     if (out_dropped != NULL) {
         *out_dropped = 0;
     }
@@ -371,11 +371,11 @@ long aic_rt_conc_payload_drop(long payload_id, long* out_dropped) {
     return 0;
 }
 
-long aic_rt_conc_arc_new(
+int64_t aic_rt_conc_arc_new(
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_handle
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_handle
 ) {
     (void)payload_cap;
     if (out_handle != NULL) {
@@ -384,7 +384,7 @@ long aic_rt_conc_arc_new(
     if (payload_ptr == NULL || payload_len < 0) {
         return 4;
     }
-    if ((unsigned long)payload_len > SIZE_MAX - 1UL) {
+    if ((uint64_t)payload_len > SIZE_MAX - 1UL) {
         return 4;
     }
 
@@ -393,8 +393,8 @@ long aic_rt_conc_arc_new(
         return aic_rt_conc_map_errno(lock_rc);
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_ARC_CAP; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < AIC_RT_CONC_ARC_CAP; ++i) {
         if (!aic_rt_conc_arcs[i].active) {
             slot_index = i;
             break;
@@ -429,7 +429,7 @@ long aic_rt_conc_arc_new(
     return 0;
 }
 
-long aic_rt_conc_arc_clone(long handle, long* out_handle) {
+int64_t aic_rt_conc_arc_clone(int64_t handle, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -448,7 +448,7 @@ long aic_rt_conc_arc_clone(long handle, long* out_handle) {
         return 1;
     }
 
-    long prev = atomic_fetch_add_explicit(&slot->ref_count, 1, memory_order_seq_cst);
+    int64_t prev = atomic_fetch_add_explicit(&slot->ref_count, 1, memory_order_seq_cst);
     if (prev <= 0) {
         atomic_fetch_sub_explicit(&slot->ref_count, 1, memory_order_seq_cst);
         pthread_mutex_unlock(&aic_rt_conc_arc_mutex);
@@ -461,7 +461,7 @@ long aic_rt_conc_arc_clone(long handle, long* out_handle) {
     return 0;
 }
 
-long aic_rt_conc_arc_get(long handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_conc_arc_get(int64_t handle, char** out_ptr, int64_t* out_len) {
     if (out_ptr == NULL || out_len == NULL) {
         return 4;
     }
@@ -481,7 +481,7 @@ long aic_rt_conc_arc_get(long handle, char** out_ptr, long* out_len) {
     }
 
     AicConcArcSlot* slot = &aic_rt_conc_arcs[handle - 1];
-    long ref_count = atomic_load_explicit(&slot->ref_count, memory_order_seq_cst);
+    int64_t ref_count = atomic_load_explicit(&slot->ref_count, memory_order_seq_cst);
     if (!slot->active || ref_count <= 0 || slot->payload_ptr == NULL || slot->payload_len < 0) {
         pthread_mutex_unlock(&aic_rt_conc_arc_mutex);
         return 1;
@@ -507,7 +507,7 @@ long aic_rt_conc_arc_get(long handle, char** out_ptr, long* out_len) {
     return 0;
 }
 
-long aic_rt_conc_arc_strong_count(long handle, long* out_count) {
+int64_t aic_rt_conc_arc_strong_count(int64_t handle, int64_t* out_count) {
     if (out_count != NULL) {
         *out_count = 0;
     }
@@ -521,7 +521,7 @@ long aic_rt_conc_arc_strong_count(long handle, long* out_count) {
     }
 
     AicConcArcSlot* slot = &aic_rt_conc_arcs[handle - 1];
-    long ref_count = atomic_load_explicit(&slot->ref_count, memory_order_seq_cst);
+    int64_t ref_count = atomic_load_explicit(&slot->ref_count, memory_order_seq_cst);
     if (!slot->active || ref_count <= 0) {
         pthread_mutex_unlock(&aic_rt_conc_arc_mutex);
         return 1;
@@ -533,7 +533,7 @@ long aic_rt_conc_arc_strong_count(long handle, long* out_count) {
     return 0;
 }
 
-long aic_rt_conc_arc_release(long handle) {
+int64_t aic_rt_conc_arc_release(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_ARC_CAP) {
         return 1;
     }
@@ -545,13 +545,13 @@ long aic_rt_conc_arc_release(long handle) {
     }
 
     AicConcArcSlot* slot = &aic_rt_conc_arcs[handle - 1];
-    long current = atomic_load_explicit(&slot->ref_count, memory_order_seq_cst);
+    int64_t current = atomic_load_explicit(&slot->ref_count, memory_order_seq_cst);
     if (!slot->active || current <= 0) {
         pthread_mutex_unlock(&aic_rt_conc_arc_mutex);
         return 1;
     }
 
-    long prev = atomic_fetch_sub_explicit(&slot->ref_count, 1, memory_order_seq_cst);
+    int64_t prev = atomic_fetch_sub_explicit(&slot->ref_count, 1, memory_order_seq_cst);
     if (prev <= 0) {
         atomic_fetch_add_explicit(&slot->ref_count, 1, memory_order_seq_cst);
         pthread_mutex_unlock(&aic_rt_conc_arc_mutex);
@@ -571,11 +571,11 @@ long aic_rt_conc_arc_release(long handle) {
     return 0;
 }
 
-long aic_rt_conc_atomic_int_new(long initial, long* out_handle) {
+int64_t aic_rt_conc_atomic_int_new(int64_t initial, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
-    for (long i = 0; i < AIC_RT_CONC_ATOMIC_INT_CAP; ++i) {
+    for (int64_t i = 0; i < AIC_RT_CONC_ATOMIC_INT_CAP; ++i) {
         AicConcAtomicIntSlot* slot = &aic_rt_conc_atomic_ints[i];
         int expected = 0;
         if (atomic_compare_exchange_strong_explicit(
@@ -595,7 +595,7 @@ long aic_rt_conc_atomic_int_new(long initial, long* out_handle) {
     return 7;
 }
 
-long aic_rt_conc_atomic_int_load(long handle, long* out_value) {
+int64_t aic_rt_conc_atomic_int_load(int64_t handle, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -609,7 +609,7 @@ long aic_rt_conc_atomic_int_load(long handle, long* out_value) {
     return 0;
 }
 
-long aic_rt_conc_atomic_int_store(long handle, long value) {
+int64_t aic_rt_conc_atomic_int_store(int64_t handle, int64_t value) {
     AicConcAtomicIntSlot* slot = aic_rt_conc_get_atomic_int(handle);
     if (slot == NULL) {
         return 1;
@@ -618,7 +618,7 @@ long aic_rt_conc_atomic_int_store(long handle, long value) {
     return 0;
 }
 
-long aic_rt_conc_atomic_int_add(long handle, long delta, long* out_old) {
+int64_t aic_rt_conc_atomic_int_add(int64_t handle, int64_t delta, int64_t* out_old) {
     if (out_old != NULL) {
         *out_old = 0;
     }
@@ -626,14 +626,14 @@ long aic_rt_conc_atomic_int_add(long handle, long delta, long* out_old) {
     if (slot == NULL) {
         return 1;
     }
-    long old = atomic_fetch_add_explicit(&slot->value, delta, memory_order_seq_cst);
+    int64_t old = atomic_fetch_add_explicit(&slot->value, delta, memory_order_seq_cst);
     if (out_old != NULL) {
         *out_old = old;
     }
     return 0;
 }
 
-long aic_rt_conc_atomic_int_sub(long handle, long delta, long* out_old) {
+int64_t aic_rt_conc_atomic_int_sub(int64_t handle, int64_t delta, int64_t* out_old) {
     if (out_old != NULL) {
         *out_old = 0;
     }
@@ -641,14 +641,14 @@ long aic_rt_conc_atomic_int_sub(long handle, long delta, long* out_old) {
     if (slot == NULL) {
         return 1;
     }
-    long old = atomic_fetch_sub_explicit(&slot->value, delta, memory_order_seq_cst);
+    int64_t old = atomic_fetch_sub_explicit(&slot->value, delta, memory_order_seq_cst);
     if (out_old != NULL) {
         *out_old = old;
     }
     return 0;
 }
 
-long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* out_swapped) {
+int64_t aic_rt_conc_atomic_int_cas(int64_t handle, int64_t expected, int64_t desired, int64_t* out_swapped) {
     if (out_swapped != NULL) {
         *out_swapped = 0;
     }
@@ -656,7 +656,7 @@ long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* 
     if (slot == NULL) {
         return 1;
     }
-    long expected_local = expected;
+    int64_t expected_local = expected;
     int swapped = atomic_compare_exchange_strong_explicit(
         &slot->value,
         &expected_local,
@@ -670,7 +670,7 @@ long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* 
     return 0;
 }
 
-long aic_rt_conc_atomic_int_close(long handle) {
+int64_t aic_rt_conc_atomic_int_close(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_INT_CAP) {
         return 1;
     }
@@ -683,12 +683,12 @@ long aic_rt_conc_atomic_int_close(long handle) {
     return 0;
 }
 
-long aic_rt_conc_atomic_bool_new(long initial, long* out_handle) {
+int64_t aic_rt_conc_atomic_bool_new(int64_t initial, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
     int normalized = initial != 0 ? 1 : 0;
-    for (long i = 0; i < AIC_RT_CONC_ATOMIC_BOOL_CAP; ++i) {
+    for (int64_t i = 0; i < AIC_RT_CONC_ATOMIC_BOOL_CAP; ++i) {
         AicConcAtomicBoolSlot* slot = &aic_rt_conc_atomic_bools[i];
         int expected = 0;
         if (atomic_compare_exchange_strong_explicit(
@@ -708,7 +708,7 @@ long aic_rt_conc_atomic_bool_new(long initial, long* out_handle) {
     return 7;
 }
 
-long aic_rt_conc_atomic_bool_load(long handle, long* out_value) {
+int64_t aic_rt_conc_atomic_bool_load(int64_t handle, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -722,7 +722,7 @@ long aic_rt_conc_atomic_bool_load(long handle, long* out_value) {
     return 0;
 }
 
-long aic_rt_conc_atomic_bool_store(long handle, long value) {
+int64_t aic_rt_conc_atomic_bool_store(int64_t handle, int64_t value) {
     AicConcAtomicBoolSlot* slot = aic_rt_conc_get_atomic_bool(handle);
     if (slot == NULL) {
         return 1;
@@ -731,7 +731,7 @@ long aic_rt_conc_atomic_bool_store(long handle, long value) {
     return 0;
 }
 
-long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old) {
+int64_t aic_rt_conc_atomic_bool_swap(int64_t handle, int64_t desired, int64_t* out_old) {
     if (out_old != NULL) {
         *out_old = 0;
     }
@@ -750,7 +750,7 @@ long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old) {
     return 0;
 }
 
-long aic_rt_conc_atomic_bool_close(long handle) {
+int64_t aic_rt_conc_atomic_bool_close(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_BOOL_CAP) {
         return 1;
     }
@@ -763,7 +763,7 @@ long aic_rt_conc_atomic_bool_close(long handle) {
     return 0;
 }
 
-long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* out_handle) {
+int64_t aic_rt_conc_tl_new(int64_t entry_fn, int64_t entry_env, int64_t value_size, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -771,7 +771,7 @@ long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* ou
         return 4;
     }
 
-    for (long i = 0; i < AIC_RT_CONC_TL_CAP; ++i) {
+    for (int64_t i = 0; i < AIC_RT_CONC_TL_CAP; ++i) {
         AicConcThreadLocalSlot* slot = &aic_rt_conc_tls[i];
         int expected = 0;
         if (!atomic_compare_exchange_strong_explicit(
@@ -804,7 +804,7 @@ long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* ou
     return 7;
 }
 
-long aic_rt_conc_tl_get(long handle, long* out_value_raw) {
+int64_t aic_rt_conc_tl_get(int64_t handle, int64_t* out_value_raw) {
     if (out_value_raw != NULL) {
         *out_value_raw = 0;
     }
@@ -817,7 +817,7 @@ long aic_rt_conc_tl_get(long handle, long* out_value_raw) {
     AicConcThreadLocalValue* value =
         (AicConcThreadLocalValue*)pthread_getspecific(slot->key);
     if (value == NULL) {
-        long init_rc = aic_rt_conc_tl_init_current(slot);
+        int64_t init_rc = aic_rt_conc_tl_init_current(slot);
         if (init_rc != 0) {
             return init_rc;
         }
@@ -831,7 +831,7 @@ long aic_rt_conc_tl_get(long handle, long* out_value_raw) {
     }
     if (out_value_raw != NULL) {
         if (slot->value_size > 0) {
-            *out_value_raw = (long)(intptr_t)value->bytes;
+            *out_value_raw = (int64_t)(intptr_t)value->bytes;
         } else {
             *out_value_raw = 0;
         }
@@ -839,7 +839,7 @@ long aic_rt_conc_tl_get(long handle, long* out_value_raw) {
     return 0;
 }
 
-long aic_rt_conc_tl_set(long handle, const char* value_ptr, long value_size) {
+int64_t aic_rt_conc_tl_set(int64_t handle, const char* value_ptr, int64_t value_size) {
     AicConcThreadLocalSlot* slot = aic_rt_conc_get_tl(handle);
     if (slot == NULL) {
         return 1;
@@ -856,7 +856,7 @@ static int aic_rt_net_last_socket_error(void);
 static int aic_rt_net_get_nonblocking_state(aic_rt_socket_t fd, int* out_state);
 static int aic_rt_net_set_nonblocking_state(aic_rt_socket_t fd, int enabled);
 
-static long aic_rt_net_map_errno(int err) {
+static int64_t aic_rt_net_map_errno(int err) {
     switch (err) {
         case ENOENT:
             return 1;  // NotFound
@@ -941,7 +941,7 @@ static long aic_rt_net_map_errno(int err) {
     }
 }
 
-static long aic_rt_net_map_gai_error(int err) {
+static int64_t aic_rt_net_map_gai_error(int err) {
     switch (err) {
 #ifdef EAI_NONAME
         case EAI_NONAME:
@@ -997,7 +997,7 @@ typedef struct {
 } AicNetSlot;
 
 static AicNetSlot aic_rt_net_table[AIC_RT_NET_TABLE_CAP];
-static long aic_rt_net_table_limit = AIC_RT_NET_TABLE_CAP;
+static int64_t aic_rt_net_table_limit = AIC_RT_NET_TABLE_CAP;
 static pthread_mutex_t aic_rt_net_table_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t aic_rt_net_limits_once = PTHREAD_ONCE_INIT;
 
@@ -1106,7 +1106,7 @@ static void aic_rt_net_reset_slot(AicNetSlot* slot) {
     slot->kind = 0;
 }
 
-static long aic_rt_net_close_fd(aic_rt_socket_t fd) {
+static int64_t aic_rt_net_close_fd(aic_rt_socket_t fd) {
 #ifdef _WIN32
     if (closesocket(fd) != 0) {
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
@@ -1119,7 +1119,7 @@ static long aic_rt_net_close_fd(aic_rt_socket_t fd) {
     return 0;
 }
 
-static AicNetSlot* aic_rt_net_get_slot(long handle) {
+static AicNetSlot* aic_rt_net_get_slot(int64_t handle) {
     aic_rt_net_limits_ensure();
     if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return NULL;
@@ -1131,7 +1131,7 @@ static AicNetSlot* aic_rt_net_get_slot(long handle) {
     return slot;
 }
 
-static long aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, long* out_handle) {
+static int64_t aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -1141,7 +1141,7 @@ static long aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, long* out_hand
         aic_rt_net_close_fd(fd);
         return aic_rt_net_map_errno(lock_rc);
     }
-    for (long i = 0; i < aic_rt_net_table_limit; ++i) {
+    for (int64_t i = 0; i < aic_rt_net_table_limit; ++i) {
         if (!aic_rt_net_table[i].active) {
             aic_rt_net_table[i].active = 1;
             aic_rt_net_table[i].fd = fd;
@@ -1158,7 +1158,7 @@ static long aic_rt_net_alloc_handle(aic_rt_socket_t fd, int kind, long* out_hand
     return 7;
 }
 
-static long aic_rt_net_take_handle(long handle, int kind_a, int kind_b, aic_rt_socket_t* out_fd) {
+static int64_t aic_rt_net_take_handle(int64_t handle, int kind_a, int kind_b, aic_rt_socket_t* out_fd) {
     if (out_fd != NULL) {
         *out_fd = AIC_RT_INVALID_SOCKET;
     }
@@ -1184,7 +1184,7 @@ static long aic_rt_net_take_handle(long handle, int kind_a, int kind_b, aic_rt_s
     return 0;
 }
 
-static void aic_rt_net_reset_handle_if_matches(long handle, aic_rt_socket_t fd, int kind) {
+static void aic_rt_net_reset_handle_if_matches(int64_t handle, aic_rt_socket_t fd, int kind) {
     aic_rt_net_limits_ensure();
     if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return;
@@ -1200,7 +1200,7 @@ static void aic_rt_net_reset_handle_if_matches(long handle, aic_rt_socket_t fd, 
     pthread_mutex_unlock(&aic_rt_net_table_mutex);
 }
 
-static long aic_rt_net_wait_fd(aic_rt_socket_t fd, int want_read, long timeout_ms) {
+static int64_t aic_rt_net_wait_fd(aic_rt_socket_t fd, int want_read, int64_t timeout_ms) {
     if (timeout_ms < 0) {
         return 6;
     }
@@ -1242,7 +1242,7 @@ static long aic_rt_net_wait_fd(aic_rt_socket_t fd, int want_read, long timeout_m
     return 0;
 }
 
-static long aic_rt_net_split_host_port(const char* addr, char** out_host, char** out_port) {
+static int64_t aic_rt_net_split_host_port(const char* addr, char** out_host, char** out_port) {
     if (out_host != NULL) {
         *out_host = NULL;
     }
@@ -1296,7 +1296,7 @@ static long aic_rt_net_split_host_port(const char* addr, char** out_host, char**
     return 0;
 }
 
-static long aic_rt_net_resolve(
+static int64_t aic_rt_net_resolve(
     const char* host,
     const char* port,
     int socktype,
@@ -1370,43 +1370,43 @@ static char* aic_rt_net_format_sockaddr(const struct sockaddr* addr, socklen_t a
     return out;
 }
 
-long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle);
-long aic_rt_net_tcp_send(
-    long handle,
+int64_t aic_rt_net_tcp_accept(int64_t listener, int64_t timeout_ms, int64_t* out_handle);
+int64_t aic_rt_net_tcp_send(
+    int64_t handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_sent
 );
-long aic_rt_net_tcp_send_timeout(
-    long handle,
+int64_t aic_rt_net_tcp_send_timeout(
+    int64_t handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t timeout_ms,
+    int64_t* out_sent
 );
-long aic_rt_net_tcp_recv(
-    long handle,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_net_tcp_recv(
+    int64_t handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 );
-long aic_rt_tls_send_timeout(
-    long tls_handle,
+int64_t aic_rt_tls_send_timeout(
+    int64_t tls_handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t timeout_ms,
+    int64_t* out_sent
 );
-long aic_rt_tls_recv(
-    long tls_handle,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_tls_recv(
+    int64_t tls_handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 );
 
 #define AIC_RT_NET_ASYNC_OP_CAP 512
@@ -1427,20 +1427,20 @@ typedef struct {
     int done;
     int claimed;
     int op_kind;
-    long arg0;
-    long arg1;
-    long arg2;
+    int64_t arg0;
+    int64_t arg1;
+    int64_t arg2;
     char* payload_ptr;
-    long payload_len;
-    long err_code;
-    long out_int;
+    int64_t payload_len;
+    int64_t err_code;
+    int64_t out_int;
     char* out_string_ptr;
-    long out_string_len;
+    int64_t out_string_len;
     aic_rt_socket_t reactor_fd;
     int reactor_events;
     int nonblocking_held;
-    long send_progress;
-    long deadline_ms;
+    int64_t send_progress;
+    int64_t deadline_ms;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
 } AicNetAsyncOp;
@@ -1452,24 +1452,24 @@ typedef struct {
 } AicNetAsyncWatcher;
 
 static AicNetAsyncOp aic_rt_net_async_ops[AIC_RT_NET_ASYNC_OP_CAP];
-static long aic_rt_net_async_queue[AIC_RT_NET_ASYNC_QUEUE_CAP];
-static long aic_rt_net_async_queue_head = 0;
-static long aic_rt_net_async_queue_tail = 0;
-static long aic_rt_net_async_queue_len = 0;
+static int64_t aic_rt_net_async_queue[AIC_RT_NET_ASYNC_QUEUE_CAP];
+static int64_t aic_rt_net_async_queue_head = 0;
+static int64_t aic_rt_net_async_queue_tail = 0;
+static int64_t aic_rt_net_async_queue_len = 0;
 static pthread_mutex_t aic_rt_net_async_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t aic_rt_net_async_queue_not_empty = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t aic_rt_net_async_queue_not_full = PTHREAD_COND_INITIALIZER;
 static pthread_t aic_rt_net_async_workers[AIC_RT_NET_ASYNC_WORKER_CAP];
 static int aic_rt_net_async_workers_started = 0;
-static long aic_rt_net_async_worker_count = 0;
+static int64_t aic_rt_net_async_worker_count = 0;
 static int aic_rt_net_async_shutdown_requested = 0;
 static int aic_rt_net_async_nonblock_refs[AIC_RT_NET_TABLE_CAP];
 static int aic_rt_net_async_nonblock_prev_flags[AIC_RT_NET_TABLE_CAP];
 static pthread_mutex_t aic_rt_net_async_nonblock_mutex = PTHREAD_MUTEX_INITIALIZER;
-static long aic_rt_net_async_op_limit = AIC_RT_NET_ASYNC_OP_CAP;
-static long aic_rt_net_async_queue_limit = AIC_RT_NET_ASYNC_QUEUE_CAP;
-static long aic_rt_net_async_watcher_limit = AIC_RT_NET_TABLE_CAP;
-static long aic_rt_net_async_worker_limit = 1;
+static int64_t aic_rt_net_async_op_limit = AIC_RT_NET_ASYNC_OP_CAP;
+static int64_t aic_rt_net_async_queue_limit = AIC_RT_NET_ASYNC_QUEUE_CAP;
+static int64_t aic_rt_net_async_watcher_limit = AIC_RT_NET_TABLE_CAP;
+static int64_t aic_rt_net_async_worker_limit = 1;
 static pthread_once_t aic_rt_net_async_limits_once = PTHREAD_ONCE_INIT;
 
 static void aic_rt_net_async_limits_init(void) {
@@ -1533,7 +1533,7 @@ static void aic_rt_net_async_reset_op(AicNetAsyncOp* op) {
     op->deadline_ms = -1;
 }
 
-static int aic_rt_net_async_make_deadline(long timeout_ms, struct timespec* out_deadline) {
+static int aic_rt_net_async_make_deadline(int64_t timeout_ms, struct timespec* out_deadline) {
     if (timeout_ms < 0 || out_deadline == NULL) {
         return EINVAL;
     }
@@ -1541,7 +1541,7 @@ static int aic_rt_net_async_make_deadline(long timeout_ms, struct timespec* out_
         return EINVAL;
     }
     out_deadline->tv_sec += (time_t)(timeout_ms / 1000);
-    out_deadline->tv_nsec += (long)((timeout_ms % 1000) * 1000000L);
+    out_deadline->tv_nsec += (int64_t)((timeout_ms % 1000) * 1000000L);
     if (out_deadline->tv_nsec >= 1000000000L) {
         out_deadline->tv_sec += out_deadline->tv_nsec / 1000000000L;
         out_deadline->tv_nsec = out_deadline->tv_nsec % 1000000000L;
@@ -1565,35 +1565,35 @@ static int aic_rt_net_async_is_would_block_errno(int err) {
     return 0;
 }
 
-static long aic_rt_net_async_now_ms(void) {
+static int64_t aic_rt_net_async_now_ms(void) {
 #ifdef CLOCK_MONOTONIC
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
-        long sec_ms = (long)now.tv_sec * 1000L;
-        long nsec_ms = (long)(now.tv_nsec / 1000000L);
+        int64_t sec_ms = (int64_t)now.tv_sec * 1000L;
+        int64_t nsec_ms = (int64_t)(now.tv_nsec / 1000000L);
         return sec_ms + nsec_ms;
     }
 #endif
     return 0;
 }
 
-static long aic_rt_net_async_deadline_for_timeout(long timeout_ms) {
+static int64_t aic_rt_net_async_deadline_for_timeout(int64_t timeout_ms) {
     if (timeout_ms < 0) {
         return -1;
     }
-    long now_ms = aic_rt_net_async_now_ms();
-    if (timeout_ms > LONG_MAX - now_ms) {
-        return LONG_MAX;
+    int64_t now_ms = aic_rt_net_async_now_ms();
+    if (timeout_ms > INT64_MAX - now_ms) {
+        return INT64_MAX;
     }
     return now_ms + timeout_ms;
 }
 
-static long aic_rt_net_async_enable_nonblocking_for_handle(long handle) {
+static int64_t aic_rt_net_async_enable_nonblocking_for_handle(int64_t handle) {
     aic_rt_net_limits_ensure();
     if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return 6;
     }
-    long idx = handle - 1;
+    int64_t idx = handle - 1;
     int lock_rc = pthread_mutex_lock(&aic_rt_net_async_nonblock_mutex);
     if (lock_rc != 0) {
         return aic_rt_net_map_errno(lock_rc);
@@ -1624,12 +1624,12 @@ static long aic_rt_net_async_enable_nonblocking_for_handle(long handle) {
     return 0;
 }
 
-static void aic_rt_net_async_release_nonblocking_for_handle(long handle) {
+static void aic_rt_net_async_release_nonblocking_for_handle(int64_t handle) {
     aic_rt_net_limits_ensure();
     if (handle <= 0 || handle > aic_rt_net_table_limit) {
         return;
     }
-    long idx = handle - 1;
+    int64_t idx = handle - 1;
     int lock_rc = pthread_mutex_lock(&aic_rt_net_async_nonblock_mutex);
     if (lock_rc != 0) {
         return;
@@ -1653,11 +1653,11 @@ static void aic_rt_net_async_release_nonblocking_for_handle(long handle) {
 }
 
 static void aic_rt_net_async_complete_op(
-    long op_handle,
-    long err_code,
-    long out_int,
+    int64_t op_handle,
+    int64_t err_code,
+    int64_t out_int,
     char* out_ptr,
-    long out_len
+    int64_t out_len
 ) {
     if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         if (out_ptr != NULL) {
@@ -1666,7 +1666,7 @@ static void aic_rt_net_async_complete_op(
         return;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
-    long release_handle = 0;
+    int64_t release_handle = 0;
     int release_nonblocking = 0;
     int lock_rc = pthread_mutex_lock(&op->mutex);
     if (lock_rc != 0) {
@@ -1700,14 +1700,14 @@ static void aic_rt_net_async_complete_op(
     }
 }
 
-static void aic_rt_net_async_activate_op(long op_handle, long* active_ops, long* active_len) {
+static void aic_rt_net_async_activate_op(int64_t op_handle, int64_t* active_ops, int64_t* active_len) {
     if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
-    long kind = 0;
-    long handle = 0;
-    long timeout_ms = -1;
+    int64_t kind = 0;
+    int64_t handle = 0;
+    int64_t timeout_ms = -1;
 
     int lock_rc = pthread_mutex_lock(&op->mutex);
     if (lock_rc != 0) {
@@ -1746,7 +1746,7 @@ static void aic_rt_net_async_activate_op(long op_handle, long* active_ops, long*
         return;
     }
 
-    long nonblock = aic_rt_net_async_enable_nonblocking_for_handle(handle);
+    int64_t nonblock = aic_rt_net_async_enable_nonblocking_for_handle(handle);
     if (nonblock != 0) {
         aic_rt_net_async_complete_op(op_handle, nonblock, 0, NULL, 0);
         return;
@@ -1789,14 +1789,14 @@ static void aic_rt_net_async_activate_op(long op_handle, long* active_ops, long*
 }
 
 static void aic_rt_net_async_build_watchers(
-    const long* active_ops,
-    long active_len,
+    const int64_t* active_ops,
+    int64_t active_len,
     AicNetAsyncWatcher* watchers,
-    long* watcher_len
+    int64_t* watcher_len
 ) {
     *watcher_len = 0;
-    for (long i = 0; i < active_len; ++i) {
-        long op_handle = active_ops[i];
+    for (int64_t i = 0; i < active_len; ++i) {
+        int64_t op_handle = active_ops[i];
         if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
             continue;
         }
@@ -1816,8 +1816,8 @@ static void aic_rt_net_async_build_watchers(
             continue;
         }
 
-        long found = -1;
-        for (long w = 0; w < *watcher_len; ++w) {
+        int64_t found = -1;
+        for (int64_t w = 0; w < *watcher_len; ++w) {
             if (watchers[w].fd == fd) {
                 found = w;
                 break;
@@ -1839,15 +1839,15 @@ static void aic_rt_net_async_build_watchers(
 
 static int aic_rt_net_async_reactor_wait(
     AicNetAsyncWatcher* watchers,
-    long watcher_len,
-    long timeout_ms
+    int64_t watcher_len,
+    int64_t timeout_ms
 ) {
-    for (long i = 0; i < watcher_len; ++i) {
+    for (int64_t i = 0; i < watcher_len; ++i) {
         watchers[i].ready = 0;
     }
     if (watcher_len <= 0) {
         if (timeout_ms > 0) {
-            long sleep_ms = timeout_ms > 25 ? 25 : timeout_ms;
+            int64_t sleep_ms = timeout_ms > 25 ? 25 : timeout_ms;
             aic_rt_time_sleep_ms(sleep_ms);
         }
         return 1;
@@ -1861,7 +1861,7 @@ static int aic_rt_net_async_reactor_wait(
         int epfd = epoll_create1(EPOLL_CLOEXEC);
         if (epfd >= 0) {
             int setup_ok = 1;
-            for (long i = 0; i < watcher_len; ++i) {
+            for (int64_t i = 0; i < watcher_len; ++i) {
                 struct epoll_event ev;
                 memset(&ev, 0, sizeof(ev));
                 if (watchers[i].events & AIC_RT_NET_ASYNC_EVENT_READ) {
@@ -1894,7 +1894,7 @@ static int aic_rt_net_async_reactor_wait(
                     if (raw >= (uint64_t)watcher_len) {
                         continue;
                     }
-                    long idx = (long)raw;
+                    int64_t idx = (int64_t)raw;
                     uint32_t ev = ready_events[i].events;
                     if (ev & (EPOLLIN | EPOLLPRI)) {
                         watchers[idx].ready |= AIC_RT_NET_ASYNC_EVENT_READ;
@@ -1920,7 +1920,7 @@ static int aic_rt_net_async_reactor_wait(
         if (kq >= 0) {
             struct kevent changes[AIC_RT_NET_ASYNC_WATCHER_CAP * 2];
             int change_n = 0;
-            for (long i = 0; i < watcher_len; ++i) {
+            for (int64_t i = 0; i < watcher_len; ++i) {
                 if (watchers[i].events & AIC_RT_NET_ASYNC_EVENT_READ) {
                     EV_SET(
                         &changes[change_n],
@@ -1950,7 +1950,7 @@ static int aic_rt_net_async_reactor_wait(
             struct timespec* timeout_ptr = NULL;
             if (timeout_ms >= 0) {
                 timeout_spec.tv_sec = (time_t)(timeout_ms / 1000);
-                timeout_spec.tv_nsec = (long)((timeout_ms % 1000) * 1000000L);
+                timeout_spec.tv_nsec = (int64_t)((timeout_ms % 1000) * 1000000L);
                 timeout_ptr = &timeout_spec;
             }
             struct kevent ready_events[AIC_RT_NET_ASYNC_WATCHER_CAP * 2];
@@ -1971,7 +1971,7 @@ static int aic_rt_net_async_reactor_wait(
                 }
             }
             for (int i = 0; i < ready_n; ++i) {
-                long idx = (long)(intptr_t)ready_events[i].udata;
+                int64_t idx = (int64_t)(intptr_t)ready_events[i].udata;
                 if (idx < 0 || idx >= watcher_len) {
                     continue;
                 }
@@ -1999,7 +1999,7 @@ static int aic_rt_net_async_reactor_wait(
         FD_ZERO(&read_set);
         FD_ZERO(&write_set);
         FD_ZERO(&error_set);
-        for (long i = 0; i < watcher_len; ++i) {
+        for (int64_t i = 0; i < watcher_len; ++i) {
             if (watchers[i].events & AIC_RT_NET_ASYNC_EVENT_READ) {
                 FD_SET(watchers[i].fd, &read_set);
             }
@@ -2011,8 +2011,8 @@ static int aic_rt_net_async_reactor_wait(
         struct timeval timeout_tv;
         struct timeval* timeout_ptr = NULL;
         if (timeout_ms >= 0) {
-            timeout_tv.tv_sec = (long)(timeout_ms / 1000);
-            timeout_tv.tv_usec = (long)((timeout_ms % 1000) * 1000);
+            timeout_tv.tv_sec = (int64_t)(timeout_ms / 1000);
+            timeout_tv.tv_usec = (int64_t)((timeout_ms % 1000) * 1000);
             timeout_ptr = &timeout_tv;
         }
         int ready_n = select(0, &read_set, &write_set, &error_set, timeout_ptr);
@@ -2023,7 +2023,7 @@ static int aic_rt_net_async_reactor_wait(
             }
             return 0;
         }
-        for (long i = 0; i < watcher_len; ++i) {
+        for (int64_t i = 0; i < watcher_len; ++i) {
             if (FD_ISSET(watchers[i].fd, &read_set)) {
                 watchers[i].ready |= AIC_RT_NET_ASYNC_EVENT_READ;
             }
@@ -2040,7 +2040,7 @@ static int aic_rt_net_async_reactor_wait(
     {
         struct pollfd pollers[AIC_RT_NET_ASYNC_WATCHER_CAP];
         memset(pollers, 0, sizeof(pollers));
-        for (long i = 0; i < watcher_len; ++i) {
+        for (int64_t i = 0; i < watcher_len; ++i) {
             pollers[i].fd = watchers[i].fd;
             pollers[i].events = 0;
             if (watchers[i].events & AIC_RT_NET_ASYNC_EVENT_READ) {
@@ -2057,7 +2057,7 @@ static int aic_rt_net_async_reactor_wait(
             }
             return 0;
         }
-        for (long i = 0; i < watcher_len; ++i) {
+        for (int64_t i = 0; i < watcher_len; ++i) {
             short ev = pollers[i].revents;
             if (ev & POLLIN) {
                 watchers[i].ready |= AIC_RT_NET_ASYNC_EVENT_READ;
@@ -2074,7 +2074,7 @@ static int aic_rt_net_async_reactor_wait(
 #endif
 }
 
-static int aic_rt_net_async_op_matches_fd(long op_handle, aic_rt_socket_t fd) {
+static int aic_rt_net_async_op_matches_fd(int64_t op_handle, aic_rt_socket_t fd) {
     if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 0;
     }
@@ -2091,18 +2091,18 @@ static int aic_rt_net_async_op_matches_fd(long op_handle, aic_rt_socket_t fd) {
     return matches;
 }
 
-static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
+static int aic_rt_net_async_try_progress(int64_t op_handle, int ready_mask) {
     if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 1;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
-    long kind = 0;
+    int64_t kind = 0;
     aic_rt_socket_t reactor_fd = AIC_RT_INVALID_SOCKET;
     int reactor_events = 0;
-    long payload_len = 0;
-    long send_progress = 0;
+    int64_t payload_len = 0;
+    int64_t send_progress = 0;
     char* payload_ptr = NULL;
-    long max_bytes = 0;
+    int64_t max_bytes = 0;
     int lock_rc = pthread_mutex_lock(&op->mutex);
     if (lock_rc != 0) {
         return 1;
@@ -2140,8 +2140,8 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
             aic_rt_net_async_complete_op(op_handle, aic_rt_net_map_errno(err), 0, NULL, 0);
             return 1;
         }
-        long out_handle = 0;
-        long alloc = aic_rt_net_alloc_handle(client_fd, AIC_RT_NET_KIND_TCP_STREAM, &out_handle);
+        int64_t out_handle = 0;
+        int64_t alloc = aic_rt_net_alloc_handle(client_fd, AIC_RT_NET_KIND_TCP_STREAM, &out_handle);
         aic_rt_net_async_complete_op(op_handle, alloc, out_handle, NULL, 0);
         return 1;
     }
@@ -2162,7 +2162,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
         size_t remaining = (size_t)(payload_len - send_progress);
         ssize_t n = send(reactor_fd, cursor, remaining, send_flags);
         if (n > 0) {
-            long next_progress = send_progress + (long)n;
+            int64_t next_progress = send_progress + (int64_t)n;
             if (next_progress >= payload_len) {
                 aic_rt_net_async_complete_op(op_handle, 0, next_progress, NULL, 0);
                 return 1;
@@ -2219,7 +2219,7 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
             return 1;
         }
         buffer[(size_t)n] = '\0';
-        aic_rt_net_async_complete_op(op_handle, 0, 0, buffer, (long)n);
+        aic_rt_net_async_complete_op(op_handle, 0, 0, buffer, (int64_t)n);
         return 1;
     }
 
@@ -2227,12 +2227,12 @@ static int aic_rt_net_async_try_progress(long op_handle, int ready_mask) {
     return 1;
 }
 
-static int aic_rt_net_async_handle_timeout(long op_handle, long now_ms) {
+static int aic_rt_net_async_handle_timeout(int64_t op_handle, int64_t now_ms) {
     if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
         return 1;
     }
     AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
-    long deadline_ms = -1;
+    int64_t deadline_ms = -1;
     int lock_rc = pthread_mutex_lock(&op->mutex);
     if (lock_rc != 0) {
         return 1;
@@ -2250,16 +2250,16 @@ static int aic_rt_net_async_handle_timeout(long op_handle, long now_ms) {
     return 0;
 }
 
-static long aic_rt_net_async_compute_wait_timeout(const long* active_ops, long active_len) {
-    long now_ms = aic_rt_net_async_now_ms();
-    long best = -1;
-    for (long i = 0; i < active_len; ++i) {
-        long op_handle = active_ops[i];
+static int64_t aic_rt_net_async_compute_wait_timeout(const int64_t* active_ops, int64_t active_len) {
+    int64_t now_ms = aic_rt_net_async_now_ms();
+    int64_t best = -1;
+    for (int64_t i = 0; i < active_len; ++i) {
+        int64_t op_handle = active_ops[i];
         if (op_handle <= 0 || op_handle > aic_rt_net_async_op_limit) {
             continue;
         }
         AicNetAsyncOp* op = &aic_rt_net_async_ops[op_handle - 1];
-        long deadline_ms = -1;
+        int64_t deadline_ms = -1;
         int lock_rc = pthread_mutex_lock(&op->mutex);
         if (lock_rc != 0) {
             continue;
@@ -2271,7 +2271,7 @@ static long aic_rt_net_async_compute_wait_timeout(const long* active_ops, long a
         if (deadline_ms < 0) {
             continue;
         }
-        long remaining = deadline_ms - now_ms;
+        int64_t remaining = deadline_ms - now_ms;
         if (remaining <= 0) {
             return 0;
         }
@@ -2288,12 +2288,12 @@ static long aic_rt_net_async_compute_wait_timeout(const long* active_ops, long a
     return best;
 }
 
-static long aic_rt_net_async_worker_active_target(void) {
-    long worker_count = aic_rt_net_async_worker_count;
+static int64_t aic_rt_net_async_worker_active_target(void) {
+    int64_t worker_count = aic_rt_net_async_worker_count;
     if (worker_count <= 1) {
         return aic_rt_net_async_op_limit;
     }
-    long target = aic_rt_net_async_op_limit / worker_count;
+    int64_t target = aic_rt_net_async_op_limit / worker_count;
     if ((aic_rt_net_async_op_limit % worker_count) != 0) {
         target += 1;
     }
@@ -2309,14 +2309,14 @@ static long aic_rt_net_async_worker_active_target(void) {
 static void* aic_rt_net_async_worker_main(void* raw) {
     (void)raw;
     aic_rt_net_async_limits_ensure();
-    long active_ops[AIC_RT_NET_ASYNC_OP_CAP];
-    long active_len = 0;
+    int64_t active_ops[AIC_RT_NET_ASYNC_OP_CAP];
+    int64_t active_len = 0;
     AicNetAsyncWatcher watchers[AIC_RT_NET_ASYNC_WATCHER_CAP];
 
     for (;;) {
-        long worker_target = aic_rt_net_async_worker_active_target();
+        int64_t worker_target = aic_rt_net_async_worker_active_target();
         for (;;) {
-            long queued_op = 0;
+            int64_t queued_op = 0;
             int should_exit = 0;
             int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
             if (lock_rc != 0) {
@@ -2355,8 +2355,8 @@ static void* aic_rt_net_async_worker_main(void* raw) {
             continue;
         }
 
-        long now_ms = aic_rt_net_async_now_ms();
-        for (long i = 0; i < active_len;) {
+        int64_t now_ms = aic_rt_net_async_now_ms();
+        for (int64_t i = 0; i < active_len;) {
             if (aic_rt_net_async_handle_timeout(active_ops[i], now_ms)) {
                 active_ops[i] = active_ops[active_len - 1];
                 active_len -= 1;
@@ -2368,20 +2368,20 @@ static void* aic_rt_net_async_worker_main(void* raw) {
             continue;
         }
 
-        long watcher_len = 0;
+        int64_t watcher_len = 0;
         aic_rt_net_async_build_watchers(active_ops, active_len, watchers, &watcher_len);
-        long wait_timeout_ms = aic_rt_net_async_compute_wait_timeout(active_ops, active_len);
+        int64_t wait_timeout_ms = aic_rt_net_async_compute_wait_timeout(active_ops, active_len);
         int reactor_ok = aic_rt_net_async_reactor_wait(watchers, watcher_len, wait_timeout_ms);
         if (!reactor_ok) {
-            for (long i = 0; i < active_len; ++i) {
+            for (int64_t i = 0; i < active_len; ++i) {
                 aic_rt_net_async_complete_op(active_ops[i], 7, 0, NULL, 0);
             }
         } else {
-            for (long w = 0; w < watcher_len; ++w) {
+            for (int64_t w = 0; w < watcher_len; ++w) {
                 if (watchers[w].ready == 0) {
                     continue;
                 }
-                for (long i = 0; i < active_len;) {
+                for (int64_t i = 0; i < active_len;) {
                     if (!aic_rt_net_async_op_matches_fd(active_ops[i], watchers[w].fd)) {
                         i += 1;
                         continue;
@@ -2397,7 +2397,7 @@ static void* aic_rt_net_async_worker_main(void* raw) {
         }
 
         now_ms = aic_rt_net_async_now_ms();
-        for (long i = 0; i < active_len;) {
+        for (int64_t i = 0; i < active_len;) {
             if (aic_rt_net_async_handle_timeout(active_ops[i], now_ms)) {
                 active_ops[i] = active_ops[active_len - 1];
                 active_len -= 1;
@@ -2415,8 +2415,8 @@ static int aic_rt_net_async_ensure_workers_locked(void) {
     if (aic_rt_net_async_shutdown_requested) {
         return 0;
     }
-    long started_workers = 0;
-    for (long i = 0; i < aic_rt_net_async_worker_limit; ++i) {
+    int64_t started_workers = 0;
+    for (int64_t i = 0; i < aic_rt_net_async_worker_limit; ++i) {
         int rc = pthread_create(
             &aic_rt_net_async_workers[i],
             NULL,
@@ -2433,18 +2433,18 @@ static int aic_rt_net_async_ensure_workers_locked(void) {
     return started_workers > 0;
 }
 
-static int aic_rt_net_async_remove_queued_op_locked(long op_handle) {
+static int aic_rt_net_async_remove_queued_op_locked(int64_t op_handle) {
     if (op_handle <= 0 || aic_rt_net_async_queue_len <= 0 || aic_rt_net_async_queue_limit <= 0) {
         return 0;
     }
 
-    long old_len = aic_rt_net_async_queue_len;
-    long read = aic_rt_net_async_queue_head;
-    long write = aic_rt_net_async_queue_head;
+    int64_t old_len = aic_rt_net_async_queue_len;
+    int64_t read = aic_rt_net_async_queue_head;
+    int64_t write = aic_rt_net_async_queue_head;
     int removed = 0;
 
-    for (long i = 0; i < old_len; ++i) {
-        long queued_op = aic_rt_net_async_queue[read];
+    for (int64_t i = 0; i < old_len; ++i) {
+        int64_t queued_op = aic_rt_net_async_queue[read];
         read = (read + 1) % aic_rt_net_async_queue_limit;
         if (!removed && queued_op == op_handle) {
             removed = 1;
@@ -2462,9 +2462,9 @@ static int aic_rt_net_async_remove_queued_op_locked(long op_handle) {
     return removed;
 }
 
-static long aic_rt_net_async_alloc_slot_locked(void) {
+static int64_t aic_rt_net_async_alloc_slot_locked(void) {
     aic_rt_net_async_limits_ensure();
-    for (long i = 0; i < aic_rt_net_async_op_limit; ++i) {
+    for (int64_t i = 0; i < aic_rt_net_async_op_limit; ++i) {
         if (!aic_rt_net_async_ops[i].active) {
             AicNetAsyncOp* op = &aic_rt_net_async_ops[i];
             if (!op->initialized) {
@@ -2483,7 +2483,7 @@ static long aic_rt_net_async_alloc_slot_locked(void) {
     return -1;
 }
 
-long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op) {
+int64_t aic_rt_net_async_accept_submit(int64_t listener, int64_t timeout_ms, int64_t* out_op) {
     AIC_RT_SANDBOX_BLOCK_NET("async_accept_submit", 2);
     aic_rt_net_async_limits_ensure();
     if (out_op != NULL) {
@@ -2509,7 +2509,7 @@ long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 4;
     }
-    long slot_index = aic_rt_net_async_alloc_slot_locked();
+    int64_t slot_index = aic_rt_net_async_alloc_slot_locked();
     if (slot_index < 0) {
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 7;
@@ -2521,7 +2521,7 @@ long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op
     op->op_kind = AIC_RT_NET_ASYNC_OP_ACCEPT;
     op->arg0 = listener;
     op->arg1 = timeout_ms;
-    long op_handle = slot_index + 1;
+    int64_t op_handle = slot_index + 1;
     aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
     aic_rt_net_async_queue_tail =
         (aic_rt_net_async_queue_tail + 1) % aic_rt_net_async_queue_limit;
@@ -2539,12 +2539,12 @@ long aic_rt_net_async_accept_submit(long listener, long timeout_ms, long* out_op
     return 0;
 }
 
-long aic_rt_net_async_send_submit(
-    long handle,
+int64_t aic_rt_net_async_send_submit(
+    int64_t handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_op
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_op
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("async_send_submit", 2);
@@ -2572,7 +2572,7 @@ long aic_rt_net_async_send_submit(
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 4;
     }
-    long slot_index = aic_rt_net_async_alloc_slot_locked();
+    int64_t slot_index = aic_rt_net_async_alloc_slot_locked();
     if (slot_index < 0) {
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 7;
@@ -2590,7 +2590,7 @@ long aic_rt_net_async_send_submit(
         return 7;
     }
     op->payload_len = payload_len;
-    long op_handle = slot_index + 1;
+    int64_t op_handle = slot_index + 1;
     aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
     aic_rt_net_async_queue_tail =
         (aic_rt_net_async_queue_tail + 1) % aic_rt_net_async_queue_limit;
@@ -2608,7 +2608,7 @@ long aic_rt_net_async_send_submit(
     return 0;
 }
 
-long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, long* out_op) {
+int64_t aic_rt_net_async_recv_submit(int64_t handle, int64_t max_bytes, int64_t timeout_ms, int64_t* out_op) {
     AIC_RT_SANDBOX_BLOCK_NET("async_recv_submit", 2);
     aic_rt_net_async_limits_ensure();
     if (out_op != NULL) {
@@ -2634,7 +2634,7 @@ long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, 
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 4;
     }
-    long slot_index = aic_rt_net_async_alloc_slot_locked();
+    int64_t slot_index = aic_rt_net_async_alloc_slot_locked();
     if (slot_index < 0) {
         pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
         return 7;
@@ -2647,7 +2647,7 @@ long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, 
     op->arg0 = handle;
     op->arg1 = max_bytes;
     op->arg2 = timeout_ms;
-    long op_handle = slot_index + 1;
+    int64_t op_handle = slot_index + 1;
     aic_rt_net_async_queue[aic_rt_net_async_queue_tail] = op_handle;
     aic_rt_net_async_queue_tail =
         (aic_rt_net_async_queue_tail + 1) % aic_rt_net_async_queue_limit;
@@ -2665,7 +2665,7 @@ long aic_rt_net_async_recv_submit(long handle, long max_bytes, long timeout_ms, 
     return 0;
 }
 
-long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_net_async_wait_int(int64_t op_handle, int64_t timeout_ms, int64_t* out_value) {
     AIC_RT_SANDBOX_BLOCK_NET("async_wait_int", 2);
     aic_rt_net_async_limits_ensure();
     if (out_value != NULL) {
@@ -2716,8 +2716,8 @@ long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value)
         }
     }
 
-    long err = op->err_code;
-    long out = op->out_int;
+    int64_t err = op->err_code;
+    int64_t out = op->out_int;
     aic_rt_net_async_reset_op(op);
     pthread_mutex_unlock(&op->mutex);
     if (err == 0 && out_value != NULL) {
@@ -2726,11 +2726,11 @@ long aic_rt_net_async_wait_int(long op_handle, long timeout_ms, long* out_value)
     return err;
 }
 
-long aic_rt_net_async_wait_string(
-    long op_handle,
-    long timeout_ms,
+int64_t aic_rt_net_async_wait_string(
+    int64_t op_handle,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("async_wait_string", 2);
     aic_rt_net_async_limits_ensure();
@@ -2785,9 +2785,9 @@ long aic_rt_net_async_wait_string(
         }
     }
 
-    long err = op->err_code;
+    int64_t err = op->err_code;
     char* text = op->out_string_ptr;
-    long text_len = op->out_string_len;
+    int64_t text_len = op->out_string_len;
     op->out_string_ptr = NULL;
     op->out_string_len = 0;
     aic_rt_net_async_reset_op(op);
@@ -2807,7 +2807,7 @@ long aic_rt_net_async_wait_string(
     return 0;
 }
 
-long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
+int64_t aic_rt_net_async_cancel(int64_t op_handle, int64_t* out_cancelled) {
     AIC_RT_SANDBOX_BLOCK_NET("async_cancel", 2);
     aic_rt_net_async_limits_ensure();
     if (out_cancelled != NULL) {
@@ -2840,7 +2840,7 @@ long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
         return 0;
     }
 
-    long release_handle = 0;
+    int64_t release_handle = 0;
     if (op->queued) {
         (void)aic_rt_net_async_remove_queued_op_locked(op_handle);
         op->queued = 0;
@@ -2870,7 +2870,7 @@ long aic_rt_net_async_cancel(long op_handle, long* out_cancelled) {
     return 0;
 }
 
-long aic_rt_net_async_shutdown(void) {
+int64_t aic_rt_net_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("async_shutdown", 2);
     aic_rt_net_async_limits_ensure();
     int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
@@ -2884,10 +2884,10 @@ long aic_rt_net_async_shutdown(void) {
     }
     aic_rt_net_async_shutdown_requested = 1;
     pthread_cond_broadcast(&aic_rt_net_async_queue_not_empty);
-    long worker_count = aic_rt_net_async_worker_count;
+    int64_t worker_count = aic_rt_net_async_worker_count;
     pthread_mutex_unlock(&aic_rt_net_async_queue_mutex);
 
-    for (long i = 0; i < worker_count; ++i) {
+    for (int64_t i = 0; i < worker_count; ++i) {
         pthread_join(aic_rt_net_async_workers[i], NULL);
     }
 
@@ -2901,11 +2901,11 @@ long aic_rt_net_async_shutdown(void) {
     return 0;
 }
 
-long aic_rt_net_async_pressure(
-    long* out_active_ops,
-    long* out_queue_depth,
-    long* out_op_limit,
-    long* out_queue_limit
+int64_t aic_rt_net_async_pressure(
+    int64_t* out_active_ops,
+    int64_t* out_queue_depth,
+    int64_t* out_op_limit,
+    int64_t* out_queue_limit
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("async_pressure", 2);
     aic_rt_net_async_limits_ensure();
@@ -2923,10 +2923,10 @@ long aic_rt_net_async_pressure(
         *out_queue_limit = aic_rt_net_async_queue_limit;
     }
 
-    long active_ops = 0;
-    long queue_depth = 0;
-    long op_limit = aic_rt_net_async_op_limit;
-    long queue_limit = aic_rt_net_async_queue_limit;
+    int64_t active_ops = 0;
+    int64_t queue_depth = 0;
+    int64_t op_limit = aic_rt_net_async_op_limit;
+    int64_t queue_limit = aic_rt_net_async_queue_limit;
 
     int lock_rc = pthread_mutex_lock(&aic_rt_net_async_queue_mutex);
     if (lock_rc != 0) {
@@ -2936,7 +2936,7 @@ long aic_rt_net_async_pressure(
     op_limit = aic_rt_net_async_op_limit;
     queue_limit = aic_rt_net_async_queue_limit;
 
-    for (long i = 0; i < op_limit; ++i) {
+    for (int64_t i = 0; i < op_limit; ++i) {
         AicNetAsyncOp* op = &aic_rt_net_async_ops[i];
         if (!op->initialized) {
             continue;
@@ -2968,7 +2968,7 @@ long aic_rt_net_async_pressure(
     return 0;
 }
 
-long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+int64_t aic_rt_net_tcp_listen(const char* addr_ptr, int64_t addr_len, int64_t addr_cap, int64_t* out_handle) {
     (void)addr_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tcp_listen", 2);
     if (out_handle != NULL) {
@@ -2981,7 +2981,7 @@ long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, l
 
     char* host = NULL;
     char* port = NULL;
-    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    int64_t split = aic_rt_net_split_host_port(addr, &host, &port);
     free(addr);
     if (split != 0) {
         free(host);
@@ -2990,14 +2990,14 @@ long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, l
     }
 
     struct addrinfo* infos = NULL;
-    long resolved = aic_rt_net_resolve(host, port, SOCK_STREAM, AI_PASSIVE, 1, &infos);
+    int64_t resolved = aic_rt_net_resolve(host, port, SOCK_STREAM, AI_PASSIVE, 1, &infos);
     free(host);
     free(port);
     if (resolved != 0) {
         return resolved;
     }
 
-    long result = 7;
+    int64_t result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
         aic_rt_socket_t fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd == AIC_RT_INVALID_SOCKET) {
@@ -3025,7 +3025,7 @@ long aic_rt_net_tcp_listen(const char* addr_ptr, long addr_len, long addr_cap, l
     return result;
 }
 
-long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_net_tcp_local_addr(int64_t handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_local_addr", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -3054,12 +3054,12 @@ long aic_rt_net_tcp_local_addr(long handle, char** out_ptr, long* out_len) {
         free(text);
     }
     if (out_len != NULL) {
-        *out_len = (long)strlen(text);
+        *out_len = (int64_t)strlen(text);
     }
     return 0;
 }
 
-long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
+int64_t aic_rt_net_tcp_accept(int64_t listener, int64_t timeout_ms, int64_t* out_handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_accept", 2);
     if (out_handle != NULL) {
         *out_handle = 0;
@@ -3068,7 +3068,7 @@ long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
     if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_LISTENER) {
         return 6;
     }
-    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    int64_t waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
     if (waited != 0) {
         return waited;
     }
@@ -3081,12 +3081,12 @@ long aic_rt_net_tcp_accept(long listener, long timeout_ms, long* out_handle) {
     return aic_rt_net_alloc_handle(client_fd, AIC_RT_NET_KIND_TCP_STREAM, out_handle);
 }
 
-long aic_rt_net_tcp_connect(
+int64_t aic_rt_net_tcp_connect(
     const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
-    long timeout_ms,
-    long* out_handle
+    int64_t addr_len,
+    int64_t addr_cap,
+    int64_t timeout_ms,
+    int64_t* out_handle
 ) {
     (void)addr_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tcp_connect", 2);
@@ -3102,7 +3102,7 @@ long aic_rt_net_tcp_connect(
     }
     char* host = NULL;
     char* port = NULL;
-    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    int64_t split = aic_rt_net_split_host_port(addr, &host, &port);
     free(addr);
     if (split != 0) {
         free(host);
@@ -3111,14 +3111,14 @@ long aic_rt_net_tcp_connect(
     }
 
     struct addrinfo* infos = NULL;
-    long resolved = aic_rt_net_resolve(host, port, SOCK_STREAM, 0, 0, &infos);
+    int64_t resolved = aic_rt_net_resolve(host, port, SOCK_STREAM, 0, 0, &infos);
     free(host);
     free(port);
     if (resolved != 0) {
         return resolved;
     }
 
-    long result = 7;
+    int64_t result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
         aic_rt_socket_t fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd == AIC_RT_INVALID_SOCKET) {
@@ -3159,7 +3159,7 @@ long aic_rt_net_tcp_connect(
             }
 #endif
             if (in_progress) {
-                long waited = aic_rt_net_wait_fd(fd, 0, timeout_ms);
+                int64_t waited = aic_rt_net_wait_fd(fd, 0, timeout_ms);
                 if (waited != 0) {
                     result = waited;
                     aic_rt_net_close_fd(fd);
@@ -3199,12 +3199,12 @@ long aic_rt_net_tcp_connect(
     return result;
 }
 
-long aic_rt_net_tcp_send(
-    long handle,
+int64_t aic_rt_net_tcp_send(
+    int64_t handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_sent
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tcp_send", 2);
@@ -3243,18 +3243,18 @@ long aic_rt_net_tcp_send(
         total += (size_t)n;
     }
     if (out_sent != NULL) {
-        *out_sent = (long)total;
+        *out_sent = (int64_t)total;
     }
     return 0;
 }
 
-long aic_rt_net_tcp_send_timeout(
-    long handle,
+int64_t aic_rt_net_tcp_send_timeout(
+    int64_t handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t timeout_ms,
+    int64_t* out_sent
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tcp_send_timeout", 2);
@@ -3269,11 +3269,11 @@ long aic_rt_net_tcp_send_timeout(
         return 6;
     }
 
-    long deadline_ms = -1;
-    long start_ms = aic_rt_time_monotonic_ms();
+    int64_t deadline_ms = -1;
+    int64_t start_ms = aic_rt_time_monotonic_ms();
     if (start_ms >= 0) {
-        if (timeout_ms > LONG_MAX - start_ms) {
-            deadline_ms = LONG_MAX;
+        if (timeout_ms > INT64_MAX - start_ms) {
+            deadline_ms = INT64_MAX;
         } else {
             deadline_ms = start_ms + timeout_ms;
         }
@@ -3283,13 +3283,13 @@ long aic_rt_net_tcp_send_timeout(
     const char* cursor = payload_ptr;
     size_t total = 0;
     while (remaining > 0) {
-        long wait_timeout = timeout_ms;
+        int64_t wait_timeout = timeout_ms;
         if (deadline_ms >= 0) {
-            long now_ms = aic_rt_time_monotonic_ms();
+            int64_t now_ms = aic_rt_time_monotonic_ms();
             if (now_ms >= 0) {
                 if (now_ms >= deadline_ms) {
                     if (out_sent != NULL) {
-                        *out_sent = (long)total;
+                        *out_sent = (int64_t)total;
                     }
                     return 4;
                 }
@@ -3297,10 +3297,10 @@ long aic_rt_net_tcp_send_timeout(
             }
         }
 
-        long waited = aic_rt_net_wait_fd(slot->fd, 0, wait_timeout);
+        int64_t waited = aic_rt_net_wait_fd(slot->fd, 0, wait_timeout);
         if (waited != 0) {
             if (out_sent != NULL) {
-                *out_sent = (long)total;
+                *out_sent = (int64_t)total;
             }
             return waited;
         }
@@ -3329,13 +3329,13 @@ long aic_rt_net_tcp_send_timeout(
 #endif
 #endif
             if (out_sent != NULL) {
-                *out_sent = (long)total;
+                *out_sent = (int64_t)total;
             }
             return aic_rt_net_map_errno(err);
         }
         if (n == 0) {
             if (out_sent != NULL) {
-                *out_sent = (long)total;
+                *out_sent = (int64_t)total;
             }
             return 8;
         }
@@ -3344,17 +3344,17 @@ long aic_rt_net_tcp_send_timeout(
         total += (size_t)n;
     }
     if (out_sent != NULL) {
-        *out_sent = (long)total;
+        *out_sent = (int64_t)total;
     }
     return 0;
 }
 
-long aic_rt_net_tcp_recv(
-    long handle,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_net_tcp_recv(
+    int64_t handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_recv", 2);
     if (out_ptr != NULL) {
@@ -3370,7 +3370,7 @@ long aic_rt_net_tcp_recv(
     if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
         return 6;
     }
-    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    int64_t waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
     if (waited != 0) {
         return waited;
     }
@@ -3396,15 +3396,15 @@ long aic_rt_net_tcp_recv(
         free(buffer);
     }
     if (out_len != NULL) {
-        *out_len = (long)n;
+        *out_len = (int64_t)n;
     }
     return 0;
 }
 
-long aic_rt_net_tcp_close(long handle) {
+int64_t aic_rt_net_tcp_close(int64_t handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_close", 2);
     aic_rt_socket_t fd = AIC_RT_INVALID_SOCKET;
-    long take = aic_rt_net_take_handle(
+    int64_t take = aic_rt_net_take_handle(
         handle,
         AIC_RT_NET_KIND_TCP_LISTENER,
         AIC_RT_NET_KIND_TCP_STREAM,
@@ -3416,7 +3416,7 @@ long aic_rt_net_tcp_close(long handle) {
     return aic_rt_net_close_fd(fd);
 }
 
-long aic_rt_net_tcp_set_nodelay(long handle, long enabled) {
+int64_t aic_rt_net_tcp_set_nodelay(int64_t handle, int64_t enabled) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_nodelay", 2);
     if (enabled != 0 && enabled != 1) {
         return 6;
@@ -3436,7 +3436,7 @@ long aic_rt_net_tcp_set_nodelay(long handle, long enabled) {
 #endif
 }
 
-long aic_rt_net_tcp_get_nodelay(long handle, long* out_enabled) {
+int64_t aic_rt_net_tcp_get_nodelay(int64_t handle, int64_t* out_enabled) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_nodelay", 2);
     if (out_enabled != NULL) {
         *out_enabled = 0;
@@ -3460,7 +3460,7 @@ long aic_rt_net_tcp_get_nodelay(long handle, long* out_enabled) {
 #endif
 }
 
-long aic_rt_net_tcp_set_keepalive(long handle, long enabled) {
+int64_t aic_rt_net_tcp_set_keepalive(int64_t handle, int64_t enabled) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive", 2);
     if (enabled != 0 && enabled != 1) {
         return 6;
@@ -3480,7 +3480,7 @@ long aic_rt_net_tcp_set_keepalive(long handle, long enabled) {
 #endif
 }
 
-long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
+int64_t aic_rt_net_tcp_get_keepalive(int64_t handle, int64_t* out_enabled) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive", 2);
     if (out_enabled != NULL) {
         *out_enabled = 0;
@@ -3504,7 +3504,7 @@ long aic_rt_net_tcp_get_keepalive(long handle, long* out_enabled) {
 #endif
 }
 
-long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
+int64_t aic_rt_net_tcp_set_keepalive_idle_secs(int64_t handle, int64_t idle_secs) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_idle_secs", 2);
     if (idle_secs <= 0) {
         return 6;
@@ -3515,7 +3515,7 @@ long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
     }
 #if defined(TCP_KEEPIDLE)
     int value = (int)idle_secs;
-    if ((long)value != idle_secs) {
+    if ((int64_t)value != idle_secs) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPIDLE, &value, sizeof(value)) != 0) {
@@ -3524,7 +3524,7 @@ long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
     return 0;
 #elif defined(TCP_KEEPALIVE)
     int value = (int)idle_secs;
-    if ((long)value != idle_secs) {
+    if ((int64_t)value != idle_secs) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPALIVE, &value, sizeof(value)) != 0) {
@@ -3536,7 +3536,7 @@ long aic_rt_net_tcp_set_keepalive_idle_secs(long handle, long idle_secs) {
 #endif
 }
 
-long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
+int64_t aic_rt_net_tcp_get_keepalive_idle_secs(int64_t handle, int64_t* out_idle_secs) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_idle_secs", 2);
     if (out_idle_secs != NULL) {
         *out_idle_secs = 0;
@@ -3552,7 +3552,7 @@ long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_idle_secs != NULL) {
-        *out_idle_secs = (long)value;
+        *out_idle_secs = (int64_t)value;
     }
     return 0;
 #elif defined(TCP_KEEPALIVE)
@@ -3562,7 +3562,7 @@ long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_idle_secs != NULL) {
-        *out_idle_secs = (long)value;
+        *out_idle_secs = (int64_t)value;
     }
     return 0;
 #else
@@ -3570,7 +3570,7 @@ long aic_rt_net_tcp_get_keepalive_idle_secs(long handle, long* out_idle_secs) {
 #endif
 }
 
-long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs) {
+int64_t aic_rt_net_tcp_set_keepalive_interval_secs(int64_t handle, int64_t interval_secs) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_interval_secs", 2);
     if (interval_secs <= 0) {
         return 6;
@@ -3581,7 +3581,7 @@ long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs)
     }
 #ifdef TCP_KEEPINTVL
     int value = (int)interval_secs;
-    if ((long)value != interval_secs) {
+    if ((int64_t)value != interval_secs) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPINTVL, &value, sizeof(value)) != 0) {
@@ -3593,7 +3593,7 @@ long aic_rt_net_tcp_set_keepalive_interval_secs(long handle, long interval_secs)
 #endif
 }
 
-long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_secs) {
+int64_t aic_rt_net_tcp_get_keepalive_interval_secs(int64_t handle, int64_t* out_interval_secs) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_interval_secs", 2);
     if (out_interval_secs != NULL) {
         *out_interval_secs = 0;
@@ -3609,7 +3609,7 @@ long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_interval_secs != NULL) {
-        *out_interval_secs = (long)value;
+        *out_interval_secs = (int64_t)value;
     }
     return 0;
 #else
@@ -3617,7 +3617,7 @@ long aic_rt_net_tcp_get_keepalive_interval_secs(long handle, long* out_interval_
 #endif
 }
 
-long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
+int64_t aic_rt_net_tcp_set_keepalive_count(int64_t handle, int64_t probe_count) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_keepalive_count", 2);
     if (probe_count <= 0) {
         return 6;
@@ -3628,7 +3628,7 @@ long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
     }
 #ifdef TCP_KEEPCNT
     int value = (int)probe_count;
-    if ((long)value != probe_count) {
+    if ((int64_t)value != probe_count) {
         return 6;
     }
     if (setsockopt(slot->fd, IPPROTO_TCP, TCP_KEEPCNT, &value, sizeof(value)) != 0) {
@@ -3640,7 +3640,7 @@ long aic_rt_net_tcp_set_keepalive_count(long handle, long probe_count) {
 #endif
 }
 
-long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
+int64_t aic_rt_net_tcp_get_keepalive_count(int64_t handle, int64_t* out_probe_count) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_keepalive_count", 2);
     if (out_probe_count != NULL) {
         *out_probe_count = 0;
@@ -3656,7 +3656,7 @@ long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_probe_count != NULL) {
-        *out_probe_count = (long)value;
+        *out_probe_count = (int64_t)value;
     }
     return 0;
 #else
@@ -3664,7 +3664,7 @@ long aic_rt_net_tcp_get_keepalive_count(long handle, long* out_probe_count) {
 #endif
 }
 
-long aic_rt_net_tcp_peer_addr(long handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_net_tcp_peer_addr(int64_t handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_peer_addr", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -3693,12 +3693,12 @@ long aic_rt_net_tcp_peer_addr(long handle, char** out_ptr, long* out_len) {
         free(text);
     }
     if (out_len != NULL) {
-        *out_len = (long)strlen(text);
+        *out_len = (int64_t)strlen(text);
     }
     return 0;
 }
 
-static long aic_rt_net_tcp_shutdown_mode(long handle, int how) {
+static int64_t aic_rt_net_tcp_shutdown_mode(int64_t handle, int how) {
     AicNetSlot* slot = aic_rt_net_get_slot(handle);
     if (slot == NULL || slot->kind != AIC_RT_NET_KIND_TCP_STREAM) {
         return 6;
@@ -3709,7 +3709,7 @@ static long aic_rt_net_tcp_shutdown_mode(long handle, int how) {
     return 0;
 }
 
-long aic_rt_net_tcp_shutdown(long handle) {
+int64_t aic_rt_net_tcp_shutdown(int64_t handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown", 2);
 #ifdef SHUT_RDWR
     return aic_rt_net_tcp_shutdown_mode(handle, SHUT_RDWR);
@@ -3719,7 +3719,7 @@ long aic_rt_net_tcp_shutdown(long handle) {
 #endif
 }
 
-long aic_rt_net_tcp_shutdown_read(long handle) {
+int64_t aic_rt_net_tcp_shutdown_read(int64_t handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_read", 2);
 #ifdef SHUT_RD
     return aic_rt_net_tcp_shutdown_mode(handle, SHUT_RD);
@@ -3729,7 +3729,7 @@ long aic_rt_net_tcp_shutdown_read(long handle) {
 #endif
 }
 
-long aic_rt_net_tcp_shutdown_write(long handle) {
+int64_t aic_rt_net_tcp_shutdown_write(int64_t handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_shutdown_write", 2);
 #ifdef SHUT_WR
     return aic_rt_net_tcp_shutdown_mode(handle, SHUT_WR);
@@ -3739,7 +3739,7 @@ long aic_rt_net_tcp_shutdown_write(long handle) {
 #endif
 }
 
-long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
+int64_t aic_rt_net_tcp_set_send_buffer_size(int64_t handle, int64_t size_bytes) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_send_buffer_size", 2);
     if (size_bytes <= 0) {
         return 6;
@@ -3750,7 +3750,7 @@ long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
     }
 #ifdef SO_SNDBUF
     int size = (int)size_bytes;
-    if ((long)size != size_bytes) {
+    if ((int64_t)size != size_bytes) {
         return 6;
     }
     if (setsockopt(slot->fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0) {
@@ -3762,7 +3762,7 @@ long aic_rt_net_tcp_set_send_buffer_size(long handle, long size_bytes) {
 #endif
 }
 
-long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
+int64_t aic_rt_net_tcp_get_send_buffer_size(int64_t handle, int64_t* out_size_bytes) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_send_buffer_size", 2);
     if (out_size_bytes != NULL) {
         *out_size_bytes = 0;
@@ -3778,7 +3778,7 @@ long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_size_bytes != NULL) {
-        *out_size_bytes = (long)size;
+        *out_size_bytes = (int64_t)size;
     }
     return 0;
 #else
@@ -3786,7 +3786,7 @@ long aic_rt_net_tcp_get_send_buffer_size(long handle, long* out_size_bytes) {
 #endif
 }
 
-long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
+int64_t aic_rt_net_tcp_set_recv_buffer_size(int64_t handle, int64_t size_bytes) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_set_recv_buffer_size", 2);
     if (size_bytes <= 0) {
         return 6;
@@ -3797,7 +3797,7 @@ long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
     }
 #ifdef SO_RCVBUF
     int size = (int)size_bytes;
-    if ((long)size != size_bytes) {
+    if ((int64_t)size != size_bytes) {
         return 6;
     }
     if (setsockopt(slot->fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0) {
@@ -3809,7 +3809,7 @@ long aic_rt_net_tcp_set_recv_buffer_size(long handle, long size_bytes) {
 #endif
 }
 
-long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
+int64_t aic_rt_net_tcp_get_recv_buffer_size(int64_t handle, int64_t* out_size_bytes) {
     AIC_RT_SANDBOX_BLOCK_NET("tcp_get_recv_buffer_size", 2);
     if (out_size_bytes != NULL) {
         *out_size_bytes = 0;
@@ -3825,7 +3825,7 @@ long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
         return aic_rt_net_map_errno(aic_rt_net_last_socket_error());
     }
     if (out_size_bytes != NULL) {
-        *out_size_bytes = (long)size;
+        *out_size_bytes = (int64_t)size;
     }
     return 0;
 #else
@@ -3833,7 +3833,7 @@ long aic_rt_net_tcp_get_recv_buffer_size(long handle, long* out_size_bytes) {
 #endif
 }
 
-long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+int64_t aic_rt_net_udp_bind(const char* addr_ptr, int64_t addr_len, int64_t addr_cap, int64_t* out_handle) {
     (void)addr_cap;
     AIC_RT_SANDBOX_BLOCK_NET("udp_bind", 2);
     if (out_handle != NULL) {
@@ -3846,7 +3846,7 @@ long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, lon
 
     char* host = NULL;
     char* port = NULL;
-    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    int64_t split = aic_rt_net_split_host_port(addr, &host, &port);
     free(addr);
     if (split != 0) {
         free(host);
@@ -3855,14 +3855,14 @@ long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, lon
     }
 
     struct addrinfo* infos = NULL;
-    long resolved = aic_rt_net_resolve(host, port, SOCK_DGRAM, AI_PASSIVE, 1, &infos);
+    int64_t resolved = aic_rt_net_resolve(host, port, SOCK_DGRAM, AI_PASSIVE, 1, &infos);
     free(host);
     free(port);
     if (resolved != 0) {
         return resolved;
     }
 
-    long result = 7;
+    int64_t result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
         aic_rt_socket_t fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd == AIC_RT_INVALID_SOCKET) {
@@ -3883,7 +3883,7 @@ long aic_rt_net_udp_bind(const char* addr_ptr, long addr_len, long addr_cap, lon
     return result;
 }
 
-long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_net_udp_local_addr(int64_t handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("udp_local_addr", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -3910,20 +3910,20 @@ long aic_rt_net_udp_local_addr(long handle, char** out_ptr, long* out_len) {
         free(text);
     }
     if (out_len != NULL) {
-        *out_len = (long)strlen(text);
+        *out_len = (int64_t)strlen(text);
     }
     return 0;
 }
 
-long aic_rt_net_udp_send_to(
-    long handle,
+int64_t aic_rt_net_udp_send_to(
+    int64_t handle,
     const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
+    int64_t addr_len,
+    int64_t addr_cap,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_sent
 ) {
     (void)addr_cap;
     (void)payload_cap;
@@ -3945,7 +3945,7 @@ long aic_rt_net_udp_send_to(
     }
     char* host = NULL;
     char* port = NULL;
-    long split = aic_rt_net_split_host_port(addr, &host, &port);
+    int64_t split = aic_rt_net_split_host_port(addr, &host, &port);
     free(addr);
     if (split != 0) {
         free(host);
@@ -3959,14 +3959,14 @@ long aic_rt_net_udp_send_to(
     }
 
     struct addrinfo* infos = NULL;
-    long resolved = aic_rt_net_resolve(host, port, SOCK_DGRAM, 0, 0, &infos);
+    int64_t resolved = aic_rt_net_resolve(host, port, SOCK_DGRAM, 0, 0, &infos);
     free(host);
     free(port);
     if (resolved != 0) {
         return resolved;
     }
 
-    long result = 7;
+    int64_t result = 7;
     for (struct addrinfo* ai = infos; ai != NULL; ai = ai->ai_next) {
         ssize_t sent = sendto(
             slot->fd,
@@ -3978,7 +3978,7 @@ long aic_rt_net_udp_send_to(
         );
         if (sent >= 0) {
             if (out_sent != NULL) {
-                *out_sent = (long)sent;
+                *out_sent = (int64_t)sent;
             }
             result = 0;
             break;
@@ -3989,14 +3989,14 @@ long aic_rt_net_udp_send_to(
     return result;
 }
 
-long aic_rt_net_udp_recv_from(
-    long handle,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_net_udp_recv_from(
+    int64_t handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_from_ptr,
-    long* out_from_len,
+    int64_t* out_from_len,
     char** out_payload_ptr,
-    long* out_payload_len
+    int64_t* out_payload_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("udp_recv_from", 2);
     if (out_from_ptr != NULL) {
@@ -4020,7 +4020,7 @@ long aic_rt_net_udp_recv_from(
         return 6;
     }
 
-    long waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
+    int64_t waited = aic_rt_net_wait_fd(slot->fd, 1, timeout_ms);
     if (waited != 0) {
         return waited;
     }
@@ -4059,7 +4059,7 @@ long aic_rt_net_udp_recv_from(
         free(from_text);
     }
     if (out_from_len != NULL) {
-        *out_from_len = (long)strlen(from_text);
+        *out_from_len = (int64_t)strlen(from_text);
     }
 
     if (out_payload_ptr != NULL) {
@@ -4068,15 +4068,15 @@ long aic_rt_net_udp_recv_from(
         free(payload);
     }
     if (out_payload_len != NULL) {
-        *out_payload_len = (long)got;
+        *out_payload_len = (int64_t)got;
     }
     return 0;
 }
 
-long aic_rt_net_udp_close(long handle) {
+int64_t aic_rt_net_udp_close(int64_t handle) {
     AIC_RT_SANDBOX_BLOCK_NET("udp_close", 2);
     aic_rt_socket_t fd = AIC_RT_INVALID_SOCKET;
-    long take = aic_rt_net_take_handle(handle, AIC_RT_NET_KIND_UDP, AIC_RT_NET_KIND_UDP, &fd);
+    int64_t take = aic_rt_net_take_handle(handle, AIC_RT_NET_KIND_UDP, AIC_RT_NET_KIND_UDP, &fd);
     if (take != 0) {
         return take;
     }
@@ -4103,9 +4103,9 @@ static int aic_rt_net_compare_string_items(const void* lhs, const void* rhs) {
     return strcmp(left_text, right_text);
 }
 
-static long aic_rt_net_dns_collect_lookup_all(
+static int64_t aic_rt_net_dns_collect_lookup_all(
     const char* host_ptr,
-    long host_len,
+    int64_t host_len,
     AicString** out_items,
     size_t* out_count
 ) {
@@ -4157,7 +4157,7 @@ static long aic_rt_net_dns_collect_lookup_all(
         if (aic_rt_net_contains_string_item(items, len, numeric)) {
             continue;
         }
-        long push_rc = aic_rt_fs_push_string_item(&items, &len, &cap, numeric);
+        int64_t push_rc = aic_rt_fs_push_string_item(&items, &len, &cap, numeric);
         if (push_rc != 0) {
             freeaddrinfo(infos);
             aic_rt_fs_free_string_items(items, len);
@@ -4180,12 +4180,12 @@ static long aic_rt_net_dns_collect_lookup_all(
     return 0;
 }
 
-long aic_rt_net_dns_lookup(
+int64_t aic_rt_net_dns_lookup(
     const char* host_ptr,
-    long host_len,
-    long host_cap,
+    int64_t host_len,
+    int64_t host_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)host_cap;
     AIC_RT_SANDBOX_BLOCK_NET("dns_lookup", 2);
@@ -4197,12 +4197,12 @@ long aic_rt_net_dns_lookup(
     }
     AicString* items = NULL;
     size_t count = 0;
-    long collect_rc = aic_rt_net_dns_collect_lookup_all(host_ptr, host_len, &items, &count);
+    int64_t collect_rc = aic_rt_net_dns_collect_lookup_all(host_ptr, host_len, &items, &count);
     if (collect_rc != 0) {
         return collect_rc;
     }
     char* first = aic_rt_copy_bytes(items[0].ptr, (size_t)items[0].len);
-    long first_len = items[0].len;
+    int64_t first_len = items[0].len;
     aic_rt_fs_free_string_items(items, count);
     if (first == NULL && first_len > 0) {
         return 7;
@@ -4218,12 +4218,12 @@ long aic_rt_net_dns_lookup(
     return 0;
 }
 
-long aic_rt_net_dns_lookup_all(
+int64_t aic_rt_net_dns_lookup_all(
     const char* host_ptr,
-    long host_len,
-    long host_cap,
+    int64_t host_len,
+    int64_t host_cap,
     char** out_ptr,
-    long* out_count
+    int64_t* out_count
 ) {
     (void)host_cap;
     AIC_RT_SANDBOX_BLOCK_NET("dns_lookup_all", 2);
@@ -4235,7 +4235,7 @@ long aic_rt_net_dns_lookup_all(
     }
     AicString* items = NULL;
     size_t count = 0;
-    long collect_rc = aic_rt_net_dns_collect_lookup_all(host_ptr, host_len, &items, &count);
+    int64_t collect_rc = aic_rt_net_dns_collect_lookup_all(host_ptr, host_len, &items, &count);
     if (collect_rc != 0) {
         return collect_rc;
     }
@@ -4243,12 +4243,12 @@ long aic_rt_net_dns_lookup_all(
     return 0;
 }
 
-long aic_rt_net_dns_reverse(
+int64_t aic_rt_net_dns_reverse(
     const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
+    int64_t addr_len,
+    int64_t addr_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)addr_cap;
     AIC_RT_SANDBOX_BLOCK_NET("dns_reverse", 2);
@@ -4308,7 +4308,7 @@ long aic_rt_net_dns_reverse(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)strlen(name);
+        *out_len = (int64_t)strlen(name);
     }
     freeaddrinfo(infos);
     return 0;
@@ -4326,7 +4326,7 @@ typedef struct {
     SSL_CTX* ctx;
 #endif
     aic_rt_socket_t fd;
-    long consumed_net_handle;
+    int64_t consumed_net_handle;
 } AicTlsSlot;
 
 typedef struct {
@@ -4336,15 +4336,15 @@ typedef struct {
     int claimed;
     int worker_running;
     int op_kind;
-    long tls_handle;
-    long max_bytes;
-    long timeout_ms;
+    int64_t tls_handle;
+    int64_t max_bytes;
+    int64_t timeout_ms;
     char* payload_ptr;
-    long payload_len;
-    long err_code;
-    long out_int;
+    int64_t payload_len;
+    int64_t err_code;
+    int64_t out_int;
     char* out_string_ptr;
-    long out_string_len;
+    int64_t out_string_len;
     pthread_t worker;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
@@ -4353,8 +4353,8 @@ typedef struct {
 static AicTlsSlot aic_rt_tls_table[AIC_RT_TLS_TABLE_CAP];
 static AicTlsAsyncOp aic_rt_tls_async_ops[AIC_RT_TLS_ASYNC_OP_CAP];
 static pthread_mutex_t aic_rt_tls_async_ops_mutex = PTHREAD_MUTEX_INITIALIZER;
-static long aic_rt_tls_table_limit = AIC_RT_TLS_TABLE_CAP;
-static long aic_rt_tls_async_op_limit = AIC_RT_TLS_ASYNC_OP_CAP;
+static int64_t aic_rt_tls_table_limit = AIC_RT_TLS_TABLE_CAP;
+static int64_t aic_rt_tls_async_op_limit = AIC_RT_TLS_ASYNC_OP_CAP;
 static int aic_rt_tls_async_shutdown_requested = 0;
 static pthread_once_t aic_rt_tls_limits_once = PTHREAD_ONCE_INIT;
 #if AIC_RT_TLS_OPENSSL
@@ -4394,7 +4394,7 @@ static void aic_rt_tls_reset_slot(AicTlsSlot* slot) {
     slot->consumed_net_handle = 0;
 }
 
-static AicTlsSlot* aic_rt_tls_get_slot(long handle) {
+static AicTlsSlot* aic_rt_tls_get_slot(int64_t handle) {
     aic_rt_tls_limits_ensure();
     if (handle <= 0 || handle > aic_rt_tls_table_limit) {
         return NULL;
@@ -4406,20 +4406,20 @@ static AicTlsSlot* aic_rt_tls_get_slot(long handle) {
     return slot;
 }
 
-static long aic_rt_tls_alloc_slot(
+static int64_t aic_rt_tls_alloc_slot(
 #if AIC_RT_TLS_OPENSSL
     SSL* ssl,
     SSL_CTX* ctx,
 #endif
     aic_rt_socket_t fd,
-    long consumed_net_handle,
-    long* out_tls_handle
+    int64_t consumed_net_handle,
+    int64_t* out_tls_handle
 ) {
     aic_rt_tls_limits_ensure();
     if (out_tls_handle != NULL) {
         *out_tls_handle = 0;
     }
-    for (long i = 0; i < aic_rt_tls_table_limit; ++i) {
+    for (int64_t i = 0; i < aic_rt_tls_table_limit; ++i) {
         AicTlsSlot* slot = &aic_rt_tls_table[i];
         if (!slot->active) {
             slot->active = 1;
@@ -4438,10 +4438,10 @@ static long aic_rt_tls_alloc_slot(
     return 7;
 }
 
-static long aic_rt_tls_copy_optional_string(
+static int64_t aic_rt_tls_copy_optional_string(
     const char* ptr,
-    long len,
-    long has_value,
+    int64_t len,
+    int64_t has_value,
     char** out_value
 ) {
     if (out_value != NULL) {
@@ -4465,7 +4465,7 @@ static long aic_rt_tls_copy_optional_string(
     return 0;
 }
 
-static long aic_rt_tls_map_net_error(long net_error) {
+static int64_t aic_rt_tls_map_net_error(int64_t net_error) {
     if (net_error == 0) {
         return 0;
     }
@@ -4484,7 +4484,7 @@ static long aic_rt_tls_map_net_error(long net_error) {
     return 7;
 }
 
-static void aic_rt_tls_async_interrupt_handle(long tls_handle) {
+static void aic_rt_tls_async_interrupt_handle(int64_t tls_handle) {
     AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
     if (slot == NULL || slot->fd == AIC_RT_INVALID_SOCKET) {
         return;
@@ -4521,11 +4521,11 @@ static void aic_rt_tls_async_reset_op(AicTlsAsyncOp* op) {
 }
 
 static void aic_rt_tls_async_complete_op(
-    long op_handle,
-    long err_code,
-    long out_int,
+    int64_t op_handle,
+    int64_t err_code,
+    int64_t out_int,
     char* out_ptr,
-    long out_len
+    int64_t out_len
 ) {
     if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         if (out_ptr != NULL) {
@@ -4554,7 +4554,7 @@ static void aic_rt_tls_async_complete_op(
     pthread_mutex_unlock(&op->mutex);
 }
 
-static long aic_rt_tls_async_current_error(long op_handle) {
+static int64_t aic_rt_tls_async_current_error(int64_t op_handle) {
     if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         return 9;
     }
@@ -4566,7 +4566,7 @@ static long aic_rt_tls_async_current_error(long op_handle) {
     if (lock_rc != 0) {
         return 7;
     }
-    long err = 0;
+    int64_t err = 0;
     if (!op->active) {
         err = 9;
     } else if (op->done) {
@@ -4576,10 +4576,10 @@ static long aic_rt_tls_async_current_error(long op_handle) {
     return err;
 }
 
-static long aic_rt_tls_async_wait_slice(long timeout_ms, long deadline_ms) {
-    long wait_timeout = timeout_ms;
+static int64_t aic_rt_tls_async_wait_slice(int64_t timeout_ms, int64_t deadline_ms) {
+    int64_t wait_timeout = timeout_ms;
     if (deadline_ms >= 0) {
-        long now_ms = aic_rt_time_monotonic_ms();
+        int64_t now_ms = aic_rt_time_monotonic_ms();
         if (now_ms >= 0) {
             if (now_ms >= deadline_ms) {
                 return -1;
@@ -4596,13 +4596,13 @@ static long aic_rt_tls_async_wait_slice(long timeout_ms, long deadline_ms) {
     return wait_timeout;
 }
 
-static long aic_rt_tls_async_send_timeout(
-    long op_handle,
-    long tls_handle,
+static int64_t aic_rt_tls_async_send_timeout(
+    int64_t op_handle,
+    int64_t tls_handle,
     const char* payload_ptr,
-    long payload_len,
-    long timeout_ms,
-    long* out_sent
+    int64_t payload_len,
+    int64_t timeout_ms,
+    int64_t* out_sent
 ) {
     if (out_sent != NULL) {
         *out_sent = 0;
@@ -4632,11 +4632,11 @@ static long aic_rt_tls_async_send_timeout(
         restore_nonblocking = 1;
     }
 
-    long deadline_ms = -1;
-    long start_ms = aic_rt_time_monotonic_ms();
+    int64_t deadline_ms = -1;
+    int64_t start_ms = aic_rt_time_monotonic_ms();
     if (start_ms >= 0) {
-        if (timeout_ms > LONG_MAX - start_ms) {
-            deadline_ms = LONG_MAX;
+        if (timeout_ms > INT64_MAX - start_ms) {
+            deadline_ms = INT64_MAX;
         } else {
             deadline_ms = start_ms + timeout_ms;
         }
@@ -4647,12 +4647,12 @@ static long aic_rt_tls_async_send_timeout(
         return 8;
     }
 
-    long result = 7;
+    int64_t result = 7;
     size_t remaining = (size_t)payload_len;
     const unsigned char* cursor = (const unsigned char*)payload_ptr;
     size_t total = 0;
     while (remaining > 0) {
-        long cancel_err = aic_rt_tls_async_current_error(op_handle);
+        int64_t cancel_err = aic_rt_tls_async_current_error(op_handle);
         if (cancel_err != 0) {
             result = cancel_err;
             goto cleanup;
@@ -4684,12 +4684,12 @@ static long aic_rt_tls_async_send_timeout(
             goto cleanup;
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-            long wait_timeout = aic_rt_tls_async_wait_slice(timeout_ms, deadline_ms);
+            int64_t wait_timeout = aic_rt_tls_async_wait_slice(timeout_ms, deadline_ms);
             if (wait_timeout < 0) {
                 result = 8;
                 goto cleanup;
             }
-            long waited = aic_rt_net_wait_fd(
+            int64_t waited = aic_rt_net_wait_fd(
                 slot->fd,
                 ssl_error == SSL_ERROR_WANT_READ ? 1 : 0,
                 wait_timeout
@@ -4713,19 +4713,19 @@ cleanup:
         (void)aic_rt_net_set_nonblocking_state(slot->fd, prev_nonblocking);
     }
     if (out_sent != NULL) {
-        *out_sent = (long)total;
+        *out_sent = (int64_t)total;
     }
     return result;
 #endif
 }
 
-static long aic_rt_tls_async_recv(
-    long op_handle,
-    long tls_handle,
-    long max_bytes,
-    long timeout_ms,
+static int64_t aic_rt_tls_async_recv(
+    int64_t op_handle,
+    int64_t tls_handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -4758,11 +4758,11 @@ static long aic_rt_tls_async_recv(
         restore_nonblocking = 1;
     }
 
-    long deadline_ms = -1;
-    long start_ms = aic_rt_time_monotonic_ms();
+    int64_t deadline_ms = -1;
+    int64_t start_ms = aic_rt_time_monotonic_ms();
     if (start_ms >= 0) {
-        if (timeout_ms > LONG_MAX - start_ms) {
-            deadline_ms = LONG_MAX;
+        if (timeout_ms > INT64_MAX - start_ms) {
+            deadline_ms = INT64_MAX;
         } else {
             deadline_ms = start_ms + timeout_ms;
         }
@@ -4782,22 +4782,22 @@ static long aic_rt_tls_async_recv(
         return 7;
     }
 
-    long result = 7;
+    int64_t result = 7;
     int chunk = cap > (size_t)INT_MAX ? INT_MAX : (int)cap;
     for (;;) {
-        long cancel_err = aic_rt_tls_async_current_error(op_handle);
+        int64_t cancel_err = aic_rt_tls_async_current_error(op_handle);
         if (cancel_err != 0) {
             result = cancel_err;
             break;
         }
 
-        long wait_timeout = aic_rt_tls_async_wait_slice(timeout_ms, deadline_ms);
+        int64_t wait_timeout = aic_rt_tls_async_wait_slice(timeout_ms, deadline_ms);
         if (wait_timeout < 0) {
             result = 8;
             break;
         }
 
-        long waited = aic_rt_net_wait_fd(slot->fd, 1, wait_timeout);
+        int64_t waited = aic_rt_net_wait_fd(slot->fd, 1, wait_timeout);
         if (waited == 4) {
             continue;
         }
@@ -4815,7 +4815,7 @@ static long aic_rt_tls_async_recv(
                 buffer = NULL;
             }
             if (out_len != NULL) {
-                *out_len = (long)rc;
+                *out_len = (int64_t)rc;
             }
             result = 0;
             break;
@@ -4854,17 +4854,17 @@ static long aic_rt_tls_async_recv(
 }
 
 static void* aic_rt_tls_async_worker_main(void* raw) {
-    long op_handle = (long)(intptr_t)raw;
+    int64_t op_handle = (int64_t)(intptr_t)raw;
     if (op_handle <= 0 || op_handle > aic_rt_tls_async_op_limit) {
         return NULL;
     }
     AicTlsAsyncOp* op = &aic_rt_tls_async_ops[op_handle - 1];
-    long op_kind = 0;
-    long tls_handle = 0;
-    long max_bytes = 0;
-    long timeout_ms = 0;
+    int64_t op_kind = 0;
+    int64_t tls_handle = 0;
+    int64_t max_bytes = 0;
+    int64_t timeout_ms = 0;
     const char* payload_ptr = NULL;
-    long payload_len = 0;
+    int64_t payload_len = 0;
     char* worker_payload_ptr = NULL;
     int have_lock = 0;
     int should_complete = 0;
@@ -4895,10 +4895,10 @@ static void* aic_rt_tls_async_worker_main(void* raw) {
     pthread_mutex_unlock(&op->mutex);
     have_lock = 0;
 
-    long err = 5;
-    long out_int = 0;
+    int64_t err = 5;
+    int64_t out_int = 0;
     char* out_string_ptr = NULL;
-    long out_string_len = 0;
+    int64_t out_string_len = 0;
     should_complete = 1;
 
     if (op_kind == AIC_RT_TLS_ASYNC_OP_SEND) {
@@ -4944,9 +4944,9 @@ finish:
     return NULL;
 }
 
-static long aic_rt_tls_async_alloc_slot_locked(void) {
+static int64_t aic_rt_tls_async_alloc_slot_locked(void) {
     aic_rt_tls_limits_ensure();
-    for (long i = 0; i < aic_rt_tls_async_op_limit; ++i) {
+    for (int64_t i = 0; i < aic_rt_tls_async_op_limit; ++i) {
         AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
         if (op->active || op->worker_running) {
             continue;
@@ -4968,13 +4968,13 @@ static long aic_rt_tls_async_alloc_slot_locked(void) {
     return -1;
 }
 
-long aic_rt_tls_async_send_submit(
-    long tls_handle,
+int64_t aic_rt_tls_async_send_submit(
+    int64_t tls_handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_op
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t timeout_ms,
+    int64_t* out_op
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_send_submit", 2);
@@ -4994,7 +4994,7 @@ long aic_rt_tls_async_send_submit(
         pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
         return 8;
     }
-    long slot_index = aic_rt_tls_async_alloc_slot_locked();
+    int64_t slot_index = aic_rt_tls_async_alloc_slot_locked();
     if (slot_index == -1) {
         pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
         return 8;
@@ -5016,7 +5016,7 @@ long aic_rt_tls_async_send_submit(
     }
     op->payload_len = payload_len;
     op->worker_running = 1;
-    long op_handle = slot_index + 1;
+    int64_t op_handle = slot_index + 1;
 
     int create_rc = pthread_create(
         &op->worker,
@@ -5039,11 +5039,11 @@ long aic_rt_tls_async_send_submit(
     return 0;
 }
 
-long aic_rt_tls_async_recv_submit(
-    long tls_handle,
-    long max_bytes,
-    long timeout_ms,
-    long* out_op
+int64_t aic_rt_tls_async_recv_submit(
+    int64_t tls_handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
+    int64_t* out_op
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_recv_submit", 2);
     aic_rt_tls_limits_ensure();
@@ -5062,7 +5062,7 @@ long aic_rt_tls_async_recv_submit(
         pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
         return 8;
     }
-    long slot_index = aic_rt_tls_async_alloc_slot_locked();
+    int64_t slot_index = aic_rt_tls_async_alloc_slot_locked();
     if (slot_index == -1) {
         pthread_mutex_unlock(&aic_rt_tls_async_ops_mutex);
         return 8;
@@ -5078,7 +5078,7 @@ long aic_rt_tls_async_recv_submit(
     op->max_bytes = max_bytes;
     op->timeout_ms = timeout_ms;
     op->worker_running = 1;
-    long op_handle = slot_index + 1;
+    int64_t op_handle = slot_index + 1;
 
     int create_rc = pthread_create(
         &op->worker,
@@ -5101,7 +5101,7 @@ long aic_rt_tls_async_recv_submit(
     return 0;
 }
 
-long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_tls_async_wait_int(int64_t op_handle, int64_t timeout_ms, int64_t* out_value) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_int", 2);
     aic_rt_tls_limits_ensure();
     if (out_value != NULL) {
@@ -5155,8 +5155,8 @@ long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value)
         }
     }
 
-    long err = op->err_code;
-    long out = op->out_int;
+    int64_t err = op->err_code;
+    int64_t out = op->out_int;
     aic_rt_tls_async_reset_op(op);
     pthread_mutex_unlock(&op->mutex);
     if (err == 0 && out_value != NULL) {
@@ -5165,11 +5165,11 @@ long aic_rt_tls_async_wait_int(long op_handle, long timeout_ms, long* out_value)
     return err;
 }
 
-long aic_rt_tls_async_wait_string(
-    long op_handle,
-    long timeout_ms,
+int64_t aic_rt_tls_async_wait_string(
+    int64_t op_handle,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_wait_string", 2);
     aic_rt_tls_limits_ensure();
@@ -5227,9 +5227,9 @@ long aic_rt_tls_async_wait_string(
         }
     }
 
-    long err = op->err_code;
+    int64_t err = op->err_code;
     char* text = op->out_string_ptr;
-    long text_len = op->out_string_len;
+    int64_t text_len = op->out_string_len;
     op->out_string_ptr = NULL;
     op->out_string_len = 0;
     aic_rt_tls_async_reset_op(op);
@@ -5249,7 +5249,7 @@ long aic_rt_tls_async_wait_string(
     return 0;
 }
 
-long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
+int64_t aic_rt_tls_async_cancel(int64_t op_handle, int64_t* out_cancelled) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_cancel", 2);
     aic_rt_tls_limits_ensure();
     if (out_cancelled != NULL) {
@@ -5290,7 +5290,7 @@ long aic_rt_tls_async_cancel(long op_handle, long* out_cancelled) {
     return 0;
 }
 
-long aic_rt_tls_async_shutdown(void) {
+int64_t aic_rt_tls_async_shutdown(void) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_shutdown", 2);
     aic_rt_tls_limits_ensure();
     int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
@@ -5298,12 +5298,12 @@ long aic_rt_tls_async_shutdown(void) {
         return 7;
     }
     aic_rt_tls_async_shutdown_requested = 1;
-    for (long i = 0; i < aic_rt_tls_async_op_limit; ++i) {
+    for (int64_t i = 0; i < aic_rt_tls_async_op_limit; ++i) {
         AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
         if (!op->initialized) {
             continue;
         }
-        long interrupt_handle = 0;
+        int64_t interrupt_handle = 0;
         int op_lock_rc = pthread_mutex_lock(&op->mutex);
         if (op_lock_rc != 0) {
             continue;
@@ -5333,11 +5333,11 @@ long aic_rt_tls_async_shutdown(void) {
     return 0;
 }
 
-long aic_rt_tls_async_pressure(
-    long* out_active_ops,
-    long* out_queue_depth,
-    long* out_op_limit,
-    long* out_queue_limit
+int64_t aic_rt_tls_async_pressure(
+    int64_t* out_active_ops,
+    int64_t* out_queue_depth,
+    int64_t* out_op_limit,
+    int64_t* out_queue_limit
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_pressure", 2);
     aic_rt_tls_limits_ensure();
@@ -5355,16 +5355,16 @@ long aic_rt_tls_async_pressure(
         *out_queue_limit = 0;
     }
 
-    long active_ops = 0;
-    long occupied_ops = 0;
-    long op_limit = aic_rt_tls_async_op_limit;
+    int64_t active_ops = 0;
+    int64_t occupied_ops = 0;
+    int64_t op_limit = aic_rt_tls_async_op_limit;
 
     int lock_rc = pthread_mutex_lock(&aic_rt_tls_async_ops_mutex);
     if (lock_rc != 0) {
         return 7;
     }
     op_limit = aic_rt_tls_async_op_limit;
-    for (long i = 0; i < op_limit; ++i) {
+    for (int64_t i = 0; i < op_limit; ++i) {
         AicTlsAsyncOp* op = &aic_rt_tls_async_ops[i];
         if (!op->initialized) {
             continue;
@@ -5431,7 +5431,7 @@ static int aic_rt_tls_ensure_initialized(void) {
     return 1;
 }
 
-static long aic_rt_tls_map_verify_error(long verify_error) {
+static int64_t aic_rt_tls_map_verify_error(int64_t verify_error) {
     switch (verify_error) {
         case X509_V_OK:
             return 0;
@@ -5448,7 +5448,7 @@ static long aic_rt_tls_map_verify_error(long verify_error) {
     }
 }
 
-static long aic_rt_tls_map_ssl_handshake_error(SSL* ssl, int ssl_error, long verify_server) {
+static int64_t aic_rt_tls_map_ssl_handshake_error(SSL* ssl, int ssl_error, int64_t verify_server) {
     if (ssl_error == SSL_ERROR_ZERO_RETURN) {
         return 6;
     }
@@ -5460,8 +5460,8 @@ static long aic_rt_tls_map_ssl_handshake_error(SSL* ssl, int ssl_error, long ver
     }
     if (ssl_error == SSL_ERROR_SSL) {
         if (verify_server != 0) {
-            long verify_error = (long)SSL_get_verify_result(ssl);
-            long mapped = aic_rt_tls_map_verify_error(verify_error);
+            int64_t verify_error = (int64_t)SSL_get_verify_result(ssl);
+            int64_t mapped = aic_rt_tls_map_verify_error(verify_error);
             if (mapped != 0) {
                 return mapped;
             }
@@ -5472,26 +5472,26 @@ static long aic_rt_tls_map_ssl_handshake_error(SSL* ssl, int ssl_error, long ver
 }
 #endif
 
-static long aic_rt_tls_connect_core(
-    long tcp_handle,
-    long verify_server,
+static int64_t aic_rt_tls_connect_core(
+    int64_t tcp_handle,
+    int64_t verify_server,
     const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
+    int64_t ca_cert_len,
+    int64_t ca_cert_cap,
+    int64_t has_ca_cert,
     const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
+    int64_t client_cert_len,
+    int64_t client_cert_cap,
+    int64_t has_client_cert,
     const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
+    int64_t client_key_len,
+    int64_t client_key_cap,
+    int64_t has_client_key,
     const char* server_name_ptr,
-    long server_name_len,
-    long server_name_cap,
-    long has_server_name,
-    long* out_tls_handle,
+    int64_t server_name_len,
+    int64_t server_name_cap,
+    int64_t has_server_name,
+    int64_t* out_tls_handle,
     int close_net_on_fail
 ) {
     (void)ca_cert_cap;
@@ -5537,11 +5537,11 @@ static long aic_rt_tls_connect_core(
     char* client_key = NULL;
     char* server_name = NULL;
 
-    long copy_ca = aic_rt_tls_copy_optional_string(ca_cert_ptr, ca_cert_len, has_ca_cert, &ca_cert);
+    int64_t copy_ca = aic_rt_tls_copy_optional_string(ca_cert_ptr, ca_cert_len, has_ca_cert, &ca_cert);
     if (copy_ca != 0) {
         return copy_ca;
     }
-    long copy_client_cert = aic_rt_tls_copy_optional_string(
+    int64_t copy_client_cert = aic_rt_tls_copy_optional_string(
         client_cert_ptr,
         client_cert_len,
         has_client_cert,
@@ -5551,7 +5551,7 @@ static long aic_rt_tls_connect_core(
         free(ca_cert);
         return copy_client_cert;
     }
-    long copy_client_key = aic_rt_tls_copy_optional_string(
+    int64_t copy_client_key = aic_rt_tls_copy_optional_string(
         client_key_ptr,
         client_key_len,
         has_client_key,
@@ -5562,7 +5562,7 @@ static long aic_rt_tls_connect_core(
         free(client_cert);
         return copy_client_key;
     }
-    long copy_server_name = aic_rt_tls_copy_optional_string(
+    int64_t copy_server_name = aic_rt_tls_copy_optional_string(
         server_name_ptr,
         server_name_len,
         has_server_name,
@@ -5575,7 +5575,7 @@ static long aic_rt_tls_connect_core(
         return copy_server_name;
     }
 
-    long result = 5;
+    int64_t result = 5;
 #if AIC_RT_TLS_OPENSSL
     if (!aic_rt_tls_ensure_initialized()) {
         result = 7;
@@ -5713,22 +5713,22 @@ cleanup:
     return result;
 }
 
-static long aic_rt_tls_accept_core(
-    long tcp_handle,
-    long verify_server,
+static int64_t aic_rt_tls_accept_core(
+    int64_t tcp_handle,
+    int64_t verify_server,
     const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
+    int64_t ca_cert_len,
+    int64_t ca_cert_cap,
+    int64_t has_ca_cert,
     const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
+    int64_t client_cert_len,
+    int64_t client_cert_cap,
+    int64_t has_client_cert,
     const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
-    long* out_tls_handle,
+    int64_t client_key_len,
+    int64_t client_key_cap,
+    int64_t has_client_key,
+    int64_t* out_tls_handle,
     int close_net_on_fail
 ) {
     (void)ca_cert_cap;
@@ -5770,11 +5770,11 @@ static long aic_rt_tls_accept_core(
     char* client_cert = NULL;
     char* client_key = NULL;
 
-    long copy_ca = aic_rt_tls_copy_optional_string(ca_cert_ptr, ca_cert_len, has_ca_cert, &ca_cert);
+    int64_t copy_ca = aic_rt_tls_copy_optional_string(ca_cert_ptr, ca_cert_len, has_ca_cert, &ca_cert);
     if (copy_ca != 0) {
         return copy_ca;
     }
-    long copy_client_cert = aic_rt_tls_copy_optional_string(
+    int64_t copy_client_cert = aic_rt_tls_copy_optional_string(
         client_cert_ptr,
         client_cert_len,
         has_client_cert,
@@ -5784,7 +5784,7 @@ static long aic_rt_tls_accept_core(
         free(ca_cert);
         return copy_client_cert;
     }
-    long copy_client_key = aic_rt_tls_copy_optional_string(
+    int64_t copy_client_key = aic_rt_tls_copy_optional_string(
         client_key_ptr,
         client_key_len,
         has_client_key,
@@ -5796,7 +5796,7 @@ static long aic_rt_tls_accept_core(
         return copy_client_key;
     }
 
-    long result = 5;
+    int64_t result = 5;
 #if AIC_RT_TLS_OPENSSL
     if (!aic_rt_tls_ensure_initialized()) {
         result = 7;
@@ -5894,26 +5894,26 @@ cleanup:
     return result;
 }
 
-long aic_rt_tls_connect(
-    long tcp_handle,
-    long verify_server,
+int64_t aic_rt_tls_connect(
+    int64_t tcp_handle,
+    int64_t verify_server,
     const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
+    int64_t ca_cert_len,
+    int64_t ca_cert_cap,
+    int64_t has_ca_cert,
     const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
+    int64_t client_cert_len,
+    int64_t client_cert_cap,
+    int64_t has_client_cert,
     const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
+    int64_t client_key_len,
+    int64_t client_key_cap,
+    int64_t has_client_key,
     const char* server_name_ptr,
-    long server_name_len,
-    long server_name_cap,
-    long has_server_name,
-    long* out_tls_handle
+    int64_t server_name_len,
+    int64_t server_name_cap,
+    int64_t has_server_name,
+    int64_t* out_tls_handle
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_connect", 2);
     return aic_rt_tls_connect_core(
@@ -5940,37 +5940,37 @@ long aic_rt_tls_connect(
     );
 }
 
-long aic_rt_tls_connect_addr(
+int64_t aic_rt_tls_connect_addr(
     const char* addr_ptr,
-    long addr_len,
-    long addr_cap,
-    long verify_server,
+    int64_t addr_len,
+    int64_t addr_cap,
+    int64_t verify_server,
     const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
+    int64_t ca_cert_len,
+    int64_t ca_cert_cap,
+    int64_t has_ca_cert,
     const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
+    int64_t client_cert_len,
+    int64_t client_cert_cap,
+    int64_t has_client_cert,
     const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
+    int64_t client_key_len,
+    int64_t client_key_cap,
+    int64_t has_client_key,
     const char* server_name_ptr,
-    long server_name_len,
-    long server_name_cap,
-    long has_server_name,
-    long timeout_ms,
-    long* out_tls_handle
+    int64_t server_name_len,
+    int64_t server_name_cap,
+    int64_t has_server_name,
+    int64_t timeout_ms,
+    int64_t* out_tls_handle
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_connect_addr", 2);
-    long tcp_handle = 0;
-    long connect_rc = aic_rt_net_tcp_connect(addr_ptr, addr_len, addr_cap, timeout_ms, &tcp_handle);
+    int64_t tcp_handle = 0;
+    int64_t connect_rc = aic_rt_net_tcp_connect(addr_ptr, addr_len, addr_cap, timeout_ms, &tcp_handle);
     if (connect_rc != 0) {
         return aic_rt_tls_map_net_error(connect_rc);
     }
-    long tls_rc = aic_rt_tls_connect_core(
+    int64_t tls_rc = aic_rt_tls_connect_core(
         tcp_handle,
         verify_server,
         ca_cert_ptr,
@@ -5995,31 +5995,31 @@ long aic_rt_tls_connect_addr(
     return tls_rc;
 }
 
-long aic_rt_tls_accept(
-    long listener_handle,
-    long verify_server,
+int64_t aic_rt_tls_accept(
+    int64_t listener_handle,
+    int64_t verify_server,
     const char* ca_cert_ptr,
-    long ca_cert_len,
-    long ca_cert_cap,
-    long has_ca_cert,
+    int64_t ca_cert_len,
+    int64_t ca_cert_cap,
+    int64_t has_ca_cert,
     const char* client_cert_ptr,
-    long client_cert_len,
-    long client_cert_cap,
-    long has_client_cert,
+    int64_t client_cert_len,
+    int64_t client_cert_cap,
+    int64_t has_client_cert,
     const char* client_key_ptr,
-    long client_key_len,
-    long client_key_cap,
-    long has_client_key,
-    long timeout_ms,
-    long* out_tls_handle
+    int64_t client_key_len,
+    int64_t client_key_cap,
+    int64_t has_client_key,
+    int64_t timeout_ms,
+    int64_t* out_tls_handle
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_accept", 2);
-    long tcp_handle = 0;
-    long accept_rc = aic_rt_net_tcp_accept(listener_handle, timeout_ms, &tcp_handle);
+    int64_t tcp_handle = 0;
+    int64_t accept_rc = aic_rt_net_tcp_accept(listener_handle, timeout_ms, &tcp_handle);
     if (accept_rc != 0) {
         return aic_rt_tls_map_net_error(accept_rc);
     }
-    long tls_rc = aic_rt_tls_accept_core(
+    int64_t tls_rc = aic_rt_tls_accept_core(
         tcp_handle,
         verify_server,
         ca_cert_ptr,
@@ -6040,12 +6040,12 @@ long aic_rt_tls_accept(
     return tls_rc;
 }
 
-long aic_rt_tls_send(
-    long tls_handle,
+int64_t aic_rt_tls_send(
+    int64_t tls_handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t* out_sent
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tls_send", 2);
@@ -6091,19 +6091,19 @@ long aic_rt_tls_send(
         return 7;
     }
     if (out_sent != NULL) {
-        *out_sent = (long)total;
+        *out_sent = (int64_t)total;
     }
     return 0;
 #endif
 }
 
-long aic_rt_tls_send_timeout(
-    long tls_handle,
+int64_t aic_rt_tls_send_timeout(
+    int64_t tls_handle,
     const char* payload_ptr,
-    long payload_len,
-    long payload_cap,
-    long timeout_ms,
-    long* out_sent
+    int64_t payload_len,
+    int64_t payload_cap,
+    int64_t timeout_ms,
+    int64_t* out_sent
 ) {
     (void)payload_cap;
     AIC_RT_SANDBOX_BLOCK_NET("tls_send_timeout", 2);
@@ -6120,11 +6120,11 @@ long aic_rt_tls_send_timeout(
 #if !AIC_RT_TLS_OPENSSL
     return 5;
 #else
-    long deadline_ms = -1;
-    long start_ms = aic_rt_time_monotonic_ms();
+    int64_t deadline_ms = -1;
+    int64_t start_ms = aic_rt_time_monotonic_ms();
     if (start_ms >= 0) {
-        if (timeout_ms > LONG_MAX - start_ms) {
-            deadline_ms = LONG_MAX;
+        if (timeout_ms > INT64_MAX - start_ms) {
+            deadline_ms = INT64_MAX;
         } else {
             deadline_ms = start_ms + timeout_ms;
         }
@@ -6147,13 +6147,13 @@ long aic_rt_tls_send_timeout(
         int ssl_error = SSL_get_error(slot->ssl, rc);
         if (ssl_error == SSL_ERROR_ZERO_RETURN) {
             if (out_sent != NULL) {
-                *out_sent = (long)total;
+                *out_sent = (int64_t)total;
             }
             return 6;
         }
         if (ssl_error == SSL_ERROR_SYSCALL) {
             if (out_sent != NULL) {
-                *out_sent = (long)total;
+                *out_sent = (int64_t)total;
             }
             if (errno == 0) {
                 return 6;
@@ -6161,13 +6161,13 @@ long aic_rt_tls_send_timeout(
             return aic_rt_tls_map_net_error(aic_rt_net_map_errno(aic_rt_net_last_socket_error()));
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-            long wait_timeout = timeout_ms;
+            int64_t wait_timeout = timeout_ms;
             if (deadline_ms >= 0) {
-                long now_ms = aic_rt_time_monotonic_ms();
+                int64_t now_ms = aic_rt_time_monotonic_ms();
                 if (now_ms >= 0) {
                     if (now_ms >= deadline_ms) {
                         if (out_sent != NULL) {
-                            *out_sent = (long)total;
+                            *out_sent = (int64_t)total;
                         }
                         return 8;
                     }
@@ -6175,33 +6175,33 @@ long aic_rt_tls_send_timeout(
                 }
             }
             int want_read = ssl_error == SSL_ERROR_WANT_READ ? 1 : 0;
-            long waited = aic_rt_net_wait_fd(slot->fd, want_read, wait_timeout);
+            int64_t waited = aic_rt_net_wait_fd(slot->fd, want_read, wait_timeout);
             if (waited != 0) {
                 if (out_sent != NULL) {
-                    *out_sent = (long)total;
+                    *out_sent = (int64_t)total;
                 }
                 return aic_rt_tls_map_net_error(waited);
             }
             continue;
         }
         if (out_sent != NULL) {
-            *out_sent = (long)total;
+            *out_sent = (int64_t)total;
         }
         return 7;
     }
     if (out_sent != NULL) {
-        *out_sent = (long)total;
+        *out_sent = (int64_t)total;
     }
     return 0;
 #endif
 }
 
-long aic_rt_tls_recv(
-    long tls_handle,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_tls_recv(
+    int64_t tls_handle,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_recv", 2);
     if (out_ptr != NULL) {
@@ -6220,10 +6220,10 @@ long aic_rt_tls_recv(
 #if !AIC_RT_TLS_OPENSSL
     return 5;
 #else
-    long deadline_ms = -1;
+    int64_t deadline_ms = -1;
     if (timeout_ms > 0) {
-        long now_ms = aic_rt_time_monotonic_ms();
-        if (now_ms >= 0 && now_ms <= LONG_MAX - timeout_ms) {
+        int64_t now_ms = aic_rt_time_monotonic_ms();
+        if (now_ms >= 0 && now_ms <= INT64_MAX - timeout_ms) {
             deadline_ms = now_ms + timeout_ms;
         }
     }
@@ -6235,9 +6235,9 @@ long aic_rt_tls_recv(
     }
     int chunk = cap > (size_t)INT_MAX ? INT_MAX : (int)cap;
     for (;;) {
-        long wait_timeout = timeout_ms;
+        int64_t wait_timeout = timeout_ms;
         if (deadline_ms >= 0) {
-            long now_ms = aic_rt_time_monotonic_ms();
+            int64_t now_ms = aic_rt_time_monotonic_ms();
             if (now_ms >= 0) {
                 if (now_ms >= deadline_ms) {
                     free(buffer);
@@ -6247,7 +6247,7 @@ long aic_rt_tls_recv(
             }
         }
 
-        long waited = aic_rt_net_wait_fd(slot->fd, 1, wait_timeout);
+        int64_t waited = aic_rt_net_wait_fd(slot->fd, 1, wait_timeout);
         if (waited != 0) {
             free(buffer);
             return aic_rt_tls_map_net_error(waited);
@@ -6263,7 +6263,7 @@ long aic_rt_tls_recv(
                 free(buffer);
             }
             if (out_len != NULL) {
-                *out_len = (long)rc;
+                *out_len = (int64_t)rc;
             }
             return 0;
         }
@@ -6289,7 +6289,7 @@ long aic_rt_tls_recv(
 #endif
 }
 
-long aic_rt_tls_close(long tls_handle) {
+int64_t aic_rt_tls_close(int64_t tls_handle) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_close", 2);
     AicTlsSlot* slot = aic_rt_tls_get_slot(tls_handle);
     if (slot == NULL) {
@@ -6311,13 +6311,13 @@ long aic_rt_tls_close(long tls_handle) {
     }
 #endif
     if (fd >= 0) {
-        long close_rc = aic_rt_net_close_fd(fd);
+        int64_t close_rc = aic_rt_net_close_fd(fd);
         return aic_rt_tls_map_net_error(close_rc);
     }
     return 0;
 }
 
-static long aic_rt_tls_push_string_item_slice(
+static int64_t aic_rt_tls_push_string_item_slice(
     AicString** items,
     size_t* len,
     size_t* cap,
@@ -6327,7 +6327,7 @@ static long aic_rt_tls_push_string_item_slice(
     if (items == NULL || len == NULL || cap == NULL) {
         return 7;
     }
-    if (text_len > (size_t)LONG_MAX) {
+    if (text_len > (size_t)INT64_MAX) {
         return 7;
     }
     if (*len >= *cap) {
@@ -6355,19 +6355,19 @@ static long aic_rt_tls_push_string_item_slice(
     }
 
     const char* source = text == NULL ? "" : text;
-    char* copy = aic_rt_fs_copy_slice(source, (long)text_len);
+    char* copy = aic_rt_fs_copy_slice(source, (int64_t)text_len);
     if (copy == NULL) {
         return 7;
     }
     (*items)[*len].ptr = copy;
-    (*items)[*len].len = (long)text_len;
-    (*items)[*len].cap = (long)text_len;
+    (*items)[*len].len = (int64_t)text_len;
+    (*items)[*len].cap = (int64_t)text_len;
     *len += 1;
     return 0;
 }
 
 #if AIC_RT_TLS_OPENSSL
-static long aic_rt_tls_peer_name_copy(X509_NAME* name, char** out_ptr, long* out_len) {
+static int64_t aic_rt_tls_peer_name_copy(X509_NAME* name, char** out_ptr, int64_t* out_len) {
     if (name == NULL) {
         return 7;
     }
@@ -6375,7 +6375,7 @@ static long aic_rt_tls_peer_name_copy(X509_NAME* name, char** out_ptr, long* out
     if (raw == NULL) {
         return 7;
     }
-    long raw_len = (long)strlen(raw);
+    int64_t raw_len = (int64_t)strlen(raw);
     char* out = aic_rt_copy_bytes(raw, (size_t)raw_len);
     OPENSSL_free(raw);
     if (out == NULL) {
@@ -6393,7 +6393,7 @@ static long aic_rt_tls_peer_name_copy(X509_NAME* name, char** out_ptr, long* out
 }
 #endif
 
-long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_tls_peer_subject(int64_t tls_handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_peer_subject", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -6412,13 +6412,13 @@ long aic_rt_tls_peer_subject(long tls_handle, char** out_ptr, long* out_len) {
     if (cert == NULL) {
         return 6;
     }
-    long rc = aic_rt_tls_peer_name_copy(X509_get_subject_name(cert), out_ptr, out_len);
+    int64_t rc = aic_rt_tls_peer_name_copy(X509_get_subject_name(cert), out_ptr, out_len);
     X509_free(cert);
     return rc;
 #endif
 }
 
-long aic_rt_tls_peer_issuer(long tls_handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_tls_peer_issuer(int64_t tls_handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_peer_issuer", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -6437,13 +6437,13 @@ long aic_rt_tls_peer_issuer(long tls_handle, char** out_ptr, long* out_len) {
     if (cert == NULL) {
         return 6;
     }
-    long rc = aic_rt_tls_peer_name_copy(X509_get_issuer_name(cert), out_ptr, out_len);
+    int64_t rc = aic_rt_tls_peer_name_copy(X509_get_issuer_name(cert), out_ptr, out_len);
     X509_free(cert);
     return rc;
 #endif
 }
 
-long aic_rt_tls_peer_fingerprint_sha256(long tls_handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_tls_peer_fingerprint_sha256(int64_t tls_handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_peer_fingerprint_sha256", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -6493,13 +6493,13 @@ long aic_rt_tls_peer_fingerprint_sha256(long tls_handle, char** out_ptr, long* o
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)out_n;
+        *out_len = (int64_t)out_n;
     }
     return 0;
 #endif
 }
 
-long aic_rt_tls_peer_san_entries(long tls_handle, char** out_ptr, long* out_count) {
+int64_t aic_rt_tls_peer_san_entries(int64_t tls_handle, char** out_ptr, int64_t* out_count) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_peer_san_entries", 2);
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -6529,7 +6529,7 @@ long aic_rt_tls_peer_san_entries(long tls_handle, char** out_ptr, long* out_coun
     AicString* items = NULL;
     size_t len = 0;
     size_t cap = 0;
-    long result = 0;
+    int64_t result = 0;
 
     int san_count = sk_GENERAL_NAME_num(sans);
     for (int i = 0; i < san_count; ++i) {
@@ -6606,7 +6606,7 @@ long aic_rt_tls_peer_san_entries(long tls_handle, char** out_ptr, long* out_coun
 #endif
 }
 
-long aic_rt_tls_version(long tls_handle, long* out_version) {
+int64_t aic_rt_tls_version(int64_t tls_handle, int64_t* out_version) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_version", 2);
     if (out_version != NULL) {
         *out_version = 0;
@@ -6642,7 +6642,7 @@ long aic_rt_tls_version(long tls_handle, long* out_version) {
 
 #define AIC_RT_ASYNC_POLL_SLICE_MS 5
 
-long aic_rt_net_async_poll_int_once(long op_handle, long* out_value) {
+int64_t aic_rt_net_async_poll_int_once(int64_t op_handle, int64_t* out_value) {
     AIC_RT_SANDBOX_BLOCK_NET("async_poll_int_once", 2);
     aic_rt_net_async_limits_ensure();
     if (out_value != NULL) {
@@ -6673,8 +6673,8 @@ long aic_rt_net_async_poll_int_once(long op_handle, long* out_value) {
         return -1;
     }
 
-    long err = op->err_code;
-    long out = op->out_int;
+    int64_t err = op->err_code;
+    int64_t out = op->out_int;
     aic_rt_net_async_reset_op(op);
     pthread_mutex_unlock(&op->mutex);
     if (err == 0 && out_value != NULL) {
@@ -6683,7 +6683,7 @@ long aic_rt_net_async_poll_int_once(long op_handle, long* out_value) {
     return err;
 }
 
-long aic_rt_net_async_poll_string_once(long op_handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_net_async_poll_string_once(int64_t op_handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("async_poll_string_once", 2);
     aic_rt_net_async_limits_ensure();
     if (out_ptr != NULL) {
@@ -6717,9 +6717,9 @@ long aic_rt_net_async_poll_string_once(long op_handle, char** out_ptr, long* out
         return -1;
     }
 
-    long err = op->err_code;
+    int64_t err = op->err_code;
     char* text = op->out_string_ptr;
-    long text_len = op->out_string_len;
+    int64_t text_len = op->out_string_len;
     op->out_string_ptr = NULL;
     op->out_string_len = 0;
     aic_rt_net_async_reset_op(op);
@@ -6739,7 +6739,7 @@ long aic_rt_net_async_poll_string_once(long op_handle, char** out_ptr, long* out
     return err;
 }
 
-long aic_rt_tls_async_poll_int_once(long op_handle, long* out_value) {
+int64_t aic_rt_tls_async_poll_int_once(int64_t op_handle, int64_t* out_value) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_poll_int_once", 2);
     aic_rt_tls_limits_ensure();
     if (out_value != NULL) {
@@ -6770,8 +6770,8 @@ long aic_rt_tls_async_poll_int_once(long op_handle, long* out_value) {
         return -1;
     }
 
-    long err = op->err_code;
-    long out = op->out_int;
+    int64_t err = op->err_code;
+    int64_t out = op->out_int;
     aic_rt_tls_async_reset_op(op);
     pthread_mutex_unlock(&op->mutex);
     if (err == 0 && out_value != NULL) {
@@ -6780,7 +6780,7 @@ long aic_rt_tls_async_poll_int_once(long op_handle, long* out_value) {
     return err;
 }
 
-long aic_rt_tls_async_poll_string_once(long op_handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_tls_async_poll_string_once(int64_t op_handle, char** out_ptr, int64_t* out_len) {
     AIC_RT_SANDBOX_BLOCK_NET("tls_async_poll_string_once", 2);
     aic_rt_tls_limits_ensure();
     if (out_ptr != NULL) {
@@ -6814,9 +6814,9 @@ long aic_rt_tls_async_poll_string_once(long op_handle, char** out_ptr, long* out
         return -1;
     }
 
-    long err = op->err_code;
+    int64_t err = op->err_code;
     char* text = op->out_string_ptr;
-    long text_len = op->out_string_len;
+    int64_t text_len = op->out_string_len;
     op->out_string_ptr = NULL;
     op->out_string_len = 0;
     aic_rt_tls_async_reset_op(op);
@@ -6836,13 +6836,13 @@ long aic_rt_tls_async_poll_string_once(long op_handle, char** out_ptr, long* out
     return err;
 }
 
-long aic_rt_async_poll_int(long op_handle, long* out_value) {
+int64_t aic_rt_async_poll_int(int64_t op_handle, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
     int saw_timeout = 0;
     for (;;) {
-        long err = aic_rt_net_async_wait_int(op_handle, AIC_RT_ASYNC_POLL_SLICE_MS, out_value);
+        int64_t err = aic_rt_net_async_wait_int(op_handle, AIC_RT_ASYNC_POLL_SLICE_MS, out_value);
         if (err == 4) {
             saw_timeout = 1;
             aic_rt_time_sleep_ms(1);
@@ -6856,7 +6856,7 @@ long aic_rt_async_poll_int(long op_handle, long* out_value) {
     }
 }
 
-long aic_rt_async_poll_string(long op_handle, char** out_ptr, long* out_len) {
+int64_t aic_rt_async_poll_string(int64_t op_handle, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -6865,7 +6865,7 @@ long aic_rt_async_poll_string(long op_handle, char** out_ptr, long* out_len) {
     }
     int saw_timeout = 0;
     for (;;) {
-        long err = aic_rt_net_async_wait_string(
+        int64_t err = aic_rt_net_async_wait_string(
             op_handle,
             AIC_RT_ASYNC_POLL_SLICE_MS,
             out_ptr,
@@ -6895,7 +6895,7 @@ typedef struct {
     char* key;
     const char* value_ptr;
     size_t value_len;
-    long value_kind;
+    int64_t value_kind;
     int value_owned;
 } AicJsonObjectEntry;
 
@@ -6960,15 +6960,15 @@ static int aic_rt_json_append_utf8(char* out, size_t cap, size_t* out_pos, unsig
     return 0;
 }
 
-static long aic_rt_json_parse_value(
+static int64_t aic_rt_json_parse_value(
     const char* text,
     size_t len,
     size_t* pos,
-    long* out_kind,
+    int64_t* out_kind,
     int depth
 );
 
-static long aic_rt_json_parse_string_token(const char* text, size_t len, size_t* pos) {
+static int64_t aic_rt_json_parse_string_token(const char* text, size_t len, size_t* pos) {
     if (*pos >= len || text[*pos] != '"') {
         return 1;
     }
@@ -7014,7 +7014,7 @@ static long aic_rt_json_parse_string_token(const char* text, size_t len, size_t*
     return 1;
 }
 
-static long aic_rt_json_parse_number_token(const char* text, size_t len, size_t* pos) {
+static int64_t aic_rt_json_parse_number_token(const char* text, size_t len, size_t* pos) {
     size_t i = *pos;
     if (i < len && text[i] == '-') {
         i += 1;

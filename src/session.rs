@@ -1460,7 +1460,25 @@ fn process_is_alive(pid: u32) -> Option<bool> {
             .ok()
             .map(|status| status.success());
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        if pid == 0 {
+            return Some(false);
+        }
+        // `tasklist` prints one quoted CSV row per match; the quoted PID check avoids
+        // depending on the localized "no tasks" message.
+        let output = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let rows = String::from_utf8_lossy(&output.stdout);
+        return Some(rows.contains(&format!("\",\"{pid}\",")));
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         None
     }
@@ -1677,11 +1695,12 @@ mod tests {
         assert!(!sessions_root(dir.path()).join(STATE_LOCK_NAME).exists());
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn process_alive_rejects_non_process_pid_values() {
         assert_eq!(process_is_alive(0), Some(false));
         assert_eq!(process_is_alive(u32::MAX), Some(false));
+        assert_eq!(process_is_alive(std::process::id()), Some(true));
     }
 
     #[test]

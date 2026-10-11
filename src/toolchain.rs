@@ -237,12 +237,16 @@ mod tests {
         let expected_project_std =
             fs::canonicalize(project_root.join("std")).unwrap_or(project_root.join("std"));
         assert_eq!(roots[0], expected_project_std);
+        // Roots are canonicalized; on Windows that adds a `\\?\` prefix to the bundled path.
+        let expected_bundled_std =
+            fs::canonicalize(bundled_std_root()).unwrap_or_else(|_| bundled_std_root());
         assert!(
-            roots.iter().any(|root| root == &bundled_std_root()),
+            roots.iter().any(|root| root == &expected_bundled_std),
             "bundled std root should be present"
         );
         if let Some(default_global) = default_global_std_root() {
-            let bundled_idx = roots.iter().position(|root| root == &bundled_std_root());
+            let default_global = fs::canonicalize(&default_global).unwrap_or(default_global);
+            let bundled_idx = roots.iter().position(|root| root == &expected_bundled_std);
             let global_idx = roots.iter().position(|root| root == &default_global);
             if let (Some(bundled_idx), Some(global_idx)) = (bundled_idx, global_idx) {
                 assert!(

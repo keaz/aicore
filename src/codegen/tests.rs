@@ -2485,242 +2485,254 @@ fn panic_runtime_and_ir_abi_match() {
         .llvm_ir
         .contains("declare i64 @aic_rt_crypto_secure_eq(i8*, i64, i64, i8*, i64, i64)"));
     assert!(runtime_c_source().contains(
-        "void aic_rt_panic(const char* ptr, long len, long cap, long line, long column)"
+        "void aic_rt_panic(const char* ptr, int64_t len, int64_t cap, int64_t line, int64_t column)"
     ));
     assert!(runtime_c_source().contains("AIC_BACKTRACE"));
-    assert!(runtime_c_source().contains("void* aic_rt_heap_alloc(long size)"));
+    assert!(runtime_c_source().contains("void* aic_rt_heap_alloc(int64_t size)"));
     assert!(runtime_c_source().contains("memory_leak_detected"));
     assert!(runtime_c_source().contains("#ifdef AIC_RT_CHECK_LEAKS"));
     assert!(runtime_c_source().contains("stack backtrace:"));
     assert!(runtime_c_source().contains("void aic_rt_log_emit("));
-    assert!(runtime_c_source().contains("void aic_rt_log_set_level(long level)"));
-    assert!(runtime_c_source().contains("void aic_rt_log_set_json(long enabled)"));
-    assert!(runtime_c_source().contains("long aic_rt_fs_read_text("));
-    assert!(runtime_c_source().contains("long aic_rt_string_contains("));
+    assert!(runtime_c_source().contains("void aic_rt_log_set_level(int64_t level)"));
+    assert!(runtime_c_source().contains("void aic_rt_log_set_json(int64_t enabled)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_fs_read_text("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_string_contains("));
     assert!(runtime_c_source().contains("aic_rt_string_slice_valid_cap"));
-    assert!(runtime_c_source().contains("long aic_rt_string_parse_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_string_parse_int("));
     assert!(runtime_c_source().contains("void aic_rt_string_join("));
     assert!(runtime_c_source().contains("void aic_rt_vec_new("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_with_capacity("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_of("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_get("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_push("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_pop("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_set("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_insert("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_remove_at("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_reserve("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_shrink_to_fit("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_contains("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_index_of("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_with_capacity("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_of("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_get("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_push("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_pop("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_set("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_insert("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_remove_at("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_reserve("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_shrink_to_fit("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_contains("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_index_of("));
     assert!(runtime_c_source().contains("static int aic_rt_vec_option_int_equal("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_reverse("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_slice("));
-    assert!(runtime_c_source().contains("long aic_rt_vec_append("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_reverse("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_slice("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_vec_append("));
     assert!(runtime_c_source().contains("void aic_rt_vec_clear("));
-    assert!(runtime_c_source().contains("long aic_rt_fs_metadata("));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_map_new(long key_kind, long value_kind, long* out_handle)"));
-    assert!(runtime_c_source().contains("long aic_rt_map_close(long handle)"));
-    assert!(runtime_c_source().contains("long aic_rt_map_insert_string("));
-    assert!(runtime_c_source().contains("long aic_rt_map_insert_int("));
-    assert!(runtime_c_source().contains("long aic_rt_map_get_string("));
-    assert!(runtime_c_source().contains("long aic_rt_map_get_int("));
-    assert!(runtime_c_source().contains("long aic_rt_map_contains("));
-    assert!(runtime_c_source().contains("long aic_rt_map_remove("));
-    assert!(runtime_c_source().contains("long aic_rt_map_size("));
-    assert!(runtime_c_source().contains("long aic_rt_map_keys("));
-    assert!(runtime_c_source().contains("long aic_rt_map_values_string("));
-    assert!(runtime_c_source().contains("long aic_rt_map_values_int("));
-    assert!(runtime_c_source().contains("long aic_rt_map_entries_string("));
-    assert!(runtime_c_source().contains("long aic_rt_map_entries_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_fs_metadata("));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_map_new(int64_t key_kind, int64_t value_kind, int64_t* out_handle)"
+    ));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_close(int64_t handle)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_insert_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_insert_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_get_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_get_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_contains("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_remove("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_size("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_keys("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_values_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_values_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_entries_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_map_entries_int("));
     assert!(runtime_c_source().contains("#define AIC_RT_SSO_INLINE_MAX 23"));
     assert!(runtime_c_source().contains("char key_inline_buf[AIC_RT_SSO_INLINE_MAX + 1];"));
     assert!(runtime_c_source().contains("static int aic_rt_map_string_storage_replace("));
     assert!(runtime_c_source().contains("AIC_RT_DISABLE_MAP_SSO"));
-    assert!(runtime_c_source().contains("long aic_rt_buffer_new(long capacity, long* out_handle)"));
     assert!(runtime_c_source()
-        .contains("long aic_rt_buffer_new_growable(long initial_capacity, long max_capacity, long* out_handle)"));
-    assert!(runtime_c_source().contains("long aic_rt_buffer_from_bytes("));
+        .contains("int64_t aic_rt_buffer_new(int64_t capacity, int64_t* out_handle)"));
     assert!(runtime_c_source()
-        .contains("long aic_rt_buffer_to_bytes(long handle, char** out_ptr, long* out_len)"));
+        .contains("int64_t aic_rt_buffer_new_growable(int64_t initial_capacity, int64_t max_capacity, int64_t* out_handle)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_buffer_from_bytes("));
     assert!(runtime_c_source().contains(
-        "long aic_rt_buffer_read_length_prefixed(long handle, char** out_ptr, long* out_len)"
+        "int64_t aic_rt_buffer_to_bytes(int64_t handle, char** out_ptr, int64_t* out_len)"
     ));
-    assert!(runtime_c_source().contains("long aic_rt_buffer_close(long handle)"));
-    assert!(runtime_c_source().contains("long aic_rt_buffer_write_string_prefixed(long handle, const char* s_ptr, long s_len, long s_cap)"));
-    assert!(
-        runtime_c_source().contains("long aic_rt_buffer_read_u32_be(long handle, long* out_value)")
-    );
-    assert!(runtime_c_source().contains("long aic_rt_buffer_write_u32_le(long handle, long value)"));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_buffer_read_length_prefixed(int64_t handle, char** out_ptr, int64_t* out_len)"
+    ));
+    assert!(runtime_c_source().contains("int64_t aic_rt_buffer_close(int64_t handle)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_buffer_write_string_prefixed(int64_t handle, const char* s_ptr, int64_t s_len, int64_t s_cap)"));
     assert!(runtime_c_source()
-        .contains("long aic_rt_buffer_patch_u32_be(long handle, long offset, long value)"));
-    assert!(runtime_c_source().contains("long aic_rt_time_now_ms(void)"));
-    assert!(runtime_c_source().contains("long aic_rt_time_monotonic_ms(void)"));
-    assert!(runtime_c_source().contains("void aic_rt_time_sleep_ms(long ms)"));
-    assert!(runtime_c_source().contains("long aic_rt_time_parse_rfc3339("));
-    assert!(runtime_c_source().contains("long aic_rt_time_parse_iso8601("));
-    assert!(runtime_c_source().contains("long aic_rt_time_format_rfc3339("));
-    assert!(runtime_c_source().contains("long aic_rt_time_format_iso8601("));
+        .contains("int64_t aic_rt_buffer_read_u32_be(int64_t handle, int64_t* out_value)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_buffer_write_u32_le(int64_t handle, int64_t value)"));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_buffer_patch_u32_be(int64_t handle, int64_t offset, int64_t value)"
+    ));
+    assert!(runtime_c_source().contains("int64_t aic_rt_time_now_ms(void)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_time_monotonic_ms(void)"));
+    assert!(runtime_c_source().contains("void aic_rt_time_sleep_ms(int64_t ms)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_time_parse_rfc3339("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_time_parse_iso8601("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_time_format_rfc3339("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_time_format_iso8601("));
     assert!(runtime_c_source().contains("AIC_TEST_TIME_MS"));
     assert!(runtime_c_source().contains("AIC_TEST_MODE"));
-    assert!(runtime_c_source().contains("long aic_rt_signal_register(long signal_code)"));
-    assert!(runtime_c_source().contains("long aic_rt_signal_wait(long* out_signal_code)"));
-    assert!(runtime_c_source().contains("void aic_rt_rand_seed(long seed)"));
-    assert!(runtime_c_source().contains("long aic_rt_rand_next(void)"));
-    assert!(runtime_c_source().contains("long aic_rt_rand_range(long min_inclusive"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_signal_register(int64_t signal_code)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_signal_wait(int64_t* out_signal_code)"));
+    assert!(runtime_c_source().contains("void aic_rt_rand_seed(int64_t seed)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_rand_next(void)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_rand_range(int64_t min_inclusive"));
     assert!(runtime_c_source().contains("AIC_TEST_SEED"));
     assert!(runtime_c_source()
-        .contains("long aic_rt_mock_io_set_stdin(const char* ptr, long len, long cap)"));
+        .contains("int64_t aic_rt_mock_io_set_stdin(const char* ptr, int64_t len, int64_t cap)"));
     assert!(runtime_c_source()
-        .contains("long aic_rt_mock_io_take_stdout(char** out_ptr, long* out_len)"));
+        .contains("int64_t aic_rt_mock_io_take_stdout(char** out_ptr, int64_t* out_len)"));
     assert!(runtime_c_source()
-        .contains("long aic_rt_mock_io_take_stderr(char** out_ptr, long* out_len)"));
+        .contains("int64_t aic_rt_mock_io_take_stderr(char** out_ptr, int64_t* out_len)"));
     assert!(runtime_c_source().contains("AIC_TEST_NO_REAL_IO"));
     assert!(runtime_c_source().contains("AIC_TEST_IO_CAPTURE"));
-    assert!(runtime_c_source().contains("long aic_rt_conc_spawn(long value, long delay_ms"));
-    assert!(runtime_c_source().contains("long aic_rt_conc_join(long handle, long* out_value)"));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value)"));
-    assert!(runtime_c_source().contains("long aic_rt_conc_join_poll(long handle, long* out_value)"));
-    assert!(runtime_c_source().contains("long aic_rt_conc_spawn_group("));
-    assert!(runtime_c_source().contains("long aic_rt_conc_select_first("));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_channel_int(long capacity, long* out_handle)"));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_channel_int_buffered(long capacity, long* out_handle)"));
-    assert!(runtime_c_source().contains("long aic_rt_conc_try_send_int(long handle, long value)"));
     assert!(
-        runtime_c_source().contains("long aic_rt_conc_try_recv_int(long handle, long* out_value)")
+        runtime_c_source().contains("int64_t aic_rt_conc_spawn(int64_t value, int64_t delay_ms")
     );
-    assert!(runtime_c_source().contains("long aic_rt_conc_select_recv_int("));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_mutex_lock(long handle, long timeout_ms, long* out_value)"));
+    assert!(
+        runtime_c_source().contains("int64_t aic_rt_conc_join(int64_t handle, int64_t* out_value)")
+    );
     assert!(runtime_c_source().contains(
-        "long aic_rt_conc_rwlock_write_lock(long handle, long timeout_ms, long* out_value)"
-    ));
-    assert!(runtime_c_source().contains("long aic_rt_conc_arc_new("));
-    assert!(
-        runtime_c_source().contains("long aic_rt_conc_arc_clone(long handle, long* out_handle)")
-    );
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_arc_get(long handle, char** out_ptr, long* out_len)"));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_arc_strong_count(long handle, long* out_count)"));
-    assert!(runtime_c_source().contains("long aic_rt_conc_arc_release(long handle)"));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_int_new(long initial, long* out_handle)"));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_int_load(long handle, long* out_value)"));
-    assert!(
-        runtime_c_source().contains("long aic_rt_conc_atomic_int_store(long handle, long value)")
-    );
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_int_add(long handle, long delta, long* out_old)"));
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_int_sub(long handle, long delta, long* out_old)"));
-    assert!(runtime_c_source().contains(
-        "long aic_rt_conc_atomic_int_cas(long handle, long expected, long desired, long* out_swapped)"
+        "int64_t aic_rt_conc_join_timeout(int64_t handle, int64_t timeout_ms, int64_t* out_value)"
     ));
     assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_bool_new(long initial, long* out_handle)"));
+        .contains("int64_t aic_rt_conc_join_poll(int64_t handle, int64_t* out_value)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_conc_spawn_group("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_conc_select_first("));
     assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_bool_load(long handle, long* out_value)"));
-    assert!(
-        runtime_c_source().contains("long aic_rt_conc_atomic_bool_store(long handle, long value)")
-    );
-    assert!(runtime_c_source()
-        .contains("long aic_rt_conc_atomic_bool_swap(long handle, long desired, long* out_old)"));
+        .contains("int64_t aic_rt_conc_channel_int(int64_t capacity, int64_t* out_handle)"));
     assert!(runtime_c_source().contains(
-        "long aic_rt_conc_tl_new(long entry_fn, long entry_env, long value_size, long* out_handle)"
+        "int64_t aic_rt_conc_channel_int_buffered(int64_t capacity, int64_t* out_handle)"
     ));
-    assert!(
-        runtime_c_source().contains("long aic_rt_conc_tl_get(long handle, long* out_value_raw)")
-    );
     assert!(runtime_c_source()
-        .contains("long aic_rt_conc_tl_set(long handle, const char* value_ptr, long value_size)"));
+        .contains("int64_t aic_rt_conc_try_send_int(int64_t handle, int64_t value)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_try_recv_int(int64_t handle, int64_t* out_value)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_conc_select_recv_int("));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_mutex_lock(int64_t handle, int64_t timeout_ms, int64_t* out_value)"
+    ));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_rwlock_write_lock(int64_t handle, int64_t timeout_ms, int64_t* out_value)"
+    ));
+    assert!(runtime_c_source().contains("int64_t aic_rt_conc_arc_new("));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_arc_clone(int64_t handle, int64_t* out_handle)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_arc_get(int64_t handle, char** out_ptr, int64_t* out_len)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_arc_strong_count(int64_t handle, int64_t* out_count)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_conc_arc_release(int64_t handle)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_atomic_int_new(int64_t initial, int64_t* out_handle)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_atomic_int_load(int64_t handle, int64_t* out_value)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_atomic_int_store(int64_t handle, int64_t value)"));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_atomic_int_add(int64_t handle, int64_t delta, int64_t* out_old)"
+    ));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_atomic_int_sub(int64_t handle, int64_t delta, int64_t* out_old)"
+    ));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_atomic_int_cas(int64_t handle, int64_t expected, int64_t desired, int64_t* out_swapped)"
+    ));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_atomic_bool_new(int64_t initial, int64_t* out_handle)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_atomic_bool_load(int64_t handle, int64_t* out_value)"));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_atomic_bool_store(int64_t handle, int64_t value)"));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_atomic_bool_swap(int64_t handle, int64_t desired, int64_t* out_old)"
+    ));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_tl_new(int64_t entry_fn, int64_t entry_env, int64_t value_size, int64_t* out_handle)"
+    ));
+    assert!(runtime_c_source()
+        .contains("int64_t aic_rt_conc_tl_get(int64_t handle, int64_t* out_value_raw)"));
+    assert!(runtime_c_source().contains(
+        "int64_t aic_rt_conc_tl_set(int64_t handle, const char* value_ptr, int64_t value_size)"
+    ));
     assert!(runtime_c_source().contains("#include <stdatomic.h>"));
     assert!(runtime_c_source().contains("atomic_fetch_add_explicit(&slot->ref_count"));
     assert!(runtime_c_source().contains("atomic_fetch_sub_explicit(&slot->ref_count"));
     assert!(runtime_c_source().contains("atomic_fetch_add_explicit(&slot->value"));
     assert!(runtime_c_source().contains("atomic_fetch_sub_explicit(&slot->value"));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_listen("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_nodelay("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_nodelay("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_keepalive("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_keepalive("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_send_buffer_size("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_send_buffer_size("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_set_recv_buffer_size("));
-    assert!(runtime_c_source().contains("long aic_rt_net_tcp_get_recv_buffer_size("));
-    assert!(runtime_c_source().contains("long aic_rt_net_udp_recv_from("));
-    assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup("));
-    assert!(runtime_c_source().contains("long aic_rt_net_dns_lookup_all("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_listen("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_set_nodelay("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_get_nodelay("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_set_keepalive("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_get_keepalive("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_set_send_buffer_size("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_get_send_buffer_size("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_set_recv_buffer_size("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_tcp_get_recv_buffer_size("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_udp_recv_from("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_dns_lookup("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_dns_lookup_all("));
     assert!(runtime_c_source().contains("static pthread_mutex_t aic_rt_net_table_mutex"));
-    assert!(runtime_c_source().contains("static long aic_rt_net_take_handle("));
+    assert!(runtime_c_source().contains("static int64_t aic_rt_net_take_handle("));
     assert!(runtime_c_source().contains("static void aic_rt_net_reset_handle_if_matches("));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_accept_submit("));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_send_submit("));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_recv_submit("));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_wait_int("));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_wait_string("));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_shutdown(void)"));
-    assert!(runtime_c_source().contains("long aic_rt_net_async_pressure("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_accept_submit("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_send_submit("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_recv_submit("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_wait_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_wait_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_shutdown(void)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_net_async_pressure("));
     assert!(runtime_c_source().contains("static int aic_rt_net_async_remove_queued_op_locked("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_connect("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_connect_addr("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_accept("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_send("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_recv("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_async_send_submit("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_async_recv_submit("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_async_wait_int("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_async_wait_string("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_async_shutdown(void)"));
-    assert!(runtime_c_source().contains("long aic_rt_tls_async_pressure("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_connect("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_connect_addr("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_accept("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_send("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_recv("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_async_send_submit("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_async_recv_submit("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_async_wait_int("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_async_wait_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_async_shutdown(void)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_async_pressure("));
     assert!(runtime_c_source().contains("AIC_RT_TLS_ASYNC_OP_CAP"));
     assert!(runtime_c_source().contains("if (wait_rc == ETIMEDOUT)"));
     assert!(runtime_c_source().contains("op->claimed = 0;"));
-    assert!(runtime_c_source().contains("long aic_rt_tls_close("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_peer_subject("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_peer_issuer("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_peer_fingerprint_sha256("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_peer_san_entries("));
-    assert!(runtime_c_source().contains("long aic_rt_tls_version("));
-    assert!(runtime_c_source().contains("long aic_rt_async_poll_int(long op_handle"));
-    assert!(runtime_c_source().contains("long aic_rt_async_poll_string(long op_handle"));
-    assert!(runtime_c_source().contains("long aic_rt_url_parse("));
-    assert!(runtime_c_source().contains("long aic_rt_url_normalize("));
-    assert!(runtime_c_source().contains("long aic_rt_url_net_addr("));
-    assert!(runtime_c_source().contains("long aic_rt_http_parse_method("));
-    assert!(runtime_c_source().contains("long aic_rt_http_status_reason("));
-    assert!(runtime_c_source().contains("long aic_rt_http_validate_header("));
-    assert!(runtime_c_source().contains("long aic_rt_http_validate_target("));
-    assert!(runtime_c_source().contains("long aic_rt_http_server_listen("));
-    assert!(runtime_c_source().contains("long aic_rt_http_server_read_request("));
-    assert!(runtime_c_source().contains("long aic_rt_http_server_write_response("));
-    assert!(runtime_c_source().contains("long aic_rt_http_server_async_read_request("));
-    assert!(runtime_c_source().contains("long aic_rt_http_server_async_write_response("));
-    assert!(runtime_c_source().contains("long aic_rt_router_new(long* out_handle)"));
-    assert!(runtime_c_source().contains("long aic_rt_router_add("));
-    assert!(runtime_c_source().contains("long aic_rt_router_match("));
-    assert!(runtime_c_source().contains("long aic_rt_json_parse("));
-    assert!(runtime_c_source().contains("long aic_rt_json_stringify("));
-    assert!(runtime_c_source().contains("long aic_rt_json_decode_string("));
-    assert!(runtime_c_source().contains("long aic_rt_json_object_set("));
-    assert!(runtime_c_source().contains("long aic_rt_json_object_get("));
-    assert!(runtime_c_source().contains("long aic_rt_regex_compile("));
-    assert!(runtime_c_source().contains("long aic_rt_regex_captures("));
-    assert!(runtime_c_source().contains("long aic_rt_regex_find("));
-    assert!(runtime_c_source().contains("long aic_rt_regex_replace("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_close("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_peer_subject("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_peer_issuer("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_peer_fingerprint_sha256("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_peer_san_entries("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_tls_version("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_async_poll_int(int64_t op_handle"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_async_poll_string(int64_t op_handle"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_url_parse("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_url_normalize("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_url_net_addr("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_parse_method("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_status_reason("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_validate_header("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_validate_target("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_server_listen("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_server_read_request("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_server_write_response("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_server_async_read_request("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_http_server_async_write_response("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_router_new(int64_t* out_handle)"));
+    assert!(runtime_c_source().contains("int64_t aic_rt_router_add("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_router_match("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_json_parse("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_json_stringify("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_json_decode_string("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_json_object_set("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_json_object_get("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_regex_compile("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_regex_captures("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_regex_find("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_regex_replace("));
     assert!(runtime_c_source().contains("void aic_rt_crypto_md5("));
     assert!(runtime_c_source().contains("void aic_rt_crypto_sha256("));
     assert!(runtime_c_source().contains("void aic_rt_crypto_hmac_sha256("));
-    assert!(runtime_c_source().contains("long aic_rt_crypto_pbkdf2_sha256("));
-    assert!(runtime_c_source().contains("long aic_rt_crypto_hex_decode("));
-    assert!(runtime_c_source().contains("long aic_rt_crypto_base64_decode("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_crypto_pbkdf2_sha256("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_crypto_hex_decode("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_crypto_base64_decode("));
     assert!(runtime_c_source().contains("void aic_rt_crypto_random_bytes("));
-    assert!(runtime_c_source().contains("long aic_rt_crypto_secure_eq("));
+    assert!(runtime_c_source().contains("int64_t aic_rt_crypto_secure_eq("));
 }
 
 /// Returns the conditional-compilation frames enclosing the first line containing `marker`,

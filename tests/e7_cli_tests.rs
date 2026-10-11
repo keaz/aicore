@@ -5785,7 +5785,7 @@ fn main() -> Int effects { io } capabilities { io } {
     .expect("write source");
     fs::write(
         project.path().join("native/add.c"),
-        r#"long ffi_add42(long x) { return x + 42; }"#,
+        "#include <stdint.h>\nint64_t ffi_add42(int64_t x) { return x + 42; }\n",
     )
     .expect("write c source");
 

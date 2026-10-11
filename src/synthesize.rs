@@ -10,6 +10,7 @@ use crate::ast::{self, BinOp, Expr, ExprKind, Item, TypeExpr, TypeKind, UnaryOp}
 use crate::diagnostics::Diagnostic;
 use crate::formatter::format_program;
 use crate::ir_builder;
+use crate::machine_paths::normalize_separators_path;
 use crate::parser;
 use crate::scaffold::{self, FnScaffoldOptions, ParamSpec};
 use crate::span::Span;
@@ -188,7 +189,7 @@ impl SyntheticSourceMap {
         );
         let (line, column) = line_col_for_offset(&self.source, resolved.start);
         SynthesizeRenderedDiagnosticSpan {
-            file: self.file.to_string_lossy().to_string(),
+            file: normalize_separators_path(&self.file),
             span: resolved,
             line,
             column,
@@ -313,7 +314,7 @@ pub fn synthesize_from_spec(
         phase: SYNTHESIZE_PHASE,
         source_kind: SOURCE_KIND_SPEC,
         target: spec.function.name.clone(),
-        spec_file: spec.file.to_string_lossy().to_string(),
+        spec_file: normalize_separators_path(&spec.file),
         artifacts: vec![
             SynthesizeArtifact {
                 kind: "function".to_string(),
@@ -973,7 +974,7 @@ fn render_manual_synthesize_diagnostic(
         code: code.map(ToString::to_string),
         severity,
         message: message.into(),
-        file: file.to_string_lossy().to_string(),
+        file: normalize_separators_path(file),
         span: resolved_span,
         line,
         column,

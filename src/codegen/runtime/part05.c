@@ -10,13 +10,13 @@
 #define AIC_RT_JSON_BYTES_DEFAULT (16L * 1024L * 1024L)
 #define AIC_RT_JSON_BYTES_MAX (256L * 1024L * 1024L)
 
-static long aic_rt_json_depth_limit = AIC_RT_JSON_DEPTH_DEFAULT;
-static long aic_rt_json_bytes_limit = AIC_RT_JSON_BYTES_DEFAULT;
+static int64_t aic_rt_json_depth_limit = AIC_RT_JSON_DEPTH_DEFAULT;
+static int64_t aic_rt_json_bytes_limit = AIC_RT_JSON_BYTES_DEFAULT;
 static pthread_once_t aic_rt_json_limits_once = PTHREAD_ONCE_INIT;
 
-static long aic_rt_json_last_error_offset = 0;
-static long aic_rt_json_last_error_line = 1;
-static long aic_rt_json_last_error_column = 1;
+static int64_t aic_rt_json_last_error_offset = 0;
+static int64_t aic_rt_json_last_error_line = 1;
+static int64_t aic_rt_json_last_error_column = 1;
 
 static void aic_rt_json_limits_init(void) {
     aic_rt_json_depth_limit = aic_rt_env_parse_bounded_long(
@@ -41,8 +41,8 @@ static void aic_rt_json_record_error_location(const char* text, size_t len, size
     if (offset > len) {
         offset = len;
     }
-    long line = 1;
-    long column = 1;
+    int64_t line = 1;
+    int64_t column = 1;
     if (text != NULL) {
         for (size_t i = 0; i < offset; ++i) {
             if (text[i] == '\n') {
@@ -53,7 +53,7 @@ static void aic_rt_json_record_error_location(const char* text, size_t len, size
             }
         }
     }
-    aic_rt_json_last_error_offset = (long)offset;
+    aic_rt_json_last_error_offset = (int64_t)offset;
     aic_rt_json_last_error_line = line;
     aic_rt_json_last_error_column = column;
 }
@@ -68,7 +68,7 @@ static int aic_rt_json_is_number_continuation(char ch) {
             ch == '_');
 }
 
-static long aic_rt_json_parse_string_token_strict(const char* text, size_t len, size_t* pos) {
+static int64_t aic_rt_json_parse_string_token_strict(const char* text, size_t len, size_t* pos) {
     if (*pos >= len || text[*pos] != '"') {
         return AIC_RT_JSON_ERR_INVALID_STRING;
     }
@@ -161,8 +161,8 @@ static long aic_rt_json_parse_string_token_strict(const char* text, size_t len, 
     return AIC_RT_JSON_ERR_INVALID_STRING;
 }
 
-static long aic_rt_json_parse_number_token_typed(const char* text, size_t len, size_t* pos) {
-    long rc = aic_rt_json_parse_number_token(text, len, pos);
+static int64_t aic_rt_json_parse_number_token_typed(const char* text, size_t len, size_t* pos) {
+    int64_t rc = aic_rt_json_parse_number_token(text, len, pos);
     if (rc != 0) {
         return AIC_RT_JSON_ERR_INVALID_NUMBER;
     }
@@ -172,7 +172,7 @@ static long aic_rt_json_parse_number_token_typed(const char* text, size_t len, s
     return 0;
 }
 
-static long aic_rt_json_parse_array(
+static int64_t aic_rt_json_parse_array(
     const char* text,
     size_t len,
     size_t* pos,
@@ -188,8 +188,8 @@ static long aic_rt_json_parse_array(
         return 0;
     }
     while (*pos < len) {
-        long inner_kind = 0;
-        long rc = aic_rt_json_parse_value(text, len, pos, &inner_kind, depth + 1);
+        int64_t inner_kind = 0;
+        int64_t rc = aic_rt_json_parse_value(text, len, pos, &inner_kind, depth + 1);
         if (rc != 0) {
             return rc;
         }
@@ -211,7 +211,7 @@ static long aic_rt_json_parse_array(
     return AIC_RT_JSON_ERR_INVALID_JSON;
 }
 
-static long aic_rt_json_parse_object(
+static int64_t aic_rt_json_parse_object(
     const char* text,
     size_t len,
     size_t* pos,
@@ -227,7 +227,7 @@ static long aic_rt_json_parse_object(
         return 0;
     }
     while (*pos < len) {
-        long key_rc = aic_rt_json_parse_string_token_strict(text, len, pos);
+        int64_t key_rc = aic_rt_json_parse_string_token_strict(text, len, pos);
         if (key_rc != 0) {
             return key_rc;
         }
@@ -237,8 +237,8 @@ static long aic_rt_json_parse_object(
         }
         *pos += 1;
         aic_rt_json_skip_ws(text, len, pos);
-        long inner_kind = 0;
-        long value_rc = aic_rt_json_parse_value(text, len, pos, &inner_kind, depth + 1);
+        int64_t inner_kind = 0;
+        int64_t value_rc = aic_rt_json_parse_value(text, len, pos, &inner_kind, depth + 1);
         if (value_rc != 0) {
             return value_rc;
         }
@@ -260,11 +260,11 @@ static long aic_rt_json_parse_object(
     return AIC_RT_JSON_ERR_INVALID_JSON;
 }
 
-static long aic_rt_json_parse_value(
+static int64_t aic_rt_json_parse_value(
     const char* text,
     size_t len,
     size_t* pos,
-    long* out_kind,
+    int64_t* out_kind,
     int depth
 ) {
     aic_rt_json_limits_ensure();
@@ -307,7 +307,7 @@ static long aic_rt_json_parse_value(
         return AIC_RT_JSON_ERR_INVALID_JSON;
     }
     if (ch == '"') {
-        long rc = aic_rt_json_parse_string_token_strict(text, len, pos);
+        int64_t rc = aic_rt_json_parse_string_token_strict(text, len, pos);
         if (rc != 0) {
             return rc;
         }
@@ -317,7 +317,7 @@ static long aic_rt_json_parse_value(
         return 0;
     }
     if (ch == '[') {
-        long rc = aic_rt_json_parse_array(text, len, pos, depth);
+        int64_t rc = aic_rt_json_parse_array(text, len, pos, depth);
         if (rc != 0) {
             return rc;
         }
@@ -327,7 +327,7 @@ static long aic_rt_json_parse_value(
         return 0;
     }
     if (ch == '{') {
-        long rc = aic_rt_json_parse_object(text, len, pos, depth);
+        int64_t rc = aic_rt_json_parse_object(text, len, pos, depth);
         if (rc != 0) {
             return rc;
         }
@@ -337,7 +337,7 @@ static long aic_rt_json_parse_value(
         return 0;
     }
     if (ch == '-' || (ch >= '0' && ch <= '9')) {
-        long rc = aic_rt_json_parse_number_token_typed(text, len, pos);
+        int64_t rc = aic_rt_json_parse_number_token_typed(text, len, pos);
         if (rc != 0) {
             return rc;
         }
@@ -349,15 +349,15 @@ static long aic_rt_json_parse_value(
     return AIC_RT_JSON_ERR_INVALID_JSON;
 }
 
-static long aic_rt_json_validate_document(const char* text, size_t len, long* out_kind) {
+static int64_t aic_rt_json_validate_document(const char* text, size_t len, int64_t* out_kind) {
     aic_rt_json_limits_ensure();
     if (len > (size_t)aic_rt_json_bytes_limit) {
         aic_rt_json_record_error_location(text, len, len);
         return AIC_RT_JSON_ERR_INVALID_INPUT;
     }
     size_t pos = 0;
-    long kind = AIC_RT_JSON_KIND_NULL;
-    long rc = aic_rt_json_parse_value(text, len, &pos, &kind, 0);
+    int64_t kind = AIC_RT_JSON_KIND_NULL;
+    int64_t rc = aic_rt_json_parse_value(text, len, &pos, &kind, 0);
     if (rc != 0) {
         aic_rt_json_record_error_location(text, len, pos);
         return rc;
@@ -365,7 +365,7 @@ static long aic_rt_json_validate_document(const char* text, size_t len, long* ou
     size_t parse_end = pos;
     aic_rt_json_skip_ws(text, len, &pos);
     if (pos != len) {
-        long tail_rc = AIC_RT_JSON_ERR_INVALID_JSON;
+        int64_t tail_rc = AIC_RT_JSON_ERR_INVALID_JSON;
         if (kind == AIC_RT_JSON_KIND_NUMBER &&
             parse_end < len &&
             !aic_rt_json_is_space(text[parse_end]) &&
@@ -382,7 +382,7 @@ static long aic_rt_json_validate_document(const char* text, size_t len, long* ou
     return 0;
 }
 
-static long aic_rt_json_decode_string_token(
+static int64_t aic_rt_json_decode_string_token(
     const char* text,
     size_t len,
     size_t* pos,
@@ -399,7 +399,7 @@ static long aic_rt_json_decode_string_token(
         return AIC_RT_JSON_ERR_INVALID_STRING;
     }
     size_t validate_pos = *pos;
-    long validate_rc = aic_rt_json_parse_string_token_strict(text, len, &validate_pos);
+    int64_t validate_rc = aic_rt_json_parse_string_token_strict(text, len, &validate_pos);
     if (validate_rc != 0) {
         return AIC_RT_JSON_ERR_INVALID_STRING;
     }
@@ -514,11 +514,11 @@ static long aic_rt_json_decode_string_token(
     return AIC_RT_JSON_ERR_INVALID_STRING;
 }
 
-static long aic_rt_json_escape_string(
+static int64_t aic_rt_json_escape_string(
     const char* src,
     size_t len,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -608,7 +608,7 @@ static long aic_rt_json_escape_string(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)pos;
+        *out_len = (int64_t)pos;
     }
     return 0;
 }
@@ -626,14 +626,14 @@ static void aic_rt_json_free_entries(AicJsonObjectEntry* entries, size_t count) 
     free(entries);
 }
 
-static long aic_rt_json_upsert_entry(
+static int64_t aic_rt_json_upsert_entry(
     AicJsonObjectEntry** entries_ptr,
     size_t* count_ptr,
     size_t* cap_ptr,
     char* key,
     const char* value_ptr,
     size_t value_len,
-    long value_kind,
+    int64_t value_kind,
     int value_owned
 ) {
     AicJsonObjectEntry* entries = *entries_ptr;
@@ -672,7 +672,7 @@ static long aic_rt_json_upsert_entry(
     return 0;
 }
 
-static long aic_rt_json_collect_object_entries(
+static int64_t aic_rt_json_collect_object_entries(
     const char* text,
     size_t len,
     AicJsonObjectEntry** out_entries,
@@ -715,7 +715,7 @@ static long aic_rt_json_collect_object_entries(
     while (pos < len) {
         char* key = NULL;
         size_t key_len = 0;
-        long key_rc = aic_rt_json_decode_string_token(text, len, &pos, &key, &key_len);
+        int64_t key_rc = aic_rt_json_decode_string_token(text, len, &pos, &key, &key_len);
         (void)key_len;
         if (key_rc != 0) {
             free(key);
@@ -732,8 +732,8 @@ static long aic_rt_json_collect_object_entries(
         aic_rt_json_skip_ws(text, len, &pos);
 
         size_t value_start = pos;
-        long value_kind = 0;
-        long value_rc = aic_rt_json_parse_value(text, len, &pos, &value_kind, 1);
+        int64_t value_kind = 0;
+        int64_t value_rc = aic_rt_json_parse_value(text, len, &pos, &value_kind, 1);
         if (value_rc != 0) {
             free(key);
             aic_rt_json_free_entries(entries, count);
@@ -741,7 +741,7 @@ static long aic_rt_json_collect_object_entries(
         }
         size_t value_end = pos;
 
-        long upsert = aic_rt_json_upsert_entry(
+        int64_t upsert = aic_rt_json_upsert_entry(
             &entries,
             &count,
             &cap,
@@ -816,13 +816,13 @@ static int aic_rt_json_trim_bounds(const char* text, size_t len, size_t* out_sta
     return start < end;
 }
 
-long aic_rt_json_parse(
+int64_t aic_rt_json_parse(
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     char** out_ptr,
-    long* out_len,
-    long* out_kind
+    int64_t* out_len,
+    int64_t* out_kind
 ) {
     (void)text_cap;
     if (out_ptr != NULL) {
@@ -837,8 +837,8 @@ long aic_rt_json_parse(
     if (text_len < 0 || (text_len > 0 && text_ptr == NULL)) {
         return 6;
     }
-    long kind = AIC_RT_JSON_KIND_NULL;
-    long parse_rc = aic_rt_json_validate_document(text_ptr, (size_t)text_len, &kind);
+    int64_t kind = AIC_RT_JSON_KIND_NULL;
+    int64_t parse_rc = aic_rt_json_validate_document(text_ptr, (size_t)text_len, &kind);
     if (parse_rc != 0) {
         return parse_rc;
     }
@@ -860,12 +860,12 @@ long aic_rt_json_parse(
     return 0;
 }
 
-long aic_rt_json_stringify(
+int64_t aic_rt_json_stringify(
     const char* raw_ptr,
-    long raw_len,
-    long raw_cap,
+    int64_t raw_len,
+    int64_t raw_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)raw_cap;
     if (out_ptr != NULL) {
@@ -877,7 +877,7 @@ long aic_rt_json_stringify(
     if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
         return 6;
     }
-    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, NULL);
+    int64_t parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, NULL);
     if (parse_rc != 0) {
         return parse_rc;
     }
@@ -896,7 +896,7 @@ long aic_rt_json_stringify(
     return 0;
 }
 
-long aic_rt_json_encode_int(long value, char** out_ptr, long* out_len) {
+int64_t aic_rt_json_encode_int(int64_t value, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -904,7 +904,7 @@ long aic_rt_json_encode_int(long value, char** out_ptr, long* out_len) {
         *out_len = 0;
     }
     char buf[64];
-    int written = snprintf(buf, sizeof(buf), "%ld", value);
+    int written = snprintf(buf, sizeof(buf), "%" PRId64, value);
     if (written < 0) {
         return 7;
     }
@@ -918,12 +918,12 @@ long aic_rt_json_encode_int(long value, char** out_ptr, long* out_len) {
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)written;
+        *out_len = (int64_t)written;
     }
     return 0;
 }
 
-long aic_rt_json_encode_float(double value, char** out_ptr, long* out_len) {
+int64_t aic_rt_json_encode_float(double value, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -960,12 +960,12 @@ long aic_rt_json_encode_float(double value, char** out_ptr, long* out_len) {
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)written;
+        *out_len = (int64_t)written;
     }
     return 0;
 }
 
-long aic_rt_json_encode_bool(long value, char** out_ptr, long* out_len) {
+int64_t aic_rt_json_encode_bool(int64_t value, char** out_ptr, int64_t* out_len) {
     if (value != 0) {
         char* out_true = aic_rt_copy_bytes("true", 4);
         if (out_true == NULL) {
@@ -996,12 +996,12 @@ long aic_rt_json_encode_bool(long value, char** out_ptr, long* out_len) {
     return 0;
 }
 
-long aic_rt_json_encode_string(
+int64_t aic_rt_json_encode_string(
     const char* value_ptr,
-    long value_len,
-    long value_cap,
+    int64_t value_len,
+    int64_t value_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)value_cap;
     if (value_len < 0 || (value_len > 0 && value_ptr == NULL)) {
@@ -1016,7 +1016,7 @@ long aic_rt_json_encode_string(
     return aic_rt_json_escape_string(value_ptr, (size_t)value_len, out_ptr, out_len);
 }
 
-long aic_rt_json_encode_null(char** out_ptr, long* out_len) {
+int64_t aic_rt_json_encode_null(char** out_ptr, int64_t* out_len) {
     char* out = aic_rt_copy_bytes("null", 4);
     if (out == NULL) {
         if (out_ptr != NULL) {
@@ -1038,11 +1038,11 @@ long aic_rt_json_encode_null(char** out_ptr, long* out_len) {
     return 0;
 }
 
-long aic_rt_json_decode_int(
+int64_t aic_rt_json_decode_int(
     const char* raw_ptr,
-    long raw_len,
-    long raw_cap,
-    long* out_value
+    int64_t raw_len,
+    int64_t raw_cap,
+    int64_t* out_value
 ) {
     (void)raw_cap;
     if (out_value != NULL) {
@@ -1051,8 +1051,8 @@ long aic_rt_json_decode_int(
     if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
         return 6;
     }
-    long kind = AIC_RT_JSON_KIND_NULL;
-    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    int64_t kind = AIC_RT_JSON_KIND_NULL;
+    int64_t parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
     if (parse_rc != 0) {
         return parse_rc;
     }
@@ -1081,21 +1081,21 @@ long aic_rt_json_decode_int(
         free(number);
         return 4;
     }
-    if (parsed < LONG_MIN || parsed > LONG_MAX) {
+    if (parsed < INT64_MIN || parsed > INT64_MAX) {
         free(number);
         return 4;
     }
     if (out_value != NULL) {
-        *out_value = (long)parsed;
+        *out_value = (int64_t)parsed;
     }
     free(number);
     return 0;
 }
 
-long aic_rt_json_decode_float(
+int64_t aic_rt_json_decode_float(
     const char* raw_ptr,
-    long raw_len,
-    long raw_cap,
+    int64_t raw_len,
+    int64_t raw_cap,
     double* out_value
 ) {
     (void)raw_cap;
@@ -1105,8 +1105,8 @@ long aic_rt_json_decode_float(
     if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
         return 6;
     }
-    long kind = AIC_RT_JSON_KIND_NULL;
-    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    int64_t kind = AIC_RT_JSON_KIND_NULL;
+    int64_t parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
     if (parse_rc != 0) {
         return parse_rc;
     }
@@ -1140,11 +1140,11 @@ long aic_rt_json_decode_float(
     return 0;
 }
 
-long aic_rt_json_decode_bool(
+int64_t aic_rt_json_decode_bool(
     const char* raw_ptr,
-    long raw_len,
-    long raw_cap,
-    long* out_value
+    int64_t raw_len,
+    int64_t raw_cap,
+    int64_t* out_value
 ) {
     (void)raw_cap;
     if (out_value != NULL) {
@@ -1153,8 +1153,8 @@ long aic_rt_json_decode_bool(
     if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
         return 6;
     }
-    long kind = AIC_RT_JSON_KIND_NULL;
-    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    int64_t kind = AIC_RT_JSON_KIND_NULL;
+    int64_t parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
     if (parse_rc != 0) {
         return parse_rc;
     }
@@ -1182,12 +1182,12 @@ long aic_rt_json_decode_bool(
     return 1;
 }
 
-long aic_rt_json_decode_string(
+int64_t aic_rt_json_decode_string(
     const char* raw_ptr,
-    long raw_len,
-    long raw_cap,
+    int64_t raw_len,
+    int64_t raw_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)raw_cap;
     if (out_ptr != NULL) {
@@ -1199,8 +1199,8 @@ long aic_rt_json_decode_string(
     if (raw_len < 0 || (raw_len > 0 && raw_ptr == NULL)) {
         return 6;
     }
-    long kind = AIC_RT_JSON_KIND_NULL;
-    long parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
+    int64_t kind = AIC_RT_JSON_KIND_NULL;
+    int64_t parse_rc = aic_rt_json_validate_document(raw_ptr, (size_t)raw_len, &kind);
     if (parse_rc != 0) {
         return parse_rc;
     }
@@ -1215,7 +1215,7 @@ long aic_rt_json_decode_string(
     size_t pos = start;
     char* decoded = NULL;
     size_t decoded_len = 0;
-    long decode_rc =
+    int64_t decode_rc =
         aic_rt_json_decode_string_token(raw_ptr, end, &pos, &decoded, &decoded_len);
     if (decode_rc != 0 || pos != end) {
         free(decoded);
@@ -1227,12 +1227,12 @@ long aic_rt_json_decode_string(
         free(decoded);
     }
     if (out_len != NULL) {
-        *out_len = (long)decoded_len;
+        *out_len = (int64_t)decoded_len;
     }
     return 0;
 }
 
-long aic_rt_json_object_empty(char** out_ptr, long* out_len) {
+int64_t aic_rt_json_object_empty(char** out_ptr, int64_t* out_len) {
     char* out = aic_rt_copy_bytes("{}", 2);
     if (out == NULL) {
         if (out_ptr != NULL) {
@@ -1254,19 +1254,19 @@ long aic_rt_json_object_empty(char** out_ptr, long* out_len) {
     return 0;
 }
 
-long aic_rt_json_object_set(
+int64_t aic_rt_json_object_set(
     const char* object_ptr,
-    long object_len,
-    long object_cap,
+    int64_t object_len,
+    int64_t object_cap,
     const char* key_ptr,
-    long key_len,
-    long key_cap,
+    int64_t key_len,
+    int64_t key_cap,
     const char* value_ptr,
-    long value_len,
-    long value_cap,
+    int64_t value_len,
+    int64_t value_cap,
     char** out_ptr,
-    long* out_len,
-    long* out_kind
+    int64_t* out_len,
+    int64_t* out_kind
 ) {
     (void)object_cap;
     (void)key_cap;
@@ -1286,16 +1286,16 @@ long aic_rt_json_object_set(
         return 6;
     }
 
-    long object_kind = AIC_RT_JSON_KIND_NULL;
-    long object_rc = aic_rt_json_validate_document(object_ptr, (size_t)object_len, &object_kind);
+    int64_t object_kind = AIC_RT_JSON_KIND_NULL;
+    int64_t object_rc = aic_rt_json_validate_document(object_ptr, (size_t)object_len, &object_kind);
     if (object_rc != 0) {
         return object_rc;
     }
     if (object_kind != AIC_RT_JSON_KIND_OBJECT) {
         return 2;
     }
-    long value_kind = AIC_RT_JSON_KIND_NULL;
-    long value_rc = aic_rt_json_validate_document(value_ptr, (size_t)value_len, &value_kind);
+    int64_t value_kind = AIC_RT_JSON_KIND_NULL;
+    int64_t value_rc = aic_rt_json_validate_document(value_ptr, (size_t)value_len, &value_kind);
     if (value_rc != 0) {
         return value_rc;
     }
@@ -1312,7 +1312,7 @@ long aic_rt_json_object_set(
 
     AicJsonObjectEntry* entries = NULL;
     size_t count = 0;
-    long collect_rc =
+    int64_t collect_rc =
         aic_rt_json_collect_object_entries(object_copy, (size_t)object_len, &entries, &count);
     if (collect_rc != 0) {
         free(object_copy);
@@ -1323,7 +1323,7 @@ long aic_rt_json_object_set(
     }
 
     size_t cap = count;
-    long upsert_rc = aic_rt_json_upsert_entry(
+    int64_t upsert_rc = aic_rt_json_upsert_entry(
         &entries,
         &count,
         &cap,
@@ -1344,10 +1344,10 @@ long aic_rt_json_object_set(
     qsort(entries, count, sizeof(AicJsonObjectEntry), aic_rt_json_entry_cmp);
 
     char** key_json = NULL;
-    long* key_json_len = NULL;
+    int64_t* key_json_len = NULL;
     if (count > 0) {
         key_json = (char**)calloc(count, sizeof(char*));
-        key_json_len = (long*)calloc(count, sizeof(long));
+        key_json_len = (int64_t*)calloc(count, sizeof(int64_t));
         if (key_json == NULL || key_json_len == NULL) {
             free(object_copy);
             free(key_json);
@@ -1359,7 +1359,7 @@ long aic_rt_json_object_set(
 
     size_t total_len = 2;
     for (size_t i = 0; i < count; ++i) {
-        long escape_rc = aic_rt_json_escape_string(
+        int64_t escape_rc = aic_rt_json_escape_string(
             entries[i].key,
             strlen(entries[i].key),
             &key_json[i],
@@ -1418,7 +1418,7 @@ long aic_rt_json_object_set(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)pos;
+        *out_len = (int64_t)pos;
     }
     if (out_kind != NULL) {
         *out_kind = AIC_RT_JSON_KIND_OBJECT;
@@ -1434,17 +1434,17 @@ long aic_rt_json_object_set(
     return 0;
 }
 
-long aic_rt_json_object_get(
+int64_t aic_rt_json_object_get(
     const char* object_ptr,
-    long object_len,
-    long object_cap,
+    int64_t object_len,
+    int64_t object_cap,
     const char* key_ptr,
-    long key_len,
-    long key_cap,
+    int64_t key_len,
+    int64_t key_cap,
     char** out_ptr,
-    long* out_len,
-    long* out_kind,
-    long* out_found
+    int64_t* out_len,
+    int64_t* out_kind,
+    int64_t* out_found
 ) {
     (void)object_cap;
     (void)key_cap;
@@ -1465,8 +1465,8 @@ long aic_rt_json_object_get(
         return 6;
     }
 
-    long object_kind = AIC_RT_JSON_KIND_NULL;
-    long object_rc = aic_rt_json_validate_document(object_ptr, (size_t)object_len, &object_kind);
+    int64_t object_kind = AIC_RT_JSON_KIND_NULL;
+    int64_t object_rc = aic_rt_json_validate_document(object_ptr, (size_t)object_len, &object_kind);
     if (object_rc != 0) {
         return object_rc;
     }
@@ -1484,7 +1484,7 @@ long aic_rt_json_object_get(
 
     AicJsonObjectEntry* entries = NULL;
     size_t count = 0;
-    long collect_rc =
+    int64_t collect_rc =
         aic_rt_json_collect_object_entries(object_copy, (size_t)object_len, &entries, &count);
     if (collect_rc != 0) {
         free(object_copy);
@@ -1508,7 +1508,7 @@ long aic_rt_json_object_get(
                 free(out);
             }
             if (out_len != NULL) {
-                *out_len = (long)entries[i].value_len;
+                *out_len = (int64_t)entries[i].value_len;
             }
             if (out_kind != NULL) {
                 *out_kind = entries[i].value_kind;
@@ -1535,7 +1535,7 @@ long aic_rt_json_object_get(
 #define AIC_RT_REGEX_SUPPORTED_FLAGS \
     (AIC_RT_REGEX_FLAG_CASE_INSENSITIVE | AIC_RT_REGEX_FLAG_MULTILINE | AIC_RT_REGEX_FLAG_DOT_MATCHES_NEWLINE)
 
-static long aic_rt_regex_validate_flags(long flags) {
+static int64_t aic_rt_regex_validate_flags(int64_t flags) {
     if (flags < 0) {
         return 2;  // InvalidInput
     }
@@ -1550,7 +1550,7 @@ static long aic_rt_regex_validate_flags(long flags) {
 }
 
 #ifdef _WIN32
-long aic_rt_regex_compile(const char* pattern_ptr, long pattern_len, long pattern_cap, long flags) {
+int64_t aic_rt_regex_compile(const char* pattern_ptr, int64_t pattern_len, int64_t pattern_cap, int64_t flags) {
     (void)pattern_ptr;
     (void)pattern_len;
     (void)pattern_cap;
@@ -1558,15 +1558,15 @@ long aic_rt_regex_compile(const char* pattern_ptr, long pattern_len, long patter
     return 4;
 }
 
-long aic_rt_regex_is_match(
+int64_t aic_rt_regex_is_match(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
-    long* out_is_match
+    int64_t text_len,
+    int64_t text_cap,
+    int64_t* out_is_match
 ) {
     (void)pattern_ptr;
     (void)pattern_len;
@@ -1581,16 +1581,16 @@ long aic_rt_regex_is_match(
     return 4;
 }
 
-long aic_rt_regex_find(
+int64_t aic_rt_regex_find(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)pattern_ptr;
     (void)pattern_len;
@@ -1608,21 +1608,21 @@ long aic_rt_regex_find(
     return 4;
 }
 
-long aic_rt_regex_captures(
+int64_t aic_rt_regex_captures(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     char** out_full_ptr,
-    long* out_full_len,
+    int64_t* out_full_len,
     char** out_groups_ptr,
-    long* out_group_count,
-    long* out_start,
-    long* out_end,
-    long* out_found
+    int64_t* out_group_count,
+    int64_t* out_start,
+    int64_t* out_end,
+    int64_t* out_found
 ) {
     (void)pattern_ptr;
     (void)pattern_len;
@@ -1655,19 +1655,19 @@ long aic_rt_regex_captures(
     return 4;
 }
 
-long aic_rt_regex_replace(
+int64_t aic_rt_regex_replace(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     const char* replacement_ptr,
-    long replacement_len,
-    long replacement_cap,
+    int64_t replacement_len,
+    int64_t replacement_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)pattern_ptr;
     (void)pattern_len;
@@ -1688,7 +1688,7 @@ long aic_rt_regex_replace(
     return 4;
 }
 #else
-static long aic_rt_regex_map_compile_error(int err) {
+static int64_t aic_rt_regex_map_compile_error(int err) {
     switch (err) {
 #ifdef REG_ESPACE
         case REG_ESPACE:
@@ -1699,7 +1699,7 @@ static long aic_rt_regex_map_compile_error(int err) {
     }
 }
 
-static long aic_rt_regex_map_exec_error(int err) {
+static int64_t aic_rt_regex_map_exec_error(int err) {
     switch (err) {
 #ifdef REG_NOMATCH
         case REG_NOMATCH:
@@ -1714,18 +1714,18 @@ static long aic_rt_regex_map_exec_error(int err) {
     }
 }
 
-static long aic_rt_regex_compile_pattern(
+static int64_t aic_rt_regex_compile_pattern(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     regex_t* out_regex
 ) {
     (void)pattern_cap;
     if (out_regex == NULL) {
         return 6;
     }
-    long flag_check = aic_rt_regex_validate_flags(flags);
+    int64_t flag_check = aic_rt_regex_validate_flags(flags);
     if (flag_check != 0) {
         return flag_check;
     }
@@ -1753,9 +1753,9 @@ static long aic_rt_regex_compile_pattern(
     return 0;
 }
 
-long aic_rt_regex_compile(const char* pattern_ptr, long pattern_len, long pattern_cap, long flags) {
+int64_t aic_rt_regex_compile(const char* pattern_ptr, int64_t pattern_len, int64_t pattern_cap, int64_t flags) {
     regex_t compiled;
-    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    int64_t err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
     if (err != 0) {
         return err;
     }
@@ -1763,15 +1763,15 @@ long aic_rt_regex_compile(const char* pattern_ptr, long pattern_len, long patter
     return 0;
 }
 
-long aic_rt_regex_is_match(
+int64_t aic_rt_regex_is_match(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
-    long* out_is_match
+    int64_t text_len,
+    int64_t text_cap,
+    int64_t* out_is_match
 ) {
     (void)text_cap;
     if (out_is_match != NULL) {
@@ -1781,7 +1781,7 @@ long aic_rt_regex_is_match(
         return 2;
     }
     regex_t compiled;
-    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    int64_t err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
     if (err != 0) {
         return err;
     }
@@ -1811,16 +1811,16 @@ long aic_rt_regex_is_match(
     return 0;
 }
 
-long aic_rt_regex_find(
+int64_t aic_rt_regex_find(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)text_cap;
     if (out_ptr != NULL) {
@@ -1833,7 +1833,7 @@ long aic_rt_regex_find(
         return 2;
     }
     regex_t compiled;
-    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    int64_t err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
     if (err != 0) {
         return err;
     }
@@ -1870,26 +1870,26 @@ long aic_rt_regex_find(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)(end - start);
+        *out_len = (int64_t)(end - start);
     }
     return 0;
 }
 
-long aic_rt_regex_captures(
+int64_t aic_rt_regex_captures(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     char** out_full_ptr,
-    long* out_full_len,
+    int64_t* out_full_len,
     char** out_groups_ptr,
-    long* out_group_count,
-    long* out_start,
-    long* out_end,
-    long* out_found
+    int64_t* out_group_count,
+    int64_t* out_start,
+    int64_t* out_end,
+    int64_t* out_found
 ) {
     (void)text_cap;
     if (out_full_ptr != NULL) {
@@ -1918,7 +1918,7 @@ long aic_rt_regex_captures(
     }
 
     regex_t compiled;
-    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    int64_t err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
     if (err != 0) {
         return err;
     }
@@ -1930,7 +1930,7 @@ long aic_rt_regex_captures(
     }
 
     size_t raw_match_count = (size_t)compiled.re_nsub + 1;
-    if (raw_match_count == 0 || raw_match_count > (size_t)LONG_MAX) {
+    if (raw_match_count == 0 || raw_match_count > (size_t)INT64_MAX) {
         free(text);
         regfree(&compiled);
         return 5;
@@ -1975,7 +1975,7 @@ long aic_rt_regex_captures(
     }
 
     size_t group_count = raw_match_count - 1;
-    if (group_count > (size_t)LONG_MAX) {
+    if (group_count > (size_t)INT64_MAX) {
         free(full);
         free(matches);
         free(text);
@@ -2012,8 +2012,8 @@ long aic_rt_regex_captures(
             return 6;
         }
         groups[i].ptr = part;
-        groups[i].len = (long)(part_end - part_start);
-        groups[i].cap = (long)(part_end - part_start);
+        groups[i].len = (int64_t)(part_end - part_start);
+        groups[i].cap = (int64_t)(part_end - part_start);
     }
 
     free(matches);
@@ -2025,7 +2025,7 @@ long aic_rt_regex_captures(
         free(full);
     }
     if (out_full_len != NULL) {
-        *out_full_len = (long)(full_end - full_start);
+        *out_full_len = (int64_t)(full_end - full_start);
     }
     if (out_groups_ptr != NULL) {
         *out_groups_ptr = (char*)groups;
@@ -2033,13 +2033,13 @@ long aic_rt_regex_captures(
         aic_rt_string_free_parts(groups, group_count);
     }
     if (out_group_count != NULL) {
-        *out_group_count = (long)group_count;
+        *out_group_count = (int64_t)group_count;
     }
     if (out_start != NULL) {
-        *out_start = (long)full_start;
+        *out_start = (int64_t)full_start;
     }
     if (out_end != NULL) {
-        *out_end = (long)full_end;
+        *out_end = (int64_t)full_end;
     }
     if (out_found != NULL) {
         *out_found = 1;
@@ -2047,19 +2047,19 @@ long aic_rt_regex_captures(
     return 0;
 }
 
-long aic_rt_regex_replace(
+int64_t aic_rt_regex_replace(
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long flags,
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t flags,
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     const char* replacement_ptr,
-    long replacement_len,
-    long replacement_cap,
+    int64_t replacement_len,
+    int64_t replacement_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)text_cap;
     (void)replacement_cap;
@@ -2077,7 +2077,7 @@ long aic_rt_regex_replace(
     }
 
     regex_t compiled;
-    long err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
+    int64_t err = aic_rt_regex_compile_pattern(pattern_ptr, pattern_len, pattern_cap, flags, &compiled);
     if (err != 0) {
         return err;
     }
@@ -2110,7 +2110,7 @@ long aic_rt_regex_replace(
                 free(out_copy);
             }
             if (out_len != NULL) {
-                *out_len = (long)text_bytes;
+                *out_len = (int64_t)text_bytes;
             }
             return 0;
         }
@@ -2138,7 +2138,7 @@ long aic_rt_regex_replace(
         return 6;
     }
     size_t suffix = text_bytes - suffix_start;
-    if (prefix > (size_t)LONG_MAX || repl_bytes > (size_t)LONG_MAX || suffix > (size_t)LONG_MAX) {
+    if (prefix > (size_t)INT64_MAX || repl_bytes > (size_t)INT64_MAX || suffix > (size_t)INT64_MAX) {
         free(text);
         free(replacement);
         regfree(&compiled);
@@ -2151,7 +2151,7 @@ long aic_rt_regex_replace(
         return 5;
     }
     size_t out_bytes = prefix + repl_bytes + suffix;
-    if (out_bytes > (size_t)LONG_MAX) {
+    if (out_bytes > (size_t)INT64_MAX) {
         free(text);
         free(replacement);
         regfree(&compiled);
@@ -2185,7 +2185,7 @@ long aic_rt_regex_replace(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)out_bytes;
+        *out_len = (int64_t)out_bytes;
     }
     return 0;
 }
@@ -2233,7 +2233,7 @@ static int aic_rt_url_has_control_or_space(const char* ptr, size_t len) {
     return 0;
 }
 
-static long aic_rt_url_validate_scheme(const char* ptr, size_t len) {
+static int64_t aic_rt_url_validate_scheme(const char* ptr, size_t len) {
     if (ptr == NULL || len == 0) {
         return 2;
     }
@@ -2249,7 +2249,7 @@ static long aic_rt_url_validate_scheme(const char* ptr, size_t len) {
     return 0;
 }
 
-static long aic_rt_url_parse_port(const char* ptr, size_t len, long* out_port) {
+static int64_t aic_rt_url_parse_port(const char* ptr, size_t len, int64_t* out_port) {
     if (out_port != NULL) {
         *out_port = -1;
     }
@@ -2267,7 +2267,7 @@ static long aic_rt_url_parse_port(const char* ptr, size_t len, long* out_port) {
         }
     }
     if (out_port != NULL) {
-        *out_port = (long)value;
+        *out_port = (int64_t)value;
     }
     return 0;
 }
@@ -2281,11 +2281,11 @@ static int aic_rt_url_host_needs_brackets(const char* host, size_t host_len) {
     return 0;
 }
 
-static long aic_rt_url_copy_out(
+static int64_t aic_rt_url_copy_out(
     const char* ptr,
     size_t len,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     char* out = aic_rt_copy_bytes(ptr, len);
     if (out == NULL) {
@@ -2297,26 +2297,26 @@ static long aic_rt_url_copy_out(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)len;
+        *out_len = (int64_t)len;
     }
     return 0;
 }
 
-long aic_rt_url_parse(
+int64_t aic_rt_url_parse(
     const char* text_ptr,
-    long text_len,
-    long text_cap,
+    int64_t text_len,
+    int64_t text_cap,
     char** out_scheme_ptr,
-    long* out_scheme_len,
+    int64_t* out_scheme_len,
     char** out_host_ptr,
-    long* out_host_len,
-    long* out_port,
+    int64_t* out_host_len,
+    int64_t* out_port,
     char** out_path_ptr,
-    long* out_path_len,
+    int64_t* out_path_len,
     char** out_query_ptr,
-    long* out_query_len,
+    int64_t* out_query_len,
     char** out_fragment_ptr,
-    long* out_fragment_len
+    int64_t* out_fragment_len
 ) {
     (void)text_cap;
     if (out_scheme_ptr != NULL) {
@@ -2374,7 +2374,7 @@ long aic_rt_url_parse(
     if (scheme_end == 0) {
         return 1;
     }
-    long scheme_check = aic_rt_url_validate_scheme(text_ptr, scheme_end);
+    int64_t scheme_check = aic_rt_url_validate_scheme(text_ptr, scheme_end);
     if (scheme_check != 0) {
         return scheme_check;
     }
@@ -2396,7 +2396,7 @@ long aic_rt_url_parse(
 
     size_t host_start = authority_start;
     size_t host_end = authority_end;
-    long parsed_port = -1;
+    int64_t parsed_port = -1;
     int bracketed = 0;
     if (text_ptr[authority_start] == '[') {
         bracketed = 1;
@@ -2413,7 +2413,7 @@ long aic_rt_url_parse(
             if (text_ptr[close + 1] != ':') {
                 return 3;
             }
-            long port_rc = aic_rt_url_parse_port(
+            int64_t port_rc = aic_rt_url_parse_port(
                 text_ptr + close + 2,
                 authority_end - (close + 2),
                 &parsed_port
@@ -2431,7 +2431,7 @@ long aic_rt_url_parse(
         }
         if (colon < authority_end) {
             host_end = colon;
-            long port_rc =
+            int64_t port_rc =
                 aic_rt_url_parse_port(text_ptr + colon + 1, authority_end - (colon + 1), &parsed_port);
             if (port_rc != 0) {
                 return port_rc;
@@ -2499,7 +2499,7 @@ long aic_rt_url_parse(
         return 1;
     }
 
-    long rc = aic_rt_url_copy_out(text_ptr, scheme_end, out_scheme_ptr, out_scheme_len);
+    int64_t rc = aic_rt_url_copy_out(text_ptr, scheme_end, out_scheme_ptr, out_scheme_len);
     if (rc != 0) {
         return rc;
     }
@@ -2579,25 +2579,25 @@ long aic_rt_url_parse(
     return 0;
 }
 
-long aic_rt_url_normalize(
+int64_t aic_rt_url_normalize(
     const char* scheme_ptr,
-    long scheme_len,
-    long scheme_cap,
+    int64_t scheme_len,
+    int64_t scheme_cap,
     const char* host_ptr,
-    long host_len,
-    long host_cap,
-    long port,
+    int64_t host_len,
+    int64_t host_cap,
+    int64_t port,
     const char* path_ptr,
-    long path_len,
-    long path_cap,
+    int64_t path_len,
+    int64_t path_cap,
     const char* query_ptr,
-    long query_len,
-    long query_cap,
+    int64_t query_len,
+    int64_t query_cap,
     const char* fragment_ptr,
-    long fragment_len,
-    long fragment_cap,
+    int64_t fragment_len,
+    int64_t fragment_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)scheme_cap;
     (void)host_cap;
@@ -2621,7 +2621,7 @@ long aic_rt_url_normalize(
     if (port < -1 || port > 65535) {
         return 4;
     }
-    long scheme_check = aic_rt_url_validate_scheme(scheme_ptr, (size_t)scheme_len);
+    int64_t scheme_check = aic_rt_url_validate_scheme(scheme_ptr, (size_t)scheme_len);
     if (scheme_check != 0) {
         return scheme_check;
     }
@@ -2661,7 +2661,7 @@ long aic_rt_url_normalize(
         host[i] = aic_rt_ascii_lower(host[i]);
     }
 
-    long normalized_port = port;
+    int64_t normalized_port = port;
     if ((normalized_port == 80 && aic_rt_ascii_eq_lit_ci(scheme, (size_t)scheme_len, "http")) ||
         (normalized_port == 443 && aic_rt_ascii_eq_lit_ci(scheme, (size_t)scheme_len, "https"))) {
         normalized_port = -1;
@@ -2670,7 +2670,7 @@ long aic_rt_url_normalize(
     char port_buf[32];
     size_t port_len = 0;
     if (normalized_port >= 0) {
-        int written = snprintf(port_buf, sizeof(port_buf), "%ld", normalized_port);
+        int written = snprintf(port_buf, sizeof(port_buf), "%" PRId64, normalized_port);
         if (written <= 0 || (size_t)written >= sizeof(port_buf)) {
             free(scheme);
             free(host);
@@ -2743,21 +2743,21 @@ long aic_rt_url_normalize(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)pos;
+        *out_len = (int64_t)pos;
     }
     return 0;
 }
 
-long aic_rt_url_net_addr(
+int64_t aic_rt_url_net_addr(
     const char* scheme_ptr,
-    long scheme_len,
-    long scheme_cap,
+    int64_t scheme_len,
+    int64_t scheme_cap,
     const char* host_ptr,
-    long host_len,
-    long host_cap,
-    long port,
+    int64_t host_len,
+    int64_t host_cap,
+    int64_t port,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)scheme_cap;
     (void)host_cap;
@@ -2777,7 +2777,7 @@ long aic_rt_url_net_addr(
         return 3;
     }
 
-    long scheme_check = aic_rt_url_validate_scheme(scheme_ptr, (size_t)scheme_len);
+    int64_t scheme_check = aic_rt_url_validate_scheme(scheme_ptr, (size_t)scheme_len);
     if (scheme_check != 0) {
         return scheme_check;
     }
@@ -2788,7 +2788,7 @@ long aic_rt_url_net_addr(
         }
     }
 
-    long resolved_port = port;
+    int64_t resolved_port = port;
     if (resolved_port < 0) {
         if (aic_rt_ascii_eq_lit_ci(scheme_ptr, (size_t)scheme_len, "http")) {
             resolved_port = 80;
@@ -2804,7 +2804,7 @@ long aic_rt_url_net_addr(
 
     int needs_brackets = aic_rt_url_host_needs_brackets(host_ptr, (size_t)host_len);
     char port_buf[32];
-    int written = snprintf(port_buf, sizeof(port_buf), "%ld", resolved_port);
+    int written = snprintf(port_buf, sizeof(port_buf), "%" PRId64, resolved_port);
     if (written <= 0 || (size_t)written >= sizeof(port_buf)) {
         return 7;
     }
@@ -2832,7 +2832,7 @@ long aic_rt_url_net_addr(
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)pos;
+        *out_len = (int64_t)pos;
     }
     return 0;
 }
@@ -2863,7 +2863,7 @@ static int aic_rt_http_is_token_char(char ch) {
     }
 }
 
-static long aic_rt_http_copy_const(const char* text, char** out_ptr, long* out_len) {
+static int64_t aic_rt_http_copy_const(const char* text, char** out_ptr, int64_t* out_len) {
     size_t len = strlen(text);
     char* out = aic_rt_copy_bytes(text, len);
     if (out == NULL) {
@@ -2875,12 +2875,12 @@ static long aic_rt_http_copy_const(const char* text, char** out_ptr, long* out_l
         free(out);
     }
     if (out_len != NULL) {
-        *out_len = (long)len;
+        *out_len = (int64_t)len;
     }
     return 0;
 }
 
-long aic_rt_http_parse_method(const char* text_ptr, long text_len, long text_cap, long* out_tag) {
+int64_t aic_rt_http_parse_method(const char* text_ptr, int64_t text_len, int64_t text_cap, int64_t* out_tag) {
     (void)text_cap;
     if (out_tag != NULL) {
         *out_tag = 0;
@@ -2933,7 +2933,7 @@ long aic_rt_http_parse_method(const char* text_ptr, long text_len, long text_cap
     return 1;
 }
 
-long aic_rt_http_method_name(long method_tag, char** out_ptr, long* out_len) {
+int64_t aic_rt_http_method_name(int64_t method_tag, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -2960,7 +2960,7 @@ long aic_rt_http_method_name(long method_tag, char** out_ptr, long* out_len) {
     }
 }
 
-long aic_rt_http_status_reason(long status, char** out_ptr, long* out_len) {
+int64_t aic_rt_http_status_reason(int64_t status, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -3018,13 +3018,13 @@ long aic_rt_http_status_reason(long status, char** out_ptr, long* out_len) {
     }
 }
 
-long aic_rt_http_validate_header(
+int64_t aic_rt_http_validate_header(
     const char* name_ptr,
-    long name_len,
-    long name_cap,
+    int64_t name_len,
+    int64_t name_cap,
     const char* value_ptr,
-    long value_len,
-    long value_cap
+    int64_t value_len,
+    int64_t value_cap
 ) {
     (void)name_cap;
     (void)value_cap;
@@ -3054,7 +3054,7 @@ long aic_rt_http_validate_header(
     return 0;
 }
 
-long aic_rt_http_validate_target(const char* target_ptr, long target_len, long target_cap) {
+int64_t aic_rt_http_validate_target(const char* target_ptr, int64_t target_len, int64_t target_cap) {
     (void)target_cap;
     if (target_len < 0 || (target_len > 0 && target_ptr == NULL)) {
         return 6;
@@ -3083,8 +3083,8 @@ long aic_rt_http_validate_target(const char* target_ptr, long target_len, long t
     char* path = NULL;
     char* query = NULL;
     char* fragment = NULL;
-    long port = -1;
-    long rc = aic_rt_url_parse(
+    int64_t port = -1;
+    int64_t rc = aic_rt_url_parse(
         target_ptr,
         target_len,
         target_cap,
@@ -3117,7 +3117,7 @@ long aic_rt_http_validate_target(const char* target_ptr, long target_len, long t
     return 5;
 }
 
-static long aic_rt_http_server_map_net_error(long net_err) {
+static int64_t aic_rt_http_server_map_net_error(int64_t net_err) {
     if (net_err == 0) {
         return 0;
     }
@@ -3127,12 +3127,12 @@ static long aic_rt_http_server_map_net_error(long net_err) {
     return 8;
 }
 
-static long aic_rt_http_server_async_recv(
-    long conn,
-    long max_bytes,
-    long timeout_ms,
+static int64_t aic_rt_http_server_async_recv(
+    int64_t conn,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_chunk,
-    long* out_chunk_len
+    int64_t* out_chunk_len
 ) {
     if (out_chunk != NULL) {
         *out_chunk = NULL;
@@ -3140,26 +3140,26 @@ static long aic_rt_http_server_async_recv(
     if (out_chunk_len != NULL) {
         *out_chunk_len = 0;
     }
-    long op_handle = 0;
-    long submit_rc = aic_rt_net_async_recv_submit(conn, max_bytes, timeout_ms, &op_handle);
+    int64_t op_handle = 0;
+    int64_t submit_rc = aic_rt_net_async_recv_submit(conn, max_bytes, timeout_ms, &op_handle);
     if (submit_rc != 0) {
         return submit_rc;
     }
 
-    long wait_timeout_ms = timeout_ms;
-    if (wait_timeout_ms < LONG_MAX - 50) {
+    int64_t wait_timeout_ms = timeout_ms;
+    if (wait_timeout_ms < INT64_MAX - 50) {
         wait_timeout_ms += 50;
     } else {
-        wait_timeout_ms = LONG_MAX;
+        wait_timeout_ms = INT64_MAX;
     }
-    long wait_rc =
+    int64_t wait_rc =
         aic_rt_net_async_wait_string(op_handle, wait_timeout_ms, out_chunk, out_chunk_len);
     if (wait_rc == 4) {
-        long cancelled = 0;
+        int64_t cancelled = 0;
         if (aic_rt_net_async_cancel(op_handle, &cancelled) == 0 && cancelled == 1) {
             char* cleanup_ptr = NULL;
-            long cleanup_len = 0;
-            long cleanup_rc =
+            int64_t cleanup_len = 0;
+            int64_t cleanup_rc =
                 aic_rt_net_async_wait_string(op_handle, 50, &cleanup_ptr, &cleanup_len);
             free(cleanup_ptr);
             (void)cleanup_rc;
@@ -3168,30 +3168,30 @@ static long aic_rt_http_server_async_recv(
     return wait_rc;
 }
 
-static long aic_rt_http_server_async_send(
-    long conn,
+static int64_t aic_rt_http_server_async_send(
+    int64_t conn,
     const char* payload_ptr,
-    long payload_len,
-    long* out_sent
+    int64_t payload_len,
+    int64_t* out_sent
 ) {
     if (out_sent != NULL) {
         *out_sent = 0;
     }
-    long op_handle = 0;
-    long submit_rc =
+    int64_t op_handle = 0;
+    int64_t submit_rc =
         aic_rt_net_async_send_submit(conn, payload_ptr, payload_len, payload_len, &op_handle);
     if (submit_rc != 0) {
         return submit_rc;
     }
 
-    long wait_timeout_ms = 30000L;
-    long sent = 0;
-    long wait_rc = aic_rt_net_async_wait_int(op_handle, wait_timeout_ms, &sent);
+    int64_t wait_timeout_ms = 30000L;
+    int64_t sent = 0;
+    int64_t wait_rc = aic_rt_net_async_wait_int(op_handle, wait_timeout_ms, &sent);
     if (wait_rc == 4) {
-        long cancelled = 0;
+        int64_t cancelled = 0;
         if (aic_rt_net_async_cancel(op_handle, &cancelled) == 0 && cancelled == 1) {
-            long cleanup_sent = 0;
-            long cleanup_rc = aic_rt_net_async_wait_int(op_handle, 50, &cleanup_sent);
+            int64_t cleanup_sent = 0;
+            int64_t cleanup_rc = aic_rt_net_async_wait_int(op_handle, 50, &cleanup_sent);
             (void)cleanup_rc;
         }
     }
@@ -3217,12 +3217,12 @@ static long aic_rt_http_server_async_send(
 #define AIC_RT_HTTP_READ_TOTAL_MS_DEFAULT (30L * 1000L)
 #define AIC_RT_HTTP_READ_TOTAL_MS_MAX (5L * 60L * 1000L)
 
-static long aic_rt_http_request_line_bytes_limit = AIC_RT_HTTP_REQUEST_LINE_BYTES_DEFAULT;
-static long aic_rt_http_header_bytes_limit = AIC_RT_HTTP_HEADER_BYTES_DEFAULT;
-static long aic_rt_http_header_count_limit = AIC_RT_HTTP_HEADER_COUNT_DEFAULT;
-static long aic_rt_http_body_bytes_limit = AIC_RT_HTTP_BODY_BYTES_DEFAULT;
-static long aic_rt_http_read_idle_ms_limit = AIC_RT_HTTP_READ_IDLE_MS_DEFAULT;
-static long aic_rt_http_read_total_ms_limit = AIC_RT_HTTP_READ_TOTAL_MS_DEFAULT;
+static int64_t aic_rt_http_request_line_bytes_limit = AIC_RT_HTTP_REQUEST_LINE_BYTES_DEFAULT;
+static int64_t aic_rt_http_header_bytes_limit = AIC_RT_HTTP_HEADER_BYTES_DEFAULT;
+static int64_t aic_rt_http_header_count_limit = AIC_RT_HTTP_HEADER_COUNT_DEFAULT;
+static int64_t aic_rt_http_body_bytes_limit = AIC_RT_HTTP_BODY_BYTES_DEFAULT;
+static int64_t aic_rt_http_read_idle_ms_limit = AIC_RT_HTTP_READ_IDLE_MS_DEFAULT;
+static int64_t aic_rt_http_read_total_ms_limit = AIC_RT_HTTP_READ_TOTAL_MS_DEFAULT;
 static pthread_once_t aic_rt_http_limits_once = PTHREAD_ONCE_INIT;
 
 static void aic_rt_http_limits_init(void) {
@@ -3268,32 +3268,32 @@ static void aic_rt_http_limits_ensure(void) {
     (void)pthread_once(&aic_rt_http_limits_once, aic_rt_http_limits_init);
 }
 
-static long aic_rt_http_now_ms(void) {
+static int64_t aic_rt_http_now_ms(void) {
 #ifdef CLOCK_MONOTONIC
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
-        long sec_ms = (long)now.tv_sec * 1000L;
-        long nsec_ms = (long)(now.tv_nsec / 1000000L);
+        int64_t sec_ms = (int64_t)now.tv_sec * 1000L;
+        int64_t nsec_ms = (int64_t)(now.tv_nsec / 1000000L);
         return sec_ms + nsec_ms;
     }
 #endif
     return -1;
 }
 
-static int aic_rt_http_server_parse_decimal(const char* ptr, size_t len, long* out_value) {
+static int aic_rt_http_server_parse_decimal(const char* ptr, size_t len, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
     if (ptr == NULL || len == 0) {
         return 0;
     }
-    long value = 0;
+    int64_t value = 0;
     for (size_t i = 0; i < len; ++i) {
         if (!aic_rt_ascii_is_digit(ptr[i])) {
             return 0;
         }
         int digit = ptr[i] - '0';
-        if (value > (LONG_MAX - digit) / 10) {
+        if (value > (INT64_MAX - digit) / 10) {
             return 0;
         }
         value = (value * 10) + digit;
@@ -3537,11 +3537,11 @@ static int aic_rt_http_server_find_header_delimiter(
     return 0;
 }
 
-static long aic_rt_http_server_query_to_map(const char* query_ptr, size_t query_len, long* out_handle) {
+static int64_t aic_rt_http_server_query_to_map(const char* query_ptr, size_t query_len, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
-    long handle = 0;
+    int64_t handle = 0;
     if (aic_rt_map_new(1, 1, &handle) != 0) {
         return 9;
     }
@@ -3570,14 +3570,14 @@ static long aic_rt_http_server_query_to_map(const char* query_ptr, size_t query_
             const char* value_ptr = eq < segment_end ? query_ptr + eq + 1 : query_ptr + segment_end;
             size_t value_len = eq < segment_end ? segment_end - (eq + 1) : 0;
             if (key_len > 0) {
-                long rc = aic_rt_map_insert_string(
+                int64_t rc = aic_rt_map_insert_string(
                     handle,
                     key_ptr,
-                    (long)key_len,
-                    (long)key_len,
+                    (int64_t)key_len,
+                    (int64_t)key_len,
                     value_ptr,
-                    (long)value_len,
-                    (long)value_len
+                    (int64_t)value_len,
+                    (int64_t)value_len
                 );
                 if (rc != 0) {
                     return 9;
@@ -3592,14 +3592,14 @@ static long aic_rt_http_server_query_to_map(const char* query_ptr, size_t query_
     return 0;
 }
 
-static long aic_rt_http_server_headers_to_map(
+static int64_t aic_rt_http_server_headers_to_map(
     const char* headers_ptr,
     size_t headers_len,
-    long* out_handle,
-    long* out_content_length,
+    int64_t* out_handle,
+    int64_t* out_content_length,
     int* out_has_content_length,
     int* out_has_chunked_transfer,
-    long header_count_limit
+    int64_t header_count_limit
 ) {
     if (out_handle != NULL) {
         *out_handle = 0;
@@ -3613,7 +3613,7 @@ static long aic_rt_http_server_headers_to_map(
     if (out_has_chunked_transfer != NULL) {
         *out_has_chunked_transfer = 0;
     }
-    long handle = 0;
+    int64_t handle = 0;
     if (aic_rt_map_new(1, 1, &handle) != 0) {
         return 9;
     }
@@ -3628,10 +3628,10 @@ static long aic_rt_http_server_headers_to_map(
     }
 
     int seen_content_length = 0;
-    long seen_content_length_value = 0;
+    int64_t seen_content_length_value = 0;
     int seen_transfer_encoding = 0;
     int seen_chunked_transfer = 0;
-    long header_count = 0;
+    int64_t header_count = 0;
     size_t cursor = 0;
     while (cursor < headers_len) {
         size_t line_end = cursor;
@@ -3675,13 +3675,13 @@ static long aic_rt_http_server_headers_to_map(
         const char* value_ptr = headers_ptr + value_start;
         size_t value_len = value_end - value_start;
 
-        long valid = aic_rt_http_validate_header(
+        int64_t valid = aic_rt_http_validate_header(
             raw_name_ptr,
-            (long)raw_name_len,
-            (long)raw_name_len,
+            (int64_t)raw_name_len,
+            (int64_t)raw_name_len,
             value_ptr,
-            (long)value_len,
-            (long)value_len
+            (int64_t)value_len,
+            (int64_t)value_len
         );
         if (valid != 0) {
             return 3;
@@ -3695,14 +3695,14 @@ static long aic_rt_http_server_headers_to_map(
             lower_name[i] = aic_rt_ascii_lower(lower_name[i]);
         }
 
-        long insert_rc = aic_rt_map_insert_string(
+        int64_t insert_rc = aic_rt_map_insert_string(
             handle,
             lower_name,
-            (long)raw_name_len,
-            (long)raw_name_len,
+            (int64_t)raw_name_len,
+            (int64_t)raw_name_len,
             value_ptr,
-            (long)value_len,
-            (long)value_len
+            (int64_t)value_len,
+            (int64_t)value_len
         );
         if (insert_rc != 0) {
             free(lower_name);
@@ -3710,7 +3710,7 @@ static long aic_rt_http_server_headers_to_map(
         }
 
         if (aic_rt_ascii_eq_lit_ci(lower_name, raw_name_len, "content-length")) {
-            long parsed = 0;
+            int64_t parsed = 0;
             int parsed_ok = aic_rt_http_server_parse_decimal(value_ptr, value_len, &parsed);
             if (!parsed_ok) {
                 free(lower_name);
@@ -3754,34 +3754,34 @@ static long aic_rt_http_server_headers_to_map(
     return 0;
 }
 
-long aic_rt_http_server_listen(const char* addr_ptr, long addr_len, long addr_cap, long* out_handle) {
+int64_t aic_rt_http_server_listen(const char* addr_ptr, int64_t addr_len, int64_t addr_cap, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
-    long rc = aic_rt_net_tcp_listen(addr_ptr, addr_len, addr_cap, out_handle);
+    int64_t rc = aic_rt_net_tcp_listen(addr_ptr, addr_len, addr_cap, out_handle);
     return aic_rt_http_server_map_net_error(rc);
 }
 
-long aic_rt_http_server_accept(long listener, long timeout_ms, long* out_handle) {
+int64_t aic_rt_http_server_accept(int64_t listener, int64_t timeout_ms, int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
-    long rc = aic_rt_net_tcp_accept(listener, timeout_ms, out_handle);
+    int64_t rc = aic_rt_net_tcp_accept(listener, timeout_ms, out_handle);
     return aic_rt_http_server_map_net_error(rc);
 }
 
-long aic_rt_http_server_read_request(
-    long conn,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_http_server_read_request(
+    int64_t conn,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_method_ptr,
-    long* out_method_len,
+    int64_t* out_method_len,
     char** out_path_ptr,
-    long* out_path_len,
-    long* out_query_handle,
-    long* out_headers_handle,
+    int64_t* out_path_len,
+    int64_t* out_query_handle,
+    int64_t* out_headers_handle,
     char** out_body_ptr,
-    long* out_body_len
+    int64_t* out_body_len
 ) {
     if (out_method_ptr != NULL) {
         *out_method_ptr = NULL;
@@ -3817,17 +3817,17 @@ long aic_rt_http_server_read_request(
 
     size_t request_line_limit = (size_t)aic_rt_http_request_line_bytes_limit;
     size_t header_bytes_limit = (size_t)aic_rt_http_header_bytes_limit;
-    long header_count_limit = aic_rt_http_header_count_limit;
+    int64_t header_count_limit = aic_rt_http_header_count_limit;
     size_t body_bytes_limit = (size_t)aic_rt_http_body_bytes_limit;
-    long read_idle_ms_limit = aic_rt_http_read_idle_ms_limit;
-    long effective_total_timeout_ms =
+    int64_t read_idle_ms_limit = aic_rt_http_read_idle_ms_limit;
+    int64_t effective_total_timeout_ms =
         timeout_ms > 0 ? timeout_ms : aic_rt_http_read_total_ms_limit;
-    long deadline_ms = -1;
+    int64_t deadline_ms = -1;
     if (effective_total_timeout_ms > 0) {
-        long now_ms = aic_rt_http_now_ms();
+        int64_t now_ms = aic_rt_http_now_ms();
         if (now_ms >= 0) {
-            if (effective_total_timeout_ms > LONG_MAX - now_ms) {
-                deadline_ms = LONG_MAX;
+            if (effective_total_timeout_ms > INT64_MAX - now_ms) {
+                deadline_ms = INT64_MAX;
             } else {
                 deadline_ms = now_ms + effective_total_timeout_ms;
             }
@@ -3845,8 +3845,8 @@ long aic_rt_http_server_read_request(
     size_t header_marker = SIZE_MAX;
     size_t delimiter_len = 0;
     size_t line_end = SIZE_MAX;
-    long headers_handle = 0;
-    long content_length = 0;
+    int64_t headers_handle = 0;
+    int64_t content_length = 0;
     int has_content_length = 0;
     int has_chunked_transfer = 0;
     int headers_parsed = 0;
@@ -3881,7 +3881,7 @@ long aic_rt_http_server_read_request(
                     free(payload);
                     return 3;
                 }
-                long headers_rc = aic_rt_http_server_headers_to_map(
+                int64_t headers_rc = aic_rt_http_server_headers_to_map(
                     payload + headers_start,
                     headers_len,
                     &headers_handle,
@@ -3976,15 +3976,15 @@ long aic_rt_http_server_read_request(
             }
         }
 
-        long recv_timeout_ms = read_idle_ms_limit;
+        int64_t recv_timeout_ms = read_idle_ms_limit;
         if (deadline_ms >= 0) {
-            long now_ms = aic_rt_http_now_ms();
+            int64_t now_ms = aic_rt_http_now_ms();
             if (now_ms >= 0) {
                 if (now_ms >= deadline_ms) {
                     free(payload);
                     return 5;
                 }
-                long remaining_deadline = deadline_ms - now_ms;
+                int64_t remaining_deadline = deadline_ms - now_ms;
                 if (recv_timeout_ms > remaining_deadline) {
                     recv_timeout_ms = remaining_deadline;
                 }
@@ -3995,10 +3995,10 @@ long aic_rt_http_server_read_request(
             return 5;
         }
 
-        long remaining = (long)(max_payload - payload_n);
+        int64_t remaining = (int64_t)(max_payload - payload_n);
         char* chunk = NULL;
-        long chunk_len = 0;
-        long recv_rc = aic_rt_net_tcp_recv(conn, remaining, recv_timeout_ms, &chunk, &chunk_len);
+        int64_t chunk_len = 0;
+        int64_t recv_rc = aic_rt_net_tcp_recv(conn, remaining, recv_timeout_ms, &chunk, &chunk_len);
         if (recv_rc != 0) {
             free(chunk);
             free(payload);
@@ -4098,12 +4098,12 @@ long aic_rt_http_server_read_request(
         return 3;
     }
 
-    long method_tag = 0;
-    if (aic_rt_http_parse_method(method_ptr, (long)method_len, (long)method_len, &method_tag) != 0) {
+    int64_t method_tag = 0;
+    if (aic_rt_http_parse_method(method_ptr, (int64_t)method_len, (int64_t)method_len, &method_tag) != 0) {
         free(payload);
         return 2;
     }
-    if (aic_rt_http_validate_target(target_ptr, (long)target_len, (long)target_len) != 0) {
+    if (aic_rt_http_validate_target(target_ptr, (int64_t)target_len, (int64_t)target_len) != 0) {
         free(payload);
         return 4;
     }
@@ -4143,12 +4143,12 @@ long aic_rt_http_server_read_request(
         char* scheme = NULL;
         char* host = NULL;
         char* fragment = NULL;
-        long path_len_long = 0;
-        long query_len_long = 0;
-        long parse_rc = aic_rt_url_parse(
+        int64_t path_len_long = 0;
+        int64_t query_len_long = 0;
+        int64_t parse_rc = aic_rt_url_parse(
             target_ptr,
-            (long)target_len,
-            (long)target_len,
+            (int64_t)target_len,
+            (int64_t)target_len,
             &scheme,
             NULL,
             &host,
@@ -4185,8 +4185,8 @@ long aic_rt_http_server_read_request(
         query_len = query_len_long > 0 ? (size_t)query_len_long : 0;
     }
 
-    long query_handle = 0;
-    long query_rc = aic_rt_http_server_query_to_map(query_src, query_len, &query_handle);
+    int64_t query_handle = 0;
+    int64_t query_rc = aic_rt_http_server_query_to_map(query_src, query_len, &query_handle);
     if (query_rc != 0) {
         free(query_owned);
         free(path_owned);
@@ -4294,9 +4294,9 @@ long aic_rt_http_server_read_request(
         free(method_owned);
     }
     if (out_method_len != NULL) {
-        *out_method_len = (long)method_len;
+        *out_method_len = (int64_t)method_len;
     }
-    long path_len_out = (long)strlen(path_owned);
+    int64_t path_len_out = (int64_t)strlen(path_owned);
     if (out_path_ptr != NULL) {
         *out_path_ptr = path_owned;
     } else {
@@ -4317,19 +4317,19 @@ long aic_rt_http_server_read_request(
         free(body_owned);
     }
     if (out_body_len != NULL) {
-        *out_body_len = (long)body_len;
+        *out_body_len = (int64_t)body_len;
     }
     return 0;
 }
 
-long aic_rt_http_server_write_response(
-    long conn,
-    long status,
-    long headers_handle,
+int64_t aic_rt_http_server_write_response(
+    int64_t conn,
+    int64_t status,
+    int64_t headers_handle,
     const char* body_ptr,
-    long body_len,
-    long body_cap,
-    long* out_sent
+    int64_t body_len,
+    int64_t body_cap,
+    int64_t* out_sent
 ) {
     (void)body_cap;
     if (out_sent != NULL) {
@@ -4348,8 +4348,8 @@ long aic_rt_http_server_write_response(
     }
 
     char* reason = NULL;
-    long reason_len = 0;
-    long reason_rc = aic_rt_http_status_reason(status, &reason, &reason_len);
+    int64_t reason_len = 0;
+    int64_t reason_rc = aic_rt_http_status_reason(status, &reason, &reason_len);
     if (reason_rc != 0 || reason == NULL) {
         free(reason);
         return 1;
@@ -4373,7 +4373,7 @@ long aic_rt_http_server_write_response(
         if (aic_rt_ascii_eq_lit_ci(key_ptr, (size_t)entry->key_len, "content-length")) {
             continue;
         }
-        long valid = aic_rt_http_validate_header(
+        int64_t valid = aic_rt_http_validate_header(
             key_ptr,
             entry->key_len,
             entry->key_len,
@@ -4390,14 +4390,14 @@ long aic_rt_http_server_write_response(
     }
 
     char status_buf[32];
-    int status_len = snprintf(status_buf, sizeof(status_buf), "%ld", status);
+    int status_len = snprintf(status_buf, sizeof(status_buf), "%" PRId64, status);
     if (status_len <= 0 || (size_t)status_len >= sizeof(status_buf)) {
         free(order);
         free(reason);
         return 9;
     }
     char content_len_buf[32];
-    int content_len_len = snprintf(content_len_buf, sizeof(content_len_buf), "%ld", body_len);
+    int content_len_len = snprintf(content_len_buf, sizeof(content_len_buf), "%" PRId64, body_len);
     if (content_len_len <= 0 || (size_t)content_len_len >= sizeof(content_len_buf)) {
         free(order);
         free(reason);
@@ -4410,7 +4410,7 @@ long aic_rt_http_server_write_response(
     total += 16 + (size_t)content_len_len + 2;
     total += 2;
     total += (size_t)body_len;
-    if (total > (size_t)LONG_MAX) {
+    if (total > (size_t)INT64_MAX) {
         free(order);
         free(reason);
         return 9;
@@ -4470,8 +4470,8 @@ long aic_rt_http_server_write_response(
     }
     wire[pos] = '\0';
 
-    long sent = 0;
-    long send_rc = aic_rt_net_tcp_send(conn, wire, (long)pos, (long)pos, &sent);
+    int64_t sent = 0;
+    int64_t send_rc = aic_rt_net_tcp_send(conn, wire, (int64_t)pos, (int64_t)pos, &sent);
     free(wire);
     free(order);
     free(reason);
@@ -4485,18 +4485,18 @@ long aic_rt_http_server_write_response(
     return 0;
 }
 
-long aic_rt_http_server_async_read_request(
-    long conn,
-    long max_bytes,
-    long timeout_ms,
+int64_t aic_rt_http_server_async_read_request(
+    int64_t conn,
+    int64_t max_bytes,
+    int64_t timeout_ms,
     char** out_method_ptr,
-    long* out_method_len,
+    int64_t* out_method_len,
     char** out_path_ptr,
-    long* out_path_len,
-    long* out_query_handle,
-    long* out_headers_handle,
+    int64_t* out_path_len,
+    int64_t* out_query_handle,
+    int64_t* out_headers_handle,
     char** out_body_ptr,
-    long* out_body_len
+    int64_t* out_body_len
 ) {
     if (out_method_ptr != NULL) {
         *out_method_ptr = NULL;
@@ -4532,17 +4532,17 @@ long aic_rt_http_server_async_read_request(
 
     size_t request_line_limit = (size_t)aic_rt_http_request_line_bytes_limit;
     size_t header_bytes_limit = (size_t)aic_rt_http_header_bytes_limit;
-    long header_count_limit = aic_rt_http_header_count_limit;
+    int64_t header_count_limit = aic_rt_http_header_count_limit;
     size_t body_bytes_limit = (size_t)aic_rt_http_body_bytes_limit;
-    long read_idle_ms_limit = aic_rt_http_read_idle_ms_limit;
-    long effective_total_timeout_ms =
+    int64_t read_idle_ms_limit = aic_rt_http_read_idle_ms_limit;
+    int64_t effective_total_timeout_ms =
         timeout_ms > 0 ? timeout_ms : aic_rt_http_read_total_ms_limit;
-    long deadline_ms = -1;
+    int64_t deadline_ms = -1;
     if (effective_total_timeout_ms > 0) {
-        long now_ms = aic_rt_http_now_ms();
+        int64_t now_ms = aic_rt_http_now_ms();
         if (now_ms >= 0) {
-            if (effective_total_timeout_ms > LONG_MAX - now_ms) {
-                deadline_ms = LONG_MAX;
+            if (effective_total_timeout_ms > INT64_MAX - now_ms) {
+                deadline_ms = INT64_MAX;
             } else {
                 deadline_ms = now_ms + effective_total_timeout_ms;
             }
@@ -4560,8 +4560,8 @@ long aic_rt_http_server_async_read_request(
     size_t header_marker = SIZE_MAX;
     size_t delimiter_len = 0;
     size_t line_end = SIZE_MAX;
-    long headers_handle = 0;
-    long content_length = 0;
+    int64_t headers_handle = 0;
+    int64_t content_length = 0;
     int has_content_length = 0;
     int has_chunked_transfer = 0;
     int headers_parsed = 0;
@@ -4596,7 +4596,7 @@ long aic_rt_http_server_async_read_request(
                     free(payload);
                     return 3;
                 }
-                long headers_rc = aic_rt_http_server_headers_to_map(
+                int64_t headers_rc = aic_rt_http_server_headers_to_map(
                     payload + headers_start,
                     headers_len,
                     &headers_handle,
@@ -4691,15 +4691,15 @@ long aic_rt_http_server_async_read_request(
             }
         }
 
-        long recv_timeout_ms = read_idle_ms_limit;
+        int64_t recv_timeout_ms = read_idle_ms_limit;
         if (deadline_ms >= 0) {
-            long now_ms = aic_rt_http_now_ms();
+            int64_t now_ms = aic_rt_http_now_ms();
             if (now_ms >= 0) {
                 if (now_ms >= deadline_ms) {
                     free(payload);
                     return 5;
                 }
-                long remaining_deadline = deadline_ms - now_ms;
+                int64_t remaining_deadline = deadline_ms - now_ms;
                 if (recv_timeout_ms > remaining_deadline) {
                     recv_timeout_ms = remaining_deadline;
                 }
@@ -4710,10 +4710,10 @@ long aic_rt_http_server_async_read_request(
             return 5;
         }
 
-        long remaining = (long)(max_payload - payload_n);
+        int64_t remaining = (int64_t)(max_payload - payload_n);
         char* chunk = NULL;
-        long chunk_len = 0;
-        long recv_rc =
+        int64_t chunk_len = 0;
+        int64_t recv_rc =
             aic_rt_http_server_async_recv(conn, remaining, recv_timeout_ms, &chunk, &chunk_len);
         if (recv_rc != 0) {
             free(chunk);
@@ -4814,12 +4814,12 @@ long aic_rt_http_server_async_read_request(
         return 3;
     }
 
-    long method_tag = 0;
-    if (aic_rt_http_parse_method(method_ptr, (long)method_len, (long)method_len, &method_tag) != 0) {
+    int64_t method_tag = 0;
+    if (aic_rt_http_parse_method(method_ptr, (int64_t)method_len, (int64_t)method_len, &method_tag) != 0) {
         free(payload);
         return 2;
     }
-    if (aic_rt_http_validate_target(target_ptr, (long)target_len, (long)target_len) != 0) {
+    if (aic_rt_http_validate_target(target_ptr, (int64_t)target_len, (int64_t)target_len) != 0) {
         free(payload);
         return 4;
     }
@@ -4859,12 +4859,12 @@ long aic_rt_http_server_async_read_request(
         char* scheme = NULL;
         char* host = NULL;
         char* fragment = NULL;
-        long path_len_long = 0;
-        long query_len_long = 0;
-        long parse_rc = aic_rt_url_parse(
+        int64_t path_len_long = 0;
+        int64_t query_len_long = 0;
+        int64_t parse_rc = aic_rt_url_parse(
             target_ptr,
-            (long)target_len,
-            (long)target_len,
+            (int64_t)target_len,
+            (int64_t)target_len,
             &scheme,
             NULL,
             &host,
@@ -4901,8 +4901,8 @@ long aic_rt_http_server_async_read_request(
         query_len = query_len_long > 0 ? (size_t)query_len_long : 0;
     }
 
-    long query_handle = 0;
-    long query_rc = aic_rt_http_server_query_to_map(query_src, query_len, &query_handle);
+    int64_t query_handle = 0;
+    int64_t query_rc = aic_rt_http_server_query_to_map(query_src, query_len, &query_handle);
     if (query_rc != 0) {
         free(query_owned);
         free(path_owned);
@@ -5010,9 +5010,9 @@ long aic_rt_http_server_async_read_request(
         free(method_owned);
     }
     if (out_method_len != NULL) {
-        *out_method_len = (long)method_len;
+        *out_method_len = (int64_t)method_len;
     }
-    long path_len_out = (long)strlen(path_owned);
+    int64_t path_len_out = (int64_t)strlen(path_owned);
     if (out_path_ptr != NULL) {
         *out_path_ptr = path_owned;
     } else {
@@ -5033,19 +5033,19 @@ long aic_rt_http_server_async_read_request(
         free(body_owned);
     }
     if (out_body_len != NULL) {
-        *out_body_len = (long)body_len;
+        *out_body_len = (int64_t)body_len;
     }
     return 0;
 }
 
-long aic_rt_http_server_async_write_response(
-    long conn,
-    long status,
-    long headers_handle,
+int64_t aic_rt_http_server_async_write_response(
+    int64_t conn,
+    int64_t status,
+    int64_t headers_handle,
     const char* body_ptr,
-    long body_len,
-    long body_cap,
-    long* out_sent
+    int64_t body_len,
+    int64_t body_cap,
+    int64_t* out_sent
 ) {
     (void)body_cap;
     if (out_sent != NULL) {
@@ -5064,8 +5064,8 @@ long aic_rt_http_server_async_write_response(
     }
 
     char* reason = NULL;
-    long reason_len = 0;
-    long reason_rc = aic_rt_http_status_reason(status, &reason, &reason_len);
+    int64_t reason_len = 0;
+    int64_t reason_rc = aic_rt_http_status_reason(status, &reason, &reason_len);
     if (reason_rc != 0 || reason == NULL) {
         free(reason);
         return 1;
@@ -5089,7 +5089,7 @@ long aic_rt_http_server_async_write_response(
         if (aic_rt_ascii_eq_lit_ci(key_ptr, (size_t)entry->key_len, "content-length")) {
             continue;
         }
-        long valid = aic_rt_http_validate_header(
+        int64_t valid = aic_rt_http_validate_header(
             key_ptr,
             entry->key_len,
             entry->key_len,
@@ -5106,14 +5106,14 @@ long aic_rt_http_server_async_write_response(
     }
 
     char status_buf[32];
-    int status_len = snprintf(status_buf, sizeof(status_buf), "%ld", status);
+    int status_len = snprintf(status_buf, sizeof(status_buf), "%" PRId64, status);
     if (status_len <= 0 || (size_t)status_len >= sizeof(status_buf)) {
         free(order);
         free(reason);
         return 9;
     }
     char content_len_buf[32];
-    int content_len_len = snprintf(content_len_buf, sizeof(content_len_buf), "%ld", body_len);
+    int content_len_len = snprintf(content_len_buf, sizeof(content_len_buf), "%" PRId64, body_len);
     if (content_len_len <= 0 || (size_t)content_len_len >= sizeof(content_len_buf)) {
         free(order);
         free(reason);
@@ -5126,7 +5126,7 @@ long aic_rt_http_server_async_write_response(
     total += 16 + (size_t)content_len_len + 2;
     total += 2;
     total += (size_t)body_len;
-    if (total > (size_t)LONG_MAX) {
+    if (total > (size_t)INT64_MAX) {
         free(order);
         free(reason);
         return 9;
@@ -5186,8 +5186,8 @@ long aic_rt_http_server_async_write_response(
     }
     wire[pos] = '\0';
 
-    long sent = 0;
-    long send_rc = aic_rt_http_server_async_send(conn, wire, (long)pos, &sent);
+    int64_t sent = 0;
+    int64_t send_rc = aic_rt_http_server_async_send(conn, wire, (int64_t)pos, &sent);
     free(wire);
     free(order);
     free(reason);
@@ -5201,8 +5201,8 @@ long aic_rt_http_server_async_write_response(
     return 0;
 }
 
-long aic_rt_http_server_close(long handle) {
-    long rc = aic_rt_net_tcp_close(handle);
+int64_t aic_rt_http_server_close(int64_t handle) {
+    int64_t rc = aic_rt_net_tcp_close(handle);
     return aic_rt_http_server_map_net_error(rc);
 }
 
@@ -5213,21 +5213,21 @@ long aic_rt_http_server_close(long handle) {
 typedef struct {
     int active;
     char* method_ptr;
-    long method_len;
+    int64_t method_len;
     char* pattern_ptr;
-    long pattern_len;
-    long route_id;
+    int64_t pattern_len;
+    int64_t route_id;
 } AicRtRouterRoute;
 
 typedef struct {
     int active;
-    long len;
-    long cap;
+    int64_t len;
+    int64_t cap;
     AicRtRouterRoute* routes;
 } AicRtRouterSlot;
 
 static AicRtRouterSlot aic_rt_router_table[AIC_RT_ROUTER_TABLE_CAP];
-static long aic_rt_router_route_limit = AIC_RT_ROUTER_ROUTE_CAP_DEFAULT;
+static int64_t aic_rt_router_route_limit = AIC_RT_ROUTER_ROUTE_CAP_DEFAULT;
 static pthread_once_t aic_rt_router_limits_once = PTHREAD_ONCE_INIT;
 
 static void aic_rt_router_limits_init(void) {
@@ -5250,7 +5250,7 @@ static char aic_rt_router_ascii_upper(char ch) {
     return ch;
 }
 
-static AicRtRouterSlot* aic_rt_router_get_slot(long handle) {
+static AicRtRouterSlot* aic_rt_router_get_slot(int64_t handle) {
     aic_rt_router_limits_ensure();
     if (handle <= 0 || handle > AIC_RT_ROUTER_TABLE_CAP) {
         return NULL;
@@ -5496,7 +5496,7 @@ static int aic_rt_router_pattern_precedence_compare(
  * Returns 1 (InvalidPattern) when overlapping definitions are ambiguous or
  * violate required registration precedence.
  */
-static long aic_rt_router_check_route_conflicts(
+static int64_t aic_rt_router_check_route_conflicts(
     const AicRtRouterSlot* slot,
     const char* method_ptr,
     size_t method_len,
@@ -5507,7 +5507,7 @@ static long aic_rt_router_check_route_conflicts(
         return 4;
     }
 
-    for (long i = 0; i < slot->len; ++i) {
+    for (int64_t i = 0; i < slot->len; ++i) {
         const AicRtRouterRoute* existing = &slot->routes[i];
         if (!existing->active) {
             continue;
@@ -5672,12 +5672,12 @@ static int aic_rt_router_method_matches(
     return 1;
 }
 
-static long aic_rt_router_pattern_match(
+static int64_t aic_rt_router_pattern_match(
     const char* pattern_ptr,
     size_t pattern_len,
     const char* path_ptr,
     size_t path_len,
-    long params_handle,
+    int64_t params_handle,
     int* out_match
 ) {
     if (out_match != NULL) {
@@ -5732,14 +5732,14 @@ static long aic_rt_router_pattern_match(
 
         if (pattern_segment_ptr[0] == ':') {
             if (params_handle > 0) {
-                long insert_rc = aic_rt_map_insert_string(
+                int64_t insert_rc = aic_rt_map_insert_string(
                     params_handle,
                     pattern_segment_ptr + 1,
-                    (long)(pattern_segment_len - 1),
-                    (long)(pattern_segment_len - 1),
+                    (int64_t)(pattern_segment_len - 1),
+                    (int64_t)(pattern_segment_len - 1),
                     path_segment_ptr,
-                    (long)path_segment_len,
-                    (long)path_segment_len
+                    (int64_t)path_segment_len,
+                    (int64_t)path_segment_len
                 );
                 if (insert_rc != 0) {
                     return 4;
@@ -5755,12 +5755,12 @@ static long aic_rt_router_pattern_match(
     }
 }
 
-long aic_rt_router_new(long* out_handle) {
+int64_t aic_rt_router_new(int64_t* out_handle) {
     if (out_handle != NULL) {
         *out_handle = 0;
     }
     aic_rt_router_limits_ensure();
-    for (long i = 0; i < AIC_RT_ROUTER_TABLE_CAP; ++i) {
+    for (int64_t i = 0; i < AIC_RT_ROUTER_TABLE_CAP; ++i) {
         if (!aic_rt_router_table[i].active) {
             AicRtRouterSlot* slot = &aic_rt_router_table[i];
             AicRtRouterRoute* routes = (AicRtRouterRoute*)calloc(
@@ -5783,15 +5783,15 @@ long aic_rt_router_new(long* out_handle) {
     return 3;
 }
 
-long aic_rt_router_add(
-    long handle,
+int64_t aic_rt_router_add(
+    int64_t handle,
     const char* method_ptr,
-    long method_len,
-    long method_cap,
+    int64_t method_len,
+    int64_t method_cap,
     const char* pattern_ptr,
-    long pattern_len,
-    long pattern_cap,
-    long route_id
+    int64_t pattern_len,
+    int64_t pattern_cap,
+    int64_t route_id
 ) {
     (void)method_cap;
     (void)pattern_cap;
@@ -5814,7 +5814,7 @@ long aic_rt_router_add(
     if (slot->routes == NULL) {
         return 4;
     }
-    long conflict_rc = aic_rt_router_check_route_conflicts(
+    int64_t conflict_rc = aic_rt_router_check_route_conflicts(
         slot,
         method_ptr,
         (size_t)method_len,
@@ -5829,7 +5829,7 @@ long aic_rt_router_add(
     if (method_owned == NULL) {
         return 4;
     }
-    for (long i = 0; i < method_len; ++i) {
+    for (int64_t i = 0; i < method_len; ++i) {
         method_owned[i] = aic_rt_router_ascii_upper(method_owned[i]);
     }
     char* pattern_owned = aic_rt_copy_bytes(pattern_ptr, (size_t)pattern_len);
@@ -5849,17 +5849,17 @@ long aic_rt_router_add(
     return 0;
 }
 
-long aic_rt_router_match(
-    long handle,
+int64_t aic_rt_router_match(
+    int64_t handle,
     const char* method_ptr,
-    long method_len,
-    long method_cap,
+    int64_t method_len,
+    int64_t method_cap,
     const char* path_ptr,
-    long path_len,
-    long path_cap,
-    long* out_route_id,
-    long* out_params_handle,
-    long* out_found
+    int64_t path_len,
+    int64_t path_cap,
+    int64_t* out_route_id,
+    int64_t* out_params_handle,
+    int64_t* out_found
 ) {
     (void)method_cap;
     (void)path_cap;
@@ -5890,7 +5890,7 @@ long aic_rt_router_match(
         return 4;
     }
 
-    for (long i = 0; i < slot->len; ++i) {
+    for (int64_t i = 0; i < slot->len; ++i) {
         AicRtRouterRoute* route = &slot->routes[i];
         if (!route->active) {
             continue;
@@ -5899,7 +5899,7 @@ long aic_rt_router_match(
             continue;
         }
         int first_match = 0;
-        long first_rc = aic_rt_router_pattern_match(
+        int64_t first_rc = aic_rt_router_pattern_match(
             route->pattern_ptr,
             (size_t)route->pattern_len,
             path_ptr,
@@ -5914,12 +5914,12 @@ long aic_rt_router_match(
             continue;
         }
 
-        long params_handle = 0;
+        int64_t params_handle = 0;
         if (aic_rt_map_new(1, 1, &params_handle) != 0) {
             return 4;
         }
         int second_match = 0;
-        long second_rc = aic_rt_router_pattern_match(
+        int64_t second_rc = aic_rt_router_pattern_match(
             route->pattern_ptr,
             (size_t)route->pattern_len,
             path_ptr,
@@ -5943,7 +5943,7 @@ long aic_rt_router_match(
         return 0;
     }
 
-    long empty_params = 0;
+    int64_t empty_params = 0;
     if (aic_rt_map_new(1, 1, &empty_params) != 0) {
         return 4;
     }
@@ -5990,18 +5990,18 @@ static void aic_rt_print_backtrace(void) {
 #endif
 }
 
-void aic_rt_panic(const char* ptr, long len, long cap, long line, long column) {
+void aic_rt_panic(const char* ptr, int64_t len, int64_t cap, int64_t line, int64_t column) {
     (void)cap;
     if (ptr == NULL) {
         if (line > 0 && column > 0) {
-            fprintf(stderr, "AICore panic at %ld:%ld\n", line, column);
+            fprintf(stderr, "AICore panic at %" PRId64 ":%" PRId64 "\n", line, column);
         } else {
             fprintf(stderr, "AICore panic\n");
         }
     } else {
         int n = len < 0 ? 0 : (int)len;
         if (line > 0 && column > 0) {
-            fprintf(stderr, "AICore panic at %ld:%ld: %.*s\n", line, column, n, ptr);
+            fprintf(stderr, "AICore panic at %" PRId64 ":%" PRId64 ": %.*s\n", line, column, n, ptr);
         } else {
             fprintf(stderr, "AICore panic: %.*s\n", n, ptr);
         }

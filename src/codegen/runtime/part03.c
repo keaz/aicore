@@ -1,7 +1,7 @@
     const char* needle_ptr,
-    long needle_len,
-    long needle_cap,
-    long* out_index
+    int64_t needle_len,
+    int64_t needle_cap,
+    int64_t* out_index
 ) {
     if (out_index != NULL) {
         *out_index = 0;
@@ -10,7 +10,7 @@
         !aic_rt_string_slice_valid_cap(needle_ptr, needle_len, needle_cap)) {
         return 0;
     }
-    long found = aic_rt_string_find_first_raw(
+    int64_t found = aic_rt_string_find_first_raw(
         s_ptr,
         (size_t)s_len,
         needle_ptr,
@@ -26,14 +26,14 @@
     return 1;
 }
 
-long aic_rt_string_last_index_of(
+int64_t aic_rt_string_last_index_of(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     const char* needle_ptr,
-    long needle_len,
-    long needle_cap,
-    long* out_index
+    int64_t needle_len,
+    int64_t needle_cap,
+    int64_t* out_index
 ) {
     if (out_index != NULL) {
         *out_index = 0;
@@ -42,7 +42,7 @@ long aic_rt_string_last_index_of(
         !aic_rt_string_slice_valid_cap(needle_ptr, needle_len, needle_cap)) {
         return 0;
     }
-    long found = aic_rt_string_find_last_raw(
+    int64_t found = aic_rt_string_find_last_raw(
         s_ptr,
         (size_t)s_len,
         needle_ptr,
@@ -59,12 +59,12 @@ long aic_rt_string_last_index_of(
 
 void aic_rt_string_substring(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
-    long start,
-    long end,
+    int64_t s_len,
+    int64_t s_cap,
+    int64_t start,
+    int64_t end,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -77,8 +77,8 @@ void aic_rt_string_substring(
         aic_rt_string_runtime_panic("substring", "INVALID_INPUT", "invalid-utf8-input");
         return;
     }
-    long clamped_start = start < 0 ? 0 : start;
-    long clamped_end = end < 0 ? 0 : end;
+    int64_t clamped_start = start < 0 ? 0 : start;
+    int64_t clamped_end = end < 0 ? 0 : end;
     if (clamped_end <= clamped_start) {
         aic_rt_string_write_empty_or_panic("substring", out_ptr, out_len);
         return;
@@ -86,7 +86,7 @@ void aic_rt_string_substring(
 
     size_t n = (size_t)s_len;
     size_t cursor = 0;
-    long scalar_index = 0;
+    int64_t scalar_index = 0;
     size_t start_byte = n;
     size_t end_byte = n;
 
@@ -130,12 +130,12 @@ void aic_rt_string_substring(
 
 void aic_rt_string_byte_substring(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
-    long start,
-    long end,
+    int64_t s_len,
+    int64_t s_cap,
+    int64_t start,
+    int64_t end,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
@@ -147,8 +147,8 @@ void aic_rt_string_byte_substring(
         aic_rt_string_runtime_panic("byte_substring", "INVALID_INPUT", "invalid-byte-slice");
         return;
     }
-    long clamped_start = start < 0 ? 0 : start;
-    long clamped_end = end < 0 ? 0 : end;
+    int64_t clamped_start = start < 0 ? 0 : start;
+    int64_t clamped_end = end < 0 ? 0 : end;
     if (clamped_start > s_len) {
         clamped_start = s_len;
     }
@@ -169,13 +169,13 @@ void aic_rt_string_byte_substring(
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
-long aic_rt_string_char_at(
+int64_t aic_rt_string_char_at(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
-    long index,
+    int64_t s_len,
+    int64_t s_cap,
+    int64_t index,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -191,7 +191,7 @@ long aic_rt_string_char_at(
 
     size_t n = (size_t)s_len;
     size_t cursor = 0;
-    long scalar_index = 0;
+    int64_t scalar_index = 0;
     while (cursor < n) {
         size_t width =
             aic_rt_string_utf8_valid_prefix((const unsigned char*)(s_ptr + cursor), n - cursor);
@@ -214,13 +214,13 @@ long aic_rt_string_char_at(
     return 0;
 }
 
-long aic_rt_string_compare(
+int64_t aic_rt_string_compare(
     const char* lhs_ptr,
-    long lhs_len,
-    long lhs_cap,
+    int64_t lhs_len,
+    int64_t lhs_cap,
     const char* rhs_ptr,
-    long rhs_len,
-    long rhs_cap
+    int64_t rhs_len,
+    int64_t rhs_cap
 ) {
     (void)lhs_cap;
     (void)rhs_cap;
@@ -228,23 +228,23 @@ long aic_rt_string_compare(
         !aic_rt_string_slice_valid(rhs_ptr, rhs_len)) {
         return 0;
     }
-    return (long)aic_rt_map_key_compare_raw(lhs_ptr, lhs_len, rhs_ptr, rhs_len);
+    return (int64_t)aic_rt_map_key_compare_raw(lhs_ptr, lhs_len, rhs_ptr, rhs_len);
 }
 
-long aic_rt_bytes_byte_at(const char* data_ptr, long data_len, long data_cap, long index) {
+int64_t aic_rt_bytes_byte_at(const char* data_ptr, int64_t data_len, int64_t data_cap, int64_t index) {
     (void)data_cap;
     if (!aic_rt_string_slice_valid(data_ptr, data_len) || index < 0 || index >= data_len) {
         return 0;
     }
-    return (long)(unsigned char)data_ptr[index];
+    return (int64_t)(unsigned char)data_ptr[index];
 }
 
 void aic_rt_bytes_from_byte_values(
     const char* values_ptr,
-    long values_len,
-    long values_cap,
+    int64_t values_len,
+    int64_t values_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)values_cap;
     if (out_ptr != NULL) {
@@ -263,7 +263,7 @@ void aic_rt_bytes_from_byte_values(
         aic_rt_string_write_empty_or_panic("bytes_from_ints", out_ptr, out_len);
         return;
     }
-    if (count > SIZE_MAX - 1 || count > (size_t)LONG_MAX) {
+    if (count > SIZE_MAX - 1 || count > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("bytes_from_ints", "OVERFLOW", "byte-count-overflow");
         return;
     }
@@ -286,7 +286,7 @@ void aic_rt_bytes_from_byte_values(
     }
     out[count] = '\0';
     if (out_len != NULL) {
-        *out_len = (long)count;
+        *out_len = (int64_t)count;
     }
     if (out_ptr != NULL) {
         *out_ptr = out;
@@ -297,10 +297,10 @@ void aic_rt_bytes_from_byte_values(
 
 void aic_rt_bytes_from_u8_values(
     const char* values_ptr,
-    long values_len,
-    long values_cap,
+    int64_t values_len,
+    int64_t values_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)values_cap;
     if (out_ptr != NULL) {
@@ -320,7 +320,7 @@ void aic_rt_bytes_from_u8_values(
     }
 
     size_t count = (size_t)values_len;
-    if (count > SIZE_MAX - 1 || count > (size_t)LONG_MAX) {
+    if (count > SIZE_MAX - 1 || count > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("bytes_from_u8", "OVERFLOW", "byte-count-overflow");
         return;
     }
@@ -334,7 +334,7 @@ void aic_rt_bytes_from_u8_values(
     memcpy(out, values_ptr, count);
     out[count] = '\0';
     if (out_len != NULL) {
-        *out_len = (long)count;
+        *out_len = (int64_t)count;
     }
     if (out_ptr != NULL) {
         *out_ptr = out;
@@ -345,13 +345,13 @@ void aic_rt_bytes_from_u8_values(
 
 void aic_rt_string_split(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     const char* delimiter_ptr,
-    long delimiter_len,
-    long delimiter_cap,
+    int64_t delimiter_len,
+    int64_t delimiter_cap,
     char** out_ptr,
-    long* out_count
+    int64_t* out_count
 ) {
     (void)s_cap;
     (void)delimiter_cap;
@@ -373,7 +373,7 @@ void aic_rt_string_split(
     if (delim_len > 0) {
         size_t cursor = 0;
         while (cursor <= text_len) {
-            long pos = aic_rt_string_find_first_raw(s_ptr, text_len, delimiter_ptr, delim_len, cursor);
+            int64_t pos = aic_rt_string_find_first_raw(s_ptr, text_len, delimiter_ptr, delim_len, cursor);
             if (pos < 0) {
                 break;
             }
@@ -381,7 +381,7 @@ void aic_rt_string_split(
             cursor = (size_t)pos + delim_len;
         }
     }
-    if (part_count > (size_t)LONG_MAX) {
+    if (part_count > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("split", "OVERFLOW", "segment-count-overflow");
         return;
     }
@@ -402,12 +402,12 @@ void aic_rt_string_split(
             return;
         }
         items[0].ptr = only;
-        items[0].len = (long)text_len;
-        items[0].cap = (long)text_len;
+        items[0].len = (int64_t)text_len;
+        items[0].cap = (int64_t)text_len;
         out_index = 1;
     } else {
         while (cursor <= text_len) {
-            long pos = aic_rt_string_find_first_raw(s_ptr, text_len, delimiter_ptr, delim_len, cursor);
+            int64_t pos = aic_rt_string_find_first_raw(s_ptr, text_len, delimiter_ptr, delim_len, cursor);
             size_t end = pos < 0 ? text_len : (size_t)pos;
             size_t seg_len = end >= cursor ? (end - cursor) : 0;
             char* seg = aic_rt_copy_bytes(s_ptr + cursor, seg_len);
@@ -417,8 +417,8 @@ void aic_rt_string_split(
                 return;
             }
             items[out_index].ptr = seg;
-            items[out_index].len = (long)seg_len;
-            items[out_index].cap = (long)seg_len;
+            items[out_index].len = (int64_t)seg_len;
+            items[out_index].cap = (int64_t)seg_len;
             out_index += 1;
             if (pos < 0) {
                 break;
@@ -430,15 +430,15 @@ void aic_rt_string_split(
     aic_rt_string_write_vec_out(out_ptr, out_count, items, out_index);
 }
 
-long aic_rt_string_split_first(
+int64_t aic_rt_string_split_first(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     const char* delimiter_ptr,
-    long delimiter_len,
-    long delimiter_cap,
+    int64_t delimiter_len,
+    int64_t delimiter_cap,
     char** out_ptr,
-    long* out_count
+    int64_t* out_count
 ) {
     (void)s_cap;
     (void)delimiter_cap;
@@ -456,7 +456,7 @@ long aic_rt_string_split_first(
 
     size_t text_len = (size_t)s_len;
     size_t delim_len = (size_t)delimiter_len;
-    long pos = aic_rt_string_find_first_raw(s_ptr, text_len, delimiter_ptr, delim_len, 0);
+    int64_t pos = aic_rt_string_find_first_raw(s_ptr, text_len, delimiter_ptr, delim_len, 0);
     if (pos < 0) {
         return 0;
     }
@@ -476,21 +476,21 @@ long aic_rt_string_split_first(
         return 0;
     }
     items[0].ptr = left;
-    items[0].len = (long)left_len;
-    items[0].cap = (long)left_len;
+    items[0].len = (int64_t)left_len;
+    items[0].cap = (int64_t)left_len;
     items[1].ptr = right;
-    items[1].len = (long)right_len;
-    items[1].cap = (long)right_len;
+    items[1].len = (int64_t)right_len;
+    items[1].cap = (int64_t)right_len;
     aic_rt_string_write_vec_out(out_ptr, out_count, items, 2);
     return 1;
 }
 
 void aic_rt_string_trim(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -517,10 +517,10 @@ void aic_rt_string_trim(
 
 void aic_rt_string_trim_start(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -547,10 +547,10 @@ void aic_rt_string_trim_start(
 
 void aic_rt_string_trim_end(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -577,10 +577,10 @@ void aic_rt_string_trim_end(
 
 void aic_rt_string_to_upper(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -650,10 +650,10 @@ void aic_rt_string_to_upper(
 
 void aic_rt_string_to_lower(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -723,16 +723,16 @@ void aic_rt_string_to_lower(
 
 void aic_rt_string_replace(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     const char* from_ptr,
-    long from_len,
-    long from_cap,
+    int64_t from_len,
+    int64_t from_cap,
     const char* to_ptr,
-    long to_len,
-    long to_cap,
+    int64_t to_len,
+    int64_t to_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     (void)from_cap;
@@ -766,7 +766,7 @@ void aic_rt_string_replace(
     size_t cursor = 0;
     size_t matches = 0;
     while (cursor <= text_len) {
-        long pos = aic_rt_string_find_first_raw(s_ptr, text_len, from_ptr, from_n, cursor);
+        int64_t pos = aic_rt_string_find_first_raw(s_ptr, text_len, from_ptr, from_n, cursor);
         if (pos < 0) {
             break;
         }
@@ -798,7 +798,7 @@ void aic_rt_string_replace(
         size_t delta = from_n - to_n;
         out_bytes -= matches * delta;
     }
-    if (out_bytes > (size_t)LONG_MAX) {
+    if (out_bytes > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("replace", "OVERFLOW", "output-size-overflow");
         return;
     }
@@ -811,7 +811,7 @@ void aic_rt_string_replace(
     size_t in_pos = 0;
     size_t out_pos = 0;
     while (in_pos <= text_len) {
-        long match_pos = aic_rt_string_find_first_raw(s_ptr, text_len, from_ptr, from_n, in_pos);
+        int64_t match_pos = aic_rt_string_find_first_raw(s_ptr, text_len, from_ptr, from_n, in_pos);
         if (match_pos < 0) {
             size_t tail = text_len - in_pos;
             if (tail > 0) {
@@ -838,11 +838,11 @@ void aic_rt_string_replace(
 
 void aic_rt_string_repeat(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
-    long count,
+    int64_t s_len,
+    int64_t s_cap,
+    int64_t count,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -870,7 +870,7 @@ void aic_rt_string_repeat(
         return;
     }
     size_t out_bytes = n * reps;
-    if (out_bytes > (size_t)LONG_MAX) {
+    if (out_bytes > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("repeat", "OVERFLOW", "output-size-overflow");
         return;
     }
@@ -888,7 +888,7 @@ void aic_rt_string_repeat(
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
-static long aic_rt_string_parse_int_error(const char* message, char** out_err_ptr, long* out_err_len) {
+static int64_t aic_rt_string_parse_int_error(const char* message, char** out_err_ptr, int64_t* out_err_len) {
     size_t message_len = strlen(message);
     char* out = aic_rt_copy_bytes(message, message_len);
     if (out == NULL) {
@@ -906,18 +906,18 @@ static long aic_rt_string_parse_int_error(const char* message, char** out_err_pt
         free(out);
     }
     if (out_err_len != NULL) {
-        *out_err_len = (long)message_len;
+        *out_err_len = (int64_t)message_len;
     }
     return 1;
 }
 
-long aic_rt_string_parse_int(
+int64_t aic_rt_string_parse_int(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
-    long* out_value,
+    int64_t s_len,
+    int64_t s_cap,
+    int64_t* out_value,
     char** out_err_ptr,
-    long* out_err_len
+    int64_t* out_err_len
 ) {
     (void)s_cap;
     if (out_value != NULL) {
@@ -950,8 +950,8 @@ long aic_rt_string_parse_int(
 
     unsigned long long value = 0;
     unsigned long long limit = negative
-        ? (unsigned long long)LONG_MAX + 1ULL
-        : (unsigned long long)LONG_MAX;
+        ? (unsigned long long)INT64_MAX + 1ULL
+        : (unsigned long long)INT64_MAX;
     for (size_t i = start; i < end; ++i) {
         char ch = s_ptr[i];
         if (ch < '0' || ch > '9') {
@@ -968,15 +968,15 @@ long aic_rt_string_parse_int(
         value = value * 10ULL + digit;
     }
 
-    long parsed = 0;
+    int64_t parsed = 0;
     if (negative) {
-        if (value == (unsigned long long)LONG_MAX + 1ULL) {
-            parsed = LONG_MIN;
+        if (value == (unsigned long long)INT64_MAX + 1ULL) {
+            parsed = INT64_MIN;
         } else {
-            parsed = -(long)value;
+            parsed = -(int64_t)value;
         }
     } else {
-        parsed = (long)value;
+        parsed = (int64_t)value;
     }
     if (out_value != NULL) {
         *out_value = parsed;
@@ -984,7 +984,7 @@ long aic_rt_string_parse_int(
     return 0;
 }
 
-static long aic_rt_string_parse_float_error(const char* message, char** out_err_ptr, long* out_err_len) {
+static int64_t aic_rt_string_parse_float_error(const char* message, char** out_err_ptr, int64_t* out_err_len) {
     size_t message_len = strlen(message);
     char* out = aic_rt_copy_bytes(message, message_len);
     if (out == NULL) {
@@ -1002,18 +1002,18 @@ static long aic_rt_string_parse_float_error(const char* message, char** out_err_
         free(out);
     }
     if (out_err_len != NULL) {
-        *out_err_len = (long)message_len;
+        *out_err_len = (int64_t)message_len;
     }
     return 1;
 }
 
-long aic_rt_string_parse_float(
+int64_t aic_rt_string_parse_float(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     double* out_value,
     char** out_err_ptr,
-    long* out_err_len
+    int64_t* out_err_len
 ) {
     (void)s_cap;
     if (out_value != NULL) {
@@ -1061,7 +1061,7 @@ long aic_rt_string_parse_float(
     return 0;
 }
 
-void aic_rt_string_int_to_string(long value, char** out_ptr, long* out_len) {
+void aic_rt_string_int_to_string(int64_t value, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -1069,7 +1069,7 @@ void aic_rt_string_int_to_string(long value, char** out_ptr, long* out_len) {
         *out_len = 0;
     }
     char buffer[64];
-    int written = snprintf(buffer, sizeof(buffer), "%ld", value);
+    int written = snprintf(buffer, sizeof(buffer), "%" PRId64, value);
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
         aic_rt_string_runtime_panic("int_to_string", "INTERNAL", "snprintf-failed");
         return;
@@ -1083,7 +1083,7 @@ void aic_rt_string_int_to_string(long value, char** out_ptr, long* out_len) {
     );
 }
 
-void aic_rt_string_float_to_string(double value, char** out_ptr, long* out_len) {
+void aic_rt_string_float_to_string(double value, char** out_ptr, int64_t* out_len) {
     if (out_ptr != NULL) {
         *out_ptr = NULL;
     }
@@ -1147,7 +1147,7 @@ void aic_rt_string_float_to_string(double value, char** out_ptr, long* out_len) 
     );
 }
 
-void aic_rt_string_bool_to_string(long value, char** out_ptr, long* out_len) {
+void aic_rt_string_bool_to_string(int64_t value, char** out_ptr, int64_t* out_len) {
     if (value != 0) {
         aic_rt_string_write_out_or_panic(
             "bool_to_string",
@@ -1167,12 +1167,12 @@ void aic_rt_string_bool_to_string(long value, char** out_ptr, long* out_len) {
     }
 }
 
-long aic_rt_char_is_digit(int value) {
+int64_t aic_rt_char_is_digit(int value) {
     uint32_t cp = (uint32_t)value;
     return (cp >= (uint32_t)'0' && cp <= (uint32_t)'9') ? 1 : 0;
 }
 
-long aic_rt_char_is_alpha(int value) {
+int64_t aic_rt_char_is_alpha(int value) {
     uint32_t cp = (uint32_t)value;
     if ((cp >= (uint32_t)'A' && cp <= (uint32_t)'Z') ||
         (cp >= (uint32_t)'a' && cp <= (uint32_t)'z')) {
@@ -1181,7 +1181,7 @@ long aic_rt_char_is_alpha(int value) {
     return 0;
 }
 
-long aic_rt_char_is_whitespace(int value) {
+int64_t aic_rt_char_is_whitespace(int value) {
     uint32_t cp = (uint32_t)value;
     if (cp == 0x0009u || cp == 0x000Au || cp == 0x000Bu || cp == 0x000Cu ||
         cp == 0x000Du || cp == 0x0020u || cp == 0x0085u || cp == 0x00A0u ||
@@ -1195,11 +1195,11 @@ long aic_rt_char_is_whitespace(int value) {
     return 0;
 }
 
-long aic_rt_char_to_int(int value) {
-    return (long)(uint32_t)value;
+int64_t aic_rt_char_to_int(int value) {
+    return (int64_t)(uint32_t)value;
 }
 
-long aic_rt_char_int_to_char(long value, int* out_char) {
+int64_t aic_rt_char_int_to_char(int64_t value, int* out_char) {
     if (out_char != NULL) {
         *out_char = 0;
     }
@@ -1217,10 +1217,10 @@ long aic_rt_char_int_to_char(long value, int* out_char) {
 
 void aic_rt_char_chars(
     const char* s_ptr,
-    long s_len,
-    long s_cap,
+    int64_t s_len,
+    int64_t s_cap,
     char** out_ptr,
-    long* out_count
+    int64_t* out_count
 ) {
     (void)s_cap;
     if (out_ptr != NULL) {
@@ -1247,7 +1247,7 @@ void aic_rt_char_chars(
         cursor += width;
         count += 1;
     }
-    if (count > (size_t)LONG_MAX) {
+    if (count > (size_t)INT64_MAX) {
         return;
     }
 
@@ -1270,7 +1270,7 @@ void aic_rt_char_chars(
     }
 
     if (out_count != NULL) {
-        *out_count = (long)count;
+        *out_count = (int64_t)count;
     }
     if (out_ptr != NULL) {
         *out_ptr = (char*)codepoints;
@@ -1281,10 +1281,10 @@ void aic_rt_char_chars(
 
 void aic_rt_char_from_chars(
     const char* chars_ptr,
-    long chars_len,
-    long chars_cap,
+    int64_t chars_len,
+    int64_t chars_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)chars_cap;
     if (out_ptr != NULL) {
@@ -1317,7 +1317,7 @@ void aic_rt_char_from_chars(
     const int32_t* codepoints = (const int32_t*)chars_ptr;
     size_t out_pos = 0;
     for (size_t i = 0; i < count; ++i) {
-        long raw = (long)codepoints[i];
+        int64_t raw = (int64_t)codepoints[i];
         uint32_t cp = raw < 0 ? 0xFFFDu : (uint32_t)raw;
         if (cp > 0x10FFFFu || (cp >= 0xD800u && cp <= 0xDFFFu)) {
             cp = 0xFFFDu;
@@ -1338,12 +1338,12 @@ void aic_rt_char_from_chars(
 
     out[out_pos] = '\0';
     if (out_len != NULL) {
-        if (out_pos > (size_t)LONG_MAX) {
+        if (out_pos > (size_t)INT64_MAX) {
             free(out);
             aic_rt_string_runtime_panic("char_from_chars", "OVERFLOW", "output-size-overflow");
             return;
         }
-        *out_len = (long)out_pos;
+        *out_len = (int64_t)out_pos;
     }
     if (out_ptr != NULL) {
         *out_ptr = out;
@@ -1354,13 +1354,13 @@ void aic_rt_char_from_chars(
 
 void aic_rt_string_join(
     const char* parts_ptr,
-    long parts_len,
-    long parts_cap,
+    int64_t parts_len,
+    int64_t parts_cap,
     const char* separator_ptr,
-    long separator_len,
-    long separator_cap,
+    int64_t separator_len,
+    int64_t separator_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)parts_cap;
     (void)separator_cap;
@@ -1388,7 +1388,7 @@ void aic_rt_string_join(
     const AicString* parts = (const AicString*)(const void*)parts_ptr;
     size_t total = 0;
     for (size_t i = 0; i < count; ++i) {
-        long part_len_long = parts[i].len;
+        int64_t part_len_long = parts[i].len;
         const char* part_ptr = parts[i].ptr;
         if (part_len_long < 0 || (part_len_long > 0 && part_ptr == NULL)) {
             aic_rt_string_runtime_panic("join", "INVALID_INPUT", "invalid-part-slice");
@@ -1408,7 +1408,7 @@ void aic_rt_string_join(
             total += sep_len;
         }
     }
-    if (total > (size_t)LONG_MAX) {
+    if (total > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("join", "OVERFLOW", "output-size-overflow");
         return;
     }
@@ -1436,13 +1436,13 @@ void aic_rt_string_join(
 
 void aic_rt_string_format(
     const char* template_ptr,
-    long template_len,
-    long template_cap,
+    int64_t template_len,
+    int64_t template_cap,
     const char* args_ptr,
-    long args_len,
-    long args_cap,
+    int64_t args_len,
+    int64_t args_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)template_cap;
     (void)args_cap;
@@ -1467,7 +1467,7 @@ void aic_rt_string_format(
         }
         args = (const AicString*)(const void*)args_ptr;
         for (size_t idx = 0; idx < arg_count; ++idx) {
-            long arg_len_long = args[idx].len;
+            int64_t arg_len_long = args[idx].len;
             const char* arg_ptr = args[idx].ptr;
             if (arg_len_long < 0 || (arg_len_long > 0 && arg_ptr == NULL)) {
                 aic_rt_string_runtime_panic("format", "INVALID_INPUT", "invalid-arg-slice");
@@ -1522,7 +1522,7 @@ void aic_rt_string_format(
         in_pos += 1;
     }
 
-    if (total > (size_t)LONG_MAX) {
+    if (total > (size_t)INT64_MAX) {
         aic_rt_string_runtime_panic("format", "OVERFLOW", "output-size-overflow");
         return;
     }
@@ -1576,13 +1576,13 @@ void aic_rt_string_format(
 
 void aic_rt_path_join(
     const char* left_ptr,
-    long left_len,
-    long left_cap,
+    int64_t left_len,
+    int64_t left_cap,
     const char* right_ptr,
-    long right_len,
-    long right_cap,
+    int64_t right_len,
+    int64_t right_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)left_cap;
     (void)right_cap;
@@ -1639,10 +1639,10 @@ void aic_rt_path_join(
 
 void aic_rt_path_basename(
     const char* path_ptr,
-    long path_len,
-    long path_cap,
+    int64_t path_len,
+    int64_t path_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)path_cap;
     if (out_ptr != NULL) {
@@ -1675,10 +1675,10 @@ void aic_rt_path_basename(
 
 void aic_rt_path_dirname(
     const char* path_ptr,
-    long path_len,
-    long path_cap,
+    int64_t path_len,
+    int64_t path_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)path_cap;
     if (out_ptr != NULL) {
@@ -1727,10 +1727,10 @@ void aic_rt_path_dirname(
 
 void aic_rt_path_extension(
     const char* path_ptr,
-    long path_len,
-    long path_cap,
+    int64_t path_len,
+    int64_t path_cap,
     char** out_ptr,
-    long* out_len
+    int64_t* out_len
 ) {
     (void)path_cap;
     if (out_ptr != NULL) {
@@ -1775,18 +1775,18 @@ void aic_rt_path_extension(
     aic_rt_write_string_out(out_ptr, out_len, out);
 }
 
-long aic_rt_path_is_abs(const char* path_ptr, long path_len, long path_cap) {
+int64_t aic_rt_path_is_abs(const char* path_ptr, int64_t path_len, int64_t path_cap) {
     (void)path_cap;
     char* path = aic_rt_fs_copy_slice(path_ptr, path_len);
     if (path == NULL) {
         return 0;
     }
-    long out = aic_rt_path_is_abs_cstr(path) ? 1 : 0;
+    int64_t out = aic_rt_path_is_abs_cstr(path) ? 1 : 0;
     free(path);
     return out;
 }
 
-static long aic_rt_proc_map_errno(int err) {
+static int64_t aic_rt_proc_map_errno(int err) {
     switch (err) {
         case ENOENT:
             return 1;  // NotFound
@@ -1812,7 +1812,7 @@ static long aic_rt_proc_map_errno(int err) {
 }
 
 #ifdef _WIN32
-static long aic_rt_proc_map_win_error(unsigned long err) {
+static int64_t aic_rt_proc_map_win_error(uint64_t err) {
     switch (err) {
         case ERROR_FILE_NOT_FOUND:
         case ERROR_PATH_NOT_FOUND:
@@ -1839,7 +1839,7 @@ static long aic_rt_proc_map_win_error(unsigned long err) {
 }
 #endif
 
-static char* aic_rt_proc_read_text_file(const char* path, long* out_len) {
+static char* aic_rt_proc_read_text_file(const char* path, int64_t* out_len) {
     if (out_len != NULL) {
         *out_len = 0;
     }
@@ -1851,7 +1851,7 @@ static char* aic_rt_proc_read_text_file(const char* path, long* out_len) {
         fclose(f);
         return NULL;
     }
-    long size = ftell(f);
+    int64_t size = ftell(f);
     if (size < 0) {
         fclose(f);
         return NULL;
@@ -1869,12 +1869,12 @@ static char* aic_rt_proc_read_text_file(const char* path, long* out_len) {
     fclose(f);
     buffer[read_n] = '\0';
     if (out_len != NULL) {
-        *out_len = (long)read_n;
+        *out_len = (int64_t)read_n;
     }
     return buffer;
 }
 
-static long aic_rt_proc_make_temp_file_path(const char* prefix, char** out_path) {
+static int64_t aic_rt_proc_make_temp_file_path(const char* prefix, char** out_path) {
     if (out_path == NULL) {
         return 3;
     }
@@ -1920,21 +1920,21 @@ static long aic_rt_proc_make_temp_file_path(const char* prefix, char** out_path)
 #endif
 }
 
-static long aic_rt_proc_decode_wait_status(int status) {
+static int64_t aic_rt_proc_decode_wait_status(int status) {
 #ifdef _WIN32
-    return (long)status;
+    return (int64_t)status;
 #else
     if (WIFEXITED(status)) {
-        return (long)WEXITSTATUS(status);
+        return (int64_t)WEXITSTATUS(status);
     }
     if (WIFSIGNALED(status)) {
-        return 128 + (long)WTERMSIG(status);
+        return 128 + (int64_t)WTERMSIG(status);
     }
     return 1;
 #endif
 }
 
-static long aic_rt_proc_write_text_file(const char* path, const char* text) {
+static int64_t aic_rt_proc_write_text_file(const char* path, const char* text) {
     if (path == NULL) {
         return 3;
     }
@@ -1957,7 +1957,7 @@ static long aic_rt_proc_write_text_file(const char* path, const char* text) {
     return 0;
 }
 
-static long aic_rt_proc_validate_env_items(const AicString* items, long count) {
+static int64_t aic_rt_proc_validate_env_items(const AicString* items, int64_t count) {
     if (count < 0) {
         return 3;
     }
@@ -1969,7 +1969,7 @@ static long aic_rt_proc_validate_env_items(const AicString* items, long count) {
     }
     size_t count_n = (size_t)count;
     for (size_t i = 0; i < count_n; ++i) {
-        long item_len_long = items[i].len;
+        int64_t item_len_long = items[i].len;
         const char* item_ptr = items[i].ptr;
         if (item_len_long <= 0 || item_ptr == NULL) {
             return 3;
@@ -1987,11 +1987,11 @@ static long aic_rt_proc_validate_env_items(const AicString* items, long count) {
 }
 
 #ifdef _WIN32
-static long aic_rt_proc_run_windows_command(
+static int64_t aic_rt_proc_run_windows_command(
     const char* command_line,
     const char* cwd,
-    long timeout_ms,
-    long* out_status,
+    int64_t timeout_ms,
+    int64_t* out_status,
     int* out_timed_out
 ) {
     if (out_status != NULL) {
@@ -2062,23 +2062,23 @@ static long aic_rt_proc_run_windows_command(
         *out_timed_out = timed_out;
     }
     if (out_status != NULL) {
-        *out_status = timed_out ? 124 : (long)exit_code;
+        *out_status = timed_out ? 124 : (int64_t)exit_code;
     }
     return 0;
 }
 
-static long aic_rt_proc_run_shell_with_options(
+static int64_t aic_rt_proc_run_shell_with_options(
     const char* command,
     const char* stdin_text,
     const char* cwd,
     const AicString* env_items,
-    long env_count,
-    long timeout_ms,
-    long* out_status,
+    int64_t env_count,
+    int64_t timeout_ms,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     if (out_status != NULL) {
         *out_status = 0;
@@ -2099,7 +2099,7 @@ static long aic_rt_proc_run_shell_with_options(
         return 3;
     }
 
-    long env_valid = aic_rt_proc_validate_env_items(env_items, env_count);
+    int64_t env_valid = aic_rt_proc_validate_env_items(env_items, env_count);
     if (env_valid != 0) {
         return env_valid;
     }
@@ -2107,19 +2107,19 @@ static long aic_rt_proc_run_shell_with_options(
     char* stdout_path = NULL;
     char* stderr_path = NULL;
     char* stdin_path = NULL;
-    long mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
+    int64_t mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
     if (mk_out != 0) {
         free(stdout_path);
         return mk_out;
     }
-    long mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
+    int64_t mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
     if (mk_err != 0) {
         remove(stdout_path);
         free(stdout_path);
         free(stderr_path);
         return mk_err;
     }
-    long mk_in = aic_rt_proc_make_temp_file_path("aic_proc_in_", &stdin_path);
+    int64_t mk_in = aic_rt_proc_make_temp_file_path("aic_proc_in_", &stdin_path);
     if (mk_in != 0) {
         remove(stdout_path);
         remove(stderr_path);
@@ -2128,7 +2128,7 @@ static long aic_rt_proc_run_shell_with_options(
         free(stdin_path);
         return mk_in;
     }
-    long wrote = aic_rt_proc_write_text_file(stdin_path, stdin_text);
+    int64_t wrote = aic_rt_proc_write_text_file(stdin_path, stdin_text);
     if (wrote != 0) {
         remove(stdout_path);
         remove(stderr_path);
@@ -2218,9 +2218,9 @@ static long aic_rt_proc_run_shell_with_options(
     command_line[11 + pos] = '\0';
     free(body);
 
-    long run_status = 0;
+    int64_t run_status = 0;
     int timed_out = 0;
-    long run_rc = aic_rt_proc_run_windows_command(
+    int64_t run_rc = aic_rt_proc_run_windows_command(
         command_line,
         cwd,
         timeout_ms,
@@ -2229,8 +2229,8 @@ static long aic_rt_proc_run_shell_with_options(
     );
     free(command_line);
 
-    long stdout_n = 0;
-    long stderr_n = 0;
+    int64_t stdout_n = 0;
+    int64_t stderr_n = 0;
     char* stdout_text = aic_rt_proc_read_text_file(stdout_path, &stdout_n);
     char* stderr_text = aic_rt_proc_read_text_file(stderr_path, &stderr_n);
     remove(stdout_path);
@@ -2274,13 +2274,13 @@ static long aic_rt_proc_run_shell_with_options(
 #endif
 
 #ifndef _WIN32
-static long aic_rt_proc_apply_env_items(const AicString* items, long count) {
+static int64_t aic_rt_proc_apply_env_items(const AicString* items, int64_t count) {
     if (count <= 0) {
         return 0;
     }
     size_t count_n = (size_t)count;
     for (size_t i = 0; i < count_n; ++i) {
-        long item_len_long = items[i].len;
+        int64_t item_len_long = items[i].len;
         const char* item_ptr = items[i].ptr;
         if (item_len_long <= 0 || item_ptr == NULL) {
             return 3;
@@ -2308,9 +2308,9 @@ static long aic_rt_proc_apply_env_items(const AicString* items, long count) {
     return 0;
 }
 
-static long aic_rt_proc_wait_for_pid(
+static int64_t aic_rt_proc_wait_for_pid(
     pid_t pid,
-    long timeout_ms,
+    int64_t timeout_ms,
     int* out_status,
     int* out_timed_out
 ) {
@@ -2362,8 +2362,8 @@ static long aic_rt_proc_wait_for_pid(
         if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
             return aic_rt_proc_map_errno(errno);
         }
-        long elapsed_ms = (long)(now.tv_sec - start.tv_sec) * 1000L;
-        elapsed_ms += (long)((now.tv_nsec - start.tv_nsec) / 1000000L);
+        int64_t elapsed_ms = (int64_t)(now.tv_sec - start.tv_sec) * 1000L;
+        elapsed_ms += (int64_t)((now.tv_nsec - start.tv_nsec) / 1000000L);
         if (elapsed_ms >= timeout_ms) {
             if (kill(pid, SIGKILL) != 0 && errno != ESRCH) {
                 return aic_rt_proc_map_errno(errno);
@@ -2390,18 +2390,18 @@ static long aic_rt_proc_wait_for_pid(
     }
 }
 
-static long aic_rt_proc_run_shell_with_options(
+static int64_t aic_rt_proc_run_shell_with_options(
     const char* command,
     const char* stdin_text,
     const char* cwd,
     const AicString* env_items,
-    long env_count,
-    long timeout_ms,
-    long* out_status,
+    int64_t env_count,
+    int64_t timeout_ms,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     if (out_status != NULL) {
         *out_status = 0;
@@ -2424,7 +2424,7 @@ static long aic_rt_proc_run_shell_with_options(
     if (timeout_ms < 0) {
         return 3;
     }
-    long env_valid = aic_rt_proc_validate_env_items(env_items, env_count);
+    int64_t env_valid = aic_rt_proc_validate_env_items(env_items, env_count);
     if (env_valid != 0) {
         return env_valid;
     }
@@ -2432,19 +2432,19 @@ static long aic_rt_proc_run_shell_with_options(
     char* stdout_path = NULL;
     char* stderr_path = NULL;
     char* stdin_path = NULL;
-    long mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
+    int64_t mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
     if (mk_out != 0) {
         free(stdout_path);
         return mk_out;
     }
-    long mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
+    int64_t mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
     if (mk_err != 0) {
         remove(stdout_path);
         free(stdout_path);
         free(stderr_path);
         return mk_err;
     }
-    long mk_in = aic_rt_proc_make_temp_file_path("aic_proc_in_", &stdin_path);
+    int64_t mk_in = aic_rt_proc_make_temp_file_path("aic_proc_in_", &stdin_path);
     if (mk_in != 0) {
         remove(stdout_path);
         remove(stderr_path);
@@ -2453,7 +2453,7 @@ static long aic_rt_proc_run_shell_with_options(
         free(stdin_path);
         return mk_in;
     }
-    long wrote = aic_rt_proc_write_text_file(stdin_path, stdin_text);
+    int64_t wrote = aic_rt_proc_write_text_file(stdin_path, stdin_text);
     if (wrote != 0) {
         remove(stdout_path);
         remove(stderr_path);
@@ -2536,7 +2536,7 @@ static long aic_rt_proc_run_shell_with_options(
             _exit(126);
         }
 
-        long env_applied = aic_rt_proc_apply_env_items(env_items, env_count);
+        int64_t env_applied = aic_rt_proc_apply_env_items(env_items, env_count);
         if (env_applied != 0) {
             int mapped = (int)(-env_applied);
             (void)write(setup_pipe[1], &mapped, sizeof(mapped));
@@ -2573,14 +2573,14 @@ static long aic_rt_proc_run_shell_with_options(
         free(stderr_path);
         free(stdin_path);
         if (setup_result < 0) {
-            return (long)(-setup_result);
+            return (int64_t)(-setup_result);
         }
         return aic_rt_proc_map_errno(setup_result);
     }
 
     int wait_status = 0;
     int timed_out = 0;
-    long waited = aic_rt_proc_wait_for_pid(pid, timeout_ms, &wait_status, &timed_out);
+    int64_t waited = aic_rt_proc_wait_for_pid(pid, timeout_ms, &wait_status, &timed_out);
     if (waited != 0) {
         remove(stdout_path);
         remove(stderr_path);
@@ -2591,8 +2591,8 @@ static long aic_rt_proc_run_shell_with_options(
         return waited;
     }
 
-    long stdout_n = 0;
-    long stderr_n = 0;
+    int64_t stdout_n = 0;
+    int64_t stderr_n = 0;
     char* stdout_text = aic_rt_proc_read_text_file(stdout_path, &stdout_n);
     char* stderr_text = aic_rt_proc_read_text_file(stderr_path, &stderr_n);
     remove(stdout_path);
@@ -2634,13 +2634,13 @@ static long aic_rt_proc_run_shell_with_options(
 }
 #endif
 
-static long aic_rt_proc_run_shell(
+static int64_t aic_rt_proc_run_shell(
     const char* command,
-    long* out_status,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     if (out_status != NULL) {
         *out_status = 0;
@@ -2663,12 +2663,12 @@ static long aic_rt_proc_run_shell(
 
     char* stdout_path = NULL;
     char* stderr_path = NULL;
-    long mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
+    int64_t mk_out = aic_rt_proc_make_temp_file_path("aic_proc_out_", &stdout_path);
     if (mk_out != 0) {
         free(stdout_path);
         return mk_out;
     }
-    long mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
+    int64_t mk_err = aic_rt_proc_make_temp_file_path("aic_proc_err_", &stderr_path);
     if (mk_err != 0) {
         free(stdout_path);
         free(stderr_path);
@@ -2704,8 +2704,8 @@ static long aic_rt_proc_run_shell(
         return aic_rt_proc_map_errno(err);
     }
 
-    long stdout_n = 0;
-    long stderr_n = 0;
+    int64_t stdout_n = 0;
+    int64_t stderr_n = 0;
     char* stdout_text = aic_rt_proc_read_text_file(stdout_path, &stdout_n);
     char* stderr_text = aic_rt_proc_read_text_file(stderr_path, &stderr_n);
     remove(stdout_path);
@@ -2744,14 +2744,14 @@ static long aic_rt_proc_run_shell(
 typedef struct {
     int active;
 #ifdef _WIN32
-    long pid;
+    int64_t pid;
     HANDLE process;
 #else
     pid_t pid;
 #endif
 } AicProcSlot;
 static AicProcSlot aic_rt_proc_table[AIC_RT_PROC_TABLE_CAP];
-static long aic_rt_proc_table_limit = AIC_RT_PROC_TABLE_CAP;
+static int64_t aic_rt_proc_table_limit = AIC_RT_PROC_TABLE_CAP;
 #ifdef _WIN32
 static volatile LONG aic_rt_proc_limits_initialized = 0;
 #else
@@ -2777,7 +2777,7 @@ static void aic_rt_proc_limits_ensure(void) {
 #endif
 }
 
-long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_cap, long* out_handle) {
+int64_t aic_rt_proc_spawn(const char* command_ptr, int64_t command_len, int64_t command_cap, int64_t* out_handle) {
     (void)command_cap;
     AIC_RT_SANDBOX_BLOCK_PROC("spawn", 2);
     if (out_handle != NULL) {
@@ -2822,8 +2822,8 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
     }
     CloseHandle(process_info.hThread);
 
-    long slot = -1;
-    for (long i = 0; i < aic_rt_proc_table_limit; ++i) {
+    int64_t slot = -1;
+    for (int64_t i = 0; i < aic_rt_proc_table_limit; ++i) {
         if (!aic_rt_proc_table[i].active) {
             slot = i;
             break;
@@ -2836,7 +2836,7 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
         return 4;
     }
     aic_rt_proc_table[slot].active = 1;
-    aic_rt_proc_table[slot].pid = (long)process_info.dwProcessId;
+    aic_rt_proc_table[slot].pid = (int64_t)process_info.dwProcessId;
     aic_rt_proc_table[slot].process = process_info.hProcess;
     if (out_handle != NULL) {
         *out_handle = slot + 1;
@@ -2846,7 +2846,7 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
     aic_rt_proc_limits_ensure();
     pid_t pid = fork();
     if (pid < 0) {
-        long mapped = aic_rt_proc_map_errno(errno);
+        int64_t mapped = aic_rt_proc_map_errno(errno);
         free(command);
         return mapped;
     }
@@ -2856,8 +2856,8 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
     }
     free(command);
 
-    long slot = -1;
-    for (long i = 0; i < aic_rt_proc_table_limit; ++i) {
+    int64_t slot = -1;
+    for (int64_t i = 0; i < aic_rt_proc_table_limit; ++i) {
         if (!aic_rt_proc_table[i].active) {
             slot = i;
             break;
@@ -2877,7 +2877,7 @@ long aic_rt_proc_spawn(const char* command_ptr, long command_len, long command_c
 #endif
 }
 
-long aic_rt_proc_wait(long handle, long* out_status) {
+int64_t aic_rt_proc_wait(int64_t handle, int64_t* out_status) {
     AIC_RT_SANDBOX_BLOCK_PROC("wait", 2);
     if (out_status != NULL) {
         *out_status = 0;
@@ -2887,7 +2887,7 @@ long aic_rt_proc_wait(long handle, long* out_status) {
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
-    long slot = handle - 1;
+    int64_t slot = handle - 1;
     if (!aic_rt_proc_table[slot].active) {
         return 5;
     }
@@ -2902,7 +2902,7 @@ long aic_rt_proc_wait(long handle, long* out_status) {
     CloseHandle(aic_rt_proc_table[slot].process);
     memset(&aic_rt_proc_table[slot], 0, sizeof(AicProcSlot));
     if (out_status != NULL) {
-        *out_status = (long)exit_code;
+        *out_status = (int64_t)exit_code;
     }
     return 0;
 #else
@@ -2910,7 +2910,7 @@ long aic_rt_proc_wait(long handle, long* out_status) {
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
-    long slot = handle - 1;
+    int64_t slot = handle - 1;
     if (!aic_rt_proc_table[slot].active) {
         return 5;
     }
@@ -2927,7 +2927,7 @@ long aic_rt_proc_wait(long handle, long* out_status) {
 #endif
 }
 
-long aic_rt_proc_is_running(long handle, long* out_running) {
+int64_t aic_rt_proc_is_running(int64_t handle, int64_t* out_running) {
     AIC_RT_SANDBOX_BLOCK_PROC("is_running", 2);
     if (out_running != NULL) {
         *out_running = 0;
@@ -2937,7 +2937,7 @@ long aic_rt_proc_is_running(long handle, long* out_running) {
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
-    long slot = handle - 1;
+    int64_t slot = handle - 1;
     if (!aic_rt_proc_table[slot].active) {
         return 5;
     }
@@ -2967,7 +2967,7 @@ long aic_rt_proc_is_running(long handle, long* out_running) {
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
-    long slot = handle - 1;
+    int64_t slot = handle - 1;
     if (!aic_rt_proc_table[slot].active) {
         return 5;
     }
@@ -3001,31 +3001,31 @@ long aic_rt_proc_is_running(long handle, long* out_running) {
 #endif
 }
 
-long aic_rt_proc_current_pid(long* out_pid) {
+int64_t aic_rt_proc_current_pid(int64_t* out_pid) {
     AIC_RT_SANDBOX_BLOCK_PROC("current_pid", 2);
     if (out_pid != NULL) {
         *out_pid = 0;
     }
 #ifdef _WIN32
     if (out_pid != NULL) {
-        *out_pid = (long)GetCurrentProcessId();
+        *out_pid = (int64_t)GetCurrentProcessId();
     }
 #else
     if (out_pid != NULL) {
-        *out_pid = (long)getpid();
+        *out_pid = (int64_t)getpid();
     }
 #endif
     return 0;
 }
 
-long aic_rt_proc_kill(long handle) {
+int64_t aic_rt_proc_kill(int64_t handle) {
     AIC_RT_SANDBOX_BLOCK_PROC("kill", 2);
 #ifdef _WIN32
     aic_rt_proc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
-    long slot = handle - 1;
+    int64_t slot = handle - 1;
     if (!aic_rt_proc_table[slot].active) {
         return 5;
     }
@@ -3047,7 +3047,7 @@ long aic_rt_proc_kill(long handle) {
     if (handle <= 0 || handle > aic_rt_proc_table_limit) {
         return 5;
     }
-    long slot = handle - 1;
+    int64_t slot = handle - 1;
     if (!aic_rt_proc_table[slot].active) {
         return 5;
     }
@@ -3060,15 +3060,15 @@ long aic_rt_proc_kill(long handle) {
 #endif
 }
 
-long aic_rt_proc_run(
+int64_t aic_rt_proc_run(
     const char* command_ptr,
-    long command_len,
-    long command_cap,
-    long* out_status,
+    int64_t command_len,
+    int64_t command_cap,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     (void)command_cap;
     AIC_RT_SANDBOX_BLOCK_PROC("run", 2);
@@ -3077,7 +3077,7 @@ long aic_rt_proc_run(
         free(command);
         return 3;
     }
-    long result = aic_rt_proc_run_shell(
+    int64_t result = aic_rt_proc_run_shell(
         command,
         out_status,
         out_stdout_ptr,
@@ -3089,18 +3089,18 @@ long aic_rt_proc_run(
     return result;
 }
 
-long aic_rt_proc_pipe(
+int64_t aic_rt_proc_pipe(
     const char* left_ptr,
-    long left_len,
-    long left_cap,
+    int64_t left_len,
+    int64_t left_cap,
     const char* right_ptr,
-    long right_len,
-    long right_cap,
-    long* out_status,
+    int64_t right_len,
+    int64_t right_cap,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     (void)left_cap;
     (void)right_cap;
@@ -3122,7 +3122,7 @@ long aic_rt_proc_pipe(
     snprintf(command, command_n, "%s | %s", left, right);
     free(left);
     free(right);
-    long result = aic_rt_proc_run_shell(
+    int64_t result = aic_rt_proc_run_shell(
         command,
         out_status,
         out_stdout_ptr,
@@ -3134,25 +3134,25 @@ long aic_rt_proc_pipe(
     return result;
 }
 
-long aic_rt_proc_run_with(
+int64_t aic_rt_proc_run_with(
     const char* command_ptr,
-    long command_len,
-    long command_cap,
+    int64_t command_len,
+    int64_t command_cap,
     const char* stdin_ptr,
-    long stdin_len,
-    long stdin_cap,
+    int64_t stdin_len,
+    int64_t stdin_cap,
     const char* cwd_ptr,
-    long cwd_len,
-    long cwd_cap,
+    int64_t cwd_len,
+    int64_t cwd_cap,
     const char* env_ptr,
-    long env_len,
-    long env_cap,
-    long timeout_ms,
-    long* out_status,
+    int64_t env_len,
+    int64_t env_cap,
+    int64_t timeout_ms,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     (void)command_cap;
     (void)stdin_cap;
@@ -3180,7 +3180,7 @@ long aic_rt_proc_run_with(
         env_items = (const AicString*)(const void*)env_ptr;
     }
 
-    long result = aic_rt_proc_run_shell_with_options(
+    int64_t result = aic_rt_proc_run_shell_with_options(
         command,
         stdin_text,
         cwd,
@@ -3199,16 +3199,16 @@ long aic_rt_proc_run_with(
     return result;
 }
 
-long aic_rt_proc_run_timeout(
+int64_t aic_rt_proc_run_timeout(
     const char* command_ptr,
-    long command_len,
-    long command_cap,
-    long timeout_ms,
-    long* out_status,
+    int64_t command_len,
+    int64_t command_cap,
+    int64_t timeout_ms,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     (void)command_cap;
     AIC_RT_SANDBOX_BLOCK_PROC("run_timeout", 2);
@@ -3217,7 +3217,7 @@ long aic_rt_proc_run_timeout(
         free(command);
         return 3;
     }
-    long result = aic_rt_proc_run_shell_with_options(
+    int64_t result = aic_rt_proc_run_shell_with_options(
         command,
         "",
         "",
@@ -3234,15 +3234,15 @@ long aic_rt_proc_run_timeout(
     return result;
 }
 
-long aic_rt_proc_pipe_chain(
+int64_t aic_rt_proc_pipe_chain(
     const char* stages_ptr,
-    long stages_len,
-    long stages_cap,
-    long* out_status,
+    int64_t stages_len,
+    int64_t stages_cap,
+    int64_t* out_status,
     char** out_stdout_ptr,
-    long* out_stdout_len,
+    int64_t* out_stdout_len,
     char** out_stderr_ptr,
-    long* out_stderr_len
+    int64_t* out_stderr_len
 ) {
     (void)stages_cap;
     AIC_RT_SANDBOX_BLOCK_PROC("pipe_chain", 2);
@@ -3253,7 +3253,7 @@ long aic_rt_proc_pipe_chain(
     size_t count = (size_t)stages_len;
     size_t total = 0;
     for (size_t i = 0; i < count; ++i) {
-        long stage_len_long = stages[i].len;
+        int64_t stage_len_long = stages[i].len;
         const char* stage_ptr = stages[i].ptr;
         if (stage_len_long <= 0 || stage_ptr == NULL) {
             return 3;
@@ -3285,7 +3285,7 @@ long aic_rt_proc_pipe_chain(
         }
     }
     command[pos] = '\0';
-    long result = aic_rt_proc_run_shell_with_options(
+    int64_t result = aic_rt_proc_run_shell_with_options(
         command,
         "",
         "",
@@ -3316,7 +3316,7 @@ long aic_rt_proc_pipe_chain(
 #define AIC_RT_CONC_ATOMIC_BOOL_CAP 4096
 #define AIC_RT_CONC_TL_CAP 4096
 
-typedef long (*AicConcEntryFn)(void*);
+typedef int64_t (*AicConcEntryFn)(void*);
 
 typedef struct {
     int active;
@@ -3324,10 +3324,10 @@ typedef struct {
     int cancelled;
     int panic;
     int mode;
-    long scope_id;
-    long input_value;
-    long delay_ms;
-    long result;
+    int64_t scope_id;
+    int64_t input_value;
+    int64_t delay_ms;
+    int64_t result;
     AicConcEntryFn entry_fn;
     void* entry_env;
     char thread_name[64];
@@ -3339,11 +3339,11 @@ typedef struct {
 typedef struct {
     int active;
     int closed;
-    long* values;
-    long cap;
-    long len;
-    long head;
-    long tail;
+    int64_t* values;
+    int64_t cap;
+    int64_t len;
+    int64_t head;
+    int64_t tail;
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
@@ -3353,7 +3353,7 @@ typedef struct {
     int active;
     int closed;
     int locked;
-    long value;
+    int64_t value;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
 } AicConcMutexSlot;
@@ -3362,7 +3362,7 @@ typedef struct {
     int active;
     int closed;
     int write_locked;
-    long value;
+    int64_t value;
     pthread_rwlock_t rwlock;
     pthread_mutex_t meta_mutex;
 } AicConcRwLockSlot;
@@ -3370,25 +3370,25 @@ typedef struct {
 typedef struct {
     int active;
     int cancelled;
-    long parent;
+    int64_t parent;
 } AicConcScopeSlot;
 
 typedef struct {
     int active;
     char* ptr;
-    long len;
+    int64_t len;
 } AicConcPayloadSlot;
 
 typedef struct {
     int active;
-    atomic_long ref_count;
+    _Atomic int64_t ref_count;
     char* payload_ptr;
-    long payload_len;
+    int64_t payload_len;
 } AicConcArcSlot;
 
 typedef struct {
     atomic_int active;
-    atomic_long value;
+    _Atomic int64_t value;
 } AicConcAtomicIntSlot;
 
 typedef struct {
@@ -3398,7 +3398,7 @@ typedef struct {
 
 typedef struct {
     atomic_int active;
-    long value_size;
+    int64_t value_size;
     AicConcEntryFn init_fn;
     void* init_env;
     pthread_key_t key;
@@ -3421,10 +3421,10 @@ static AicConcThreadLocalSlot aic_rt_conc_tls[AIC_RT_CONC_TL_CAP];
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_payload_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_arc_mutex = PTHREAD_MUTEX_INITIALIZER;
-static long aic_rt_conc_task_limit = AIC_RT_CONC_TASK_CAP;
-static long aic_rt_conc_channel_limit = AIC_RT_CONC_CHANNEL_CAP;
-static long aic_rt_conc_mutex_limit = AIC_RT_CONC_MUTEX_CAP;
-static long aic_rt_fs_async_op_limit = AIC_RT_CONC_TASK_CAP;
+static int64_t aic_rt_conc_task_limit = AIC_RT_CONC_TASK_CAP;
+static int64_t aic_rt_conc_channel_limit = AIC_RT_CONC_CHANNEL_CAP;
+static int64_t aic_rt_conc_mutex_limit = AIC_RT_CONC_MUTEX_CAP;
+static int64_t aic_rt_fs_async_op_limit = AIC_RT_CONC_TASK_CAP;
 static atomic_int aic_rt_fs_async_shutdown_requested = 0;
 static pthread_once_t aic_rt_conc_limits_once = PTHREAD_ONCE_INIT;
 
@@ -3465,9 +3465,9 @@ static int aic_rt_conc_task_is_fs_async(const AicConcTaskSlot* slot) {
         && strncmp(slot->thread_name, "fs.", 3) == 0;
 }
 
-static long aic_rt_fs_async_active_count(void) {
-    long active = 0;
-    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
+static int64_t aic_rt_fs_async_active_count(void) {
+    int64_t active = 0;
+    for (int64_t i = 0; i < aic_rt_conc_task_limit; ++i) {
         if (aic_rt_conc_task_is_fs_async(&aic_rt_conc_tasks[i])) {
             active += 1;
         }
@@ -3475,7 +3475,7 @@ static long aic_rt_fs_async_active_count(void) {
     return active;
 }
 
-static long aic_rt_conc_map_errno(int err) {
+static int64_t aic_rt_conc_map_errno(int err) {
     switch (err) {
 #ifdef ETIMEDOUT
         case ETIMEDOUT:
@@ -3492,7 +3492,7 @@ static long aic_rt_conc_map_errno(int err) {
     }
 }
 
-static int aic_rt_conc_make_deadline(long timeout_ms, struct timespec* out_deadline) {
+static int aic_rt_conc_make_deadline(int64_t timeout_ms, struct timespec* out_deadline) {
     if (timeout_ms < 0 || out_deadline == NULL) {
         return EINVAL;
     }
@@ -3500,7 +3500,7 @@ static int aic_rt_conc_make_deadline(long timeout_ms, struct timespec* out_deadl
         return errno;
     }
     out_deadline->tv_sec += (time_t)(timeout_ms / 1000);
-    out_deadline->tv_nsec += (long)((timeout_ms % 1000) * 1000000L);
+    out_deadline->tv_nsec += (int64_t)((timeout_ms % 1000) * 1000000L);
     if (out_deadline->tv_nsec >= 1000000000L) {
         out_deadline->tv_sec += out_deadline->tv_nsec / 1000000000L;
         out_deadline->tv_nsec = out_deadline->tv_nsec % 1000000000L;
@@ -3508,7 +3508,7 @@ static int aic_rt_conc_make_deadline(long timeout_ms, struct timespec* out_deadl
     return 0;
 }
 
-static long aic_rt_conc_scope_new_internal(long parent_scope, long* out_scope) {
+static int64_t aic_rt_conc_scope_new_internal(int64_t parent_scope, int64_t* out_scope) {
     if (out_scope != NULL) {
         *out_scope = 0;
     }
@@ -3526,7 +3526,7 @@ static long aic_rt_conc_scope_new_internal(long parent_scope, long* out_scope) {
             return 4;
         }
     }
-    for (long i = 0; i < AIC_RT_CONC_SCOPE_CAP; ++i) {
+    for (int64_t i = 0; i < AIC_RT_CONC_SCOPE_CAP; ++i) {
         if (!aic_rt_conc_scopes[i].active) {
             aic_rt_conc_scopes[i].active = 1;
             aic_rt_conc_scopes[i].cancelled = 0;
@@ -3542,7 +3542,7 @@ static long aic_rt_conc_scope_new_internal(long parent_scope, long* out_scope) {
     return 7;
 }
 
-static int aic_rt_conc_scope_is_cancelled(long scope_id) {
+static int aic_rt_conc_scope_is_cancelled(int64_t scope_id) {
     if (scope_id <= 0) {
         return 0;
     }
@@ -3550,7 +3550,7 @@ static int aic_rt_conc_scope_is_cancelled(long scope_id) {
     if (lock_rc != 0) {
         return 0;
     }
-    long current = scope_id;
+    int64_t current = scope_id;
     while (current > 0 && current <= AIC_RT_CONC_SCOPE_CAP) {
         AicConcScopeSlot* slot = &aic_rt_conc_scopes[current - 1];
         if (!slot->active) {
@@ -3566,7 +3566,7 @@ static int aic_rt_conc_scope_is_cancelled(long scope_id) {
     return 0;
 }
 
-static void aic_rt_conc_scope_cancel_internal(long scope_id) {
+static void aic_rt_conc_scope_cancel_internal(int64_t scope_id) {
     if (scope_id <= 0) {
         return;
     }
@@ -3580,7 +3580,7 @@ static void aic_rt_conc_scope_cancel_internal(long scope_id) {
     pthread_mutex_unlock(&aic_rt_conc_scope_mutex);
 }
 
-static void aic_rt_conc_scope_release_internal(long scope_id) {
+static void aic_rt_conc_scope_release_internal(int64_t scope_id) {
     if (scope_id <= 0) {
         return;
     }
@@ -3594,7 +3594,7 @@ static void aic_rt_conc_scope_release_internal(long scope_id) {
     pthread_mutex_unlock(&aic_rt_conc_scope_mutex);
 }
 
-static int aic_rt_conc_scope_is_active(long scope_id) {
+static int aic_rt_conc_scope_is_active(int64_t scope_id) {
     if (scope_id <= 0 || scope_id > AIC_RT_CONC_SCOPE_CAP) {
         return 0;
     }
@@ -3607,7 +3607,7 @@ static int aic_rt_conc_scope_is_active(long scope_id) {
     return active;
 }
 
-static AicConcTaskSlot* aic_rt_conc_get_task(long handle) {
+static AicConcTaskSlot* aic_rt_conc_get_task(int64_t handle) {
     aic_rt_conc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_conc_task_limit) {
         return NULL;
@@ -3619,7 +3619,7 @@ static AicConcTaskSlot* aic_rt_conc_get_task(long handle) {
     return slot;
 }
 
-static AicConcChannelSlot* aic_rt_conc_get_channel(long handle) {
+static AicConcChannelSlot* aic_rt_conc_get_channel(int64_t handle) {
     aic_rt_conc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_conc_channel_limit) {
         return NULL;
@@ -3631,7 +3631,7 @@ static AicConcChannelSlot* aic_rt_conc_get_channel(long handle) {
     return slot;
 }
 
-static AicConcMutexSlot* aic_rt_conc_get_mutex(long handle) {
+static AicConcMutexSlot* aic_rt_conc_get_mutex(int64_t handle) {
     aic_rt_conc_limits_ensure();
     if (handle <= 0 || handle > aic_rt_conc_mutex_limit) {
         return NULL;
@@ -3643,7 +3643,7 @@ static AicConcMutexSlot* aic_rt_conc_get_mutex(long handle) {
     return slot;
 }
 
-static AicConcRwLockSlot* aic_rt_conc_get_rwlock(long handle) {
+static AicConcRwLockSlot* aic_rt_conc_get_rwlock(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_RWLOCK_CAP) {
         return NULL;
     }
@@ -3654,7 +3654,7 @@ static AicConcRwLockSlot* aic_rt_conc_get_rwlock(long handle) {
     return slot;
 }
 
-static AicConcAtomicIntSlot* aic_rt_conc_get_atomic_int(long handle) {
+static AicConcAtomicIntSlot* aic_rt_conc_get_atomic_int(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_INT_CAP) {
         return NULL;
     }
@@ -3665,7 +3665,7 @@ static AicConcAtomicIntSlot* aic_rt_conc_get_atomic_int(long handle) {
     return slot;
 }
 
-static AicConcAtomicBoolSlot* aic_rt_conc_get_atomic_bool(long handle) {
+static AicConcAtomicBoolSlot* aic_rt_conc_get_atomic_bool(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_ATOMIC_BOOL_CAP) {
         return NULL;
     }
@@ -3676,7 +3676,7 @@ static AicConcAtomicBoolSlot* aic_rt_conc_get_atomic_bool(long handle) {
     return slot;
 }
 
-static AicConcThreadLocalSlot* aic_rt_conc_get_tl(long handle) {
+static AicConcThreadLocalSlot* aic_rt_conc_get_tl(int64_t handle) {
     if (handle <= 0 || handle > AIC_RT_CONC_TL_CAP) {
         return NULL;
     }
@@ -3697,10 +3697,10 @@ static void aic_rt_conc_tl_value_destroy(void* raw_value) {
     free(value);
 }
 
-static long aic_rt_conc_tl_set_current(
+static int64_t aic_rt_conc_tl_set_current(
     AicConcThreadLocalSlot* slot,
     const unsigned char* value_ptr,
-    long value_size
+    int64_t value_size
 ) {
     if (slot == NULL || value_size < 0 || value_size != slot->value_size) {
         return 4;
@@ -3740,11 +3740,11 @@ static long aic_rt_conc_tl_set_current(
     return 0;
 }
 
-static long aic_rt_conc_tl_init_current(AicConcThreadLocalSlot* slot) {
+static int64_t aic_rt_conc_tl_init_current(AicConcThreadLocalSlot* slot) {
     if (slot == NULL || slot->init_fn == NULL) {
         return 4;
     }
-    long init_raw = slot->init_fn(slot->init_env);
+    int64_t init_raw = slot->init_fn(slot->init_env);
     if (slot->value_size == 0) {
         if (init_raw != 0) {
             free((void*)(intptr_t)init_raw);
@@ -3755,12 +3755,12 @@ static long aic_rt_conc_tl_init_current(AicConcThreadLocalSlot* slot) {
         return 7;
     }
     unsigned char* init_value = (unsigned char*)(intptr_t)init_raw;
-    long rc = aic_rt_conc_tl_set_current(slot, init_value, slot->value_size);
+    int64_t rc = aic_rt_conc_tl_set_current(slot, init_value, slot->value_size);
     free(init_value);
     return rc;
 }
 
-static long aic_rt_conc_payload_clone_internal(long payload_id, long* out_payload_id) {
+static int64_t aic_rt_conc_payload_clone_internal(int64_t payload_id, int64_t* out_payload_id) {
     if (out_payload_id != NULL) {
         *out_payload_id = 0;
     }
@@ -3779,8 +3779,8 @@ static long aic_rt_conc_payload_clone_internal(long payload_id, long* out_payloa
         return 1;
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < AIC_RT_CONC_PAYLOAD_CAP; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < AIC_RT_CONC_PAYLOAD_CAP; ++i) {
         if (!aic_rt_conc_payloads[i].active) {
             slot_index = i;
             break;
@@ -3816,7 +3816,7 @@ static long aic_rt_conc_payload_clone_internal(long payload_id, long* out_payloa
 static void aic_rt_conc_task_set_name(
     AicConcTaskSlot* slot,
     const char* name_ptr,
-    long name_len
+    int64_t name_len
 ) {
     if (slot == NULL) {
         return;
@@ -3845,9 +3845,9 @@ static void aic_rt_conc_set_thread_name(const char* name) {
 }
 
 static void* aic_rt_conc_task_main(void* raw_slot) {
-    long slot_index = -1;
+    int64_t slot_index = -1;
     if (raw_slot != NULL) {
-        slot_index = *(long*)raw_slot;
+        slot_index = *(int64_t*)raw_slot;
     }
     free(raw_slot);
     aic_rt_conc_limits_ensure();
@@ -3883,7 +3883,7 @@ static void* aic_rt_conc_task_main(void* raw_slot) {
             return NULL;
         }
 
-        long result = entry_fn(entry_env);
+        int64_t result = entry_fn(entry_env);
         free(entry_env);
         pthread_mutex_lock(&slot->mutex);
         if (slot->cancelled || aic_rt_conc_scope_is_cancelled(slot->scope_id)) {
@@ -3897,9 +3897,9 @@ static void* aic_rt_conc_task_main(void* raw_slot) {
         return NULL;
     }
 
-    long remaining = slot->delay_ms;
+    int64_t remaining = slot->delay_ms;
     while (remaining > 0) {
-        long step = remaining > 10 ? 10 : remaining;
+        int64_t step = remaining > 10 ? 10 : remaining;
         aic_rt_time_sleep_ms(step);
         remaining -= step;
 
@@ -3935,7 +3935,7 @@ static void* aic_rt_conc_task_main(void* raw_slot) {
     return NULL;
 }
 
-static long aic_rt_conc_spawn_with_scope(long value, long delay_ms, long scope_id, long* out_handle) {
+static int64_t aic_rt_conc_spawn_with_scope(int64_t value, int64_t delay_ms, int64_t scope_id, int64_t* out_handle) {
     aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
@@ -3946,8 +3946,8 @@ static long aic_rt_conc_spawn_with_scope(long value, long delay_ms, long scope_i
     if (scope_id > 0 && aic_rt_conc_scope_is_cancelled(scope_id)) {
         return 3;
     }
-    long slot_index = -1;
-    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < aic_rt_conc_task_limit; ++i) {
         if (!aic_rt_conc_tasks[i].active) {
             slot_index = i;
             break;
@@ -3973,7 +3973,7 @@ static long aic_rt_conc_spawn_with_scope(long value, long delay_ms, long scope_i
         return 7;
     }
 
-    long* arg = (long*)malloc(sizeof(long));
+    int64_t* arg = (int64_t*)malloc(sizeof(int64_t));
     if (arg == NULL) {
         pthread_cond_destroy(&slot->cond);
         pthread_mutex_destroy(&slot->mutex);
@@ -3995,17 +3995,17 @@ static long aic_rt_conc_spawn_with_scope(long value, long delay_ms, long scope_i
     return 0;
 }
 
-long aic_rt_conc_spawn(long value, long delay_ms, long* out_handle) {
+int64_t aic_rt_conc_spawn(int64_t value, int64_t delay_ms, int64_t* out_handle) {
     return aic_rt_conc_spawn_with_scope(value, delay_ms, 0, out_handle);
 }
 
-static long aic_rt_conc_spawn_fn_with_scope(
-    long entry_fn,
-    long entry_env,
-    long scope_id,
+static int64_t aic_rt_conc_spawn_fn_with_scope(
+    int64_t entry_fn,
+    int64_t entry_env,
+    int64_t scope_id,
     const char* name_ptr,
-    long name_len,
-    long* out_handle
+    int64_t name_len,
+    int64_t* out_handle
 ) {
     aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
@@ -4021,8 +4021,8 @@ static long aic_rt_conc_spawn_fn_with_scope(
         return 3;
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < aic_rt_conc_task_limit; ++i) {
         if (!aic_rt_conc_tasks[i].active) {
             slot_index = i;
             break;
@@ -4050,7 +4050,7 @@ static long aic_rt_conc_spawn_fn_with_scope(
         return 7;
     }
 
-    long* arg = (long*)malloc(sizeof(long));
+    int64_t* arg = (int64_t*)malloc(sizeof(int64_t));
     if (arg == NULL) {
         pthread_cond_destroy(&slot->cond);
         pthread_mutex_destroy(&slot->mutex);
@@ -4073,27 +4073,27 @@ static long aic_rt_conc_spawn_fn_with_scope(
     return 0;
 }
 
-long aic_rt_conc_spawn_fn(long entry_fn, long entry_env, long* out_handle) {
+int64_t aic_rt_conc_spawn_fn(int64_t entry_fn, int64_t entry_env, int64_t* out_handle) {
     return aic_rt_conc_spawn_fn_with_scope(entry_fn, entry_env, 0, NULL, 0, out_handle);
 }
 
-long aic_rt_conc_spawn_fn_named(
-    long entry_fn,
-    long entry_env,
+int64_t aic_rt_conc_spawn_fn_named(
+    int64_t entry_fn,
+    int64_t entry_env,
     const char* name_ptr,
-    long name_len,
-    long name_cap,
-    long* out_handle
+    int64_t name_len,
+    int64_t name_cap,
+    int64_t* out_handle
 ) {
     (void)name_cap;
     return aic_rt_conc_spawn_fn_with_scope(entry_fn, entry_env, 0, name_ptr, name_len, out_handle);
 }
 
-long aic_rt_conc_scope_new(long* out_scope) {
+int64_t aic_rt_conc_scope_new(int64_t* out_scope) {
     return aic_rt_conc_scope_new_internal(0, out_scope);
 }
 
-long aic_rt_conc_scope_spawn_fn(long scope_id, long entry_fn, long entry_env, long* out_handle) {
+int64_t aic_rt_conc_scope_spawn_fn(int64_t scope_id, int64_t entry_fn, int64_t entry_env, int64_t* out_handle) {
     if (!aic_rt_conc_scope_is_active(scope_id)) {
         if (out_handle != NULL) {
             *out_handle = 0;
@@ -4103,11 +4103,11 @@ long aic_rt_conc_scope_spawn_fn(long scope_id, long entry_fn, long entry_env, lo
     return aic_rt_conc_spawn_fn_with_scope(entry_fn, entry_env, scope_id, NULL, 0, out_handle);
 }
 
-static long aic_rt_conc_join_internal(
-    long handle,
-    long timeout_ms,
+static int64_t aic_rt_conc_join_internal(
+    int64_t handle,
+    int64_t timeout_ms,
     int use_timeout,
-    long* out_value
+    int64_t* out_value
 ) {
     if (out_value != NULL) {
         *out_value = 0;
@@ -4153,7 +4153,7 @@ static long aic_rt_conc_join_internal(
 
     int cancelled = slot->cancelled;
     int panic = slot->panic;
-    long result = slot->result;
+    int64_t result = slot->result;
     pthread_mutex_unlock(&slot->mutex);
 
     int join_rc = pthread_join(slot->thread, NULL);
@@ -4176,22 +4176,22 @@ static long aic_rt_conc_join_internal(
     return 0;
 }
 
-long aic_rt_conc_join(long handle, long* out_value) {
+int64_t aic_rt_conc_join(int64_t handle, int64_t* out_value) {
     return aic_rt_conc_join_internal(handle, 0, 0, out_value);
 }
 
-long aic_rt_conc_join_value(long handle, long* out_value) {
+int64_t aic_rt_conc_join_value(int64_t handle, int64_t* out_value) {
     return aic_rt_conc_join_internal(handle, 0, 0, out_value);
 }
 
-long aic_rt_conc_join_poll(long handle, long* out_value) {
+int64_t aic_rt_conc_join_poll(int64_t handle, int64_t* out_value) {
     return aic_rt_conc_join_internal(handle, 0, 1, out_value);
 }
 
-typedef long (*AicAsyncPollFn)(void* frame, void* out_value);
+typedef int64_t (*AicAsyncPollFn)(void* frame, void* out_value);
 typedef void (*AicAsyncDropFn)(void* frame);
 
-long aic_rt_async_poll_once(void* frame, void* poll_fn_raw, void* out_value) {
+int64_t aic_rt_async_poll_once(void* frame, void* poll_fn_raw, void* out_value) {
     if (poll_fn_raw == NULL) {
         return 4;
     }
@@ -4199,9 +4199,9 @@ long aic_rt_async_poll_once(void* frame, void* poll_fn_raw, void* out_value) {
     return poll_fn(frame, out_value);
 }
 
-long aic_rt_async_drive(void* frame, void* poll_fn_raw, void* out_value) {
+int64_t aic_rt_async_drive(void* frame, void* poll_fn_raw, void* out_value) {
     for (;;) {
-        long rc = aic_rt_async_poll_once(frame, poll_fn_raw, out_value);
+        int64_t rc = aic_rt_async_poll_once(frame, poll_fn_raw, out_value);
         if (rc != 1) {
             return rc;
         }
@@ -4217,27 +4217,27 @@ void aic_rt_async_drop(void* frame, void* drop_fn_raw) {
     drop_fn(frame);
 }
 
-long aic_rt_conc_cancel(long handle, long* out_cancelled);
+int64_t aic_rt_conc_cancel(int64_t handle, int64_t* out_cancelled);
 
-long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_conc_join_timeout(int64_t handle, int64_t timeout_ms, int64_t* out_value) {
     if (timeout_ms < 0) {
         if (out_value != NULL) {
             *out_value = 0;
         }
         return 4;
     }
-    long rc = aic_rt_conc_join_internal(handle, timeout_ms, 1, out_value);
+    int64_t rc = aic_rt_conc_join_internal(handle, timeout_ms, 1, out_value);
     if (rc != 2) {
         return rc;
     }
 
-    long cancelled = 0;
-    long cancel_rc = aic_rt_conc_cancel(handle, &cancelled);
+    int64_t cancelled = 0;
+    int64_t cancel_rc = aic_rt_conc_cancel(handle, &cancelled);
     if (cancel_rc != 0 && cancel_rc != 1) {
         return cancel_rc;
     }
-    long discard = 0;
-    long join_rc = aic_rt_conc_join(handle, &discard);
+    int64_t discard = 0;
+    int64_t join_rc = aic_rt_conc_join(handle, &discard);
     if (join_rc != 0 && join_rc != 1 && join_rc != 3 && join_rc != 5) {
         return join_rc;
     }
@@ -4247,7 +4247,7 @@ long aic_rt_conc_join_timeout(long handle, long timeout_ms, long* out_value) {
     return 2;
 }
 
-long aic_rt_conc_cancel(long handle, long* out_cancelled) {
+int64_t aic_rt_conc_cancel(int64_t handle, int64_t* out_cancelled) {
     if (out_cancelled != NULL) {
         *out_cancelled = 0;
     }
@@ -4255,7 +4255,7 @@ long aic_rt_conc_cancel(long handle, long* out_cancelled) {
     if (slot == NULL) {
         return 1;
     }
-    long scope_id = 0;
+    int64_t scope_id = 0;
     int propagate_scope_cancel = 0;
     int lock_rc = pthread_mutex_lock(&slot->mutex);
     if (lock_rc != 0) {
@@ -4276,7 +4276,7 @@ long aic_rt_conc_cancel(long handle, long* out_cancelled) {
     return 0;
 }
 
-long aic_rt_fs_async_submit_allowed(long* out_allowed) {
+int64_t aic_rt_fs_async_submit_allowed(int64_t* out_allowed) {
     aic_rt_conc_limits_ensure();
     if (out_allowed != NULL) {
         *out_allowed = 0;
@@ -4293,7 +4293,7 @@ long aic_rt_fs_async_submit_allowed(long* out_allowed) {
     return 0;
 }
 
-long aic_rt_fs_async_shutdown(long* out_ok) {
+int64_t aic_rt_fs_async_shutdown(int64_t* out_ok) {
     atomic_store(&aic_rt_fs_async_shutdown_requested, 1);
     if (out_ok != NULL) {
         *out_ok = 1;
@@ -4301,11 +4301,11 @@ long aic_rt_fs_async_shutdown(long* out_ok) {
     return 0;
 }
 
-long aic_rt_fs_async_pressure(
-    long* out_active,
-    long* out_queue_depth,
-    long* out_op_limit,
-    long* out_queue_limit
+int64_t aic_rt_fs_async_pressure(
+    int64_t* out_active,
+    int64_t* out_queue_depth,
+    int64_t* out_op_limit,
+    int64_t* out_queue_limit
 ) {
     aic_rt_conc_limits_ensure();
     if (out_active != NULL) {
@@ -4321,7 +4321,7 @@ long aic_rt_fs_async_pressure(
         *out_queue_limit = 0;
     }
 
-    long active = aic_rt_fs_async_active_count();
+    int64_t active = aic_rt_fs_async_active_count();
 
     if (out_active != NULL) {
         *out_active = active;
@@ -4329,14 +4329,14 @@ long aic_rt_fs_async_pressure(
     return 0;
 }
 
-long aic_rt_conc_scope_join_all(long scope_id) {
+int64_t aic_rt_conc_scope_join_all(int64_t scope_id) {
     aic_rt_conc_limits_ensure();
     if (!aic_rt_conc_scope_is_active(scope_id)) {
         return 4;
     }
-    long handles[AIC_RT_CONC_TASK_CAP];
-    long handle_count = 0;
-    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
+    int64_t handles[AIC_RT_CONC_TASK_CAP];
+    int64_t handle_count = 0;
+    for (int64_t i = 0; i < aic_rt_conc_task_limit; ++i) {
         AicConcTaskSlot* slot = &aic_rt_conc_tasks[i];
         if (!slot->active || slot->scope_id != scope_id) {
             continue;
@@ -4344,10 +4344,10 @@ long aic_rt_conc_scope_join_all(long scope_id) {
         handles[handle_count] = i + 1;
         handle_count += 1;
     }
-    long first_err = 0;
-    for (long i = 0; i < handle_count; ++i) {
-        long out_value = 0;
-        long rc = aic_rt_conc_join(handles[i], &out_value);
+    int64_t first_err = 0;
+    for (int64_t i = 0; i < handle_count; ++i) {
+        int64_t out_value = 0;
+        int64_t rc = aic_rt_conc_join(handles[i], &out_value);
         if (rc != 0 && rc != 1 && first_err == 0) {
             first_err = rc;
         }
@@ -4355,24 +4355,24 @@ long aic_rt_conc_scope_join_all(long scope_id) {
     return first_err;
 }
 
-long aic_rt_conc_scope_cancel(long scope_id) {
+int64_t aic_rt_conc_scope_cancel(int64_t scope_id) {
     aic_rt_conc_limits_ensure();
     if (!aic_rt_conc_scope_is_active(scope_id)) {
         return 4;
     }
     aic_rt_conc_scope_cancel_internal(scope_id);
-    for (long i = 0; i < aic_rt_conc_task_limit; ++i) {
+    for (int64_t i = 0; i < aic_rt_conc_task_limit; ++i) {
         AicConcTaskSlot* slot = &aic_rt_conc_tasks[i];
         if (!slot->active || slot->scope_id != scope_id) {
             continue;
         }
-        long out_cancelled = 0;
+        int64_t out_cancelled = 0;
         (void)aic_rt_conc_cancel(i + 1, &out_cancelled);
     }
     return 0;
 }
 
-long aic_rt_conc_scope_close(long scope_id) {
+int64_t aic_rt_conc_scope_close(int64_t scope_id) {
     if (!aic_rt_conc_scope_is_active(scope_id)) {
         return 4;
     }
@@ -4380,13 +4380,13 @@ long aic_rt_conc_scope_close(long scope_id) {
     return 0;
 }
 
-long aic_rt_conc_spawn_group(
+int64_t aic_rt_conc_spawn_group(
     const unsigned char* values_ptr,
-    long values_len,
-    long values_cap,
-    long delay_ms,
-    long** out_values_ptr,
-    long* out_count
+    int64_t values_len,
+    int64_t values_cap,
+    int64_t delay_ms,
+    int64_t** out_values_ptr,
+    int64_t* out_count
 ) {
     (void)values_cap;
     if (out_values_ptr != NULL) {
@@ -4406,22 +4406,22 @@ long aic_rt_conc_spawn_group(
     }
 
     size_t count = (size_t)values_len;
-    if (count > SIZE_MAX / sizeof(long)) {
+    if (count > SIZE_MAX / sizeof(int64_t)) {
         return 4;
     }
-    const long* values = (const long*)(const void*)values_ptr;
-    long* handles = (long*)calloc(count, sizeof(long));
+    const int64_t* values = (const int64_t*)(const void*)values_ptr;
+    int64_t* handles = (int64_t*)calloc(count, sizeof(int64_t));
     if (handles == NULL) {
         return 7;
     }
-    long* results = (long*)malloc(count * sizeof(long));
+    int64_t* results = (int64_t*)malloc(count * sizeof(int64_t));
     if (results == NULL) {
         free(handles);
         return 7;
     }
 
-    long scope_id = 0;
-    long scope_rc = aic_rt_conc_scope_new_internal(0, &scope_id);
+    int64_t scope_id = 0;
+    int64_t scope_rc = aic_rt_conc_scope_new_internal(0, &scope_id);
     if (scope_rc != 0) {
         free(handles);
         free(results);
@@ -4429,15 +4429,15 @@ long aic_rt_conc_spawn_group(
     }
 
     for (size_t i = 0; i < count; ++i) {
-        long handle = 0;
-        long spawn_rc = aic_rt_conc_spawn_with_scope(values[i], delay_ms, scope_id, &handle);
+        int64_t handle = 0;
+        int64_t spawn_rc = aic_rt_conc_spawn_with_scope(values[i], delay_ms, scope_id, &handle);
         if (spawn_rc != 0) {
             aic_rt_conc_scope_cancel_internal(scope_id);
             for (size_t j = 0; j < i; ++j) {
                 if (handles[j] > 0) {
-                    long cancelled = 0;
+                    int64_t cancelled = 0;
                     (void)aic_rt_conc_cancel(handles[j], &cancelled);
-                    long discard = 0;
+                    int64_t discard = 0;
                     (void)aic_rt_conc_join(handles[j], &discard);
                 }
             }
@@ -4450,15 +4450,15 @@ long aic_rt_conc_spawn_group(
     }
 
     for (size_t i = 0; i < count; ++i) {
-        long rc = aic_rt_conc_join(handles[i], &results[i]);
+        int64_t rc = aic_rt_conc_join(handles[i], &results[i]);
         handles[i] = 0;
         if (rc != 0) {
             aic_rt_conc_scope_cancel_internal(scope_id);
             for (size_t j = i + 1; j < count; ++j) {
                 if (handles[j] > 0) {
-                    long cancelled = 0;
+                    int64_t cancelled = 0;
                     (void)aic_rt_conc_cancel(handles[j], &cancelled);
-                    long discard = 0;
+                    int64_t discard = 0;
                     (void)aic_rt_conc_join(handles[j], &discard);
                 }
             }
@@ -4472,17 +4472,17 @@ long aic_rt_conc_spawn_group(
     aic_rt_conc_scope_release_internal(scope_id);
     free(handles);
     *out_values_ptr = results;
-    *out_count = (long)count;
+    *out_count = (int64_t)count;
     return 0;
 }
 
-long aic_rt_conc_select_first(
+int64_t aic_rt_conc_select_first(
     const unsigned char* tasks_ptr,
-    long tasks_len,
-    long tasks_cap,
-    long timeout_ms,
-    long* out_selected_index,
-    long* out_value
+    int64_t tasks_len,
+    int64_t tasks_cap,
+    int64_t timeout_ms,
+    int64_t* out_selected_index,
+    int64_t* out_value
 ) {
     (void)tasks_cap;
     if (out_selected_index != NULL) {
@@ -4496,11 +4496,11 @@ long aic_rt_conc_select_first(
     }
 
     size_t count = (size_t)tasks_len;
-    if (count > SIZE_MAX / sizeof(long)) {
+    if (count > SIZE_MAX / sizeof(int64_t)) {
         return 4;
     }
-    const long* task_handles = (const long*)(const void*)tasks_ptr;
-    long* pending = (long*)malloc(count * sizeof(long));
+    const int64_t* task_handles = (const int64_t*)(const void*)tasks_ptr;
+    int64_t* pending = (int64_t*)malloc(count * sizeof(int64_t));
     if (pending == NULL) {
         return 7;
     }
@@ -4508,31 +4508,31 @@ long aic_rt_conc_select_first(
         pending[i] = task_handles[i];
     }
 
-    long started_ms = aic_rt_time_monotonic_ms();
+    int64_t started_ms = aic_rt_time_monotonic_ms();
     if (started_ms < 0) {
         started_ms = 0;
     }
-    long winner_rc = 2;
-    long winner_index = 0;
-    long winner_value = 0;
+    int64_t winner_rc = 2;
+    int64_t winner_index = 0;
+    int64_t winner_value = 0;
     int done = 0;
 
     while (!done) {
         int any_pending = 0;
         for (size_t i = 0; i < count; ++i) {
-            long handle = pending[i];
+            int64_t handle = pending[i];
             if (handle <= 0) {
                 continue;
             }
             any_pending = 1;
-            long value = 0;
-            long rc = aic_rt_conc_join_internal(handle, 0, 1, &value);
+            int64_t value = 0;
+            int64_t rc = aic_rt_conc_join_internal(handle, 0, 1, &value);
             if (rc == 2) {
                 continue;
             }
             pending[i] = 0;
             winner_rc = rc;
-            winner_index = (long)i;
+            winner_index = (int64_t)i;
             winner_value = value;
             done = 1;
             break;
@@ -4548,7 +4548,7 @@ long aic_rt_conc_select_first(
             winner_rc = 2;
             break;
         }
-        long now_ms = aic_rt_time_monotonic_ms();
+        int64_t now_ms = aic_rt_time_monotonic_ms();
         if (now_ms < 0) {
             now_ms = started_ms;
         }
@@ -4563,9 +4563,9 @@ long aic_rt_conc_select_first(
         if (pending[i] <= 0) {
             continue;
         }
-        long cancelled = 0;
+        int64_t cancelled = 0;
         (void)aic_rt_conc_cancel(pending[i], &cancelled);
-        long discard = 0;
+        int64_t discard = 0;
         (void)aic_rt_conc_join(pending[i], &discard);
     }
     free(pending);
@@ -4582,7 +4582,7 @@ long aic_rt_conc_select_first(
     return winner_rc;
 }
 
-long aic_rt_conc_channel_int(long capacity, long* out_handle) {
+int64_t aic_rt_conc_channel_int(int64_t capacity, int64_t* out_handle) {
     aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
@@ -4591,8 +4591,8 @@ long aic_rt_conc_channel_int(long capacity, long* out_handle) {
         return 4;
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < aic_rt_conc_channel_limit; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < aic_rt_conc_channel_limit; ++i) {
         if (!aic_rt_conc_channels[i].active) {
             slot_index = i;
             break;
@@ -4604,7 +4604,7 @@ long aic_rt_conc_channel_int(long capacity, long* out_handle) {
 
     AicConcChannelSlot* slot = &aic_rt_conc_channels[slot_index];
     memset(slot, 0, sizeof(*slot));
-    slot->values = (long*)malloc((size_t)capacity * sizeof(long));
+    slot->values = (int64_t*)malloc((size_t)capacity * sizeof(int64_t));
     if (slot->values == NULL) {
         memset(slot, 0, sizeof(*slot));
         return 7;
@@ -4640,11 +4640,11 @@ long aic_rt_conc_channel_int(long capacity, long* out_handle) {
     return 0;
 }
 
-long aic_rt_conc_channel_int_buffered(long capacity, long* out_handle) {
+int64_t aic_rt_conc_channel_int_buffered(int64_t capacity, int64_t* out_handle) {
     return aic_rt_conc_channel_int(capacity, out_handle);
 }
 
-long aic_rt_conc_send_int(long handle, long value, long timeout_ms) {
+int64_t aic_rt_conc_send_int(int64_t handle, int64_t value, int64_t timeout_ms) {
     if (timeout_ms < 0) {
         return 4;
     }
@@ -4694,7 +4694,7 @@ long aic_rt_conc_send_int(long handle, long value, long timeout_ms) {
     return 0;
 }
 
-long aic_rt_conc_try_send_int(long handle, long value) {
+int64_t aic_rt_conc_try_send_int(int64_t handle, int64_t value) {
     AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
     if (slot == NULL) {
         return 6;
@@ -4721,7 +4721,7 @@ long aic_rt_conc_try_send_int(long handle, long value) {
     return 0;
 }
 
-long aic_rt_conc_recv_int(long handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_conc_recv_int(int64_t handle, int64_t timeout_ms, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -4762,7 +4762,7 @@ long aic_rt_conc_recv_int(long handle, long timeout_ms, long* out_value) {
         }
     }
 
-    long value = slot->values[slot->head];
+    int64_t value = slot->values[slot->head];
     slot->head = (slot->head + 1) % slot->cap;
     slot->len -= 1;
     pthread_cond_signal(&slot->not_full);
@@ -4773,7 +4773,7 @@ long aic_rt_conc_recv_int(long handle, long timeout_ms, long* out_value) {
     return 0;
 }
 
-long aic_rt_conc_try_recv_int(long handle, long* out_value) {
+int64_t aic_rt_conc_try_recv_int(int64_t handle, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
@@ -4792,7 +4792,7 @@ long aic_rt_conc_try_recv_int(long handle, long* out_value) {
         return closed ? 6 : 9;
     }
 
-    long value = slot->values[slot->head];
+    int64_t value = slot->values[slot->head];
     slot->head = (slot->head + 1) % slot->cap;
     slot->len -= 1;
     pthread_cond_signal(&slot->not_full);
@@ -4803,12 +4803,12 @@ long aic_rt_conc_try_recv_int(long handle, long* out_value) {
     return 0;
 }
 
-long aic_rt_conc_select_recv_int(
-    long first_handle,
-    long second_handle,
-    long timeout_ms,
-    long* out_selected_index,
-    long* out_value
+int64_t aic_rt_conc_select_recv_int(
+    int64_t first_handle,
+    int64_t second_handle,
+    int64_t timeout_ms,
+    int64_t* out_selected_index,
+    int64_t* out_value
 ) {
     if (out_selected_index != NULL) {
         *out_selected_index = 0;
@@ -4820,13 +4820,13 @@ long aic_rt_conc_select_recv_int(
         return 4;
     }
 
-    long started_ms = aic_rt_time_monotonic_ms();
+    int64_t started_ms = aic_rt_time_monotonic_ms();
     if (started_ms < 0) {
         started_ms = 0;
     }
-    long turn = 0;
+    int64_t turn = 0;
     for (;;) {
-        long handles[2];
+        int64_t handles[2];
         if ((turn & 1) == 0) {
             handles[0] = first_handle;
             handles[1] = second_handle;
@@ -4838,8 +4838,8 @@ long aic_rt_conc_select_recv_int(
         int all_closed = 1;
 
         for (int i = 0; i < 2; ++i) {
-            long value = 0;
-            long rc = aic_rt_conc_try_recv_int(handles[i], &value);
+            int64_t value = 0;
+            int64_t rc = aic_rt_conc_try_recv_int(handles[i], &value);
             if (rc == 0) {
                 if (out_selected_index != NULL) {
                     *out_selected_index = indices[i];
@@ -4864,7 +4864,7 @@ long aic_rt_conc_select_recv_int(
         if (timeout_ms == 0) {
             return 2;
         }
-        long now_ms = aic_rt_time_monotonic_ms();
+        int64_t now_ms = aic_rt_time_monotonic_ms();
         if (now_ms < 0) {
             now_ms = started_ms;
         }
@@ -4876,7 +4876,7 @@ long aic_rt_conc_select_recv_int(
     }
 }
 
-long aic_rt_conc_close_channel(long handle) {
+int64_t aic_rt_conc_close_channel(int64_t handle) {
     AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
     if (slot == NULL) {
         return 1;
@@ -4892,14 +4892,14 @@ long aic_rt_conc_close_channel(long handle) {
     return 0;
 }
 
-long aic_rt_conc_mutex_int(long initial, long* out_handle) {
+int64_t aic_rt_conc_mutex_int(int64_t initial, int64_t* out_handle) {
     aic_rt_conc_limits_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
     }
 
-    long slot_index = -1;
-    for (long i = 0; i < aic_rt_conc_mutex_limit; ++i) {
+    int64_t slot_index = -1;
+    for (int64_t i = 0; i < aic_rt_conc_mutex_limit; ++i) {
         if (!aic_rt_conc_mutexes[i].active) {
             slot_index = i;
             break;
@@ -4931,7 +4931,7 @@ long aic_rt_conc_mutex_int(long initial, long* out_handle) {
     return 0;
 }
 
-long aic_rt_conc_mutex_lock(long handle, long timeout_ms, long* out_value) {
+int64_t aic_rt_conc_mutex_lock(int64_t handle, int64_t timeout_ms, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }

@@ -7,6 +7,7 @@ use anyhow::{anyhow, bail, Context};
 use serde::Serialize;
 
 use crate::ast::{self, BinOp, Expr, ExprKind, TypeExpr, TypeKind};
+use crate::machine_paths::normalize_separators_path;
 use crate::parser;
 use crate::span::Span;
 use crate::symbol_query::{self, SymbolKind, SymbolRecord};
@@ -1025,13 +1026,11 @@ fn materialize_artifacts(
                 destination.display()
             )
         })?;
-        artifact.written_path = Some(
+        artifact.written_path = Some(normalize_separators_path(
             destination
                 .strip_prefix(project_root)
-                .unwrap_or(&destination)
-                .to_string_lossy()
-                .to_string(),
-        );
+                .unwrap_or(&destination),
+        ));
     }
     Ok(())
 }

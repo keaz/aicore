@@ -2045,6 +2045,12 @@ mod tests {
         SemVer, VersionReq,
     };
 
+    /// Escapes a path for embedding inside a JSON string literal (Windows paths contain `\`).
+    fn json_path(path: &Path) -> String {
+        let quoted = serde_json::to_string(&path.to_string_lossy()).expect("encode path");
+        quoted[1..quoted.len() - 1].to_string()
+    }
+
     fn write_package(root: &Path, name: &str, version: &str, module: &str, value: i32) {
         fs::create_dir_all(root.join("src")).expect("mkdir src");
         fs::write(
@@ -2281,7 +2287,7 @@ mod tests {
                     "  }}\n",
                     "}}\n"
                 ),
-                registry.path().display()
+                json_path(registry.path())
             ),
         )
         .expect("registry config");
@@ -2424,8 +2430,8 @@ mod tests {
                     "  }}\n",
                     "}}\n"
                 ),
-                registry.path().display(),
-                token_file.display()
+                json_path(registry.path()),
+                json_path(&token_file)
             ),
         )
         .expect("registry config");
@@ -2497,8 +2503,8 @@ mod tests {
                     "  }}\n",
                     "}}\n"
                 ),
-                primary.path().display(),
-                mirror.path().display()
+                json_path(primary.path()),
+                json_path(mirror.path())
             ),
         )
         .expect("registry config");
