@@ -1462,50 +1462,26 @@ fn process_is_alive(pid: u32) -> Option<bool> {
     }
     #[cfg(windows)]
     {
-        if pid == 0 {
+        // `tasklist` rejects out-of-range filter values; real PIDs stay well below i32::MAX.
+        if pid == 0 || pid > i32::MAX as u32 {
             return Some(false);
         }
-        return windows_process::is_alive(pid);
+        // `tasklist` prints one quoted CSV row per match; the quoted PID check avoids
+        // depending on the localized "no tasks" message.
+        let output = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let rows = String::from_utf8_lossy(&output.stdout);
+        return Some(rows.contains(&format!("\",\"{pid}\",")));
     }
     #[cfg(not(any(unix, windows)))]
     {
         None
-    }
-}
-
-#[cfg(windows)]
-mod windows_process {
-    use std::ffi::c_void;
-
-    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
-    const STILL_ACTIVE: u32 = 259;
-    const ERROR_ACCESS_DENIED: u32 = 5;
-    const ERROR_INVALID_PARAMETER: u32 = 87;
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> *mut c_void;
-        fn GetExitCodeProcess(process: *mut c_void, exit_code: *mut u32) -> i32;
-        fn CloseHandle(handle: *mut c_void) -> i32;
-        fn GetLastError() -> u32;
-    }
-
-    pub(super) fn is_alive(pid: u32) -> Option<bool> {
-        // SAFETY: plain Win32 calls; the handle is closed before returning.
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if handle.is_null() {
-                return match GetLastError() {
-                    ERROR_INVALID_PARAMETER => Some(false),
-                    ERROR_ACCESS_DENIED => Some(true),
-                    _ => None,
-                };
-            }
-            let mut exit_code = 0u32;
-            let queried = GetExitCodeProcess(handle, &mut exit_code) != 0;
-            CloseHandle(handle);
-            queried.then_some(exit_code == STILL_ACTIVE)
-        }
     }
 }
 
