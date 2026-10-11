@@ -613,6 +613,7 @@ Notes:
   - `AIC_RT_LIMIT_TLS_HANDLES` (default/max: `128`)
   - `AIC_RT_LIMIT_TLS_ASYNC_OPS` (default/max: `256`)
   - `AIC_RT_LIMIT_CONC_TASKS` / `AIC_RT_LIMIT_CONC_CHANNELS` / `AIC_RT_LIMIT_CONC_MUTEXES` (default/max: `128` each)
+  - Task slots are freed on join. Channel slots are not freed on close, so the channel limit counts every channel created over the life of the process.
 - `tcp_recv` and async recv wait paths return `NetError::ConnectionClosed` on peer EOF/close.
 - `async_cancel_*` keeps peer-close distinct by surfacing `NetError::Cancelled` on cancelled waits.
 - `dns_lookup_all` returns de-duplicated numeric addresses sorted lexicographically for deterministic failover iteration.
@@ -998,6 +999,7 @@ Notes:
 - Use typed callback bindings (`Fn() -> Result[Conn, PoolError]`, etc.) and a typed `pool_result: Result[Pool[Conn], PoolError]` binding for stable inference.
 - `discard(...)` is for broken resources; it destroys and rotates capacity.
 - `pool_stats(...)` is safe for runtime observability and CI assertions. It returns all-zero stats when the manager does not answer within 20 ms; retry when that matters.
+- Every `acquire(...)` round and `pool_stats(...)` call opens a reply channel, and channel slots are never reused, so a process gets about 125 such calls in total. See `docs/io-runtime/connection-pool.md#known-limitations`.
 - A timed-out `acquire(...)` never leaks a lease: a connection granted after the caller gave up returns to the idle list.
 - Idle, lifetime and health-check intervals count manager loop iterations (at least 1 ms each), so expiry can happen later than the configured time under load, never earlier.
 - Runnable reference: `examples/io/connection_pool.aic`.

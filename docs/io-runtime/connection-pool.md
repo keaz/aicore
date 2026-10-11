@@ -134,6 +134,18 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
   example, `pool_stats(...).destroyed` increasing), not for a fixed sleep.
   `examples/io/connection_pool.aic` shows this pattern.
 
+## Known Limitations
+
+- The runtime does not reuse channel slots. A process can create at most 128
+  channels (`AIC_RT_LIMIT_CONC_CHANNELS` can only lower this), and closing a channel
+  does not free its slot. `new_pool(...)` uses one channel, and every `acquire(...)`
+  round and every `pool_stats(...)` call opens one reply channel. A process that
+  makes more than about 125 of these calls in total gets channel-creation failures,
+  which `acquire(...)` reports as `Closed`. Keep long-running pool workloads and
+  stats polling loops well under this budget until slot reclamation lands in the
+  runtime (follow-up: free channel slots once both ends are closed, with
+  stale-handle protection).
+
 ## Validation
 
 - Runnable integration example: `examples/io/connection_pool.aic` (expected final line `42`).
