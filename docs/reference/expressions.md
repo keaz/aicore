@@ -122,7 +122,7 @@ hex_int        = "0x" hexdigit+ ;
 - Call resolution rejects ambiguous unqualified names when multiple modules export the same symbol.
 - Calls to `unsafe fn` or `extern` declarations require an explicit unsafe boundary (`unsafe fn` context or `unsafe { ... }`).
 - `await` is valid only inside `async fn` and requires `Async[T]`.
-- Postfix `?` is valid only on `Result[T, E]` and requires enclosing return type compatibility `Result[_, E]`.
+- Postfix `?` works on `Result[T, E]` (the enclosing function or closure returns `Result[_, E]`) and on `Option[T]` (it returns `Option[_]`); on `Err`/`None` it returns that value early. See [Option and Result](../std-api/option-result.md).
 - Struct literals require all fields exactly once; missing, duplicate, and unknown fields are diagnostics.
 - Field access requires a struct type and a declared field.
 - Tuple values use the same parentheses form as grouping expressions: one element groups, two or more elements build a tuple.

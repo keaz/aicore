@@ -76,4 +76,156 @@ impl Result {
             Err(err) => Err(err),
         }
     }
+
+    /// `is_ok` in `std.result`: returns `true` for `Ok`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let fine = Ok(1).is_ok(); // true
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn is_ok[T, E](self: Result[T, E]) -> Bool {
+        match self {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// `is_err` in `std.result`: returns `true` for `Err`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let failed = Err("x").is_err(); // true
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn is_err[T, E](self: Result[T, E]) -> Bool {
+        match self {
+            Ok(_) => false,
+            Err(_) => true,
+        }
+    }
+
+    /// `ok` in `std.result`: converts `Ok(v)` to `Some(v)`, dropping the error.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let maybe = parsed.ok();
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn ok[T, E](self: Result[T, E]) -> Option[T] {
+        match self {
+            Ok(value) => Some(value),
+            Err(_) => None,
+        }
+    }
+
+    /// `err` in `std.result`: converts `Err(e)` to `Some(e)`, dropping the value.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let problem = parsed.err();
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn err[T, E](self: Result[T, E]) -> Option[E] {
+        match self {
+            Ok(_) => None,
+            Err(err) => Some(err),
+        }
+    }
+
+    /// `map_err` in `std.result`: maps the error with `mapper` and keeps `Ok` unchanged.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let coded = parsed.map_err(|e: String| -> Int { 400 });
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn map_err[T, E, F](self: Result[T, E], mapper: Fn(E) -> F) -> Result[T, F] {
+        match self {
+            Ok(value) => Ok(value),
+            Err(err) => Err(mapper(err)),
+        }
+    }
+
+    /// `map_or` in `std.result`: maps the `Ok` value with `mapper`, or returns `fallback` for `Err`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let size = parsed.map_or(0, |v: Int| -> Int { v * 2 });
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn map_or[T, E, U](self: Result[T, E], fallback: U, mapper: Fn(T) -> U) -> U {
+        match self {
+            Ok(value) => mapper(value),
+            Err(_) => fallback,
+        }
+    }
+
+    /// `unwrap_or_else` in `std.result`: returns the `Ok` value, or `fallback` applied to the error.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let value = parsed.unwrap_or_else(|e: String| -> Int { 0 });
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn unwrap_or_else[T, E](self: Result[T, E], fallback: Fn(E) -> T) -> T {
+        match self {
+            Ok(value) => value,
+            Err(err) => fallback(err),
+        }
+    }
+
+    /// `or_else` in `std.result`: returns `self` when it is `Ok`, otherwise `fallback` applied to the error.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let retried = first_try.or_else(|e: String| -> Result[Int, String] { Ok(0) });
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn or_else[T, E, F](self: Result[T, E], fallback: Fn(E) -> Result[T, F]) -> Result[T, F] {
+        match self {
+            Ok(value) => Ok(value),
+            Err(err) => fallback(err),
+        }
+    }
 }

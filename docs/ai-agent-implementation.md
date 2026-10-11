@@ -198,8 +198,9 @@ Notes:
 - `std.crypto` provides runtime-backed primitives for MD5/SHA-256/HMAC/PBKDF2 plus hex/base64 encoding, secure random bytes, and constant-time byte comparison.
 - `std.crypto` runtime error mapping is stable (`InvalidInput`, `UnsupportedAlgorithm`, `Internal`) and exercised by positive + negative execution tests.
 - `std.option` and `std.result` expose inherent enum methods:
-  - `Option.unwrap_or`, `Option.map`, `Option.and_then`
-  - `Result.unwrap_or`, `Result.map`, `Result.and_then`
+  - `Option`: `is_some`, `is_none`, `unwrap_or`, `unwrap_or_else`, `map`, `map_or`, `and_then`, `or`, `or_else`, `filter`, `zip`, `ok_or`, `ok_or_else`
+  - `Result`: `is_ok`, `is_err`, `ok`, `err`, `unwrap_or`, `unwrap_or_else`, `map`, `map_err`, `map_or`, `and_then`, `or_else`
+  - `?` works on both (`check_option_try` / `gen_option_try` for Option); there is no panicking `unwrap`/`expect` until the `panic` effect (VERIFY-T2). See `docs/std-api/option-result.md` (SYNTAX-T6, #453).
   - method chains use standard static method dispatch (`value.map(...).and_then(...).unwrap_or(...)`)
 - Current backend support for set/map key paths includes `String`, `Bytes`, `Int`, `UInt64`, and `Bool`; unsupported key kinds emit deterministic backend diagnostic `E5011` with explicit supported-key guidance.
 - `std.fs` now exposes production-facing APIs with typed failures:

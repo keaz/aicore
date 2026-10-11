@@ -54,7 +54,7 @@ impl Option {
     fn map[T, U](self: Option[T], mapper: Fn(T) -> U) -> Option[U] {
         match self {
             Some(value) => Some(mapper(value)),
-            None => None(),
+            None => None,
         }
     }
 
@@ -73,7 +73,200 @@ impl Option {
     fn and_then[T, U](self: Option[T], mapper: Fn(T) -> Option[U]) -> Option[U] {
         match self {
             Some(value) => mapper(value),
-            None => None(),
+            None => None,
+        }
+    }
+
+    /// `is_some` in `std.option`: returns `true` for `Some`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let present = Some(1).is_some(); // true
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn is_some[T](self: Option[T]) -> Bool {
+        match self {
+            Some(_) => true,
+            None => false,
+        }
+    }
+
+    /// `is_none` in `std.option`: returns `true` for `None`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let empty: Option[Int] = None; let missing = empty.is_none(); // true
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn is_none[T](self: Option[T]) -> Bool {
+        match self {
+            Some(_) => false,
+            None => true,
+        }
+    }
+
+    /// `unwrap_or_else` in `std.option`: returns the `Some` value, or the result of `fallback` for `None`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let value = None.unwrap_or_else(|| -> Int { 7 }); // 7
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn unwrap_or_else[T](self: Option[T], fallback: Fn() -> T) -> T {
+        match self {
+            Some(value) => value,
+            None => fallback(),
+        }
+    }
+
+    /// `map_or` in `std.option`: maps the `Some` value with `mapper`, or returns `fallback` for `None`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let len = Some("abc").map_or(0, |s: String| -> Int { 3 }); // 3
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn map_or[T, U](self: Option[T], fallback: U, mapper: Fn(T) -> U) -> U {
+        match self {
+            Some(value) => mapper(value),
+            None => fallback,
+        }
+    }
+
+    /// `ok_or` in `std.option`: converts `Some(v)` to `Ok(v)` and `None` to `Err(err)`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let checked: Result[Int, String] = Some(2).ok_or("missing"); // Ok(2)
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn ok_or[T, E](self: Option[T], err: E) -> Result[T, E] {
+        match self {
+            Some(value) => Ok(value),
+            None => Err(err),
+        }
+    }
+
+    /// `ok_or_else` in `std.option`: converts `Some(v)` to `Ok(v)` and `None` to `Err` of the result of `make_err`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let checked: Result[Int, String] = None.ok_or_else(|| -> String { "missing" });
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn ok_or_else[T, E](self: Option[T], make_err: Fn() -> E) -> Result[T, E] {
+        match self {
+            Some(value) => Ok(value),
+            None => Err(make_err()),
+        }
+    }
+
+    /// `or` in `std.option`: returns `self` when it is `Some`, otherwise `other`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let picked = None.or(Some(3)); // Some(3)
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn or[T](self: Option[T], other: Option[T]) -> Option[T] {
+        match self {
+            Some(value) => Some(value),
+            None => other,
+        }
+    }
+
+    /// `or_else` in `std.option`: returns `self` when it is `Some`, otherwise the result of `fallback`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let picked = None.or_else(|| -> Option[Int] { Some(3) }); // Some(3)
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn or_else[T](self: Option[T], fallback: Fn() -> Option[T]) -> Option[T] {
+        match self {
+            Some(value) => Some(value),
+            None => fallback(),
+        }
+    }
+
+    /// `filter` in `std.option`: keeps the `Some` value only when `predicate` returns `true`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let even = Some(4).filter(|n: Int| -> Bool { n % 2 == 0 }); // Some(4)
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn filter[T](self: Option[T], predicate: Fn(T) -> Bool) -> Option[T] {
+        match self {
+            Some(value) => if predicate(value) { Some(value) } else { None },
+            None => None,
+        }
+    }
+
+    /// `zip` in `std.option`: pairs two `Some` values; `None` when either is `None`.
+    ///
+    /// ## Example
+    /// ```aic
+    /// let pair = Some(1).zip(Some("a")); // Some((1, "a"))
+    /// ```
+    ///
+    /// ## Effects
+    /// None; the function is pure.
+    ///
+    /// ## Errors
+    /// None; it never panics.
+    fn zip[T, U](self: Option[T], other: Option[U]) -> Option[(T, U)] {
+        match self {
+            Some(left) => match other {
+                Some(right) => Some((left, right)),
+                None => None,
+            },
+            None => None,
         }
     }
 }

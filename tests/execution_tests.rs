@@ -18797,3 +18797,56 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "9\n106\n39\n12\n14\n");
 }
+
+#[test]
+fn exec_option_result_combinators_and_option_try() {
+    let src = r#"
+import std.io;
+import std.option;
+import std.result;
+
+fn add_first_two(a: Option[Int], b: Option[Int]) -> Option[Int] {
+    let x = a?;
+    let y = b?;
+    Some(x + y)
+}
+
+fn flag(b: Bool) -> Int { if b { 1 } else { 0 } }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let some: Option[Int] = Some(4);
+    let none: Option[Int] = None;
+    print_int(flag(some.is_some()) * 10 + flag(none.is_none()));
+    print_int(none.unwrap_or_else(|| -> Int { 7 }) + some.unwrap_or_else(|| -> Int { 0 }));
+    print_int(some.map_or(0, |n: Int| -> Int { n * 3 }) + none.map_or(5, |n: Int| -> Int { n }));
+    let r1: Result[Int, String] = some.ok_or("missing");
+    let r2: Result[Int, String] = none.ok_or_else(|| -> String { "gone" });
+    print_int(r1.unwrap_or(0) + r2.unwrap_or(100));
+    print_int(none.or(Some(9)).unwrap_or(0) + some.or_else(|| -> Option[Int] { Some(1) }).unwrap_or(0));
+    print_int(some.filter(|n: Int| -> Bool { n % 2 == 0 }).unwrap_or(-1) + some.filter(|n: Int| -> Bool { n > 10 }).unwrap_or(-1));
+    print_int(match some.zip(Some(true)) { Some((n, b)) => n + flag(b), None => -1 } + match some.zip(none) { Some(_) => 100, None => 0 });
+    print_int(match add_first_two(Some(20), Some(22)) { Some(v) => v, None => -1 });
+    print_int(match add_first_two(Some(20), None) { Some(v) => v, None => -1 });
+    let ok: Result[Int, String] = Ok(6);
+    let bad: Result[Int, String] = Err("boom");
+    print_int(flag(ok.is_ok()) * 10 + flag(bad.is_err()));
+    print_int(ok.ok().unwrap_or(0) + bad.ok().unwrap_or(1));
+    print_int(match bad.err() { Some(_) => 1, None => 0 } + match ok.err() { Some(_) => 10, None => 0 });
+    let coded: Result[Int, Int] = bad.map_err(|e: String| -> Int { 404 });
+    print_int(match coded { Ok(v) => v, Err(code) => code });
+    print_int(ok.map_or(0, |v: Int| -> Int { v + 1 }) + bad.map_or(50, |v: Int| -> Int { v }));
+    print_int(bad.unwrap_or_else(|e: String| -> Int { 8 }));
+    let retried: Result[Int, Int] = bad.or_else(|e: String| -> Result[Int, Int] { Ok(11) });
+    print_int(retried.unwrap_or(0));
+    let pick = |o: Option[Int]| -> Option[Int] { let v = o?; Some(v * 2) };
+    print_int(pick(Some(21)).unwrap_or(0) + pick(None).unwrap_or(0));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout,
+        "11\n11\n17\n104\n13\n3\n5\n42\n-1\n11\n7\n1\n404\n57\n8\n11\n42\n"
+    );
+}

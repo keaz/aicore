@@ -1,0 +1,50 @@
+module examples.core.option_combinators;
+
+import std.io;
+import std.option;
+import std.result;
+
+// Option/Result combinators and `?` on Option.
+
+struct User {
+    id: Int,
+    manager: Option[Int],
+}
+
+fn find(users: (User, User, User), id: Int) -> Option[User] {
+    let (a, b, c) = users;
+    if a.id == id {
+        Some(a)
+    } else if b.id == id {
+        Some(b)
+    } else if c.id == id {
+        Some(c)
+    } else {
+        None
+    }
+}
+
+fn manager_of(users: (User, User, User), id: Int) -> Option[Int] {
+    let user = find(users, id)?;
+    user.manager
+}
+
+fn parse_level(raw: Int) -> Result[Int, String] {
+    if raw > 0 { Ok(raw) } else { Err("not positive") }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let users = (
+        User { id: 1, manager: None },
+        User { id: 2, manager: Some(1) },
+        User { id: 3, manager: Some(2) },
+    );
+    let chain = manager_of(users, 3).and_then(|m: Int| -> Option[Int] { manager_of(users, m) });
+    let top = chain.unwrap_or(0);
+    let missing = manager_of(users, 9).is_none();
+    let level = parse_level(-5).or_else(|e: String| -> Result[Int, String] { parse_level(40) });
+    let bonus = if missing { 1 } else { 0 };
+    // top (1) + level (40) + bonus (1) = 42
+    print_int(top + level.unwrap_or(0) + bonus);
+    0
+}

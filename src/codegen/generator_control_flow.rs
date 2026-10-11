@@ -815,6 +815,9 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
+        if base_type_name(&result_layout.repr) == "Option" {
+            return self.gen_option_try(result, &result_layout, span, fctx);
+        }
         if base_type_name(&result_layout.repr) != "Result" {
             self.diagnostics.push(Diagnostic::error(
                 "E5021",
@@ -985,6 +988,116 @@ impl<'a> Generator<'a> {
         Some(Value {
             ty: ok_payload_ty,
             repr: Some(ok_payload),
+        })
+    }
+
+    /// `option?`: the `Some` payload, or an early `return None` from the
+    /// enclosing function, which returns an `Option`.
+    fn gen_option_try(
+        &mut self,
+        option: Value,
+        option_layout: &EnumLayoutType,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let variant_index = |layout: &EnumLayoutType, name: &str| {
+            layout
+                .variants
+                .iter()
+                .position(|variant| variant.name == name)
+        };
+        let (Some(some_idx), Some(_)) = (
+            variant_index(option_layout, "Some"),
+            variant_index(option_layout, "None"),
+        ) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                "Option layout missing Some/None variants for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let Some(some_payload_ty) = option_layout.variants[some_idx].payload.clone() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5021",
+                "Option Some variant must carry a payload for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        let fn_ret_layout = match fctx.ret_ty.clone() {
+            LType::Enum(layout) if base_type_name(&layout.repr) == "Option" => layout,
+            other => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5022",
+                    format!(
+                        "`?` on Option requires an Option return type in the enclosing function, found '{}'",
+                        render_type(&other)
+                    ),
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+        };
+        let Some(fn_none_idx) = variant_index(&fn_ret_layout, "None") else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5022",
+                "enclosing Option return type missing None variant for `?`",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+
+        let option_repr = option
+            .repr
+            .clone()
+            .unwrap_or_else(|| default_value(&option.ty));
+        let tag = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, 0",
+            tag,
+            llvm_type(&option.ty),
+            option_repr
+        ));
+        let is_some = self.new_temp();
+        fctx.lines
+            .push(format!("  {is_some} = icmp eq i32 {tag}, {some_idx}"));
+        let some_label = self.new_label("try_some");
+        let none_label = self.new_label("try_none");
+        fctx.lines.push(format!(
+            "  br i1 {is_some}, label %{some_label}, label %{none_label}"
+        ));
+
+        fctx.lines.push(format!("{none_label}:"));
+        let ret_none =
+            self.build_enum_variant_value(&fn_ret_layout, fn_none_idx, None, span, fctx)?;
+        self.emit_scope_drops_to_depth(0, fctx);
+        fctx.lines
+            .push(format!("  ret {} {}", llvm_type(&fctx.ret_ty), ret_none));
+
+        fctx.lines.push(format!("{some_label}:"));
+        fctx.current_label = some_label;
+        if some_payload_ty == LType::Unit {
+            return Some(Value {
+                ty: LType::Unit,
+                repr: None,
+            });
+        }
+        let payload = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = extractvalue {} {}, {}",
+            payload,
+            llvm_type(&option.ty),
+            option_repr,
+            some_idx + 1
+        ));
+        Some(Value {
+            ty: some_payload_ty,
+            repr: Some(payload),
         })
     }
 

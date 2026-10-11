@@ -182,6 +182,7 @@ fn main() -> Result[String, FsError] effects { fs } capabilities { fs } {
 
 ## Related docs
 
+- `docs/std-api/option-result.md`: Option/Result combinators, `?`, and why there is no `unwrap` yet
 - `docs/data-bytes.md`
 - `docs/std-api/tls.md`
 - `docs/std-api/machine-readable.md`

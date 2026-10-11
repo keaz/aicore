@@ -9,6 +9,21 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "__aic_type_alias__BufferCapacityU32() -> UInt32"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "__aic_type_alias__BufferCountU32() -> UInt32"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "__aic_type_alias__BufferOffsetU32() -> UInt32"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "aic_buffer_close_intrinsic(buf: ByteBuffer) -> Result[Bool, BufferError]"
     },
     {
@@ -289,7 +304,17 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buf_position_u32(buf: ByteBuffer) -> Result[BufferOffsetU32, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buf_read_bytes(buf: ByteBuffer, count: Int) -> Result[Bytes, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_read_bytes_u32(buf: ByteBuffer, count: BufferCountU32) -> Result[Bytes, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -374,6 +399,11 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buf_remaining_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buf_reset(buf: ByteBuffer) -> ()"
     },
     {
@@ -384,12 +414,27 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buf_seek_u32(buf: ByteBuffer, position: BufferOffsetU32) -> Result[(), BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buf_size(buf: ByteBuffer) -> Int"
     },
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buf_size_u32(buf: ByteBuffer) -> Result[BufferCountU32, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buf_slice(buf: ByteBuffer, start: Int, length: Int) -> Result[ByteBuffer, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buf_slice_u32(buf: ByteBuffer, start: BufferOffsetU32, length: BufferCountU32) -> Result[ByteBuffer, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -479,7 +524,32 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "buffer_int_to_u32(value: Int) -> Result[UInt32, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buffer_one_u32() -> UInt32"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "buffer_to_bytes(buf: ByteBuffer) -> Bytes"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buffer_u32_int_max() -> UInt32"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buffer_u32_to_int(value: UInt32) -> Result[Int, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "buffer_zero_u32() -> UInt32"
     },
     {
       "module": "std.buffer",
@@ -489,7 +559,17 @@
     {
       "module": "std.buffer",
       "kind": "fn",
+      "signature": "new_buffer_u32(capacity: BufferCapacityU32) -> Result[ByteBuffer, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
       "signature": "new_growable_buffer(initial_capacity: Int, max_capacity: Int) -> Result[ByteBuffer, BufferError]"
+    },
+    {
+      "module": "std.buffer",
+      "kind": "fn",
+      "signature": "new_growable_buffer_u32(initial_capacity: BufferCapacityU32, max_capacity: BufferCapacityU32) -> Result[ByteBuffer, BufferError]"
     },
     {
       "module": "std.buffer",
@@ -530,6 +610,11 @@
       "module": "std.bytes",
       "kind": "fn",
       "signature": "aic_bytes_to_string_lossy_intrinsic(data: String) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
+      "signature": "aic_string_byte_substring_intrinsic(data: String, start: Int, end: Int) -> String"
     },
     {
       "module": "std.bytes",
@@ -814,6 +899,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "aic_conc_cancel_value_intrinsic[T](task: Task[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "aic_conc_channel_int_buffered_intrinsic(capacity: Int) -> Result[IntChannel, ConcurrencyError] effects { concurrency }"
     },
     {
@@ -885,6 +975,11 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "aic_conc_payload_take_value_intrinsic[T](payload_id: Int, marker: Option[T]) -> Result[T, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "aic_conc_poll_value_intrinsic[T](task: Task[T]) -> Result[Option[T], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1120,6 +1215,11 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "cancel_task(task: Task[Int]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "cancel_value_task[T](task: Task[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -1365,6 +1465,11 @@
       "module": "std.concurrent",
       "kind": "fn",
       "signature": "none_from_rwlock[T](hint: RwLock[T]) -> Option[T]"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
+      "signature": "poll_value_task[T](task: Task[T]) -> Result[Option[T], ConcurrencyError] effects { concurrency }"
     },
     {
       "module": "std.concurrent",
@@ -2249,6 +2354,21 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "aic_fs_async_pressure_intrinsic() -> Result[FsAsyncRuntimePressure, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_async_shutdown_intrinsic() -> Result[Bool, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "aic_fs_async_submit_allowed_intrinsic() -> Result[Bool, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
@@ -2384,6 +2504,151 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "async_append_bytes(path: String, content: Bytes, timeout_ms: Int) -> Result[Bool, FsError] effects { fs, concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_append_bytes_submit(path: String, content: Bytes) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_append_text(path: String, content: String, timeout_ms: Int) -> Result[Bool, FsError] effects { fs, concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_append_text_submit(path: String, content: String) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_cancel_bool(op: AsyncFsBoolOp) -> Result[Bool, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_cancel_bytes(op: AsyncFsBytesOp) -> Result[Bool, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_cancel_text(op: AsyncFsTextOp) -> Result[Bool, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_poll_bool(op: AsyncFsBoolOp) -> Result[Option[Bool], FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_poll_bytes(op: AsyncFsBytesOp) -> Result[Option[Bytes], FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_poll_text(op: AsyncFsTextOp) -> Result[Option[String], FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_read_bytes(path: String, timeout_ms: Int) -> Result[Bytes, FsError] effects { fs, concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_read_bytes_submit(path: String) -> Result[AsyncFsBytesOp, FsError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_read_text(path: String, timeout_ms: Int) -> Result[String, FsError] effects { fs, concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_read_text_submit(path: String) -> Result[AsyncFsTextOp, FsError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_runtime_pressure() -> Result[FsAsyncRuntimePressure, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_shutdown() -> Result[Bool, FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_any_bool(op1: AsyncFsBoolOp, op2: AsyncFsBoolOp, timeout_ms: Int) -> Result[FsAsyncBoolSelection, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_any_bytes(op1: AsyncFsBytesOp, op2: AsyncFsBytesOp, timeout_ms: Int) -> Result[FsAsyncBytesSelection, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_any_text(op1: AsyncFsTextOp, op2: AsyncFsTextOp, timeout_ms: Int) -> Result[FsAsyncTextSelection, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_bool(op: AsyncFsBoolOp, timeout_ms: Int) -> Result[Bool, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_bytes(op: AsyncFsBytesOp, timeout_ms: Int) -> Result[Bytes, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_many_bool(ops: Vec[AsyncFsBoolOp], timeout_ms: Int) -> Result[FsAsyncBoolSelection, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_many_bytes(ops: Vec[AsyncFsBytesOp], timeout_ms: Int) -> Result[FsAsyncBytesSelection, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_many_text(ops: Vec[AsyncFsTextOp], timeout_ms: Int) -> Result[FsAsyncTextSelection, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_wait_text(op: AsyncFsTextOp, timeout_ms: Int) -> Result[String, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_write_bytes(path: String, content: Bytes, timeout_ms: Int) -> Result[Bool, FsError] effects { fs, concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_write_bytes_submit(path: String, content: Bytes) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_write_text(path: String, content: String, timeout_ms: Int) -> Result[Bool, FsError] effects { fs, concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "async_write_text_submit(path: String, content: String) -> Result[AsyncFsBoolOp, FsError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "copy(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs }"
     },
     {
@@ -2415,6 +2680,66 @@
       "module": "std.fs",
       "kind": "fn",
       "signature": "file_write_str(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_bool_task(op: AsyncFsBoolOp) -> Task[Result[Bool, FsError]]"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_bytes_task(op: AsyncFsBytesOp) -> Task[Result[Bytes, FsError]]"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_poll_bool_task(task: Task[Result[Bool, FsError]]) -> Result[Option[Bool], FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_poll_bytes_task(task: Task[Result[Bytes, FsError]]) -> Result[Option[Bytes], FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_poll_text_task(task: Task[Result[String, FsError]]) -> Result[Option[String], FsError] effects { concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_text_task(op: AsyncFsTextOp) -> Task[Result[String, FsError]]"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_wait_bool_task(task: Task[Result[Bool, FsError]], timeout_ms: Int) -> Result[Bool, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_wait_bytes_task(task: Task[Result[Bytes, FsError]], timeout_ms: Int) -> Result[Bytes, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_async_wait_text_task(task: Task[Result[String, FsError]], timeout_ms: Int) -> Result[String, FsError] effects { concurrency, time }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_cancelled_error() -> FsError"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_map_concurrency_error(err: ConcurrencyError) -> FsError"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "fs_timeout_error() -> FsError"
     },
     {
       "module": "std.fs",
@@ -2484,6 +2809,36 @@
     {
       "module": "std.fs",
       "kind": "fn",
+      "signature": "spawn_append_bytes(path: String, content: Bytes) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "spawn_append_text(path: String, content: String) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "spawn_read_bytes(path: String) -> Result[Task[Result[Bytes, FsError]], ConcurrencyError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "spawn_read_text(path: String) -> Result[Task[Result[String, FsError]], ConcurrencyError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "spawn_write_bytes(path: String, content: Bytes) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
+      "signature": "spawn_write_text(path: String, content: String) -> Result[Task[Result[Bool, FsError]], ConcurrencyError] effects { fs, concurrency }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "fn",
       "signature": "temp_dir(prefix: String) -> Result[String, FsError] effects { fs }"
     },
     {
@@ -2509,7 +2864,42 @@
     {
       "module": "std.fs",
       "kind": "struct",
+      "signature": "AsyncFsBoolOp { handle: Int }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "AsyncFsBytesOp { handle: Int }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "AsyncFsTextOp { handle: Int }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
       "signature": "FileHandle { handle: Int }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "FsAsyncBoolSelection { index: Int, value: Bool }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "FsAsyncBytesSelection { index: Int, payload: Bytes }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "FsAsyncRuntimePressure { active_ops: Int, queue_depth: Int, op_limit: Int, queue_limit: Int }"
+    },
+    {
+      "module": "std.fs",
+      "kind": "struct",
+      "signature": "FsAsyncTextSelection { index: Int, text: String }"
     },
     {
       "module": "std.fs",
@@ -2669,6 +3059,16 @@
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "aic_http_server_async_read_request_intrinsic(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "aic_http_server_async_write_response_intrinsic(conn: Int, response: Response) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, ServerError] effects { net }"
     },
     {
@@ -2704,6 +3104,46 @@
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "async_accept(listener: Int, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "async_accept_submit(listener: Int, timeout_ms: Int) -> Result[AsyncIntOp, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "async_accept_wait(op: AsyncIntOp, timeout_ms: Int) -> Result[Int, NetError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "async_read_request(conn: Int, max_bytes: Int, timeout_ms: Int) -> Result[Request, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "async_serve(listener: Int, max_bytes: Int, accept_timeout_ms: Int, io_timeout_ms: Int, handler: Fn[Request, ResponseView]) -> Result[Int, ServerError] effects { net, concurrency }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "async_serve_connection(conn: Int, max_bytes: Int, timeout_ms: Int, handler: Fn[Request, ResponseView]) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "async_write_response(conn: Int, response: ResponseView) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "begin_streaming_response(conn: Int, status: UInt16, headers: Map[String, String], content_length: Int, timeout_ms: Int) -> Result[ResponseBodyWriter, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "close(handle: Int) -> Result[Bool, ServerError] effects { net }"
     },
     {
@@ -2714,12 +3154,42 @@
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "finish_streaming_response(writer: ResponseBodyWriter) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "header(resp: ResponseView, name: String) -> Option[String]"
     },
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "http_server_header_lines(headers: Map[String, String]) -> String"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_net_error_to_server_error(err: NetError) -> ServerError"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "http_server_one_u16() -> UInt16"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_positive_chunk_bytes(chunk_bytes: Int) -> Int"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_request_body_reader_from_request(request: Request, chunk_bytes: Int) -> RequestBodyReader"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_request_head_from_request(request: Request, body: Bytes, chunked: Bool) -> RequestHead"
     },
     {
       "module": "std.http_server",
@@ -2734,12 +3204,27 @@
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "http_server_send_bytes(conn: Int, payload: Bytes, timeout_ms: Int) -> Result[Int, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "http_server_status_from_int(status: Int) -> Result[UInt16, ServerError]"
     },
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "http_server_status_reason_text(status: UInt16) -> String"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "http_server_status_to_int(status: UInt16) -> Int"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "http_server_streaming_response_wire_text(status: UInt16, headers: Map[String, String], content_length: Int) -> String"
     },
     {
       "module": "std.http_server",
@@ -2764,6 +3249,26 @@
     {
       "module": "std.http_server",
       "kind": "fn",
+      "signature": "read_request_stream(conn: Int, max_bytes: Int, timeout_ms: Int, chunk_bytes: Int) -> Result[RequestBodyReader, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "request_stream_done(reader: RequestBodyReader) -> Bool"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "request_stream_head(reader: RequestBodyReader) -> RequestHead"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
+      "signature": "request_stream_read_next(reader: RequestBodyReader) -> Result[RequestBodyStep, ServerError]"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "fn",
       "signature": "response(status: UInt16, headers: Map[String, String], body: String) -> ResponseView"
     },
     {
@@ -2778,13 +3283,38 @@
     },
     {
       "module": "std.http_server",
+      "kind": "fn",
+      "signature": "write_streaming_response_chunk(writer: ResponseBodyWriter, chunk: Bytes) -> Result[ResponseBodyWriter, ServerError] effects { net }"
+    },
+    {
+      "module": "std.http_server",
       "kind": "struct",
       "signature": "Request { method: String, path: String, query: Map[String, String], headers: Map[String, String], body: String }"
     },
     {
       "module": "std.http_server",
       "kind": "struct",
+      "signature": "RequestBodyReader { head: RequestHead, body: Bytes, cursor: Int, chunk_bytes: Int }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
+      "signature": "RequestBodyStep { reader: RequestBodyReader, chunk: Option[Bytes] }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
+      "signature": "RequestHead { method: String, path: String, query: Map[String, String], headers: Map[String, String], content_length: Int, chunked: Bool }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
       "signature": "Response { status: Int, headers: Map[String, String], body: String }"
+    },
+    {
+      "module": "std.http_server",
+      "kind": "struct",
+      "signature": "ResponseBodyWriter { conn: Int, timeout_ms: Int, expected_bytes: Int, sent_bytes: Int }"
     },
     {
       "module": "std.http_server",
@@ -4074,6 +4604,11 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "__aic_type_alias__NetPortU16() -> UInt16"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "__aic_type_alias__QueueDepthU32() -> UInt32"
     },
     {
@@ -4439,12 +4974,27 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "net_format_host_port(host: String, port: NetPortU16) -> String"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_int_to_u16(value: Int) -> Result[NetPortU16, NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "net_int_to_u32(value: Int) -> Result[UInt32, NetError]"
     },
     {
       "module": "std.net",
       "kind": "fn",
       "signature": "net_io_error() -> NetError"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_one_u16() -> UInt16"
     },
     {
       "module": "std.net",
@@ -4459,7 +5009,17 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "net_parse_host_port(endpoint: String) -> Result[Tuple[String, NetPortU16], NetError]"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "net_timeout_error() -> NetError"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_u16_to_int(value: NetPortU16) -> Int"
     },
     {
       "module": "std.net",
@@ -4480,6 +5040,11 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "net_u8_to_u32(value: UInt8) -> UInt32"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "net_zero_u16() -> UInt16"
     },
     {
       "module": "std.net",
@@ -4505,6 +5070,11 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "tcp_connect(addr: String, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_connect_host_port(host: String, port: NetPortU16, timeout_ms: Int) -> Result[Int, NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4574,7 +5144,17 @@
     {
       "module": "std.net",
       "kind": "fn",
+      "signature": "tcp_listen_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
       "signature": "tcp_local_addr(handle: Int) -> Result[String, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "tcp_local_endpoint(handle: Int) -> Result[Tuple[String, NetPortU16], NetError] effects { net }"
     },
     {
       "module": "std.net",
@@ -4920,6 +5500,11 @@
       "module": "std.net",
       "kind": "fn",
       "signature": "udp_bind(addr: String) -> Result[Int, NetError] effects { net }"
+    },
+    {
+      "module": "std.net",
+      "kind": "fn",
+      "signature": "udp_bind_host_port(host: String, port: NetPortU16) -> Result[Int, NetError] effects { net }"
     },
     {
       "module": "std.net",

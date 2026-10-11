@@ -7497,15 +7497,18 @@ impl<'a> Checker<'a> {
             ir::ExprKind::Try { expr: inner } => {
                 let ty = self.check_expr(inner, locals, allowed_effects, ctx, contract_mode);
                 let ty_norm = self.normalize_type(&ty);
+                if base_type_name(&ty_norm) == "Option" {
+                    return self.check_option_try(&ty, &ty_norm, inner, expr, ctx);
+                }
                 if base_type_name(&ty_norm) != "Result" {
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E1260",
-                            format!("`?` expects Result[T, E], found '{}'", ty),
+                            format!("`?` expects Result[T, E] or Option[T], found '{}'", ty),
                             self.file,
                             inner.span,
                         )
-                        .with_help("use `?` only on Result-returning expressions"),
+                        .with_help("use `?` only on Result- or Option-returning expressions"),
                     );
                     return "<?>".to_string();
                 }
@@ -7521,7 +7524,12 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 }
 
-                let Some(function_ret) = self.current_function_ret_type.clone() else {
+                // `?` returns from the innermost function or closure.
+                let Some(function_ret) = ctx
+                    .fn_ret
+                    .clone()
+                    .or_else(|| self.current_function_ret_type.clone())
+                else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1261",
                         "`?` cannot be used outside of a function body",
@@ -10386,6 +10394,63 @@ impl<'a> Checker<'a> {
             return Some(Self::unqualified_name(base).to_string());
         }
         None
+    }
+
+    /// `expr?` on `Option[T]`: has type `T` and returns `None` from the
+    /// enclosing function or closure, which must return `Option[_]`.
+    fn check_option_try(
+        &mut self,
+        ty: &str,
+        ty_norm: &str,
+        inner: &ir::Expr,
+        expr: &ir::Expr,
+        ctx: &ExprContext,
+    ) -> String {
+        let args = extract_generic_args(ty_norm).unwrap_or_default();
+        let [value_ty] = args.as_slice() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1260",
+                format!("`?` expects Option[T], found '{}'", ty),
+                self.file,
+                inner.span,
+            ));
+            return "<?>".to_string();
+        };
+        let Some(function_ret) = ctx
+            .fn_ret
+            .clone()
+            .or_else(|| self.current_function_ret_type.clone())
+        else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1261",
+                "`?` cannot be used outside of a function body",
+                self.file,
+                expr.span,
+            ));
+            return "<?>".to_string();
+        };
+        let function_ret_norm = self.normalize_type(&function_ret);
+        if base_type_name(&function_ret_norm) != "Option" {
+            let help = if base_type_name(&function_ret_norm) == "Result" {
+                "convert the Option first, for example `value.ok_or(err)?`"
+            } else {
+                "change the return type to Option[T] or handle None explicitly"
+            };
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1261",
+                    format!(
+                        "`?` on Option requires enclosing function return type Option[_], found '{}'",
+                        function_ret
+                    ),
+                    self.file,
+                    expr.span,
+                )
+                .with_help(help),
+            );
+            return "<?>".to_string();
+        }
+        value_ty.clone()
     }
 
     /// `let Point { x, y } = value;` binds `value` to a temporary named
@@ -14693,6 +14758,28 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn question_mark_on_option_is_checked() {
+        let ok = "fn f(a: Option[Int]) -> Option[Int] { let x = a?; Some(x + 1) } fn main() -> Int { 0 }";
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // `?` on Option needs an Option-returning function.
+            ("fn f(a: Option[Int]) -> Result[Int, String] { let x = a?; Ok(x) } fn main() -> Int { 0 }", "E1261"),
+            ("fn f(a: Option[Int]) -> Int { a? } fn main() -> Int { 0 }", "E1261"),
+            // `?` on Result in an Option-returning function.
+            ("fn f(a: Result[Int, String]) -> Option[Int] { let x = a?; Some(x) } fn main() -> Int { 0 }", "E1261"),
+            // `?` on something else.
+            ("fn f(a: Int) -> Option[Int] { let x = a?; Some(x) } fn main() -> Int { 0 }", "E1260"),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);
