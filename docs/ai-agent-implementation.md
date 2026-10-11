@@ -569,6 +569,38 @@ Diagnostics:
 - Coverage guarantee:
   - `registry_explain_coverage()` test ensures all registered codes have explain metadata/range mapping.
 
+### Diagnostic catalog contract
+
+`docs/errors/catalog.md` has exactly one row per code in `REGISTERED_DIAGNOSTIC_CODES`:
+
+```text
+| `E1234` | Mode | Description | Trigger | Fix |
+```
+
+- Runnable modes hold single-file programs (one line, `|` written as `\|`):
+  - `check`: `aic check` reports the code for the trigger.
+  - `warn-unused`: `aic check --warn-unused` reports it (unused-analysis warnings).
+  - `build`: the trigger passes the checker and code generation reports the code.
+  - The fix must not report the code and must have no error diagnostics at all.
+- Described modes are not run; their trigger/fix cells say how the code is produced and resolved:
+  `cli` (a CLI command), `package` (manifest, lockfile, registry or workspace fixture),
+  `selfhost` (self-host tools under `compiler/aic`), `internal` (defensive backstop the checker
+  always pre-empts; the row names the code users see instead), `reserved` (never emitted),
+  `retired` (no longer emitted).
+- `tests/diagnostic_catalog_tests.rs` (run by `make test-unit`) parses the table, runs every runnable
+  trigger and fix through `driver::run_frontend` (plus `unused_analysis` for `warn-unused`, plus
+  `codegen` for `build`), and fails when:
+  - a registered code has no row, a row names an unregistered code, or a code has two rows;
+  - a row is malformed (wrong cell count, unknown mode, trigger/fix not one code span);
+  - two rows share a trigger program, or two non-`reserved` rows share a description (the placeholder
+    pattern this test replaced);
+  - a trigger does not report its code, or a fix reports it or any error.
+- `build` rows other than `E5037` are known check/build parity gaps (listed in `docs/diagnostic-codes.md`).
+  Closing one makes the checker reject the trigger first, so the test fails until the row moves to the
+  checker code.
+- When you add a diagnostic code: register it, add its row with a verified trigger and fix, and update
+  the `(N codes)` count in the catalog introduction.
+
 ### LSP support and IDE integration (E7-T4)
 
 - Server entrypoint: `aic lsp` (`src/lsp.rs`)
@@ -1127,6 +1159,7 @@ Verifier-focused examples:
   - `src/execution_matrix.rs`
   - `src/perf_gate.rs`
   - `tests/unit_tests.rs`
+  - `tests/diagnostic_catalog_tests.rs` (every catalog trigger/fix program)
 - Runtime/execution tests in:
   - `tests/execution_tests.rs`
   - `tests/e8_matrix_tests.rs`
