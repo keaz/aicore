@@ -68,13 +68,7 @@ struct RegexMatch {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError] {
-    let out: Result[Regex, RegexError] = Ok(Regex {
-        pattern: pattern,
-        flags: flags,
-    });
-    out
-}
+intrinsic fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, RegexError];
 
 /// `aic_regex_is_match_intrinsic` in `std.regex`.
 ///
@@ -88,10 +82,7 @@ fn aic_regex_compile_intrinsic(pattern: String, flags: Int) -> Result[Regex, Reg
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, RegexError] {
-    let out: Result[Bool, RegexError] = Ok(false);
-    out
-}
+intrinsic fn aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, RegexError];
 
 /// `aic_regex_find_intrinsic` in `std.regex`.
 ///
@@ -105,10 +96,7 @@ fn aic_regex_is_match_intrinsic(regex: Regex, text: String) -> Result[Bool, Rege
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError] {
-    let out: Result[String, RegexError] = Ok("");
-    out
-}
+intrinsic fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexError];
 
 /// `aic_regex_replace_intrinsic` in `std.regex`.
 ///
@@ -122,10 +110,7 @@ fn aic_regex_find_intrinsic(regex: Regex, text: String) -> Result[String, RegexE
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError] {
-    let out: Result[String, RegexError] = Ok(text);
-    out
-}
+intrinsic fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) -> Result[String, RegexError];
 
 /// `aic_regex_captures_intrinsic` in `std.regex`.
 ///
@@ -139,10 +124,7 @@ fn aic_regex_replace_intrinsic(regex: Regex, text: String, replacement: String) 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError] {
-    let out: Result[Option[RegexMatch], RegexError] = Ok(None());
-    out
-}
+intrinsic fn aic_regex_captures_intrinsic(regex: Regex, text: String) -> Result[Option[RegexMatch], RegexError];
 
 /// No regex flags.
 fn no_flags() -> Int {

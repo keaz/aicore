@@ -413,9 +413,7 @@ fn io_is_end_of_input(err: IoError) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_print_int_intrinsic(x: Int) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_print_int_intrinsic(x: Int) -> () effects { io };
 
 /// `aic_io_print_str_intrinsic` in `std.io`.
 ///
@@ -429,9 +427,7 @@ fn aic_io_print_int_intrinsic(x: Int) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_print_str_intrinsic(x: String) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_print_str_intrinsic(x: String) -> () effects { io };
 
 /// `aic_io_print_float_intrinsic` in `std.io`.
 ///
@@ -445,9 +441,7 @@ fn aic_io_print_str_intrinsic(x: String) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_print_float_intrinsic(x: Float) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_print_float_intrinsic(x: Float) -> () effects { io };
 
 /// `aic_io_panic_intrinsic` in `std.io`.
 ///
@@ -461,9 +455,7 @@ fn aic_io_print_float_intrinsic(x: Float) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_panic_intrinsic(message: String) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_panic_intrinsic(message: String) -> () effects { io };
 
 /// `aic_io_read_line_intrinsic` in `std.io`.
 ///
@@ -477,10 +469,7 @@ fn aic_io_panic_intrinsic(message: String) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_read_line_intrinsic() -> Result[String, IoError] effects { io } {
-    let out: Result[String, IoError] = Err(EndOfInput());
-    out
-}
+intrinsic fn aic_io_read_line_intrinsic() -> Result[String, IoError] effects { io };
 
 /// `aic_io_read_int_intrinsic` in `std.io`.
 ///
@@ -494,10 +483,7 @@ fn aic_io_read_line_intrinsic() -> Result[String, IoError] effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_read_int_intrinsic() -> Result[Int, IoError] effects { io } {
-    let out: Result[Int, IoError] = Err(InvalidInput());
-    out
-}
+intrinsic fn aic_io_read_int_intrinsic() -> Result[Int, IoError] effects { io };
 
 /// `aic_io_read_char_intrinsic` in `std.io`.
 ///
@@ -511,10 +497,7 @@ fn aic_io_read_int_intrinsic() -> Result[Int, IoError] effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_read_char_intrinsic() -> Result[String, IoError] effects { io } {
-    let out: Result[String, IoError] = Err(EndOfInput());
-    out
-}
+intrinsic fn aic_io_read_char_intrinsic() -> Result[String, IoError] effects { io };
 
 /// `aic_io_prompt_intrinsic` in `std.io`.
 ///
@@ -528,10 +511,7 @@ fn aic_io_read_char_intrinsic() -> Result[String, IoError] effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_prompt_intrinsic(message: String) -> Result[String, IoError] effects { io } {
-    let out: Result[String, IoError] = Err(EndOfInput());
-    out
-}
+intrinsic fn aic_io_prompt_intrinsic(message: String) -> Result[String, IoError] effects { io };
 
 /// `aic_io_eprint_str_intrinsic` in `std.io`.
 ///
@@ -545,9 +525,7 @@ fn aic_io_prompt_intrinsic(message: String) -> Result[String, IoError] effects {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_eprint_str_intrinsic(x: String) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_eprint_str_intrinsic(x: String) -> () effects { io };
 
 /// `aic_io_eprint_int_intrinsic` in `std.io`.
 ///
@@ -561,9 +539,7 @@ fn aic_io_eprint_str_intrinsic(x: String) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_eprint_int_intrinsic(x: Int) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_eprint_int_intrinsic(x: Int) -> () effects { io };
 
 /// `aic_io_println_str_intrinsic` in `std.io`.
 ///
@@ -577,9 +553,7 @@ fn aic_io_eprint_int_intrinsic(x: Int) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_println_str_intrinsic(x: String) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_println_str_intrinsic(x: String) -> () effects { io };
 
 /// `aic_io_println_int_intrinsic` in `std.io`.
 ///
@@ -593,9 +567,7 @@ fn aic_io_println_str_intrinsic(x: String) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_println_int_intrinsic(x: Int) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_println_int_intrinsic(x: Int) -> () effects { io };
 
 /// `aic_io_print_bool_intrinsic` in `std.io`.
 ///
@@ -609,9 +581,7 @@ fn aic_io_println_int_intrinsic(x: Int) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_print_bool_intrinsic(x: Bool) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_print_bool_intrinsic(x: Bool) -> () effects { io };
 
 /// `aic_io_println_bool_intrinsic` in `std.io`.
 ///
@@ -625,9 +595,7 @@ fn aic_io_print_bool_intrinsic(x: Bool) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_println_bool_intrinsic(x: Bool) -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_println_bool_intrinsic(x: Bool) -> () effects { io };
 
 /// `aic_io_flush_stdout_intrinsic` in `std.io`.
 ///
@@ -641,9 +609,7 @@ fn aic_io_println_bool_intrinsic(x: Bool) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_flush_stdout_intrinsic() -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_flush_stdout_intrinsic() -> () effects { io };
 
 /// `aic_io_flush_stderr_intrinsic` in `std.io`.
 ///
@@ -657,9 +623,7 @@ fn aic_io_flush_stdout_intrinsic() -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_flush_stderr_intrinsic() -> () effects { io } {
-    ()
-}
+intrinsic fn aic_io_flush_stderr_intrinsic() -> () effects { io };
 
 /// `aic_io_write_stdout_intrinsic` in `std.io`.
 ///
@@ -673,10 +637,7 @@ fn aic_io_flush_stderr_intrinsic() -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_write_stdout_intrinsic(content: String) -> Result[Int, IoError] effects { io } {
-    let _content = content;
-    io_err_int_result()
-}
+intrinsic fn aic_io_write_stdout_intrinsic(content: String) -> Result[Int, IoError] effects { io };
 
 /// `aic_io_write_stderr_intrinsic` in `std.io`.
 ///
@@ -690,10 +651,7 @@ fn aic_io_write_stdout_intrinsic(content: String) -> Result[Int, IoError] effect
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_write_stderr_intrinsic(content: String) -> Result[Int, IoError] effects { io } {
-    let _content = content;
-    io_err_int_result()
-}
+intrinsic fn aic_io_write_stderr_intrinsic(content: String) -> Result[Int, IoError] effects { io };
 
 /// `aic_io_file_read_line_intrinsic` in `std.io`.
 ///
@@ -707,10 +665,7 @@ fn aic_io_write_stderr_intrinsic(content: String) -> Result[Int, IoError] effect
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], IoError] effects { io } {
-    let _file = file;
-    io_err_option_string(io_other())
-}
+intrinsic fn aic_io_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], IoError] effects { io };
 
 /// `aic_io_file_write_str_intrinsic` in `std.io`.
 ///
@@ -724,11 +679,7 @@ fn aic_io_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], I
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Int, IoError] effects { io } {
-    let _file = file;
-    let _content = content;
-    io_err_int_result()
-}
+intrinsic fn aic_io_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Int, IoError] effects { io };
 
 /// `aic_io_file_close_intrinsic` in `std.io`.
 ///
@@ -742,10 +693,7 @@ fn aic_io_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_file_close_intrinsic(file: FileHandle) -> Result[Bool, IoError] effects { io } {
-    let _file = file;
-    io_ok_bool_true()
-}
+intrinsic fn aic_io_file_close_intrinsic(file: FileHandle) -> Result[Bool, IoError] effects { io };
 
 /// `aic_io_tcp_send_intrinsic` in `std.io`.
 ///
@@ -759,11 +707,7 @@ fn aic_io_file_close_intrinsic(file: FileHandle) -> Result[Bool, IoError] effect
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_tcp_send_intrinsic(handle: Int, content: String) -> Result[Int, IoError] effects { io } {
-    let _handle = handle;
-    let _content = content;
-    io_err_int_result()
-}
+intrinsic fn aic_io_tcp_send_intrinsic(handle: Int, content: String) -> Result[Int, IoError] effects { io };
 
 /// `aic_io_tcp_recv_intrinsic` in `std.io`.
 ///
@@ -777,12 +721,7 @@ fn aic_io_tcp_send_intrinsic(handle: Int, content: String) -> Result[Int, IoErro
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, IoError] effects { io } {
-    let _handle = handle;
-    let _max_bytes = max_bytes;
-    let _timeout_ms = timeout_ms;
-    io_err_string_result()
-}
+intrinsic fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Result[String, IoError] effects { io };
 
 /// `aic_io_tcp_close_intrinsic` in `std.io`.
 ///
@@ -796,10 +735,7 @@ fn aic_io_tcp_recv_intrinsic(handle: Int, max_bytes: Int, timeout_ms: Int) -> Re
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io } {
-    let _handle = handle;
-    io_ok_bool_true()
-}
+intrinsic fn aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io };
 
 /// `aic_io_mock_reader_install_intrinsic` in `std.io`.
 ///
@@ -813,10 +749,7 @@ fn aic_io_tcp_close_intrinsic(handle: Int) -> Result[Bool, IoError] effects { io
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_mock_reader_install_intrinsic(serialized_lines: String) -> Result[Bool, IoError] effects { io } {
-    let _serialized_lines = serialized_lines;
-    io_ok_bool_false()
-}
+intrinsic fn aic_io_mock_reader_install_intrinsic(serialized_lines: String) -> Result[Bool, IoError] effects { io };
 
 /// `aic_io_mock_writer_take_stdout_intrinsic` in `std.io`.
 ///
@@ -830,9 +763,7 @@ fn aic_io_mock_reader_install_intrinsic(serialized_lines: String) -> Result[Bool
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_mock_writer_take_stdout_intrinsic() -> Result[String, IoError] effects { io } {
-    io_err_string_result()
-}
+intrinsic fn aic_io_mock_writer_take_stdout_intrinsic() -> Result[String, IoError] effects { io };
 
 /// `aic_io_mock_writer_take_stderr_intrinsic` in `std.io`.
 ///
@@ -846,9 +777,7 @@ fn aic_io_mock_writer_take_stdout_intrinsic() -> Result[String, IoError] effects
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_io_mock_writer_take_stderr_intrinsic() -> Result[String, IoError] effects { io } {
-    io_err_string_result()
-}
+intrinsic fn aic_io_mock_writer_take_stderr_intrinsic() -> Result[String, IoError] effects { io };
 
 /// `from_fs_error` in `std.io`.
 ///

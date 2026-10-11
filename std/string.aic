@@ -57,9 +57,7 @@ enum EncodingError {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_len_intrinsic(s: String) -> Int {
-    0
-}
+intrinsic fn aic_string_len_intrinsic(s: String) -> Int;
 
 /// Return string length in bytes.
 fn len(s: String) -> Int {
@@ -83,9 +81,7 @@ fn is_empty(s: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool {
-    false
-}
+intrinsic fn aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool;
 
 /// `aic_string_starts_with_intrinsic` in `std.string`.
 ///
@@ -99,9 +95,7 @@ fn aic_string_contains_intrinsic(haystack: String, needle: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_starts_with_intrinsic(s: String, prefix: String) -> Bool {
-    false
-}
+intrinsic fn aic_string_starts_with_intrinsic(s: String, prefix: String) -> Bool;
 
 /// `aic_string_ends_with_intrinsic` in `std.string`.
 ///
@@ -115,9 +109,7 @@ fn aic_string_starts_with_intrinsic(s: String, prefix: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_ends_with_intrinsic(s: String, suffix: String) -> Bool {
-    false
-}
+intrinsic fn aic_string_ends_with_intrinsic(s: String, suffix: String) -> Bool;
 
 /// `aic_string_index_of_intrinsic` in `std.string`.
 ///
@@ -131,10 +123,7 @@ fn aic_string_ends_with_intrinsic(s: String, suffix: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
-    let out: Option[Int] = None();
-    out
-}
+intrinsic fn aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int];
 
 /// `aic_string_last_index_of_intrinsic` in `std.string`.
 ///
@@ -148,10 +137,7 @@ fn aic_string_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int] {
-    let out: Option[Int] = None();
-    out
-}
+intrinsic fn aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int];
 
 /// `aic_string_substring_intrinsic` in `std.string`.
 ///
@@ -165,9 +151,7 @@ fn aic_string_last_index_of_intrinsic(s: String, needle: String) -> Option[Int] 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_substring_intrinsic(s: String, start: Int, end: Int) -> String {
-    ""
-}
+intrinsic fn aic_string_substring_intrinsic(s: String, start: Int, end: Int) -> String;
 
 /// `aic_string_char_at_intrinsic` in `std.string`.
 ///
@@ -181,10 +165,7 @@ fn aic_string_substring_intrinsic(s: String, start: Int, end: Int) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_char_at_intrinsic(s: String, index: Int) -> Option[String] {
-    let out: Option[String] = None();
-    out
-}
+intrinsic fn aic_string_char_at_intrinsic(s: String, index: Int) -> Option[String];
 
 /// `aic_string_split_intrinsic` in `std.string`.
 ///
@@ -198,14 +179,7 @@ fn aic_string_char_at_intrinsic(s: String, index: Int) -> Option[String] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String] {
-    let out: Vec[String] = Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    };
-    out
-}
+intrinsic fn aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String];
 
 /// `aic_string_split_first_intrinsic` in `std.string`.
 ///
@@ -219,10 +193,7 @@ fn aic_string_split_intrinsic(s: String, delimiter: String) -> Vec[String] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_split_first_intrinsic(s: String, delimiter: String) -> Option[Vec[String]] {
-    let out: Option[Vec[String]] = None();
-    out
-}
+intrinsic fn aic_string_split_first_intrinsic(s: String, delimiter: String) -> Option[Vec[String]];
 
 /// `aic_string_trim_intrinsic` in `std.string`.
 ///
@@ -236,9 +207,7 @@ fn aic_string_split_first_intrinsic(s: String, delimiter: String) -> Option[Vec[
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_trim_intrinsic(s: String) -> String {
-    ""
-}
+intrinsic fn aic_string_trim_intrinsic(s: String) -> String;
 
 /// `aic_string_trim_start_intrinsic` in `std.string`.
 ///
@@ -252,9 +221,7 @@ fn aic_string_trim_intrinsic(s: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_trim_start_intrinsic(s: String) -> String {
-    ""
-}
+intrinsic fn aic_string_trim_start_intrinsic(s: String) -> String;
 
 /// `aic_string_trim_end_intrinsic` in `std.string`.
 ///
@@ -268,9 +235,7 @@ fn aic_string_trim_start_intrinsic(s: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_trim_end_intrinsic(s: String) -> String {
-    ""
-}
+intrinsic fn aic_string_trim_end_intrinsic(s: String) -> String;
 
 /// `aic_string_to_upper_intrinsic` in `std.string`.
 ///
@@ -284,9 +249,7 @@ fn aic_string_trim_end_intrinsic(s: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_to_upper_intrinsic(s: String) -> String {
-    ""
-}
+intrinsic fn aic_string_to_upper_intrinsic(s: String) -> String;
 
 /// `aic_string_to_lower_intrinsic` in `std.string`.
 ///
@@ -300,9 +263,7 @@ fn aic_string_to_upper_intrinsic(s: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_to_lower_intrinsic(s: String) -> String {
-    ""
-}
+intrinsic fn aic_string_to_lower_intrinsic(s: String) -> String;
 
 /// `aic_string_replace_intrinsic` in `std.string`.
 ///
@@ -316,9 +277,7 @@ fn aic_string_to_lower_intrinsic(s: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_replace_intrinsic(s: String, from: String, to: String) -> String {
-    ""
-}
+intrinsic fn aic_string_replace_intrinsic(s: String, from: String, to: String) -> String;
 
 /// `aic_string_repeat_intrinsic` in `std.string`.
 ///
@@ -332,9 +291,7 @@ fn aic_string_replace_intrinsic(s: String, from: String, to: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_repeat_intrinsic(s: String, count: Int) -> String {
-    ""
-}
+intrinsic fn aic_string_repeat_intrinsic(s: String, count: Int) -> String;
 
 /// `aic_string_parse_int_intrinsic` in `std.string`.
 ///
@@ -348,10 +305,7 @@ fn aic_string_repeat_intrinsic(s: String, count: Int) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_parse_int_intrinsic(s: String) -> Result[Int, String] {
-    let out: Result[Int, String] = Err("invalid integer: empty");
-    out
-}
+intrinsic fn aic_string_parse_int_intrinsic(s: String) -> Result[Int, String];
 
 /// `aic_string_parse_float_intrinsic` in `std.string`.
 ///
@@ -365,10 +319,7 @@ fn aic_string_parse_int_intrinsic(s: String) -> Result[Int, String] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_parse_float_intrinsic(s: String) -> Result[Float, String] {
-    let out: Result[Float, String] = Err("invalid float: empty");
-    out
-}
+intrinsic fn aic_string_parse_float_intrinsic(s: String) -> Result[Float, String];
 
 /// `aic_string_int_to_string_intrinsic` in `std.string`.
 ///
@@ -382,9 +333,7 @@ fn aic_string_parse_float_intrinsic(s: String) -> Result[Float, String] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_int_to_string_intrinsic(n: Int) -> String {
-    "0"
-}
+intrinsic fn aic_string_int_to_string_intrinsic(n: Int) -> String;
 
 /// `aic_string_float_to_string_intrinsic` in `std.string`.
 ///
@@ -398,9 +347,7 @@ fn aic_string_int_to_string_intrinsic(n: Int) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_float_to_string_intrinsic(v: Float) -> String {
-    "0.0"
-}
+intrinsic fn aic_string_float_to_string_intrinsic(v: Float) -> String;
 
 /// `aic_string_bool_to_string_intrinsic` in `std.string`.
 ///
@@ -414,9 +361,7 @@ fn aic_string_float_to_string_intrinsic(v: Float) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_bool_to_string_intrinsic(b: Bool) -> String {
-    if b { "true" } else { "false" }
-}
+intrinsic fn aic_string_bool_to_string_intrinsic(b: Bool) -> String;
 
 /// `aic_string_is_valid_utf8_intrinsic` in `std.string`.
 ///
@@ -430,9 +375,7 @@ fn aic_string_bool_to_string_intrinsic(b: Bool) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_is_valid_utf8_intrinsic(data: String) -> Bool {
-    false
-}
+intrinsic fn aic_string_is_valid_utf8_intrinsic(data: String) -> Bool;
 
 /// `aic_string_is_ascii_intrinsic` in `std.string`.
 ///
@@ -446,9 +389,7 @@ fn aic_string_is_valid_utf8_intrinsic(data: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_is_ascii_intrinsic(s: String) -> Bool {
-    false
-}
+intrinsic fn aic_string_is_ascii_intrinsic(s: String) -> Bool;
 
 /// `aic_string_bytes_to_string_lossy_intrinsic` in `std.string`.
 ///
@@ -462,9 +403,7 @@ fn aic_string_is_ascii_intrinsic(s: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_bytes_to_string_lossy_intrinsic(data: String) -> String {
-    ""
-}
+intrinsic fn aic_string_bytes_to_string_lossy_intrinsic(data: String) -> String;
 
 /// `aic_string_join_intrinsic` in `std.string`.
 ///
@@ -478,9 +417,7 @@ fn aic_string_bytes_to_string_lossy_intrinsic(data: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String {
-    ""
-}
+intrinsic fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String;
 
 /// `aic_string_format_intrinsic` in `std.string`.
 ///
@@ -494,9 +431,7 @@ fn aic_string_join_intrinsic(parts: Vec[String], separator: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_string_format_intrinsic(template: String, args: Vec[String]) -> String {
-    ""
-}
+intrinsic fn aic_string_format_intrinsic(template: String, args: Vec[String]) -> String;
 
 /// `string_to_bytes` in `std.string`.
 ///

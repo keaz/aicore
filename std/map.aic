@@ -42,11 +42,7 @@ struct MapEntry[K, V] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_new_intrinsic[K, V]() -> Map[K, V] {
-    Map {
-        handle: 0,
-    }
-}
+intrinsic fn aic_map_new_intrinsic[K, V]() -> Map[K, V];
 
 /// `aic_map_close_intrinsic` in `std.map`.
 ///
@@ -60,10 +56,7 @@ fn aic_map_new_intrinsic[K, V]() -> Map[K, V] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_close_intrinsic[K, V](m: Map[K, V]) -> () {
-    let _m = m;
-    ()
-}
+intrinsic fn aic_map_close_intrinsic[K, V](m: Map[K, V]) -> ();
 
 /// `aic_map_insert_intrinsic` in `std.map`.
 ///
@@ -77,11 +70,7 @@ fn aic_map_close_intrinsic[K, V](m: Map[K, V]) -> () {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
-    let _key = key;
-    let _value = value;
-    m
-}
+intrinsic fn aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V];
 
 /// `aic_map_get_intrinsic` in `std.map`.
 ///
@@ -95,12 +84,7 @@ fn aic_map_insert_intrinsic[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V] {
-    let _m = m;
-    let _key = key;
-    let out: Option[V] = None();
-    out
-}
+intrinsic fn aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V];
 
 /// `aic_map_contains_key_intrinsic` in `std.map`.
 ///
@@ -114,11 +98,7 @@ fn aic_map_get_intrinsic[K, V](m: Map[K, V], key: K) -> Option[V] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool {
-    let _m = m;
-    let _key = key;
-    false
-}
+intrinsic fn aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool;
 
 /// `aic_map_remove_intrinsic` in `std.map`.
 ///
@@ -132,10 +112,7 @@ fn aic_map_contains_key_intrinsic[K, V](m: Map[K, V], key: K) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_remove_intrinsic[K, V](m: Map[K, V], key: K) -> Map[K, V] {
-    let _key = key;
-    m
-}
+intrinsic fn aic_map_remove_intrinsic[K, V](m: Map[K, V], key: K) -> Map[K, V];
 
 /// `aic_map_size_intrinsic` in `std.map`.
 ///
@@ -149,10 +126,7 @@ fn aic_map_remove_intrinsic[K, V](m: Map[K, V], key: K) -> Map[K, V] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_size_intrinsic[K, V](m: Map[K, V]) -> Int {
-    let _m = m;
-    0
-}
+intrinsic fn aic_map_size_intrinsic[K, V](m: Map[K, V]) -> Int;
 
 /// `aic_map_keys_intrinsic` in `std.map`.
 ///
@@ -166,15 +140,7 @@ fn aic_map_size_intrinsic[K, V](m: Map[K, V]) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K] {
-    let _m = m;
-    let out: Vec[K] = Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    };
-    out
-}
+intrinsic fn aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K];
 
 /// `aic_map_values_intrinsic` in `std.map`.
 ///
@@ -188,15 +154,7 @@ fn aic_map_keys_intrinsic[K, V](m: Map[K, V]) -> Vec[K] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V] {
-    let _m = m;
-    let out: Vec[V] = Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    };
-    out
-}
+intrinsic fn aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V];
 
 /// `aic_map_entries_intrinsic` in `std.map`.
 ///
@@ -210,15 +168,7 @@ fn aic_map_values_intrinsic[K, V](m: Map[K, V]) -> Vec[V] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]] {
-    let _m = m;
-    let out: Vec[MapEntry[K, V]] = Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    };
-    out
-}
+intrinsic fn aic_map_entries_intrinsic[K, V](m: Map[K, V]) -> Vec[MapEntry[K, V]];
 
 /// `new_map` in `std.map`.
 ///

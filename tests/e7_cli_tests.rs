@@ -3676,8 +3676,15 @@ fn verify_intrinsics_std_runtime_bindings_emit_stable_json() {
         report["intrinsic_declarations"].as_u64().unwrap_or(0) >= 120,
         "report={report:#}"
     );
+    let covered = report["verified_bindings"].as_u64().unwrap_or(0)
+        + report["builtin_lowerings"].as_u64().unwrap_or(0);
     assert_eq!(
-        report["verified_bindings"], report["intrinsic_declarations"],
+        Some(covered),
+        report["intrinsic_declarations"].as_u64(),
+        "every std intrinsic needs a runtime binding or builtin lowering: report={report:#}"
+    );
+    assert!(
+        report["builtin_lowerings"].as_u64().unwrap_or(0) >= 200,
         "report={report:#}"
     );
 }

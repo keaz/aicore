@@ -18,9 +18,7 @@ module std.path;
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_path_join_intrinsic(left: String, right: String) -> String {
-    ""
-}
+intrinsic fn aic_path_join_intrinsic(left: String, right: String) -> String;
 
 /// `aic_path_basename_intrinsic` in `std.path`.
 ///
@@ -34,9 +32,7 @@ fn aic_path_join_intrinsic(left: String, right: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_path_basename_intrinsic(path: String) -> String {
-    ""
-}
+intrinsic fn aic_path_basename_intrinsic(path: String) -> String;
 
 /// `aic_path_dirname_intrinsic` in `std.path`.
 ///
@@ -50,9 +46,7 @@ fn aic_path_basename_intrinsic(path: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_path_dirname_intrinsic(path: String) -> String {
-    ""
-}
+intrinsic fn aic_path_dirname_intrinsic(path: String) -> String;
 
 /// `aic_path_extension_intrinsic` in `std.path`.
 ///
@@ -66,9 +60,7 @@ fn aic_path_dirname_intrinsic(path: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_path_extension_intrinsic(path: String) -> String {
-    ""
-}
+intrinsic fn aic_path_extension_intrinsic(path: String) -> String;
 
 /// `aic_path_is_abs_intrinsic` in `std.path`.
 ///
@@ -82,9 +74,7 @@ fn aic_path_extension_intrinsic(path: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_path_is_abs_intrinsic(path: String) -> Bool {
-    false
-}
+intrinsic fn aic_path_is_abs_intrinsic(path: String) -> Bool;
 
 /// `join` in `std.path`.
 ///

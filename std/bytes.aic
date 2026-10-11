@@ -142,9 +142,7 @@ fn aic_bytes_concat_intrinsic(left: String, right: String) -> String {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool {
-    aic_string_is_valid_utf8_intrinsic(data)
-}
+intrinsic fn aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool;
 
 /// `aic_bytes_to_string_lossy_intrinsic` in `std.bytes`.
 ///
@@ -158,9 +156,7 @@ fn aic_bytes_is_valid_utf8_intrinsic(data: String) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_bytes_to_string_lossy_intrinsic(data: String) -> String {
-    aic_string_bytes_to_string_lossy_intrinsic(data)
-}
+intrinsic fn aic_bytes_to_string_lossy_intrinsic(data: String) -> String;
 
 /// `empty` in `std.bytes`.
 ///

@@ -10138,13 +10138,19 @@ fn unit_std_bytes_intrinsics_are_runtime_backed_and_public_apis_delegate() {
         bytes_source.contains("aic_string_format_intrinsic(\"{0}{1}\", pieces)"),
         "std/bytes.aic must implement concat via string intrinsic"
     );
-    assert!(
-        bytes_source.contains("aic_string_is_valid_utf8_intrinsic(data)"),
-        "std/bytes.aic must validate UTF-8 via intrinsic-backed string API"
+    // Backend-lowered intrinsics are signature-only declarations; the code
+    // generator provides their implementation (see `aic verify-intrinsics`).
+    assert_intrinsic_declaration(
+        &bytes_source,
+        "std/bytes.aic",
+        "aic_bytes_is_valid_utf8_intrinsic",
+        1,
     );
-    assert!(
-        bytes_source.contains("aic_string_bytes_to_string_lossy_intrinsic(data)"),
-        "std/bytes.aic must decode lossy via intrinsic-backed string API"
+    assert_intrinsic_declaration(
+        &bytes_source,
+        "std/bytes.aic",
+        "aic_bytes_to_string_lossy_intrinsic",
+        1,
     );
     assert!(
         bytes_source.contains(
@@ -10607,10 +10613,7 @@ fn unit_std_fs_bytes_apis_bridge_bytes_at_intrinsic_boundary() {
         fs_source.contains("aic_fs_append_bytes_intrinsic(path, content.data)"),
         "std/fs.aic append_bytes must pass Bytes.data into runtime intrinsic"
     );
-    assert!(
-        fs_source.contains("let out: Result[String, FsError] = Err(Io());"),
-        "std/fs.aic read_bytes intrinsic fallback must avoid fake success"
-    );
+    assert_intrinsic_declaration(&fs_source, "std/fs.aic", "aic_fs_read_bytes_intrinsic", 1);
 }
 
 #[test]

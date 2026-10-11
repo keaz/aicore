@@ -35,11 +35,7 @@ enum LogLevel {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_log_emit_intrinsic(level: Int, message: String) -> () effects { io } {
-    let _level = level;
-    let _message = message;
-    ()
-}
+intrinsic fn aic_log_emit_intrinsic(level: Int, message: String) -> () effects { io };
 
 /// `aic_log_set_level_intrinsic` in `std.log`.
 ///
@@ -53,10 +49,7 @@ fn aic_log_emit_intrinsic(level: Int, message: String) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_log_set_level_intrinsic(level: Int) -> () effects { io } {
-    let _level = level;
-    ()
-}
+intrinsic fn aic_log_set_level_intrinsic(level: Int) -> () effects { io };
 
 /// `aic_log_set_json_output_intrinsic` in `std.log`.
 ///
@@ -70,10 +63,7 @@ fn aic_log_set_level_intrinsic(level: Int) -> () effects { io } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_log_set_json_output_intrinsic(enabled: Bool) -> () effects { io } {
-    let _enabled = enabled;
-    ()
-}
+intrinsic fn aic_log_set_json_output_intrinsic(enabled: Bool) -> () effects { io };
 
 /// `level_code` in `std.log`.
 ///

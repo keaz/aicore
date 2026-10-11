@@ -112,10 +112,7 @@ struct HttpResponseView {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError] {
-    let out: Result[HttpMethod, HttpError] = Err(InvalidMethod());
-    out
-}
+intrinsic fn aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError];
 
 /// `aic_http_method_name_intrinsic` in `std.http`.
 ///
@@ -129,10 +126,7 @@ fn aic_http_parse_method_intrinsic(text: String) -> Result[HttpMethod, HttpError
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpError] {
-    let out: Result[String, HttpError] = Ok("");
-    out
-}
+intrinsic fn aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpError];
 
 /// `aic_http_status_reason_intrinsic` in `std.http`.
 ///
@@ -146,10 +140,7 @@ fn aic_http_method_name_intrinsic(method: HttpMethod) -> Result[String, HttpErro
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError] {
-    let out: Result[String, HttpError] = Ok("");
-    out
-}
+intrinsic fn aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError];
 
 /// `aic_http_validate_header_intrinsic` in `std.http`.
 ///
@@ -163,10 +154,7 @@ fn aic_http_status_reason_intrinsic(status: Int) -> Result[String, HttpError] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Bool, HttpError] {
-    let out: Result[Bool, HttpError] = Ok(true);
-    out
-}
+intrinsic fn aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Bool, HttpError];
 
 /// `aic_http_validate_target_intrinsic` in `std.http`.
 ///
@@ -180,10 +168,7 @@ fn aic_http_validate_header_intrinsic(name: String, value: String) -> Result[Boo
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError] {
-    let out: Result[Bool, HttpError] = Ok(true);
-    out
-}
+intrinsic fn aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError];
 
 /// `aic_http_header_intrinsic` in `std.http`.
 ///
@@ -197,10 +182,7 @@ fn aic_http_validate_target_intrinsic(target: String) -> Result[Bool, HttpError]
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, HttpError] {
-    let out: Result[HttpHeader, HttpError] = Err(InvalidHeaderName());
-    out
-}
+intrinsic fn aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, HttpError];
 
 /// `aic_http_request_intrinsic` in `std.http`.
 ///
@@ -214,10 +196,7 @@ fn aic_http_header_intrinsic(name: String, value: String) -> Result[HttpHeader, 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError] {
-    let out: Result[HttpRequest, HttpError] = Err(InvalidTarget());
-    out
-}
+intrinsic fn aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[HttpHeader], body: String) -> Result[HttpRequest, HttpError];
 
 /// `aic_http_response_intrinsic` in `std.http`.
 ///
@@ -231,10 +210,7 @@ fn aic_http_request_intrinsic(method: HttpMethod, target: String, headers: Vec[H
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_response_intrinsic(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError] {
-    let out: Result[HttpResponse, HttpError] = Err(InvalidStatus());
-    out
-}
+intrinsic fn aic_http_response_intrinsic(status: Int, headers: Vec[HttpHeader], body: String) -> Result[HttpResponse, HttpError];
 
 /// `parse_method` in `std.http`.
 ///

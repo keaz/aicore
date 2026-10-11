@@ -24,94 +24,49 @@ struct Decimal {
 }
 
 /// Runtime bridge for signed bigint parsing.
-fn aic_numeric_bigint_parse_intrinsic(text: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid bigint: empty");
-    out
-}
+intrinsic fn aic_numeric_bigint_parse_intrinsic(text: String) -> Result[String, String];
 
 /// Runtime bridge for signed bigint addition.
-fn aic_numeric_bigint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid bigint: operation failed");
-    out
-}
+intrinsic fn aic_numeric_bigint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for signed bigint subtraction.
-fn aic_numeric_bigint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid bigint: operation failed");
-    out
-}
+intrinsic fn aic_numeric_bigint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for signed bigint multiplication.
-fn aic_numeric_bigint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid bigint: operation failed");
-    out
-}
+intrinsic fn aic_numeric_bigint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for signed bigint division.
-fn aic_numeric_bigint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("bigint division by zero");
-    out
-}
+intrinsic fn aic_numeric_bigint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for unsigned biguint parsing.
-fn aic_numeric_biguint_parse_intrinsic(text: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid biguint: empty");
-    out
-}
+intrinsic fn aic_numeric_biguint_parse_intrinsic(text: String) -> Result[String, String];
 
 /// Runtime bridge for unsigned biguint addition.
-fn aic_numeric_biguint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid biguint: operation failed");
-    out
-}
+intrinsic fn aic_numeric_biguint_add_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for unsigned biguint subtraction.
-fn aic_numeric_biguint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("biguint subtraction underflow");
-    out
-}
+intrinsic fn aic_numeric_biguint_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for unsigned biguint multiplication.
-fn aic_numeric_biguint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid biguint: operation failed");
-    out
-}
+intrinsic fn aic_numeric_biguint_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for unsigned biguint division.
-fn aic_numeric_biguint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("biguint division by zero");
-    out
-}
+intrinsic fn aic_numeric_biguint_div_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for decimal parsing.
-fn aic_numeric_decimal_parse_intrinsic(text: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid decimal: empty");
-    out
-}
+intrinsic fn aic_numeric_decimal_parse_intrinsic(text: String) -> Result[String, String];
 
 /// Runtime bridge for decimal addition.
-fn aic_numeric_decimal_add_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid decimal: operation failed");
-    out
-}
+intrinsic fn aic_numeric_decimal_add_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for decimal subtraction.
-fn aic_numeric_decimal_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid decimal: operation failed");
-    out
-}
+intrinsic fn aic_numeric_decimal_sub_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for decimal multiplication.
-fn aic_numeric_decimal_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("invalid decimal: operation failed");
-    out
-}
+intrinsic fn aic_numeric_decimal_mul_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Runtime bridge for decimal division.
-fn aic_numeric_decimal_div_intrinsic(lhs: String, rhs: String) -> Result[String, String] {
-    let out: Result[String, String] = Err("decimal division by zero");
-    out
-}
+intrinsic fn aic_numeric_decimal_div_intrinsic(lhs: String, rhs: String) -> Result[String, String];
 
 /// Convert `Result[String, String]` into `Result[BigInt, String]`.
 fn map_big_int_result(raw: Result[String, String]) -> Result[BigInt, String] {

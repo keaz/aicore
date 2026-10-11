@@ -60,9 +60,7 @@ struct DateTime {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_now_ms_intrinsic() -> Int effects { time } {
-    0
-}
+intrinsic fn aic_time_now_ms_intrinsic() -> Int effects { time };
 
 /// `aic_time_monotonic_ms_intrinsic` in `std.time`.
 ///
@@ -76,9 +74,7 @@ fn aic_time_now_ms_intrinsic() -> Int effects { time } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_monotonic_ms_intrinsic() -> Int effects { time } {
-    0
-}
+intrinsic fn aic_time_monotonic_ms_intrinsic() -> Int effects { time };
 
 /// `aic_time_sleep_ms_intrinsic` in `std.time`.
 ///
@@ -92,9 +88,7 @@ fn aic_time_monotonic_ms_intrinsic() -> Int effects { time } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time } {
-    ()
-}
+intrinsic fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time };
 
 /// `aic_time_parse_rfc3339_intrinsic` in `std.time`.
 ///
@@ -108,10 +102,7 @@ fn aic_time_sleep_ms_intrinsic(ms: Int) -> () effects { time } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_parse_rfc3339_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time } {
-    let out: Result[DateTime, TimeError] = Err(InvalidFormat());
-    out
-}
+intrinsic fn aic_time_parse_rfc3339_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time };
 
 /// `aic_time_parse_iso8601_intrinsic` in `std.time`.
 ///
@@ -125,10 +116,7 @@ fn aic_time_parse_rfc3339_intrinsic(text: String) -> Result[DateTime, TimeError]
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_parse_iso8601_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time } {
-    let out: Result[DateTime, TimeError] = Err(InvalidFormat());
-    out
-}
+intrinsic fn aic_time_parse_iso8601_intrinsic(text: String) -> Result[DateTime, TimeError] effects { time };
 
 /// `aic_time_format_rfc3339_intrinsic` in `std.time`.
 ///
@@ -142,10 +130,7 @@ fn aic_time_parse_iso8601_intrinsic(text: String) -> Result[DateTime, TimeError]
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_format_rfc3339_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time } {
-    let out: Result[String, TimeError] = Ok("");
-    out
-}
+intrinsic fn aic_time_format_rfc3339_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time };
 
 /// `aic_time_format_iso8601_intrinsic` in `std.time`.
 ///
@@ -159,10 +144,7 @@ fn aic_time_format_rfc3339_intrinsic(value: DateTime) -> Result[String, TimeErro
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time } {
-    let out: Result[String, TimeError] = Ok("");
-    out
-}
+intrinsic fn aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeError] effects { time };
 
 /// `aic_time_string_replace_intrinsic` in `std.time`.
 ///
@@ -176,9 +158,7 @@ fn aic_time_format_iso8601_intrinsic(value: DateTime) -> Result[String, TimeErro
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_time_string_replace_intrinsic(s: String, from: String, to: String) -> String {
-    ""
-}
+intrinsic fn aic_time_string_replace_intrinsic(s: String, from: String, to: String) -> String;
 
 /// `str_replace` in `std.time`.
 ///

@@ -117,9 +117,7 @@ struct FsAsyncBytesSelection {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs } {
-    false
-}
+intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs };
 
 /// `aic_fs_read_text_intrinsic` in `std.fs`.
 ///
@@ -133,10 +131,7 @@ fn aic_fs_exists_intrinsic(path: String) -> Bool effects { fs } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
-    let out: Result[String, FsError] = Ok("");
-    out
-}
+intrinsic fn aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects { fs };
 
 /// `aic_fs_write_text_intrinsic` in `std.fs`.
 ///
@@ -150,10 +145,7 @@ fn aic_fs_read_text_intrinsic(path: String) -> Result[String, FsError] effects {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_append_text_intrinsic` in `std.fs`.
 ///
@@ -167,10 +159,7 @@ fn aic_fs_write_text_intrinsic(path: String, content: String) -> Result[Bool, Fs
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_append_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_append_text_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_copy_intrinsic` in `std.fs`.
 ///
@@ -184,10 +173,7 @@ fn aic_fs_append_text_intrinsic(path: String, content: String) -> Result[Bool, F
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_move_intrinsic` in `std.fs`.
 ///
@@ -201,10 +187,7 @@ fn aic_fs_copy_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsE
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_move_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_move_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_delete_intrinsic` in `std.fs`.
 ///
@@ -218,10 +201,7 @@ fn aic_fs_move_intrinsic(from_path: String, to_path: String) -> Result[Bool, FsE
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_metadata_intrinsic` in `std.fs`.
 ///
@@ -235,14 +215,7 @@ fn aic_fs_delete_intrinsic(path: String) -> Result[Bool, FsError] effects { fs }
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effects { fs } {
-    let out: Result[FsMetadata, FsError] = Ok(FsMetadata {
-        is_file: false,
-        is_dir: false,
-        size: 0,
-    });
-    out
-}
+intrinsic fn aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effects { fs };
 
 /// `aic_fs_walk_dir_intrinsic` in `std.fs`.
 ///
@@ -256,14 +229,7 @@ fn aic_fs_metadata_intrinsic(path: String) -> Result[FsMetadata, FsError] effect
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs } {
-    let out: Result[Vec[String], FsError] = Ok(Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    });
-    out
-}
+intrinsic fn aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs };
 
 /// `aic_fs_temp_file_intrinsic` in `std.fs`.
 ///
@@ -277,10 +243,7 @@ fn aic_fs_walk_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effec
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_temp_file_intrinsic(prefix: String) -> Result[String, FsError] effects { fs } {
-    let out: Result[String, FsError] = Ok("");
-    out
-}
+intrinsic fn aic_fs_temp_file_intrinsic(prefix: String) -> Result[String, FsError] effects { fs };
 
 /// `aic_fs_temp_dir_intrinsic` in `std.fs`.
 ///
@@ -294,10 +257,7 @@ fn aic_fs_temp_file_intrinsic(prefix: String) -> Result[String, FsError] effects
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects { fs } {
-    let out: Result[String, FsError] = Ok("");
-    out
-}
+intrinsic fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects { fs };
 
 /// `aic_fs_read_bytes_intrinsic` in `std.fs`.
 ///
@@ -311,10 +271,7 @@ fn aic_fs_temp_dir_intrinsic(prefix: String) -> Result[String, FsError] effects 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
-    let out: Result[String, FsError] = Err(Io());
-    out
-}
+intrinsic fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects { fs };
 
 /// `aic_fs_write_bytes_intrinsic` in `std.fs`.
 ///
@@ -328,10 +285,7 @@ fn aic_fs_read_bytes_intrinsic(path: String) -> Result[String, FsError] effects 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Err(Io());
-    out
-}
+intrinsic fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_append_bytes_intrinsic` in `std.fs`.
 ///
@@ -345,10 +299,7 @@ fn aic_fs_write_bytes_intrinsic(path: String, content: String) -> Result[Bool, F
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Err(Io());
-    out
-}
+intrinsic fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_open_read_intrinsic` in `std.fs`.
 ///
@@ -362,10 +313,7 @@ fn aic_fs_append_bytes_intrinsic(path: String, content: String) -> Result[Bool, 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_open_read_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
-    let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
-    out
-}
+intrinsic fn aic_fs_open_read_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs };
 
 /// `aic_fs_open_write_intrinsic` in `std.fs`.
 ///
@@ -379,10 +327,7 @@ fn aic_fs_open_read_intrinsic(path: String) -> Result[FileHandle, FsError] effec
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_open_write_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
-    let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
-    out
-}
+intrinsic fn aic_fs_open_write_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs };
 
 /// `aic_fs_open_append_intrinsic` in `std.fs`.
 ///
@@ -396,10 +341,7 @@ fn aic_fs_open_write_intrinsic(path: String) -> Result[FileHandle, FsError] effe
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_open_append_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs } {
-    let out: Result[FileHandle, FsError] = Ok(FileHandle { handle: 0 });
-    out
-}
+intrinsic fn aic_fs_open_append_intrinsic(path: String) -> Result[FileHandle, FsError] effects { fs };
 
 /// `aic_fs_file_read_line_intrinsic` in `std.fs`.
 ///
@@ -413,10 +355,7 @@ fn aic_fs_open_append_intrinsic(path: String) -> Result[FileHandle, FsError] eff
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], FsError] effects { fs } {
-    let out: Result[Option[String], FsError] = Ok(None());
-    out
-}
+intrinsic fn aic_fs_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], FsError] effects { fs };
 
 /// `aic_fs_file_write_str_intrinsic` in `std.fs`.
 ///
@@ -430,10 +369,7 @@ fn aic_fs_file_read_line_intrinsic(file: FileHandle) -> Result[Option[String], F
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_file_close_intrinsic` in `std.fs`.
 ///
@@ -447,10 +383,7 @@ fn aic_fs_file_write_str_intrinsic(file: FileHandle, content: String) -> Result[
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_file_close_intrinsic(file: FileHandle) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_file_close_intrinsic(file: FileHandle) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_mkdir_intrinsic` in `std.fs`.
 ///
@@ -464,10 +397,7 @@ fn aic_fs_file_close_intrinsic(file: FileHandle) -> Result[Bool, FsError] effect
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_mkdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_mkdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_mkdir_all_intrinsic` in `std.fs`.
 ///
@@ -481,10 +411,7 @@ fn aic_fs_mkdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_mkdir_all_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_mkdir_all_intrinsic(path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_rmdir_intrinsic` in `std.fs`.
 ///
@@ -498,10 +425,7 @@ fn aic_fs_mkdir_all_intrinsic(path: String) -> Result[Bool, FsError] effects { f
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_rmdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_rmdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_list_dir_intrinsic` in `std.fs`.
 ///
@@ -515,14 +439,7 @@ fn aic_fs_rmdir_intrinsic(path: String) -> Result[Bool, FsError] effects { fs } 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs } {
-    let out: Result[Vec[String], FsError] = Ok(Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    });
-    out
-}
+intrinsic fn aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effects { fs };
 
 /// `aic_fs_create_symlink_intrinsic` in `std.fs`.
 ///
@@ -536,10 +453,7 @@ fn aic_fs_list_dir_intrinsic(path: String) -> Result[Vec[String], FsError] effec
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_create_symlink_intrinsic(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_create_symlink_intrinsic(target_path: String, link_path: String) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_read_symlink_intrinsic` in `std.fs`.
 ///
@@ -553,10 +467,7 @@ fn aic_fs_create_symlink_intrinsic(target_path: String, link_path: String) -> Re
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_read_symlink_intrinsic(path: String) -> Result[String, FsError] effects { fs } {
-    let out: Result[String, FsError] = Ok("");
-    out
-}
+intrinsic fn aic_fs_read_symlink_intrinsic(path: String) -> Result[String, FsError] effects { fs };
 
 /// `aic_fs_set_readonly_intrinsic` in `std.fs`.
 ///
@@ -570,10 +481,7 @@ fn aic_fs_read_symlink_intrinsic(path: String) -> Result[String, FsError] effect
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_fs_set_readonly_intrinsic(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs } {
-    let out: Result[Bool, FsError] = Ok(true);
-    out
-}
+intrinsic fn aic_fs_set_readonly_intrinsic(path: String, readonly: Bool) -> Result[Bool, FsError] effects { fs };
 
 /// `aic_fs_async_submit_allowed_intrinsic` in `std.fs`.
 ///

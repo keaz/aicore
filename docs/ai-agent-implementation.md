@@ -338,12 +338,13 @@ Additional implementation guidance, troubleshooting, and runnable examples:
 `aic verify-intrinsics [INPUT] --json` validates intrinsic declarations against backend lowering expectations before release.
 
 - verifies runtime ABI metadata (`intrinsic_abi = runtime`)
-- verifies every intrinsic has a known backend lowering mapping
-- verifies declaration signatures against accepted backend shapes and runtime symbol mapping
+- verifies every intrinsic has a known backend lowering: a runtime binding (`INTRINSIC_BINDING_EXPECTATIONS`) or a builtin lowering by name (`BUILTIN_INTRINSIC_LOWERINGS`)
+- verifies runtime-binding declaration signatures against accepted backend shapes and runtime symbol mapping
+- for `std`, every backend-lowered function is a signature-only `intrinsic fn` (no placeholder bodies); a missing lowering fails compilation with `E5020`
 
 Deterministic JSON fields:
 
-- `schema_version`, `input`, `files_scanned`, `intrinsic_declarations`, `verified_bindings`, `issue_count`, `ok`
+- `schema_version`, `input`, `files_scanned`, `intrinsic_declarations`, `verified_bindings`, `builtin_lowerings`, `issue_count`, `ok`
 - `issues[]` with stable kinds: `parse_diagnostic`, `unsupported_abi`, `missing_lowering`, `signature_mismatch`, `missing_runtime_symbol`
 
 Examples:

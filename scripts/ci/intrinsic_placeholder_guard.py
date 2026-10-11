@@ -16,10 +16,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# Every std module: backend-lowered intrinsics are declaration-only everywhere.
 DEFAULT_POLICY_PATHS = [
-    Path("std/concurrent.aic"),
-    Path("std/net.aic"),
-    Path("std/proc.aic"),
+    Path("std"),
 ]
 # Explicit exemptions for negative fixtures / local custom scans.
 DEFAULT_EXEMPTIONS = {
@@ -27,12 +26,19 @@ DEFAULT_EXEMPTIONS = {
     Path("examples/verify/intrinsics/invalid_bindings.aic"),
 }
 
-# AGX1 intrinsic names with a real function-body opening on the header line.
+# Intrinsic names with a real function-body opening on the header line.
 # Declaration-only signatures end with ';' and therefore do not match.
 BODY_HEADER_LINE = re.compile(
-    r"^\s*(?:intrinsic\s+)?fn\s+"
-    r"(?P<name>aic_(?:conc|net|proc)_[A-Za-z0-9_]*_intrinsic)\b[^\n]*\{\s*$"
+    r"^\s*(?:pub\s+)?(?:intrinsic\s+)?fn\s+"
+    r"(?P<name>aic_[A-Za-z0-9_]*_intrinsic)\b[^\n]*\{\s*$"
 )
+
+# Std helpers that keep an `_intrinsic` name for API compatibility but are
+# implemented in AICore on top of backend intrinsics (no backend lowering).
+AICORE_IMPLEMENTED_HELPERS = {
+    "aic_bytes_len_intrinsic",
+    "aic_bytes_concat_intrinsic",
+}
 
 
 @dataclass(frozen=True)
@@ -91,6 +97,8 @@ def scan_file(path: Path, exemptions: set[str]) -> list[Violation]:
         if match is None:
             continue
         intrinsic = match.group("name")
+        if intrinsic in AICORE_IMPLEMENTED_HELPERS:
+            continue
         column = match.start("name") + 1
         violations.append(
             Violation(

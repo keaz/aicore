@@ -52,11 +52,7 @@ enum SignalError {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_signal_register_intrinsic(signal_code: Int) -> Result[Bool, SignalError] effects { proc } {
-    let _signal_code = signal_code;
-    let out: Result[Bool, SignalError] = Err(Internal());
-    out
-}
+intrinsic fn aic_signal_register_intrinsic(signal_code: Int) -> Result[Bool, SignalError] effects { proc };
 
 /// `aic_signal_wait_intrinsic` in `std.signal`.
 ///
@@ -70,10 +66,7 @@ fn aic_signal_register_intrinsic(signal_code: Int) -> Result[Bool, SignalError] 
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_signal_wait_intrinsic() -> Result[Int, SignalError] effects { proc } {
-    let out: Result[Int, SignalError] = Err(Internal());
-    out
-}
+intrinsic fn aic_signal_wait_intrinsic() -> Result[Int, SignalError] effects { proc };
 
 /// `signal_code` in `std.signal`.
 ///

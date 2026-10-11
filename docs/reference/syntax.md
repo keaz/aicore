@@ -90,7 +90,7 @@ highest
 - `null` token is lexed but rejected semantically; absence must be modeled with `Option`.
 - `extern` declarations are signatures only and must end with `;`; effects/contracts are not allowed on extern signatures.
 - `intrinsic` declarations are signature-only runtime bindings, must end with `;`, and preserve effect declarations for callers.
-- Intrinsic declarations with function bodies, contracts, or generics are rejected with stable parser diagnostics (`E1093`).
+- Intrinsic declarations with function bodies or contracts are rejected with stable parser diagnostics (`E1093`). Intrinsics may declare generic parameters when the code generator lowers them by name (see `docs/intrinsics-runtime-bindings.md`).
 - `impl` declarations support:
   - inherent blocks for named type heads (`impl User { ... }`, `impl Status { ... }`)
   - trait impl declarations (`impl Score[Meter];`) and trait impl blocks (`impl Score[Meter] { ... }`)

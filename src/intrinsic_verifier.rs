@@ -6,7 +6,8 @@ use serde::Serialize;
 
 use crate::ast::{self, TypeKind};
 use crate::codegen::{
-    intrinsic_binding_expectation, IntrinsicBindingExpectation, IntrinsicSignatureShape,
+    builtin_intrinsic_lowering, intrinsic_binding_expectation, IntrinsicBindingExpectation,
+    IntrinsicSignatureShape,
 };
 use crate::diagnostics::Severity;
 use crate::parser;
@@ -25,7 +26,10 @@ pub struct VerifyIntrinsicsReport {
     pub input: String,
     pub files_scanned: usize,
     pub intrinsic_declarations: usize,
+    /// Declarations bound to a runtime symbol with a matching signature.
     pub verified_bindings: usize,
+    /// Declarations lowered by name with dedicated code generation.
+    pub builtin_lowerings: usize,
     pub issue_count: usize,
     pub ok: bool,
     pub issues: Vec<VerifyIntrinsicsIssue>,
@@ -66,7 +70,27 @@ impl IntrinsicDeclaration {
     }
 }
 
+/// Where the verifier looks up backend lowerings. Production code uses the
+/// code generator's tables; tests substitute tables with a mapping removed.
+pub struct IntrinsicLoweringTables<'a> {
+    pub runtime_binding: &'a dyn Fn(&str) -> Option<&'static IntrinsicBindingExpectation>,
+    pub builtin_lowering: &'a dyn Fn(&str) -> bool,
+}
+
 pub fn verify_intrinsics(input: &Path) -> anyhow::Result<VerifyIntrinsicsReport> {
+    verify_intrinsics_with_tables(
+        input,
+        &IntrinsicLoweringTables {
+            runtime_binding: &intrinsic_binding_expectation,
+            builtin_lowering: &builtin_intrinsic_lowering,
+        },
+    )
+}
+
+pub fn verify_intrinsics_with_tables(
+    input: &Path,
+    tables: &IntrinsicLoweringTables<'_>,
+) -> anyhow::Result<VerifyIntrinsicsReport> {
     let mut files = Vec::new();
     collect_aic_files(input, &mut files)?;
     if files.is_empty() {
@@ -112,6 +136,7 @@ pub fn verify_intrinsics(input: &Path) -> anyhow::Result<VerifyIntrinsicsReport>
     }
 
     let mut verified_bindings = 0usize;
+    let mut builtin_lowerings = 0usize;
     for decl in declarations.iter() {
         let abi = decl.abi.clone().unwrap_or_default();
         if abi != "runtime" {
@@ -138,7 +163,11 @@ pub fn verify_intrinsics(input: &Path) -> anyhow::Result<VerifyIntrinsicsReport>
             continue;
         }
 
-        let Some(binding) = intrinsic_binding_expectation(&decl.name) else {
+        let Some(binding) = (tables.runtime_binding)(&decl.name) else {
+            if (tables.builtin_lowering)(&decl.name) {
+                builtin_lowerings += 1;
+                continue;
+            }
             issues.push(VerifyIntrinsicsIssue {
                 code: ISSUE_MISSING_LOWERING,
                 kind: "missing_lowering",
@@ -211,6 +240,7 @@ pub fn verify_intrinsics(input: &Path) -> anyhow::Result<VerifyIntrinsicsReport>
         files_scanned: files.len(),
         intrinsic_declarations: declarations.len(),
         verified_bindings,
+        builtin_lowerings,
         issue_count,
         ok: issue_count == 0,
         issues,
@@ -326,4 +356,140 @@ fn collect_aic_files(path: &Path, out: &mut Vec<PathBuf>) -> anyhow::Result<()> 
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use tempfile::tempdir;
+
+    use super::{verify_intrinsics, verify_intrinsics_with_tables, IntrinsicLoweringTables};
+    use crate::codegen::{
+        builtin_intrinsic_lowering, builtin_intrinsic_lowerings, intrinsic_binding_expectation,
+        intrinsic_binding_expectations,
+    };
+
+    fn std_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("std")
+    }
+
+    #[test]
+    fn std_intrinsics_are_fully_covered() {
+        let report = verify_intrinsics(&std_root()).expect("verify std");
+        assert!(report.ok, "issues: {:#?}", report.issues);
+        assert_eq!(
+            report.verified_bindings + report.builtin_lowerings,
+            report.intrinsic_declarations,
+            "every std intrinsic declaration must have a backend lowering"
+        );
+        assert_eq!(
+            report.verified_bindings,
+            intrinsic_binding_expectations().len()
+        );
+        assert_eq!(
+            report.builtin_lowerings,
+            builtin_intrinsic_lowerings().len()
+        );
+    }
+
+    #[test]
+    fn removing_a_builtin_lowering_fails_verification() {
+        let removed = "aic_vec_push_intrinsic";
+        assert!(builtin_intrinsic_lowering(removed));
+        let builtin = |name: &str| name != removed && builtin_intrinsic_lowering(name);
+        let report = verify_intrinsics_with_tables(
+            &std_root(),
+            &IntrinsicLoweringTables {
+                runtime_binding: &intrinsic_binding_expectation,
+                builtin_lowering: &builtin,
+            },
+        )
+        .expect("verify std");
+        assert!(!report.ok);
+        assert_eq!(report.issue_count, 1, "{:#?}", report.issues);
+        let issue = &report.issues[0];
+        assert_eq!(issue.code, "VI1002");
+        assert_eq!(issue.intrinsic.as_deref(), Some(removed));
+        assert!(issue.file.ends_with("vec.aic"), "{issue:#?}");
+    }
+
+    #[test]
+    fn removing_a_runtime_binding_fails_verification() {
+        let removed = intrinsic_binding_expectations()[0].intrinsic;
+        let runtime = |name: &str| {
+            if name == removed {
+                None
+            } else {
+                intrinsic_binding_expectation(name)
+            }
+        };
+        let report = verify_intrinsics_with_tables(
+            &std_root(),
+            &IntrinsicLoweringTables {
+                runtime_binding: &runtime,
+                builtin_lowering: &builtin_intrinsic_lowering,
+            },
+        )
+        .expect("verify std");
+        assert_eq!(report.issue_count, 1, "{:#?}", report.issues);
+        assert_eq!(report.issues[0].code, "VI1002");
+        assert_eq!(report.issues[0].intrinsic.as_deref(), Some(removed));
+    }
+
+    #[test]
+    fn unknown_intrinsic_declaration_is_reported() {
+        let dir = tempdir().expect("tempdir");
+        let file = dir.path().join("bad.aic");
+        fs::write(
+            &file,
+            "intrinsic fn aic_made_up_intrinsic(x: Int) -> Int;\n",
+        )
+        .expect("write source");
+        let report = verify_intrinsics(&file).expect("verify");
+        assert!(!report.ok);
+        assert_eq!(report.issues[0].code, "VI1002");
+        assert_eq!(report.builtin_lowerings, 0);
+    }
+
+    #[test]
+    fn backend_lowered_std_functions_have_no_bodies() {
+        let mut files = Vec::new();
+        super::collect_aic_files(&std_root(), &mut files).expect("collect std");
+        let mut offenders = Vec::new();
+        for file in files {
+            let source = fs::read_to_string(&file).expect("read std file");
+            let (program, _) = crate::parser::parse(&source, &file.display().to_string());
+            for item in program.expect("std parses").items {
+                let crate::ast::Item::Function(func) = item else {
+                    continue;
+                };
+                let lowered = builtin_intrinsic_lowering(&func.name)
+                    || intrinsic_binding_expectation(&func.name).is_some();
+                if lowered && !func.is_intrinsic {
+                    offenders.push(format!("{}: {}", file.display(), func.name));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "backend-lowered functions must be `intrinsic fn` declarations, not bodies: {offenders:#?}"
+        );
+    }
+
+    #[test]
+    fn builtin_lowering_table_is_sorted_and_disjoint_from_runtime_bindings() {
+        let names = builtin_intrinsic_lowerings();
+        assert!(
+            names.windows(2).all(|pair| pair[0] < pair[1]),
+            "BUILTIN_INTRINSIC_LOWERINGS must stay sorted and unique for binary search"
+        );
+        for name in names {
+            assert!(
+                intrinsic_binding_expectation(name).is_none(),
+                "{name} is in both lowering tables"
+            );
+        }
+    }
 }

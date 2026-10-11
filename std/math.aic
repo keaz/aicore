@@ -21,9 +21,7 @@ const E: Float = 2.71828182845905;
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_abs_intrinsic(x: Int) -> Int {
-    0
-}
+intrinsic fn aic_math_abs_intrinsic(x: Int) -> Int;
 
 /// `aic_math_abs_float_intrinsic` in `std.math`.
 ///
@@ -37,9 +35,7 @@ fn aic_math_abs_intrinsic(x: Int) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_abs_float_intrinsic(x: Float) -> Float {
-    0.0
-}
+intrinsic fn aic_math_abs_float_intrinsic(x: Float) -> Float;
 
 /// `aic_math_min_intrinsic` in `std.math`.
 ///
@@ -53,9 +49,7 @@ fn aic_math_abs_float_intrinsic(x: Float) -> Float {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_min_intrinsic(a: Int, b: Int) -> Int {
-    0
-}
+intrinsic fn aic_math_min_intrinsic(a: Int, b: Int) -> Int;
 
 /// `aic_math_max_intrinsic` in `std.math`.
 ///
@@ -69,9 +63,7 @@ fn aic_math_min_intrinsic(a: Int, b: Int) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_max_intrinsic(a: Int, b: Int) -> Int {
-    0
-}
+intrinsic fn aic_math_max_intrinsic(a: Int, b: Int) -> Int;
 
 /// `aic_math_pow_intrinsic` in `std.math`.
 ///
@@ -85,9 +77,7 @@ fn aic_math_max_intrinsic(a: Int, b: Int) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_pow_intrinsic(base: Float, exp: Float) -> Float {
-    0.0
-}
+intrinsic fn aic_math_pow_intrinsic(base: Float, exp: Float) -> Float;
 
 /// `aic_math_sqrt_intrinsic` in `std.math`.
 ///
@@ -101,9 +91,7 @@ fn aic_math_pow_intrinsic(base: Float, exp: Float) -> Float {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_sqrt_intrinsic(x: Float) -> Float {
-    0.0
-}
+intrinsic fn aic_math_sqrt_intrinsic(x: Float) -> Float;
 
 /// `aic_math_floor_intrinsic` in `std.math`.
 ///
@@ -117,9 +105,7 @@ fn aic_math_sqrt_intrinsic(x: Float) -> Float {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_floor_intrinsic(x: Float) -> Int {
-    0
-}
+intrinsic fn aic_math_floor_intrinsic(x: Float) -> Int;
 
 /// `aic_math_ceil_intrinsic` in `std.math`.
 ///
@@ -133,9 +119,7 @@ fn aic_math_floor_intrinsic(x: Float) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_ceil_intrinsic(x: Float) -> Int {
-    0
-}
+intrinsic fn aic_math_ceil_intrinsic(x: Float) -> Int;
 
 /// `aic_math_round_intrinsic` in `std.math`.
 ///
@@ -149,9 +133,7 @@ fn aic_math_ceil_intrinsic(x: Float) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_round_intrinsic(x: Float) -> Int {
-    0
-}
+intrinsic fn aic_math_round_intrinsic(x: Float) -> Int;
 
 /// `aic_math_log_intrinsic` in `std.math`.
 ///
@@ -165,9 +147,7 @@ fn aic_math_round_intrinsic(x: Float) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_log_intrinsic(x: Float) -> Float {
-    0.0
-}
+intrinsic fn aic_math_log_intrinsic(x: Float) -> Float;
 
 /// `aic_math_sin_intrinsic` in `std.math`.
 ///
@@ -181,9 +161,7 @@ fn aic_math_log_intrinsic(x: Float) -> Float {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_sin_intrinsic(x: Float) -> Float {
-    0.0
-}
+intrinsic fn aic_math_sin_intrinsic(x: Float) -> Float;
 
 /// `aic_math_cos_intrinsic` in `std.math`.
 ///
@@ -197,9 +175,7 @@ fn aic_math_sin_intrinsic(x: Float) -> Float {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_math_cos_intrinsic(x: Float) -> Float {
-    0.0
-}
+intrinsic fn aic_math_cos_intrinsic(x: Float) -> Float;
 
 /// `abs` in `std.math`.
 ///

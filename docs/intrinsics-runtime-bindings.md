@@ -18,18 +18,20 @@ Key rules:
 
 ## Runtime Linkage Expectations
 
-Every intrinsic-backed API must satisfy all of the following:
+Every `intrinsic fn` in `std` has exactly one backend lowering, of one of two kinds:
 
-- Source declaration exists (`intrinsic fn ...;`).
-- Codegen lowering exists (`compiler/aic/libs/backend_llvm/src/main.aic` intrinsic binding table).
-- Runtime symbol mapping exists and is non-empty.
-- Declared signature matches expected lowering signature.
+- **Runtime binding**: the call becomes one call to a C runtime symbol. The declaration must match an entry in `INTRINSIC_BINDING_EXPECTATIONS` (`src/codegen/mod.rs`): the runtime symbol mapping exists and is non-empty, and the declared signature matches the expected lowering signature.
+- **Builtin lowering**: the code generator lowers the call by name with dedicated code (element sizes, struct layouts, handles), for example `aic_vec_push_intrinsic[T]`. The name must be listed in `BUILTIN_INTRINSIC_LOWERINGS` (`src/codegen/mod.rs`); a codegen unit test checks that the generator dispatches every listed name. Builtin intrinsics may be generic.
+
+No std function that the backend lowers has an AICore body: a declaration with a missing lowering fails at compile time (`E5020`) instead of running a placeholder body, and `aic verify-intrinsics` reports it as `VI1002`.
 
 Validate with:
 
 ```bash
 aic verify-intrinsics std --json
 ```
+
+The report counts `verified_bindings` (runtime bindings) and `builtin_lowerings`; for `std` their sum equals `intrinsic_declarations` and `issue_count` is 0. The command exits non-zero when any issue is found, and `make verify-intrinsics` (part of `make ci`) runs it on `std`.
 
 The verification set covers runtime-bound IO-adjacent modules such as `std.io`, `std.fs`, `std.env`, `std.proc`, `std.net`, `std.tls`, `std.http_server`, and `std.router`. Higher-level composition modules like `std.config` remain wrapper logic over those bindings.
 

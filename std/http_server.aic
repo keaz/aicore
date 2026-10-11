@@ -216,15 +216,7 @@ intrinsic fn aic_http_server_close_intrinsic(handle: Int) -> Result[Bool, Server
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_text_response_intrinsic(status: Int, body: String) -> Response {
-    let headers0: Map[String, String] = aic_map_new_intrinsic();
-    let headers = aic_map_insert_intrinsic(headers0, "content-type", "text/plain; charset=utf-8");
-    Response {
-        status: status,
-        headers: headers,
-        body: body,
-    }
-}
+intrinsic fn aic_http_server_text_response_intrinsic(status: Int, body: String) -> Response;
 
 /// `aic_http_server_json_response_intrinsic` in `std.http_server`.
 ///
@@ -238,15 +230,7 @@ fn aic_http_server_text_response_intrinsic(status: Int, body: String) -> Respons
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_json_response_intrinsic(status: Int, body: String) -> Response {
-    let headers0: Map[String, String] = aic_map_new_intrinsic();
-    let headers = aic_map_insert_intrinsic(headers0, "content-type", "application/json");
-    Response {
-        status: status,
-        headers: headers,
-        body: body,
-    }
-}
+intrinsic fn aic_http_server_json_response_intrinsic(status: Int, body: String) -> Response;
 
 /// `aic_http_server_header_intrinsic` in `std.http_server`.
 ///
@@ -260,9 +244,7 @@ fn aic_http_server_json_response_intrinsic(status: Int, body: String) -> Respons
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_http_server_header_intrinsic(resp: Response, name: String) -> Option[String] {
-    aic_map_get_intrinsic(resp.headers, name)
-}
+intrinsic fn aic_http_server_header_intrinsic(resp: Response, name: String) -> Option[String];
 
 /// `listen` in `std.http_server`.
 ///

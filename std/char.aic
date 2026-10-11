@@ -21,9 +21,7 @@ import std.vec;
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_is_digit_intrinsic(c: Char) -> Bool {
-    false
-}
+intrinsic fn aic_char_is_digit_intrinsic(c: Char) -> Bool;
 
 /// `aic_char_is_alpha_intrinsic` in `std.char`.
 ///
@@ -37,9 +35,7 @@ fn aic_char_is_digit_intrinsic(c: Char) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_is_alpha_intrinsic(c: Char) -> Bool {
-    false
-}
+intrinsic fn aic_char_is_alpha_intrinsic(c: Char) -> Bool;
 
 /// `aic_char_is_whitespace_intrinsic` in `std.char`.
 ///
@@ -53,9 +49,7 @@ fn aic_char_is_alpha_intrinsic(c: Char) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_is_whitespace_intrinsic(c: Char) -> Bool {
-    false
-}
+intrinsic fn aic_char_is_whitespace_intrinsic(c: Char) -> Bool;
 
 /// `aic_char_to_int_intrinsic` in `std.char`.
 ///
@@ -69,9 +63,7 @@ fn aic_char_is_whitespace_intrinsic(c: Char) -> Bool {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_to_int_intrinsic(c: Char) -> Int {
-    0
-}
+intrinsic fn aic_char_to_int_intrinsic(c: Char) -> Int;
 
 /// `aic_char_int_to_char_intrinsic` in `std.char`.
 ///
@@ -85,10 +77,7 @@ fn aic_char_to_int_intrinsic(c: Char) -> Int {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_int_to_char_intrinsic(n: Int) -> Option[Char] {
-    let out: Option[Char] = None();
-    out
-}
+intrinsic fn aic_char_int_to_char_intrinsic(n: Int) -> Option[Char];
 
 /// `aic_char_chars_intrinsic` in `std.char`.
 ///
@@ -102,14 +91,7 @@ fn aic_char_int_to_char_intrinsic(n: Int) -> Option[Char] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_chars_intrinsic(s: String) -> Vec[Char] {
-    let out: Vec[Char] = Vec {
-        ptr: 0,
-        len: 0,
-        cap: 0,
-    };
-    out
-}
+intrinsic fn aic_char_chars_intrinsic(s: String) -> Vec[Char];
 
 /// `aic_char_from_chars_intrinsic` in `std.char`.
 ///
@@ -123,9 +105,7 @@ fn aic_char_chars_intrinsic(s: String) -> Vec[Char] {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_char_from_chars_intrinsic(cs: Vec[Char]) -> String {
-    ""
-}
+intrinsic fn aic_char_from_chars_intrinsic(cs: Vec[Char]) -> String;
 
 /// `is_digit` in `std.char`.
 ///

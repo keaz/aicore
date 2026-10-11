@@ -18,9 +18,7 @@ module std.rand;
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand } {
-    ()
-}
+intrinsic fn aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand };
 
 /// `aic_rand_int_intrinsic` in `std.rand`.
 ///
@@ -34,9 +32,7 @@ fn aic_rand_seed_intrinsic(seed_value: Int) -> () effects { rand } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_rand_int_intrinsic() -> Int effects { rand } {
-    0
-}
+intrinsic fn aic_rand_int_intrinsic() -> Int effects { rand };
 
 /// `aic_rand_range_intrinsic` in `std.rand`.
 ///
@@ -50,9 +46,7 @@ fn aic_rand_int_intrinsic() -> Int effects { rand } {
 ///
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
-fn aic_rand_range_intrinsic(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand } {
-    min_inclusive
-}
+intrinsic fn aic_rand_range_intrinsic(min_inclusive: Int, max_exclusive: Int) -> Int effects { rand };
 
 /// Set deterministic PRNG seed for reproducible sequences.
 fn seed(seed_value: Int) -> () effects { rand } {

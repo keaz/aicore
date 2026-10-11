@@ -2863,3 +2863,42 @@ fn main() -> Int { 0 }
     ));
     assert!(llvm.contains("division_by_zero{op:div,type:UInt32}"));
 }
+
+#[test]
+fn every_builtin_intrinsic_lowering_is_dispatched_by_the_generator() {
+    let sources = [
+        include_str!("mod.rs"),
+        include_str!("generator_core.rs"),
+        include_str!("generator_collections.rs"),
+        include_str!("generator_concurrency.rs"),
+        include_str!("generator_control_flow.rs"),
+        include_str!("generator_crypto_web.rs"),
+        include_str!("generator_fs_env.rs"),
+        include_str!("generator_io.rs"),
+        include_str!("generator_json_regex.rs"),
+        include_str!("generator_net_tls_buffer.rs"),
+        include_str!("generator_path_proc.rs"),
+        include_str!("generator_string_math.rs"),
+    ];
+    let table_start = sources[0]
+        .find("const BUILTIN_INTRINSIC_LOWERINGS")
+        .expect("builtin table");
+    let table_end = table_start + sources[0][table_start..].find("];").expect("table end");
+    let outside_table: String = sources
+        .iter()
+        .enumerate()
+        .map(|(idx, source)| {
+            if idx == 0 {
+                format!("{}{}", &source[..table_start], &source[table_end..])
+            } else {
+                source.to_string()
+            }
+        })
+        .collect();
+    for name in super::builtin_intrinsic_lowerings() {
+        assert!(
+            outside_table.contains(&format!("\"{name}\"")),
+            "{name} is listed as a builtin lowering but no generator code dispatches it"
+        );
+    }
+}
