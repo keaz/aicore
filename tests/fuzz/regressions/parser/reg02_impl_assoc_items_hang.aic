@@ -1,0 +1,9 @@
+struct Sq { s: Int }
+
+impl Sq {
+    type Output = Int;
+    const SIDES: Int = 4;
+    fn area(self: Sq) -> Int { self.s }
+}
+
+fn main() -> Int { 0 }

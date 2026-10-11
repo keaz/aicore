@@ -164,6 +164,7 @@ check_pass=(
   "examples/core/vec_capacity.aic"
   "examples/core/core_language_tour.aic"
   "examples/core/traits_and_dispatch_tour.aic"
+  "examples/core/trait_members_workaround.aic"
   "examples/core/effects_capabilities_patterns_tour.aic"
   "examples/core/opt_levels_demo.aic"
   "examples/core/tail_call_optimization.aic"
@@ -211,6 +212,7 @@ check_fail=(
   "examples/verify/net_proc_protocol_invalid.aic"
   "examples/verify/qv_contract_proof_fail.aic"
   "examples/core/intrinsic_declaration_invalid_body.aic"
+  "examples/core/trait_unsupported_members_invalid.aic"
 )
 run_pass=(
   "examples/option_match.aic"
@@ -332,6 +334,7 @@ run_pass=(
   "examples/core/vec_capacity.aic"
   "examples/core/core_language_tour.aic"
   "examples/core/traits_and_dispatch_tour.aic"
+  "examples/core/trait_members_workaround.aic"
   "examples/core/effects_capabilities_patterns_tour.aic"
   "examples/core/opt_levels_demo.aic"
   "examples/core/tail_call_optimization.aic"
@@ -838,6 +841,7 @@ case "$MODE" in
     expect_run_value "examples/core/vec_capacity.aic" "42"
     expect_run_value "examples/core/core_language_tour.aic" "42"
     expect_run_value "examples/core/traits_and_dispatch_tour.aic" "42"
+    expect_run_value "examples/core/trait_members_workaround.aic" "13"
     expect_run_value "examples/core/effects_capabilities_patterns_tour.aic" "42"
     expect_run_value "examples/core/opt_levels_demo.aic" "42"
     expect_run_value "examples/core/tail_call_optimization.aic" "42"

@@ -95,6 +95,11 @@ highest
   - inherent blocks for named type heads (`impl User { ... }`, `impl Status { ... }`)
   - trait impl declarations (`impl Score[Meter];`) and trait impl blocks (`impl Score[Meter] { ... }`)
 - Inherent `impl` blocks are valid for both structs and enums.
+- Trait blocks contain method signatures only. These trait and impl members are not supported yet and are rejected with stable parser diagnostics; the parser skips the member and keeps parsing the rest of the file:
+  - associated types (`type Output;`, `type Output = Int;`) in trait or impl blocks: `E1084`
+  - associated constants (`const MAX: Int;`) in trait or impl blocks: `E1085`
+  - default method bodies in trait blocks (`fn area(self: T) -> Int { 0 }`): `E1098`. The signature is kept; move the body into each `impl Trait[Type] { ... }` block.
+- Parser error recovery always terminates. Parsing work is bounded by a token-proportional step budget; if the parser ever stops making progress it reports `E1099` (a compiler bug) instead of hanging.
 - Tuple types and tuple literals use parentheses with commas; a single parenthesized expression remains grouping.
 - Tuple field access uses numeric indices after `.` (`t.0`, `t.1`, ...).
 - `|` is overloaded with context:

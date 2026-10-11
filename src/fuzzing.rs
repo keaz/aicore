@@ -181,16 +181,34 @@ fn run_target_catch(target: FuzzTarget, source: &str) -> Option<String> {
     }
 }
 
+/// Parses `source` and treats a parser that runs out of its token-proportional
+/// step budget as a crash, so non-terminating recovery paths surface in fuzz triage.
+fn parse_terminating(
+    source: &str,
+    file: &str,
+) -> (
+    Option<crate::ast::Program>,
+    Vec<crate::diagnostics::Diagnostic>,
+) {
+    let (program, diagnostics, stats) = parser::parse_with_stats(source, file);
+    assert!(
+        !stats.budget_exhausted,
+        "parser step budget exhausted ({} steps for {} tokens)",
+        stats.steps, stats.tokens
+    );
+    (program, diagnostics)
+}
+
 fn run_target(target: FuzzTarget, source: &str) {
     match target {
         FuzzTarget::Lexer => {
             let _ = lexer::lex(source, "fuzz_lexer.aic");
         }
         FuzzTarget::Parser => {
-            let _ = parser::parse(source, "fuzz_parser.aic");
+            let _ = parse_terminating(source, "fuzz_parser.aic");
         }
         FuzzTarget::Typecheck => {
-            let (program, _parse_diags) = parser::parse(source, "fuzz_typecheck.aic");
+            let (program, _parse_diags) = parse_terminating(source, "fuzz_typecheck.aic");
             if let Some(program) = program {
                 let ir = ir_builder::build(&program);
                 let (resolution, _resolve_diags) = resolver::resolve(&ir, "fuzz_typecheck.aic");
@@ -198,12 +216,12 @@ fn run_target(target: FuzzTarget, source: &str) {
             }
         }
         FuzzTarget::Formatter => {
-            let (program, _parse_diags) = parser::parse(source, "fuzz_formatter.aic");
+            let (program, _parse_diags) = parse_terminating(source, "fuzz_formatter.aic");
             if let Some(program) = program {
                 let ir = ir_builder::build(&program);
                 let formatted = format_program(&ir);
                 let (reparsed, _reparse_diags) =
-                    parser::parse(&formatted, "fuzz_formatter_roundtrip.aic");
+                    parse_terminating(&formatted, "fuzz_formatter_roundtrip.aic");
                 if let Some(reparsed) = reparsed {
                     let reparsed_ir = ir_builder::build(&reparsed);
                     let reformatted = format_program(&reparsed_ir);
@@ -328,8 +346,22 @@ fn mutate_from_corpus(corpus: &[String], rng: &mut Lcg, max_len: usize) -> Strin
     let operations = 1 + rng.next_usize(4);
 
     for _ in 0..operations {
-        let op = rng.next_usize(4);
+        let op = rng.next_usize(5);
         match op {
+            4 => {
+                // Splice a whole token so mutations reach keyword-driven parser
+                // recovery paths that single random bytes rarely produce.
+                if bytes.len() < max_len {
+                    let snippet = TOKEN_SNIPPETS[rng.next_usize(TOKEN_SNIPPETS.len())].as_bytes();
+                    let insert_at = rng.next_usize(bytes.len() + 1);
+                    for (offset, byte) in snippet.iter().enumerate() {
+                        if bytes.len() >= max_len {
+                            break;
+                        }
+                        bytes.insert(insert_at + offset, *byte);
+                    }
+                }
+            }
             0 => {
                 if !bytes.is_empty() {
                     let idx = rng.next_usize(bytes.len());
@@ -375,6 +407,47 @@ fn mutate_from_corpus(corpus: &[String], rng: &mut Lcg, max_len: usize) -> Strin
     }
     String::from_utf8_lossy(&bytes).to_string()
 }
+
+const TOKEN_SNIPPETS: &[&str] = &[
+    " type ",
+    " const ",
+    " fn ",
+    " async ",
+    " unsafe ",
+    " pub ",
+    " priv ",
+    " trait ",
+    " impl ",
+    " struct ",
+    " enum ",
+    " extern ",
+    " intrinsic ",
+    " match ",
+    " if ",
+    " else ",
+    " let ",
+    " return ",
+    " for ",
+    " while ",
+    " loop ",
+    " where ",
+    " requires ",
+    " ensures ",
+    " effects ",
+    "#[",
+    "{",
+    "}",
+    "(",
+    ")",
+    "[",
+    "]",
+    ";",
+    ",",
+    "->",
+    "=>",
+    "=",
+    ":",
+];
 
 fn random_byte(rng: &mut Lcg) -> u8 {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_{}[]()<>+-*/%:;,.\" \\n\\t";

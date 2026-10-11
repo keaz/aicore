@@ -1,0 +1,11 @@
+trait Count[T] {
+    fn count(self: T) -> Int;
+}
+
+struct Box { v: Int }
+
+impl Count[Box] {
+    fn count(self: Box) -> Int { self.v }
+}
+
+fn main() -> Int { 0 }

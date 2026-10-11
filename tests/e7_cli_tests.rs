@@ -5484,6 +5484,38 @@ fn diag_apply_fixes_supports_warn_unused_edits() {
 }
 
 #[test]
+fn check_reports_unsupported_trait_members_without_hanging() {
+    let started = std::time::Instant::now();
+    let output = run_aic(&[
+        "check",
+        "examples/core/trait_unsupported_members_invalid.aic",
+        "--json",
+    ]);
+    let elapsed = started.elapsed();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // The original repro made the parser loop forever; recovery must finish
+    // promptly. The bound is generous to tolerate slow CI process startup.
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "aic check took {elapsed:?}"
+    );
+    let diags: Value = serde_json::from_slice(&output.stdout).expect("diagnostics json");
+    let codes: Vec<&str> = diags
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .filter_map(|diag| diag["code"].as_str())
+        .collect();
+    assert_eq!(codes, vec!["E1084", "E1085", "E1098"], "diags={diags:#}");
+}
+
+#[test]
 fn test_harness_runs_categories_and_reports_json() {
     let all = run_aic(&["test", "examples/e7/harness", "--json"]);
     assert_eq!(all.status.code(), Some(0));

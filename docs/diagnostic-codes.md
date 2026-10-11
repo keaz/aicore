@@ -33,11 +33,15 @@ Recent core-language additions:
 - `E1053-E1059`: trait/impl declaration syntax errors.
 - `E1060-E1062`: assignment statement parsing errors.
 - `E1063-E1068`: `extern`/`unsafe` parsing and declaration form errors.
+- `E1084`: associated type (`type X;`) in a trait or impl block is not supported yet.
+- `E1085`: associated constant (`const X: T;`) in a trait or impl block is not supported yet.
 - `E1093`: invalid `intrinsic fn` declaration form (signature-only rules).
 - `E1094`: malformed source attribute delimiter or missing attribute name.
 - `E1095`: malformed source attribute argument list or argument value.
 - `E1096`: framework source attribute target, duplicate, or route/filter/validation shape error.
 - `E1097`: framework source attribute argument or generated validation rule error.
+- `E1098`: default method body in a trait block is not supported yet; the signature is kept.
+- `E1099`: parser stopped making progress and hit its token-proportional step budget. This is a compiler bug; parsing ends with this diagnostic instead of hanging.
 - `E1069-E1074`: `Fn(...) -> ...` type and closure literal parsing errors.
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.

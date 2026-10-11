@@ -1,0 +1,34 @@
+module examples.core.trait_unsupported_members_invalid;
+
+// Trait blocks hold method signatures only. Each member below is rejected
+// with a stable parser diagnostic and parsing continues with the next member:
+// - `type Output;`            -> E1084 (associated type)
+// - `const SIDES: Int;`       -> E1085 (associated constant)
+// - default method body `{}`  -> E1098 (signature kept, body rejected)
+// See examples/core/trait_members_workaround.aic for the supported form.
+trait Shape[T] {
+    type Output;
+    const SIDES: Int;
+    fn area(self: T) -> Int {
+        0
+    }
+    fn perimeter(self: T) -> Int;
+}
+
+struct Square {
+    side: Int,
+}
+
+impl Shape[Square] {
+    fn area(self: Square) -> Int {
+        self.side * self.side
+    }
+
+    fn perimeter(self: Square) -> Int {
+        4 * self.side
+    }
+}
+
+fn main() -> Int {
+    0
+}

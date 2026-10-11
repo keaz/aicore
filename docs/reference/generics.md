@@ -41,6 +41,7 @@ impl_decl        = "impl" type (";" | "{" impl_method* "}") ;
 - Resolver enforces impl coherence for identical `(trait, type-argument tuple)` combinations.
 - Inherent impl targets are named types (`struct` or `enum`) and can expose generic behavior through method-level generics.
 - Trait methods participate in the same static resolution path as trait-bounded generic calls.
+- Traits do not support associated types (`E1084`), associated constants (`E1085`) or default method bodies (`E1098`) yet. Model an associated type as an extra trait generic parameter (`trait Shape[T, Output]`) and implement every method body in the `impl` block.
 - Built-in constructor behavior participates in generic inference:
   - `Some(v)` => `Option[T]`
   - `None` => `Option[<?>]` until constrained

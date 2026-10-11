@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use crate::ast::*;
 use crate::diagnostics::Diagnostic;
 use crate::ir;
@@ -8,23 +10,76 @@ const TUPLE_INTERNAL_NAME: &str = "Tuple";
 const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
 
 pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
+    let (program, diagnostics, _stats) = parse_with_stats(source, file);
+    (program, diagnostics)
+}
+
+/// Token-proportional parser step budget: every token may be inspected this many
+/// times on average before the parser is considered stuck.
+pub const PARSER_STEPS_PER_TOKEN: usize = 128;
+/// Constant headroom added to the parser step budget for tiny inputs.
+pub const PARSER_STEP_BUDGET_BASE: usize = 4096;
+
+/// Work counters for one parse, used by termination regression tests and fuzzing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseStats {
+    /// Number of tokens produced by the lexer, including the trailing EOF token.
+    pub tokens: usize,
+    /// Number of token inspections the parser performed.
+    pub steps: usize,
+    /// Maximum number of token inspections allowed for this input.
+    pub budget: usize,
+    /// True when the parser hit the budget and stopped early with `E1099`.
+    pub budget_exhausted: bool,
+}
+
+pub fn parser_step_budget(token_count: usize) -> usize {
+    token_count
+        .saturating_mul(PARSER_STEPS_PER_TOKEN)
+        .saturating_add(PARSER_STEP_BUDGET_BASE)
+}
+
+pub fn parse_with_stats(
+    source: &str,
+    file: &str,
+) -> (Option<Program>, Vec<Diagnostic>, ParseStats) {
+    parse_with_step_budget(source, file, None)
+}
+
+fn parse_with_step_budget(
+    source: &str,
+    file: &str,
+    step_budget: Option<usize>,
+) -> (Option<Program>, Vec<Diagnostic>, ParseStats) {
     clear_int_literal_metadata();
     clear_float_literal_metadata();
     ir::clear_int_literal_metadata();
     ir::clear_float_literal_metadata();
     let (tokens, mut diagnostics) = lex(source, file);
-    let mut parser = Parser {
-        file,
-        tokens,
-        index: 0,
-        diagnostics: Vec::new(),
-        for_counter: 0,
-        tuple_binding_counter: 0,
-        disallow_struct_literal: false,
-    };
+    let mut parser = Parser::new(file, tokens);
+    if let Some(step_budget) = step_budget {
+        parser.step_budget = step_budget;
+    }
     let program = parser.parse_program();
+    let stats = parser.stats();
+    if stats.budget_exhausted {
+        parser.diagnostics.push(
+            Diagnostic::error(
+                "E1099",
+                format!(
+                    "parser stopped after {} steps without making progress ({} tokens)",
+                    stats.steps, stats.tokens
+                ),
+                file,
+                parser.tokens[parser.stuck_at.get().min(parser.tokens.len() - 1)].span,
+            )
+            .with_help(
+                "this is a compiler bug; report the input and simplify the code near this location",
+            ),
+        );
+    }
     diagnostics.extend(parser.diagnostics);
-    (program, diagnostics)
+    (program, diagnostics, stats)
 }
 
 struct Parser<'a> {
@@ -35,6 +90,12 @@ struct Parser<'a> {
     for_counter: usize,
     tuple_binding_counter: usize,
     disallow_struct_literal: bool,
+    // Termination guard: every token inspection counts as one step. Once the
+    // token-proportional budget is spent the parser only sees EOF, so every
+    // parsing loop unwinds and `E1099` is reported instead of hanging.
+    steps: Cell<usize>,
+    step_budget: usize,
+    stuck_at: Cell<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +120,35 @@ enum AttributeTarget {
 }
 
 impl<'a> Parser<'a> {
+    fn new(file: &'a str, tokens: Vec<Token>) -> Self {
+        let step_budget = parser_step_budget(tokens.len());
+        Parser {
+            file,
+            tokens,
+            index: 0,
+            diagnostics: Vec::new(),
+            for_counter: 0,
+            tuple_binding_counter: 0,
+            disallow_struct_literal: false,
+            steps: Cell::new(0),
+            step_budget,
+            stuck_at: Cell::new(0),
+        }
+    }
+
+    fn stats(&self) -> ParseStats {
+        ParseStats {
+            tokens: self.tokens.len(),
+            steps: self.steps.get(),
+            budget: self.step_budget,
+            budget_exhausted: self.budget_exhausted(),
+        }
+    }
+
+    fn budget_exhausted(&self) -> bool {
+        self.steps.get() > self.step_budget
+    }
+
     fn parse_program(&mut self) -> Option<Program> {
         let start = self.current_span().start;
         let module = if self.at_kind(|k| matches!(k, TokenKind::KwModule)) {
@@ -92,11 +182,17 @@ impl<'a> Parser<'a> {
 
         let mut items = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::Eof)) {
+            let item_start = self.index;
             match self.parse_item() {
                 Some(item) => items.push(item),
                 None => {
                     if self.at_kind(|k| matches!(k, TokenKind::Eof)) {
                         break;
+                    }
+                    // Recovery must make progress: a failed item that consumed
+                    // nothing would otherwise be retried forever.
+                    if self.index == item_start {
+                        self.bump();
                     }
                     self.recover_item();
                 }
@@ -1061,10 +1157,23 @@ impl<'a> Parser<'a> {
         )?;
         let mut methods = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
+            if self.at_container_terminator() {
+                // A module-level item inside a trait block means the closing `}`
+                // is missing; stop here so the item is parsed at module scope.
+                break;
+            }
+            let member_index = self.index;
             let method_start = self.current_span().start;
             let method_attrs = self.parse_attributes();
             self.validate_attributes(&method_attrs, AttributeTarget::Function);
             let method_visibility = self.parse_visibility_modifier();
+            if self.at_container_terminator() {
+                break;
+            }
+            if self.report_unsupported_associated_item("trait") {
+                self.recover_member(member_index);
+                continue;
+            }
             let mut is_async = false;
             let mut is_unsafe = false;
             if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
@@ -1085,7 +1194,7 @@ impl<'a> Parser<'a> {
                     )
                     .with_help("define signatures like `fn name(...) -> Ret;` inside trait blocks"),
                 );
-                self.recover_item();
+                self.recover_member(member_index);
                 continue;
             }
             if let Some(method) = self.parse_trait_method_signature(
@@ -1097,7 +1206,7 @@ impl<'a> Parser<'a> {
             ) {
                 methods.push(method);
             } else {
-                self.recover_item();
+                self.recover_member(member_index);
             }
         }
         let close = self.expect(
@@ -1123,10 +1232,21 @@ impl<'a> Parser<'a> {
             self.bump();
             let mut methods = Vec::new();
             while !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof)) {
+                if self.at_container_terminator() {
+                    break;
+                }
+                let member_index = self.index;
                 let method_start = self.current_span().start;
                 let method_attrs = self.parse_attributes();
                 self.validate_attributes(&method_attrs, AttributeTarget::Function);
                 let method_visibility = self.parse_visibility_modifier();
+                if self.at_container_terminator() {
+                    break;
+                }
+                if self.report_unsupported_associated_item("impl") {
+                    self.recover_member(member_index);
+                    continue;
+                }
                 let mut is_async = false;
                 let mut is_unsafe = false;
                 if self.at_kind(|k| matches!(k, TokenKind::KwAsync)) {
@@ -1147,7 +1267,7 @@ impl<'a> Parser<'a> {
                         )
                         .with_help("define methods inside `impl Type { ... }` blocks"),
                     );
-                    self.recover_item();
+                    self.recover_member(member_index);
                     continue;
                 }
                 if let Some(method) = self.parse_function(
@@ -1160,7 +1280,7 @@ impl<'a> Parser<'a> {
                 ) {
                     methods.push(method);
                 } else {
-                    self.recover_item();
+                    self.recover_member(member_index);
                 }
             }
             let close = self.expect(
@@ -1537,6 +1657,46 @@ impl<'a> Parser<'a> {
             {
                 self.bump();
             }
+        }
+        if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+            let body_start = self.current_span();
+            self.skip_balanced_braces();
+            let body_span = Span::new(body_start.start, self.previous_span().end);
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1098",
+                    format!("default method bodies are not supported in traits yet (`{name}`)"),
+                    self.file,
+                    body_span,
+                )
+                .with_help(
+                    "end the trait signature with `;` and implement the body in each `impl Trait[Type] { ... }` block",
+                ),
+            );
+            return Some(Function {
+                name,
+                visibility,
+                attrs,
+                is_async,
+                is_unsafe,
+                is_extern: false,
+                extern_abi: None,
+                is_intrinsic: false,
+                intrinsic_abi: None,
+                generics,
+                params,
+                ret_type,
+                effects,
+                capabilities,
+                requires: None,
+                ensures: None,
+                body: Block {
+                    stmts: Vec::new(),
+                    tail: None,
+                    span: body_span,
+                },
+                span: Span::new(start, body_span.end),
+            });
         }
         let semi = self.expect(
             |k| matches!(k, TokenKind::Semi),
@@ -3120,15 +3280,9 @@ impl<'a> Parser<'a> {
                 .push(Self::shift_diagnostic(diag, interp_span.start));
         }
 
-        let mut parser = Parser {
-            file: self.file,
-            tokens,
-            index: 0,
-            diagnostics: Vec::new(),
-            for_counter: self.for_counter,
-            tuple_binding_counter: self.tuple_binding_counter,
-            disallow_struct_literal: false,
-        };
+        let mut parser = Parser::new(self.file, tokens);
+        parser.for_counter = self.for_counter;
+        parser.tuple_binding_counter = self.tuple_binding_counter;
 
         let expr = parser.parse_expr();
         if expr.is_some() && !parser.at_kind(|k| matches!(k, TokenKind::Eof)) {
@@ -4029,6 +4183,132 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Reports `type`/`const` members of a trait or impl block, which are not
+    /// supported yet. Returns true when such a member starts at the current token.
+    fn report_unsupported_associated_item(&mut self, container: &str) -> bool {
+        let (code, kind, help) = if self.at_kind(|k| matches!(k, TokenKind::KwType)) {
+            (
+                "E1084",
+                "associated types",
+                "add a generic parameter to the trait instead, for example `trait Shape[T, Output]`",
+            )
+        } else if self.at_kind(|k| matches!(k, TokenKind::KwConst)) {
+            (
+                "E1085",
+                "associated constants",
+                "declare a method that returns the value, for example `fn max_size(self: T) -> Int;`, or use a module-level `const`",
+            )
+        } else {
+            return false;
+        };
+        let span = match self.peek(1) {
+            Some(token) if matches!(token.kind, TokenKind::Ident(_)) => {
+                Span::new(self.current_span().start, token.span.end)
+            }
+            _ => self.current_span(),
+        };
+        self.diagnostics.push(
+            Diagnostic::error(
+                code,
+                format!("{kind} are not supported in {container} blocks yet"),
+                self.file,
+                span,
+            )
+            .with_help(help),
+        );
+        true
+    }
+
+    /// Skips the rest of a malformed trait or impl member.
+    ///
+    /// Recovery always makes progress: it consumes at least one token when the
+    /// member consumed nothing. It skips balanced `{ ... }` blocks and stops at
+    /// the container's closing `}`, after a `;`, after a skipped block, or before
+    /// the next member or module-level item.
+    fn recover_member(&mut self, member_start: usize) {
+        let mut consumed = self.index > member_start;
+        let mut depth = 0usize;
+        while !self.at_kind(|k| matches!(k, TokenKind::Eof)) {
+            if depth == 0 {
+                if self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+                    break;
+                }
+                if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+                    self.bump();
+                    break;
+                }
+                if consumed && (self.at_member_start() || self.at_container_terminator()) {
+                    break;
+                }
+            }
+            if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                depth += 1;
+            } else if self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+                depth -= 1;
+                if depth == 0 {
+                    self.bump();
+                    break;
+                }
+            }
+            self.bump();
+            consumed = true;
+        }
+    }
+
+    /// Consumes a `{ ... }` block including nested blocks. The current token must
+    /// be `{`. Stops at EOF when the block is unterminated.
+    fn skip_balanced_braces(&mut self) {
+        let mut depth = 0usize;
+        while !self.at_kind(|k| matches!(k, TokenKind::Eof)) {
+            if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                depth += 1;
+            } else if self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    self.bump();
+                    return;
+                }
+            }
+            self.bump();
+        }
+    }
+
+    fn at_member_start(&self) -> bool {
+        self.at_kind(|k| {
+            matches!(
+                k,
+                TokenKind::KwFn
+                    | TokenKind::KwAsync
+                    | TokenKind::KwUnsafe
+                    | TokenKind::KwType
+                    | TokenKind::KwConst
+                    | TokenKind::KwPub
+                    | TokenKind::KwPriv
+            )
+        }) || (self.at_kind(|k| matches!(k, TokenKind::Hash))
+            && self
+                .peek(1)
+                .map(|token| matches!(token.kind, TokenKind::LBracket))
+                .unwrap_or(false))
+    }
+
+    /// Tokens that can only start a module-level item, never a trait/impl member.
+    fn at_container_terminator(&self) -> bool {
+        self.at_kind(|k| {
+            matches!(
+                k,
+                TokenKind::KwStruct
+                    | TokenKind::KwEnum
+                    | TokenKind::KwTrait
+                    | TokenKind::KwImpl
+                    | TokenKind::KwExtern
+                    | TokenKind::KwIntrinsic
+                    | TokenKind::KwModule
+                    | TokenKind::KwImport
+            )
+        })
+    }
+
     fn recover_statement(&mut self) {
         while !self.at_kind(|k| matches!(k, TokenKind::Eof | TokenKind::RBrace)) {
             if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
@@ -4116,10 +4396,22 @@ impl<'a> Parser<'a> {
     }
 
     fn current(&self) -> &Token {
-        &self.tokens[self.index.min(self.tokens.len().saturating_sub(1))]
+        let last = self.tokens.len().saturating_sub(1);
+        let steps = self.steps.get().saturating_add(1);
+        self.steps.set(steps);
+        if steps > self.step_budget {
+            if steps == self.step_budget + 1 {
+                self.stuck_at.set(self.index.min(last));
+            }
+            return &self.tokens[last];
+        }
+        &self.tokens[self.index.min(last)]
     }
 
     fn peek(&self, n: usize) -> Option<&Token> {
+        if self.budget_exhausted() {
+            return self.tokens.last();
+        }
         self.tokens.get(self.index + n)
     }
 
@@ -4133,6 +4425,10 @@ impl<'a> Parser<'a> {
     }
 
     fn bump(&mut self) {
+        if self.budget_exhausted() {
+            self.index = self.tokens.len().saturating_sub(1);
+            return;
+        }
         if self.index < self.tokens.len().saturating_sub(1) {
             self.index += 1;
         }
@@ -5388,5 +5684,231 @@ fn main() -> Int {
             diagnostics.iter().any(|d| d.code == "E1092"),
             "diags={diagnostics:#?}"
         );
+    }
+
+    fn parse_terminating(src: &str) -> (Option<crate::ast::Program>, Vec<String>) {
+        let (program, diagnostics, stats) = super::parse_with_stats(src, "test.aic");
+        assert!(
+            !stats.budget_exhausted,
+            "parser exhausted its step budget: {stats:?} diags={diagnostics:#?}"
+        );
+        assert!(
+            stats.steps <= stats.tokens * 32 + 512,
+            "parser used too many steps for {} tokens: {stats:?}",
+            stats.tokens
+        );
+        let codes = diagnostics.iter().map(|d| d.code.clone()).collect();
+        (program, codes)
+    }
+
+    fn item_names(program: &crate::ast::Program) -> Vec<String> {
+        program
+            .items
+            .iter()
+            .map(|item| match item {
+                Item::Function(f) => format!("fn {}", f.name),
+                Item::Struct(s) => format!("struct {}", s.name),
+                Item::Enum(e) => format!("enum {}", e.name),
+                Item::Trait(t) => format!("trait {}", t.name),
+                Item::Impl(i) => format!("impl {}", i.trait_name),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn trait_associated_type_and_default_body_do_not_hang() {
+        let src = r#"
+trait Shape[T] {
+    type Output;
+    fn area(self: T) -> Int { 0 }
+}
+
+struct Sq { s: Int }
+
+fn main() -> Int { 0 }
+"#;
+        let (program, codes) = parse_terminating(src);
+        assert_eq!(codes, vec!["E1084", "E1098"]);
+        let program = program.expect("program");
+        assert_eq!(
+            item_names(&program),
+            vec!["trait Shape", "struct Sq", "fn main"]
+        );
+        let Item::Trait(shape) = &program.items[0] else {
+            panic!("expected trait");
+        };
+        // The signature of a method with a default body is kept so later
+        // phases still see the trait's full interface.
+        assert_eq!(shape.methods.len(), 1);
+        assert_eq!(shape.methods[0].name, "area");
+    }
+
+    #[test]
+    fn trait_associated_type_forms_report_e1084() {
+        for member in [
+            "type Output;",
+            "type Output = Int;",
+            "pub type Output;",
+            "#[doc(\"x\")] type Output;",
+        ] {
+            let src = format!(
+                "trait Shape[T] {{\n    {member}\n    fn area(self: T) -> Int;\n}}\n\nfn main() -> Int {{ 0 }}\n"
+            );
+            let (program, codes) = parse_terminating(&src);
+            assert!(
+                codes.iter().any(|c| c == "E1084"),
+                "member={member} codes={codes:?}"
+            );
+            assert!(
+                !codes.iter().any(|c| c == "E1082"),
+                "member={member} codes={codes:?}"
+            );
+            let program = program.expect("program");
+            assert_eq!(item_names(&program), vec!["trait Shape", "fn main"]);
+            let Item::Trait(shape) = &program.items[0] else {
+                panic!("expected trait");
+            };
+            assert_eq!(shape.methods.len(), 1, "member={member}");
+        }
+    }
+
+    #[test]
+    fn trait_associated_const_reports_e1085() {
+        for member in ["const MAX: Int;", "const MAX: Int = 3;"] {
+            let src = format!(
+                "trait Limits[T] {{\n    {member}\n    fn max(self: T) -> Int;\n}}\n\nfn main() -> Int {{ 0 }}\n"
+            );
+            let (program, codes) = parse_terminating(&src);
+            assert_eq!(codes, vec!["E1085"], "member={member}");
+            let program = program.expect("program");
+            assert_eq!(item_names(&program), vec!["trait Limits", "fn main"]);
+        }
+    }
+
+    #[test]
+    fn trait_default_bodies_with_nested_blocks_report_e1098() {
+        let src = r#"
+trait Count[T] {
+    fn count(self: T) -> Int {
+        if true { 1 } else { match 2 { _ => { 3 } } }
+    }
+    async fn later(self: T) -> Int { 0 }
+    fn plain(self: T) -> Int;
+}
+
+fn main() -> Int { 0 }
+"#;
+        let (program, codes) = parse_terminating(src);
+        assert_eq!(codes, vec!["E1098", "E1098"]);
+        let program = program.expect("program");
+        let Item::Trait(count) = &program.items[0] else {
+            panic!("expected trait");
+        };
+        let names: Vec<_> = count.methods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["count", "later", "plain"]);
+        assert_eq!(item_names(&program), vec!["trait Count", "fn main"]);
+    }
+
+    #[test]
+    fn impl_associated_items_report_and_keep_methods() {
+        let src = r#"
+struct Sq { s: Int }
+
+impl Sq {
+    type Output = Int;
+    const SIDES: Int = 4;
+    fn area(self: Sq) -> Int { self.s * self.s }
+}
+
+fn main() -> Int { 0 }
+"#;
+        let (program, codes) = parse_terminating(src);
+        assert_eq!(codes, vec!["E1084", "E1085"]);
+        let program = program.expect("program");
+        assert_eq!(
+            item_names(&program),
+            vec!["struct Sq", "impl Sq", "fn main"]
+        );
+        let Item::Impl(imp) = &program.items[1] else {
+            panic!("expected impl");
+        };
+        assert_eq!(imp.methods.len(), 1);
+    }
+
+    #[test]
+    fn trait_missing_closing_brace_recovers_following_items() {
+        let src = r#"
+trait Shape[T] {
+    type Output;
+    fn area(self: T) -> Int;
+
+struct Sq { s: Int }
+
+fn main() -> Int { 0 }
+"#;
+        let (program, codes) = parse_terminating(src);
+        assert!(codes.iter().any(|c| c == "E1084"), "codes={codes:?}");
+        assert!(codes.iter().any(|c| c == "E1086"), "codes={codes:?}");
+        let program = program.expect("program");
+        assert_eq!(item_names(&program), vec!["struct Sq", "fn main"]);
+    }
+
+    #[test]
+    fn malformed_trait_and_impl_members_terminate() {
+        let cases = [
+            "trait T[A] { type }",
+            "trait T[A] { const }",
+            "trait T[A] { type type type }",
+            "trait T[A] { fn f(self: A) -> Int { ",
+            "trait T[A] { fn f(self: A) -> Int { } } }",
+            "trait T[A] { 1 2 3 ; ; } fn main() -> Int { 0 }",
+            "trait T[A] { pub } struct S { x: Int }",
+            "trait T[A] { #[x] } enum E { A }",
+            "impl S { type const fn } fn main() -> Int { 0 }",
+            "impl S { fn f() -> Int { { { } } struct X { a: Int }",
+            "impl S { } } } type",
+            "trait struct enum impl type const fn",
+            "pub priv pub",
+            "# [ # [",
+        ];
+        for src in cases {
+            let (_program, codes) = parse_terminating(src);
+            assert!(!codes.is_empty(), "expected diagnostics for {src:?}");
+            assert!(
+                !codes.iter().any(|c| c == "E1099"),
+                "src={src:?} codes={codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn exhausted_step_budget_stops_parser_with_e1099() {
+        let src = "struct S { x: Int }\nfn main() -> Int { let a = 1; let b = 2; a + b }\n";
+        let (_program, diagnostics, stats) =
+            super::parse_with_step_budget(src, "test.aic", Some(12));
+        assert!(stats.budget_exhausted, "stats={stats:?}");
+        assert_eq!(stats.budget, 12);
+        let e1099: Vec<_> = diagnostics.iter().filter(|d| d.code == "E1099").collect();
+        assert_eq!(e1099.len(), 1, "diags={diagnostics:#?}");
+        assert!(e1099[0].message.contains("without making progress"));
+        // Steps stay bounded after exhaustion: every loop sees EOF and unwinds.
+        assert!(stats.steps < 12 + 64, "stats={stats:?}");
+    }
+
+    #[test]
+    fn step_budget_is_token_proportional() {
+        assert_eq!(super::parser_step_budget(0), super::PARSER_STEP_BUDGET_BASE);
+        assert_eq!(
+            super::parser_step_budget(10),
+            10 * super::PARSER_STEPS_PER_TOKEN + super::PARSER_STEP_BUDGET_BASE
+        );
+        assert_eq!(super::parser_step_budget(usize::MAX), usize::MAX);
+
+        let src = "fn main() -> Int { 0 }\n".repeat(200);
+        let (_program, diagnostics, stats) = super::parse_with_stats(&src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        assert!(!stats.budget_exhausted);
+        assert_eq!(stats.budget, super::parser_step_budget(stats.tokens));
+        assert!(stats.steps < stats.budget / 4, "stats={stats:?}");
     }
 }

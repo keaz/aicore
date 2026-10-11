@@ -1,0 +1,8 @@
+trait Shape[T] {
+    type Output;
+    fn area(self: T) -> Int { 0 }
+}
+
+struct Sq { s: Int }
+
+fn main() -> Int { 0 }

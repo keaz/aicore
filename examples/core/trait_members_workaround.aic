@@ -1,0 +1,31 @@
+module examples.core.trait_members_workaround;
+import std.io;
+
+// Supported replacements for trait members that are not available yet:
+// - associated type `type Output;` -> extra trait generic parameter `Output`
+// - associated constant `const SIDES: Int;` -> signature `fn sides(self: T) -> Int;`
+// - default method body -> signature in the trait, body in every impl block
+trait Shape[T, Output] {
+    fn area(self: T) -> Output;
+    fn sides(self: T) -> Int;
+}
+
+struct Square {
+    side: Int,
+}
+
+impl Shape[Square, Int] {
+    fn area(self: Square) -> Int {
+        self.side * self.side
+    }
+
+    fn sides(self: Square) -> Int {
+        4
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let square = Square { side: 3 };
+    print_int(square.area() + square.sides());
+    0
+}
