@@ -16,6 +16,9 @@ use crate::telemetry;
 mod runtime;
 use self::runtime::runtime_c_source;
 
+mod divisor_facts;
+use self::divisor_facts::DivisorFact;
+
 mod generator_collections;
 mod generator_concurrency;
 mod generator_control_flow;
@@ -3303,6 +3306,8 @@ struct FnCtx {
     tail_return_mode: bool,
     suppress_lifetime_end: bool,
     async_poll_ctx: Option<AsyncPollCtx>,
+    // Parameters whose `requires` clause proves them safe as divisors.
+    divisor_facts: BTreeMap<String, DivisorFact>,
 }
 
 #[derive(Debug, Clone)]

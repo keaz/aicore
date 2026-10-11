@@ -13531,6 +13531,135 @@ fn main() -> Int effects { io } capabilities { io  } {
     }
 }
 
+// Signed types with their bit width; MIN is built as `1 << (bits - 1)`.
+const DIVISION_SIGNED_TYPES: &[(&str, u32)] = &[
+    ("Int", 64),
+    ("Int8", 8),
+    ("Int16", 16),
+    ("Int32", 32),
+    ("Int64", 64),
+    ("Int128", 128),
+    ("ISize", 64),
+];
+
+fn signed_min_setup(ty: &str, bits: u32, name: &str) -> String {
+    format!(
+        "let {name}_one: {ty} = 1;\n    let {name}_shift: {ty} = {};\n    let {name}: {ty} = {name}_one << {name}_shift;",
+        bits - 1
+    )
+}
+const DIVISION_UNSIGNED_TYPES: &[&str] =
+    &["UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "USize"];
+
+fn division_panic_program(ty: &str, setup: &str, expr: &str) -> String {
+    format!(
+        r#"
+import std.io;
+fn main() -> Int effects {{ io }} capabilities {{ io }} {{
+    {setup}
+    let r: {ty} = {expr};
+    print_int(1);
+    if r == r {{ 0 }} else {{ 1 }}
+}}
+"#
+    )
+}
+
+#[test]
+fn exec_integer_division_by_zero_panics_for_every_width() {
+    let all_types = DIVISION_SIGNED_TYPES
+        .iter()
+        .map(|(ty, _)| *ty)
+        .chain(DIVISION_UNSIGNED_TYPES.iter().copied());
+    for ty in all_types {
+        for (op, op_name, verb) in [("/", "div", "division"), ("%", "rem", "remainder")] {
+            let src = division_panic_program(
+                ty,
+                &format!("let a: {ty} = 7;\n    let z: {ty} = 0;"),
+                &format!("a {op} z"),
+            );
+            let (code, stdout, stderr) = compile_and_run(&src);
+            assert_ne!(code, 0, "{ty} {op}: stdout={stdout} stderr={stderr}");
+            assert!(stdout.is_empty(), "{ty} {op} kept running: stdout={stdout}");
+            let expected =
+                format!("division_by_zero{{op:{op_name},type:{ty}}}: integer {verb} by zero");
+            assert!(stderr.contains(&expected), "{ty} {op}: stderr={stderr}");
+        }
+    }
+}
+
+#[test]
+fn exec_signed_min_divided_by_minus_one_panics_for_every_width() {
+    for (ty, bits) in DIVISION_SIGNED_TYPES {
+        let src = division_panic_program(
+            ty,
+            &format!(
+                "{}\n    let d: {ty} = -1;",
+                signed_min_setup(ty, *bits, "m")
+            ),
+            "m / d",
+        );
+        let (code, stdout, stderr) = compile_and_run(&src);
+        assert_ne!(code, 0, "{ty}: stdout={stdout} stderr={stderr}");
+        assert!(stdout.is_empty(), "{ty} kept running: stdout={stdout}");
+        let expected = format!("integer_overflow{{op:div,type:{ty}}}: {ty} division overflows (");
+        assert!(stderr.contains(&expected), "{ty}: stderr={stderr}");
+    }
+}
+
+#[test]
+fn exec_integer_division_results_are_defined_for_every_width() {
+    let mut checks = Vec::new();
+    for (ty, bits) in DIVISION_SIGNED_TYPES {
+        let min_setup = signed_min_setup(ty, *bits, &format!("m_{ty}"));
+        checks.push(format!(
+            "    let a_{ty}: {ty} = 7;\n    let b_{ty}: {ty} = 2;\n    let n_{ty}: {ty} = -7;\n    {min_setup}\n    let d_{ty}: {ty} = -1;\n    let one_{ty}: {ty} = 1;\n    let zero_{ty}: {ty} = 0;\n    ok = ok && a_{ty} / b_{ty} == 3 && a_{ty} % b_{ty} == one_{ty};\n    ok = ok && n_{ty} / b_{ty} == -3 && n_{ty} % b_{ty} == -1;\n    ok = ok && m_{ty} % d_{ty} == zero_{ty} && m_{ty} / one_{ty} == m_{ty};\n    ok = ok && a_{ty} / d_{ty} == -7;\n"
+        ));
+    }
+    for ty in DIVISION_UNSIGNED_TYPES {
+        checks.push(format!(
+            "    let a_{ty}: {ty} = 7;\n    let b_{ty}: {ty} = 2;\n    let one_{ty}: {ty} = 1;\n    ok = ok && a_{ty} / b_{ty} == 3 && a_{ty} % b_{ty} == one_{ty};\n"
+        ));
+    }
+    let src = format!(
+        r#"
+import std.io;
+fn main() -> Int effects {{ io }} capabilities {{ io }} {{
+    let mut ok = true;
+{}
+    if ok {{ print_int(1) }} else {{ print_int(0) }};
+    0
+}}
+"#,
+        checks.join("")
+    );
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_division_guards_are_elided_only_when_requires_proves_divisor() {
+    let src = r#"
+import std.io;
+fn ratio(a: Int, b: Int) -> Int requires b > 0 { a / b }
+fn guarded(a: Int, b: Int) -> Int requires b != 0 { a / b }
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(ratio(9, 3));
+    print_int(guarded(9, -3));
+    print_int(ratio(1, 0));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "3\n-3\n", "stderr={stderr}");
+    assert!(
+        stderr.contains("contract_violation{kind:requires,owner:ratio}"),
+        "the requires check must fire before the unguarded division: {stderr}"
+    );
+}
+
 #[test]
 fn exec_contract_failure() {
     let src = r#"

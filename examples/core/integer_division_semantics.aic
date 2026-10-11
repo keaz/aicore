@@ -1,0 +1,35 @@
+module examples.core.integer_division_semantics;
+import std.io;
+import std.option;
+
+// Integer `/` truncates toward zero and `%` keeps the sign of the dividend.
+// A zero divisor panics with `division_by_zero{...}` on every platform, and
+// signed `MIN / -1` panics with `integer_overflow{...}`; `MIN % -1` is 0.
+// `requires b > 0` proves the divisor safe, so `average` needs no guard.
+fn average(total: Int, count: Int) -> Int requires count > 0 {
+    total / count
+}
+
+fn checked_ratio(a: Int, b: Int) -> Option[Int] {
+    if b == 0 {
+        None()
+    } else {
+        Some(a / b)
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(-7 / 2);
+    print_int(-7 % 2);
+    print_int(average(30, 4));
+    let shift: Int = 63;
+    let one: Int = 1;
+    let min = one << shift;
+    let minus_one: Int = -1;
+    print_int(min % minus_one);
+    match checked_ratio(5, 0) {
+        Some(v) => print_int(v),
+        None => print_int(-1),
+    };
+    0
+}

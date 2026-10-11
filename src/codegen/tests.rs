@@ -2793,3 +2793,73 @@ fn runtime_windows_shim_is_active_only_under_win32() {
         "POSIX socket typedef must be the `#else` branch of the top-level Windows shim"
     );
 }
+
+fn llvm_function_body<'a>(llvm: &'a str, name: &str) -> &'a str {
+    let marker = format!("@{name}(");
+    let start = llvm
+        .lines()
+        .scan(0usize, |offset, line| {
+            let at = *offset;
+            *offset += line.len() + 1;
+            Some((at, line))
+        })
+        .find(|(_, line)| line.starts_with("define ") && line.contains(&marker))
+        .map(|(at, _)| at)
+        .unwrap_or_else(|| panic!("missing function {name}"));
+    let rest = &llvm[start..];
+    let end = rest.find("\n}\n").expect("function end");
+    &rest[..end]
+}
+
+#[test]
+fn integer_division_guards_follow_divisor_facts() {
+    let src = r#"
+fn unknown(a: Int, b: Int) -> Int { a / b }
+fn unknown_rem(a: Int, b: Int) -> Int { a % b }
+fn nonzero(a: Int, b: Int) -> Int requires b != 0 { a / b }
+fn positive(a: Int, b: Int) -> Int requires b > 0 { a / b + a % b }
+fn shadowed(a: Int, b: Int) -> Int requires b > 0 { let b = a - a; a / b }
+fn literal(a: Int) -> Int { a / 4 + a % 3 }
+fn literal_minus_one(a: Int) -> Int { a / -1 }
+fn literal_zero(a: Int) -> Int { a / 0 }
+fn unsigned(a: UInt32, b: UInt32) -> UInt32 { a / b }
+fn small(a: Int8, b: Int8) -> Int8 { a / b }
+
+fn main() -> Int { 0 }
+"#;
+    let (program, diags) = parse(src, "division_guards.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let ir = build(&program.expect("program"));
+    let lowered = lower_runtime_asserts(&ir);
+    let output = emit_llvm(&lowered, "division_guards.aic").expect("llvm");
+    let llvm = &output.llvm_ir;
+    let guards = |name: &str| {
+        let body = llvm_function_body(llvm, &format!("aic_{name}"));
+        (
+            body.matches("\ndiv_zero").count(),
+            body.matches("\ndiv_overflow").count(),
+            body.matches("select i1").count(),
+        )
+    };
+    // (zero guards, `MIN / -1` panics, `MIN % -1` selects)
+    assert_eq!(guards("unknown"), (1, 1, 0));
+    assert_eq!(guards("unknown_rem"), (1, 0, 1));
+    assert_eq!(guards("nonzero"), (0, 1, 0));
+    assert_eq!(guards("positive"), (0, 0, 0));
+    assert_eq!(guards("shadowed"), (1, 1, 0));
+    assert_eq!(guards("literal"), (0, 0, 0));
+    assert_eq!(guards("literal_minus_one"), (0, 1, 0));
+    assert_eq!(guards("literal_zero"), (1, 1, 0));
+    assert_eq!(guards("unsigned"), (1, 0, 0));
+    assert_eq!(guards("small"), (1, 1, 0));
+
+    let small = llvm_function_body(llvm, "aic_small");
+    assert!(small.contains("icmp eq i8 "), "small={small}");
+    assert!(small.contains(", -128"), "Int8 MIN guard: {small}");
+    assert!(llvm.contains("division_by_zero{op:div,type:Int8}: integer division by zero"));
+    assert!(llvm.contains("division_by_zero{op:rem,type:Int}: integer remainder by zero"));
+    assert!(llvm.contains(
+        "integer_overflow{op:div,type:Int}: Int division overflows (-9223372036854775808 / -1)"
+    ));
+    assert!(llvm.contains("division_by_zero{op:div,type:UInt32}"));
+}

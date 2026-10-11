@@ -1258,6 +1258,7 @@ impl<'a> Generator<'a> {
             tail_return_mode: false,
             suppress_lifetime_end: false,
             async_poll_ctx: None,
+            divisor_facts: divisor_facts::requires_divisor_facts(func),
         };
         fctx.lines.push("entry:".to_string());
 
@@ -1558,6 +1559,7 @@ impl<'a> Generator<'a> {
             tail_return_mode: false,
             suppress_lifetime_end: true,
             async_poll_ctx: None,
+            divisor_facts: divisor_facts::requires_divisor_facts(func),
         };
 
         let frame_ptr = self.new_temp();
@@ -1749,6 +1751,7 @@ impl<'a> Generator<'a> {
             tail_return_mode: false,
             suppress_lifetime_end: true,
             async_poll_ctx: None,
+            divisor_facts: BTreeMap::new(),
         };
 
         let cleanup_done_label = self.new_label("async_drop_cleanup_done");
@@ -1948,6 +1951,7 @@ impl<'a> Generator<'a> {
             tail_return_mode: false,
             suppress_lifetime_end: true,
             async_poll_ctx: None,
+            divisor_facts: BTreeMap::new(),
         };
         for (idx, param) in func.params.iter().enumerate() {
             let Some(field_index) = frame_plan.param_indices.get(idx) else {
@@ -3122,6 +3126,7 @@ impl<'a> Generator<'a> {
                 tail_return_mode: false,
                 suppress_lifetime_end: true,
                 async_poll_ctx: None,
+                divisor_facts: BTreeMap::new(),
             };
             let slot = DropSlot {
                 ty: inner_ty.clone(),
@@ -4801,7 +4806,12 @@ impl<'a> Generator<'a> {
                     None
                 };
                 let rv = self.gen_expr_with_expected(rhs, rhs_expected, fctx)?;
-                self.gen_binary(*op, lv, rv, fctx, expr.span)
+                let divisor = if matches!(op, BinOp::Div | BinOp::Mod) {
+                    divisor_facts::divisor_fact(rhs, &fctx.divisor_facts)
+                } else {
+                    DivisorFact::Unknown
+                };
+                self.gen_binary(*op, lv, rv, divisor, fctx, expr.span)
             }
             ir::ExprKind::Call {
                 callee,
@@ -4876,11 +4886,116 @@ impl<'a> Generator<'a> {
         }
     }
 
+    /// Guards an integer `/` or `%` before the LLVM instruction runs.
+    ///
+    /// A zero divisor panics with `division_by_zero`. For signed types,
+    /// `MIN / -1` panics with `integer_overflow`, and `MIN % -1` yields 0 by
+    /// dividing by 1 instead (LLVM leaves both undefined). Guards that
+    /// `divisor` rules out are not emitted. Returns the divisor operand to use.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn emit_integer_division_guards(
+        &mut self,
+        op: BinOp,
+        ty: &LType,
+        lhs_repr: &str,
+        rhs_repr: &str,
+        divisor: DivisorFact,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> String {
+        let llvm_ty = llvm_type(ty);
+        let type_name = render_type(ty);
+        let (op_name, verb) = match op {
+            BinOp::Div => ("div", "division"),
+            _ => ("rem", "remainder"),
+        };
+        if !divisor.excludes_zero() {
+            let is_zero = self.new_temp();
+            fctx.lines
+                .push(format!("  {is_zero} = icmp eq {llvm_ty} {rhs_repr}, 0"));
+            let fail_label = self.new_label("div_zero");
+            let ok_label = self.new_label("div_nonzero");
+            fctx.lines.push(format!(
+                "  br i1 {is_zero}, label %{fail_label}, label %{ok_label}"
+            ));
+            fctx.lines.push(format!("{fail_label}:"));
+            self.emit_static_panic(
+                &format!(
+                    "division_by_zero{{op:{op_name},type:{type_name}}}: integer {verb} by zero"
+                ),
+                span,
+                fctx,
+            );
+            fctx.lines.push(format!("{ok_label}:"));
+            fctx.current_label = ok_label;
+        }
+        let signed = !is_unsigned_integer_type(ty);
+        if !signed || divisor.excludes_minus_one() {
+            return rhs_repr.to_string();
+        }
+        let bits = integer_width_bits(ty).unwrap_or(64);
+        let min = if bits >= 128 {
+            i128::MIN
+        } else {
+            -(1i128 << (bits - 1))
+        };
+        let lhs_is_min = self.new_temp();
+        fctx.lines.push(format!(
+            "  {lhs_is_min} = icmp eq {llvm_ty} {lhs_repr}, {min}"
+        ));
+        let rhs_is_minus_one = self.new_temp();
+        fctx.lines.push(format!(
+            "  {rhs_is_minus_one} = icmp eq {llvm_ty} {rhs_repr}, -1"
+        ));
+        let overflows = self.new_temp();
+        fctx.lines.push(format!(
+            "  {overflows} = and i1 {lhs_is_min}, {rhs_is_minus_one}"
+        ));
+        if op == BinOp::Mod {
+            let safe_rhs = self.new_temp();
+            fctx.lines.push(format!(
+                "  {safe_rhs} = select i1 {overflows}, {llvm_ty} 1, {llvm_ty} {rhs_repr}"
+            ));
+            return safe_rhs;
+        }
+        let fail_label = self.new_label("div_overflow");
+        let ok_label = self.new_label("div_in_range");
+        fctx.lines.push(format!(
+            "  br i1 {overflows}, label %{fail_label}, label %{ok_label}"
+        ));
+        fctx.lines.push(format!("{fail_label}:"));
+        self.emit_static_panic(
+            &format!(
+                "integer_overflow{{op:div,type:{type_name}}}: {type_name} division overflows ({min} / -1)"
+            ),
+            span,
+            fctx,
+        );
+        fctx.lines.push(format!("{ok_label}:"));
+        fctx.current_label = ok_label;
+        rhs_repr.to_string()
+    }
+
+    /// Emits a panic with a constant message followed by `unreachable`.
+    pub(super) fn emit_static_panic(
+        &mut self,
+        message: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) {
+        let msg = self.string_literal(message, fctx);
+        if let Some((ptr, len, cap)) = self.string_parts(&msg, span, fctx) {
+            self.emit_panic_call(&ptr, &len, &cap, span, fctx);
+        }
+        fctx.lines.push("  unreachable".to_string());
+    }
+
     pub(super) fn gen_binary(
         &mut self,
         op: BinOp,
         lhs: Value,
         rhs: Value,
+        divisor: DivisorFact,
         fctx: &mut FnCtx,
         span: crate::span::Span,
     ) -> Option<Value> {
@@ -4946,14 +5061,21 @@ impl<'a> Generator<'a> {
                             }
                             _ => unreachable!(),
                         };
+                        let lhs_repr = lhs.repr.unwrap_or_else(|| "0".to_string());
+                        let mut rhs_repr = rhs.repr.unwrap_or_else(|| "0".to_string());
+                        if matches!(op, BinOp::Div | BinOp::Mod) {
+                            rhs_repr = self.emit_integer_division_guards(
+                                op, lhs_ty, &lhs_repr, &rhs_repr, divisor, span, fctx,
+                            );
+                        }
                         let reg = self.new_temp();
                         fctx.lines.push(format!(
                             "  {} = {} {} {}, {}",
                             reg,
                             inst,
                             llvm_type(lhs_ty),
-                            lhs.repr.unwrap_or_else(|| "0".to_string()),
-                            rhs.repr.unwrap_or_else(|| "0".to_string())
+                            lhs_repr,
+                            rhs_repr
                         ));
                         Some(Value {
                             ty: lhs_ty.clone(),
@@ -7601,6 +7723,7 @@ impl<'a> Generator<'a> {
             tail_return_mode: false,
             suppress_lifetime_end: false,
             async_poll_ctx: None,
+            divisor_facts: BTreeMap::new(),
         };
 
         if captures.is_empty() {

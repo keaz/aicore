@@ -74,6 +74,12 @@ hex_int        = "0x" hexdigit+ ;
 - Arithmetic:
   - `+ - * /` require matching numeric operands (`Int` with `Int`, or `Float` with `Float`)
   - `%` requires `Int` operands
+  - Integer division and remainder are defined on every platform and for every integer width:
+    - `/` truncates toward zero; `%` has the sign of the dividend (`-7 / 2 == -3`, `-7 % 2 == -1`)
+    - a zero divisor panics with `division_by_zero{op:div,type:<T>}: integer division by zero` (`op:rem` and `integer remainder by zero` for `%`)
+    - for signed types, `MIN / -1` panics with `integer_overflow{op:div,type:<T>}: <T> division overflows (<MIN> / -1)`; `MIN % -1` is `0`
+    - the checks are skipped when the divisor is a non-zero literal (the overflow check also needs a literal other than `-1`), or a parameter that the function's `requires` proves non-zero (`b != 0`, `b > 0`, `b >= 1`, `b < 0`, ...) and that the body never rebinds or assigns. `requires b > 0` also rules out `-1`; `requires b != 0` keeps the overflow check.
+  - Float division follows IEEE 754 (division by zero yields an infinity or NaN, no panic).
 - Bitwise:
   - `& | ^ << >> >>>` require `Int` operands and produce `Int`
   - `>>` is arithmetic right-shift, `>>>` is logical right-shift

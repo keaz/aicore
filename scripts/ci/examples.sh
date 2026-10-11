@@ -164,6 +164,8 @@ check_pass=(
   "examples/core/vec_capacity.aic"
   "examples/core/core_language_tour.aic"
   "examples/core/traits_and_dispatch_tour.aic"
+  "examples/core/integer_division_semantics.aic"
+  "examples/core/integer_division_by_zero.aic"
   "examples/core/trait_members_workaround.aic"
   "examples/core/effects_capabilities_patterns_tour.aic"
   "examples/core/opt_levels_demo.aic"
@@ -336,6 +338,7 @@ run_pass=(
   "examples/core/vec_capacity.aic"
   "examples/core/core_language_tour.aic"
   "examples/core/traits_and_dispatch_tour.aic"
+  "examples/core/integer_division_semantics.aic"
   "examples/core/trait_members_workaround.aic"
   "examples/core/effects_capabilities_patterns_tour.aic"
   "examples/core/opt_levels_demo.aic"
@@ -368,6 +371,7 @@ run_fail=(
   "examples/e4/contracts_all_returns.aic:ensures failed"
   "examples/e5/panic_line_map.aic:AICore panic at"
   "examples/verify/method_contract_violation.aic:contract_violation{kind:requires,owner:Account::withdraw}"
+  "examples/core/integer_division_by_zero.aic:division_by_zero{op:div,type:Int}"
 )
 
 wave1_numeric_check_candidates=(
@@ -845,6 +849,7 @@ case "$MODE" in
     expect_run_value "examples/core/vec_capacity.aic" "42"
     expect_run_value "examples/core/core_language_tour.aic" "42"
     expect_run_value "examples/core/traits_and_dispatch_tour.aic" "42"
+    expect_run_value "examples/core/integer_division_semantics.aic" "-1"
     expect_run_value "examples/core/trait_members_workaround.aic" "13"
     expect_run_value "examples/core/effects_capabilities_patterns_tour.aic" "42"
     expect_run_value "examples/core/opt_levels_demo.aic" "42"

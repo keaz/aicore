@@ -1,0 +1,10 @@
+module examples.core.integer_division_by_zero;
+import std.io;
+
+// Dividing by a zero divisor panics deterministically with
+// division_by_zero{op:div,type:Int}: integer division by zero
+fn main() -> Int effects { io } capabilities { io } {
+    let z = 0;
+    print_int(10 / z);
+    0
+}
