@@ -99,6 +99,8 @@ hex_int        = "0x" hexdigit+ ;
   - `if c { break v } else { continue }` is valid inside a loop
 - `return expr` can appear anywhere an expression can, including match arms and block tails (`else { return -1 }`). It always exits the innermost enclosing function or closure and is checked against that return type.
 - Inside a closure, `return` leaves the closure, and `break`/`continue` cannot target loops outside the closure (`E1275`/`E1276`).
+- Closures capture the outer variables they use **by value, when the closure is created**. Later assignments to the outer variable are not seen by the closure (`let mut n = 1; let f = |d: Int| -> Int { n + d }; n = 5; f(0)` is `1`).
+- A closure cannot assign to a captured variable or borrow it with `&mut` (`E1289`): the change would only reach the closure's copy. Pass the value as a parameter and assign the result instead: `let inc = |v: Int| -> Int { v + 1 }; n = inc(n);`. Variables the closure declares itself (parameters and its own `let mut` bindings) can be assigned normally. This applies equally to closures stored in struct fields, returned from functions, and nested inside other closures.
 - `return` is not allowed in contract expressions or constant initializers (`E1279`).
 - Function calls support:
   - direct function names

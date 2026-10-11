@@ -1,0 +1,18 @@
+module examples.core.closure_capture_mutation_invalid;
+import std.io;
+
+// Closures capture outer variables by value. Assigning to a captured
+// variable would only change the closure's copy, so `aic check` reports
+// E1289 "closure cannot assign to captured variable 'n'".
+// Fix: pass the value in and return the new value, as in
+// examples/core/closure_capture_by_value.aic.
+fn main() -> Int effects { io } capabilities { io } {
+    let mut n = 0;
+    let inc = |d: Int| -> Int {
+        n = n + d;
+        n
+    };
+    let _a = inc(1);
+    print_int(n);
+    0
+}

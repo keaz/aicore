@@ -48,6 +48,7 @@ Recent core-language additions:
 - `E1105`: conflicting duplicate trait impl.
 - `E1228`: unknown type name in a signature, field, payload, alias, annotation, impl header, or trait method signature. The help line suggests the closest known type (`I32` -> `Int32`, `Strng` -> `String`, `bool` -> `Bool`).
 - `E1256`: `await` used outside an async function.
+- `E1289`: a closure assigns to, or mutably borrows, a variable captured from an enclosing scope. Closures capture by value, so the change would be lost.
 - `E1279`: `return` outside a function or closure body (contract expressions, constant initializers).
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.

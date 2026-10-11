@@ -166,6 +166,7 @@ check_pass=(
   "examples/core/traits_and_dispatch_tour.aic"
   "examples/core/integer_division_semantics.aic"
   "examples/core/early_return_and_diverging.aic"
+  "examples/core/closure_capture_by_value.aic"
   "examples/core/integer_division_by_zero.aic"
   "examples/core/trait_members_workaround.aic"
   "examples/core/effects_capabilities_patterns_tour.aic"
@@ -219,6 +220,7 @@ check_fail=(
   "examples/core/intrinsic_declaration_invalid_body.aic"
   "examples/core/trait_unsupported_members_invalid.aic"
   "examples/core/unknown_type_invalid.aic"
+  "examples/core/closure_capture_mutation_invalid.aic"
 )
 run_pass=(
   "examples/option_match.aic"
@@ -342,6 +344,7 @@ run_pass=(
   "examples/core/traits_and_dispatch_tour.aic"
   "examples/core/integer_division_semantics.aic"
   "examples/core/early_return_and_diverging.aic"
+  "examples/core/closure_capture_by_value.aic"
   "examples/core/trait_members_workaround.aic"
   "examples/core/effects_capabilities_patterns_tour.aic"
   "examples/core/opt_levels_demo.aic"
@@ -854,6 +857,7 @@ case "$MODE" in
     expect_run_value "examples/core/traits_and_dispatch_tour.aic" "42"
     expect_run_value "examples/core/integer_division_semantics.aic" "-1"
     expect_run_value "examples/core/early_return_and_diverging.aic" "8"
+    expect_run_value "examples/core/closure_capture_by_value.aic" "100"
     expect_run_value "examples/core/trait_members_workaround.aic" "13"
     expect_run_value "examples/core/effects_capabilities_patterns_tour.aic" "42"
     expect_run_value "examples/core/opt_levels_demo.aic" "42"

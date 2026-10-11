@@ -13874,6 +13874,26 @@ fn main() -> Int {
 }
 
 #[test]
+fn exec_closures_capture_by_value_at_creation() {
+    let src = r#"
+import std.io;
+fn main() -> Int effects { io } capabilities { io } {
+    let mut n = 1;
+    let read = |d: Int| -> Int { n + d };
+    n = 5;
+    print_int(read(0));
+    let next = |v: Int| -> Int { v + 1 };
+    n = next(n);
+    print_int(n);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n6\n");
+}
+
+#[test]
 fn exec_contract_failure() {
     let src = r#"
 import std.io;

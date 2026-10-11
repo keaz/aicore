@@ -5683,6 +5683,32 @@ fn check_and_build_reject_unknown_type_names_before_codegen() {
 }
 
 #[test]
+fn check_rejects_closure_assignment_to_captured_variable() {
+    let check = run_aic(&[
+        "check",
+        "examples/core/closure_capture_mutation_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(check.status.code(), Some(1));
+    let diags: Value = serde_json::from_slice(&check.stdout).expect("diagnostics json");
+    let found: Vec<&Value> = diags
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter(|diag| diag["code"] == "E1289")
+        .collect();
+    assert_eq!(found.len(), 1, "{diags:#}");
+    assert_eq!(
+        found[0]["message"],
+        "closure cannot assign to captured variable 'n'"
+    );
+    assert!(found[0]["help"][0]
+        .as_str()
+        .expect("help")
+        .contains("return the new value"));
+}
+
+#[test]
 fn test_harness_runs_categories_and_reports_json() {
     let all = run_aic(&["test", "examples/e7/harness", "--json"]);
     assert_eq!(all.status.code(), Some(0));

@@ -1,0 +1,17 @@
+module examples.core.closure_capture_by_value;
+import std.io;
+
+// Closures capture outer variables by value when they are created. To
+// update a variable, pass it in and assign the closure's result.
+fn main() -> Int effects { io } capabilities { io } {
+    let mut n = 0;
+    let step = 2;
+    let inc = |current: Int| -> Int { current + step };
+    n = inc(n);
+    n = inc(n);
+    let snapshot = |extra: Int| -> Int { n + extra };
+    n = 100;
+    print_int(snapshot(0));
+    print_int(n);
+    0
+}

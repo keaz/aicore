@@ -4233,6 +4233,48 @@ impl<'a> Checker<'a> {
         result_ty
     }
 
+    /// Closures capture outer bindings by value. Assigning to a captured
+    /// binding, or borrowing it mutably, would only change the closure's copy,
+    /// so both are rejected with E1289. Nested closures are checked when they
+    /// are reached, against their own parameters.
+    fn check_closure_capture_mutation(
+        &mut self,
+        params: &[ir::ClosureParam],
+        body: &ir::Block,
+        outer_locals: &BTreeMap<String, String>,
+    ) {
+        let mut scopes = vec![params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect::<BTreeSet<_>>()];
+        let mut violations = Vec::new();
+        collect_captured_mutations_in_block(body, outer_locals, &mut scopes, &mut violations);
+        for violation in violations {
+            let (message, help) = match violation.kind {
+                CapturedMutationKind::Assign => (
+                    format!(
+                        "closure cannot assign to captured variable '{}'",
+                        violation.name
+                    ),
+                    format!(
+                        "closures capture variables by value, so the assignment would be lost; return the new value instead, for example `let next = |{0}: Int| -> Int {{ {0} + 1 }}; {0} = next({0});`",
+                        violation.name
+                    ),
+                ),
+                CapturedMutationKind::MutableBorrow => (
+                    format!(
+                        "closure cannot mutably borrow captured variable '{}'",
+                        violation.name
+                    ),
+                    "closures capture variables by value, so changes through the borrow would be lost; pass the value as a closure parameter and return the updated value".to_string(),
+                ),
+            };
+            self.diagnostics.push(
+                Diagnostic::error("E1289", message, self.file, violation.span).with_help(help),
+            );
+        }
+    }
+
     fn is_never_type(&self, ty: &str) -> bool {
         ty == NEVER_TYPE
     }
@@ -5800,6 +5842,7 @@ impl<'a> Checker<'a> {
                     closure_param_tys.push(param_ty);
                 }
 
+                self.check_closure_capture_mutation(params, body, locals);
                 // `return` in a closure leaves the closure, and `break`/`continue`
                 // cannot target loops outside it.
                 let outer_fn_ret = ctx.fn_ret.replace(declared_ret.clone());
@@ -10639,6 +10682,183 @@ fn foreign_primitive_type_name(name: &str) -> Option<&'static str> {
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CapturedMutationKind {
+    Assign,
+    MutableBorrow,
+}
+
+#[derive(Debug, Clone)]
+struct CapturedMutation {
+    name: String,
+    span: crate::span::Span,
+    kind: CapturedMutationKind,
+}
+
+fn bound_in_scopes(scopes: &[BTreeSet<String>], name: &str) -> bool {
+    scopes.iter().any(|scope| scope.contains(name))
+}
+
+fn collect_captured_mutations_in_block(
+    block: &ir::Block,
+    outer: &BTreeMap<String, String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    out: &mut Vec<CapturedMutation>,
+) {
+    scopes.push(BTreeSet::new());
+    for stmt in &block.stmts {
+        match stmt {
+            ir::Stmt::Let { name, expr, .. } => {
+                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                scopes.last_mut().expect("block scope").insert(name.clone());
+            }
+            ir::Stmt::Assign { target, expr, span } => {
+                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                if !bound_in_scopes(scopes, target) && outer.contains_key(target) {
+                    out.push(CapturedMutation {
+                        name: target.clone(),
+                        span: *span,
+                        kind: CapturedMutationKind::Assign,
+                    });
+                }
+            }
+            ir::Stmt::Expr { expr, .. } | ir::Stmt::Assert { expr, .. } => {
+                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+            }
+            ir::Stmt::Return { expr, .. } => {
+                if let Some(expr) = expr {
+                    collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                }
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_captured_mutations_in_expr(tail, outer, scopes, out);
+    }
+    scopes.pop();
+}
+
+fn collect_captured_mutations_in_expr(
+    expr: &ir::Expr,
+    outer: &BTreeMap<String, String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    out: &mut Vec<CapturedMutation>,
+) {
+    match &expr.kind {
+        // A nested closure is checked on its own when the checker reaches it.
+        ir::ExprKind::Closure { .. } => {}
+        ir::ExprKind::Borrow {
+            mutable: true,
+            expr: inner,
+        } => {
+            if let ir::ExprKind::Var(name) = &inner.kind {
+                if !bound_in_scopes(scopes, name) && outer.contains_key(name) {
+                    out.push(CapturedMutation {
+                        name: name.clone(),
+                        span: expr.span,
+                        kind: CapturedMutationKind::MutableBorrow,
+                    });
+                }
+            } else {
+                collect_captured_mutations_in_expr(inner, outer, scopes, out);
+            }
+        }
+        ir::ExprKind::Match { expr, arms } => {
+            collect_captured_mutations_in_expr(expr, outer, scopes, out);
+            for arm in arms {
+                let mut bindings = BTreeSet::new();
+                collect_pattern_bindings(&arm.pattern, &mut bindings);
+                scopes.push(bindings);
+                if let Some(guard) = &arm.guard {
+                    collect_captured_mutations_in_expr(guard, outer, scopes, out);
+                }
+                collect_captured_mutations_in_expr(&arm.body, outer, scopes, out);
+                scopes.pop();
+            }
+        }
+        ir::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            collect_captured_mutations_in_expr(cond, outer, scopes, out);
+            collect_captured_mutations_in_block(then_block, outer, scopes, out);
+            collect_captured_mutations_in_block(else_block, outer, scopes, out);
+        }
+        ir::ExprKind::While { cond, body } => {
+            collect_captured_mutations_in_expr(cond, outer, scopes, out);
+            collect_captured_mutations_in_block(body, outer, scopes, out);
+        }
+        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            collect_captured_mutations_in_block(body, outer, scopes, out);
+        }
+        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+            if let Some(expr) = expr {
+                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+            }
+        }
+        ir::ExprKind::Call { callee, args, .. } => {
+            collect_captured_mutations_in_expr(callee, outer, scopes, out);
+            for arg in args {
+                collect_captured_mutations_in_expr(arg, outer, scopes, out);
+            }
+        }
+        ir::ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                collect_captured_mutations_in_expr(arg, outer, scopes, out);
+            }
+        }
+        ir::ExprKind::Binary { lhs, rhs, .. } => {
+            collect_captured_mutations_in_expr(lhs, outer, scopes, out);
+            collect_captured_mutations_in_expr(rhs, outer, scopes, out);
+        }
+        ir::ExprKind::Unary { expr, .. }
+        | ir::ExprKind::Borrow { expr, .. }
+        | ir::ExprKind::Await { expr }
+        | ir::ExprKind::Try { expr }
+        | ir::ExprKind::FieldAccess { base: expr, .. } => {
+            collect_captured_mutations_in_expr(expr, outer, scopes, out)
+        }
+        ir::ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                collect_captured_mutations_in_expr(value, outer, scopes, out);
+            }
+        }
+        ir::ExprKind::Int(_)
+        | ir::ExprKind::Float(_)
+        | ir::ExprKind::Bool(_)
+        | ir::ExprKind::Char(_)
+        | ir::ExprKind::String(_)
+        | ir::ExprKind::Unit
+        | ir::ExprKind::Var(_)
+        | ir::ExprKind::Continue => {}
+    }
+}
+
+fn collect_pattern_bindings(pattern: &ir::Pattern, out: &mut BTreeSet<String>) {
+    match &pattern.kind {
+        ir::PatternKind::Var(name) => {
+            out.insert(name.clone());
+        }
+        ir::PatternKind::Or { patterns } | ir::PatternKind::Variant { args: patterns, .. } => {
+            for pattern in patterns {
+                collect_pattern_bindings(pattern, out);
+            }
+        }
+        ir::PatternKind::Struct { fields, .. } => {
+            for field in fields {
+                collect_pattern_bindings(&field.pattern, out);
+            }
+        }
+        ir::PatternKind::Wildcard
+        | ir::PatternKind::Int(_)
+        | ir::PatternKind::Bool(_)
+        | ir::PatternKind::Char(_)
+        | ir::PatternKind::String(_)
+        | ir::PatternKind::Unit => {}
+    }
+}
+
 fn generic_names(generics: &[ir::GenericParam]) -> BTreeSet<String> {
     generics.iter().map(|param| param.name.clone()).collect()
 }
@@ -11178,6 +11398,102 @@ fn main() -> Int { 0 }
         let found = unknown_type_messages(src);
         assert_eq!(found.len(), 1, "{found:#?}");
         assert_eq!(found[0].0, "unknown type 'T'");
+    }
+
+    fn e1289_messages(src: &str) -> Vec<String> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _d2) = resolve(&ir, "test.aic");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == "E1289")
+            .map(|d| d.message)
+            .collect()
+    }
+
+    #[test]
+    fn closures_cannot_mutate_captured_bindings() {
+        let cases = [
+            (
+                "fn f() -> Int { let mut n = 0; let inc = |d: Int| -> Int { n = n + d; n }; inc(1) }",
+                vec!["closure cannot assign to captured variable 'n'"],
+            ),
+            (
+                "fn bump(x: RefMut[Int]) -> Int { 0 }\nfn f() -> Int { let mut n = 0; let g = |d: Int| -> Int { bump(&mut n); d }; g(1) }",
+                vec!["closure cannot mutably borrow captured variable 'n'"],
+            ),
+            (
+                // Nested closures: the inner closure captures from the outer
+                // function and from the outer closure.
+                "fn f() -> Int { let mut n = 0; let outer = |a: Int| -> Int { let mut m = a; let inner = |b: Int| -> Int { n = b; m = b; b }; inner(a) }; outer(1) }",
+                vec![
+                    "closure cannot assign to captured variable 'n'",
+                    "closure cannot assign to captured variable 'm'",
+                ],
+            ),
+            (
+                // A binding shadowed only inside an inner block is captured
+                // again after the block ends.
+                "fn f() -> Int { let mut n = 0; let g = |d: Int| -> Int { if d > 0 { let mut n = d; n = n + 1; } else { () }; n = d; d }; g(1) }",
+                vec!["closure cannot assign to captured variable 'n'"],
+            ),
+        ];
+        for (body, expected) in cases {
+            let src = format!("{body}\nfn main() -> Int {{ 0 }}\n");
+            assert_eq!(e1289_messages(&src), expected, "{body}");
+        }
+    }
+
+    #[test]
+    fn closures_may_mutate_their_own_bindings() {
+        let src = r#"
+fn f() -> Int {
+    let n = 10;
+    let g = |d: Int| -> Int {
+        let mut acc = d;
+        acc = acc + n;
+        let mut n = 1;
+        n = n + acc;
+        let mut i = 0;
+        while i < 3 {
+            i = i + 1;
+        };
+        n + i
+    };
+    g(1)
+}
+fn main() -> Int { 0 }
+"#;
+        assert!(e1289_messages(src).is_empty(), "{:?}", e1289_messages(src));
+    }
+
+    #[test]
+    fn closures_in_structs_and_returned_closures_are_checked() {
+        let stored = r#"
+struct Handler { run: Fn(Int) -> Int }
+fn make() -> Handler {
+    let mut total = 0;
+    Handler { run: |x: Int| -> Int { total = total + x; total } }
+}
+fn main() -> Int { 0 }
+"#;
+        assert_eq!(
+            e1289_messages(stored),
+            vec!["closure cannot assign to captured variable 'total'"]
+        );
+        let returned = r#"
+fn counter() -> Fn(Int) -> Int {
+    let mut count = 0;
+    |step: Int| -> Int { count = count + step; count }
+}
+fn main() -> Int { 0 }
+"#;
+        assert_eq!(
+            e1289_messages(returned),
+            vec!["closure cannot assign to captured variable 'count'"]
+        );
     }
 
     #[test]
