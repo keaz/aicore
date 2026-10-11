@@ -21,6 +21,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <direct.h>
+#include <fcntl.h>
 #include <io.h>
 #include <process.h>
 #include <mstcpip.h>

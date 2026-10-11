@@ -986,6 +986,12 @@ void aic_rt_env_set_args(int argc, char** argv) {
     }
     aic_rt_argc = argc;
     aic_rt_argv = argv;
+#ifdef _WIN32
+    // Keep program output byte-identical across platforms: without this the CRT
+    // translates "\n" to "\r\n" on stdout/stderr.
+    (void)_setmode(_fileno(stdout), _O_BINARY);
+    (void)_setmode(_fileno(stderr), _O_BINARY);
+#endif
 #ifdef AIC_RT_CHECK_LEAKS
     aic_rt_leak_register_atexit();
 #endif

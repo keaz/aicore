@@ -177,6 +177,9 @@ Golden workflow examples are documented in `docs/examples/test-golden-workflow.m
 
 - The Windows compatibility shim (pthread, clock, socket and `sys/stat.h` macros) lives near the top of `src/codegen/runtime/part01.c` under `#ifdef _WIN32`. It must stay outside the POSIX `#else` branch of the platform include block; `runtime_windows_shim_is_active_only_under_win32` in `src/codegen/tests.rs` enforces this.
 - The `aic` CLI runs on a dedicated thread with a 64 MiB stack (`src/main.rs`) because the default 1 MiB Windows main-thread stack is too small for the compiler.
+- The runtime uses fixed-width `int64_t`/`uint64_t` for AICore `Int` values, never `long`: Windows is LLP64, so `long` is 32-bit there while LLVM declares runtime functions with `i64`.
+- Generated programs put stdout/stderr in binary mode on Windows so program output is byte-identical (`\n`, not `\r\n`) across platforms.
+- `std.proc` `run_with` passes environment overrides through the `CreateProcessA` environment block, so `%NAME%` expansion inside the command sees them.
 
 ## Final Pre-Submission Checklist
 
