@@ -614,7 +614,7 @@ For the full surface, use `aic --help` and `aic <command> --help`. The commands 
 aic init <project>          # Initialize a new project (no local std copy)
 aic setup [--std-root <p>]  # Install std into global toolchain location
 aic check <file> [--json]   # Type/effect check with structured diagnostics
-aic fmt <file>              # Deterministic formatting from IR
+aic fmt <file>              # Deterministic formatting from IR; keeps comments
 aic build <file> -o <out>   # Compile to native binary via LLVM
 aic run <file>              # Build and execute
 aic test <dir> [--json]     # Run built-in test harness
@@ -652,6 +652,7 @@ For agent-first usage guidance (feature selection, command strategy, and workflo
 - [aic init deep dive](docs/agent-tooling/commands/aic-init.md)
 - [aic lsp deep dive](docs/agent-tooling/commands/aic-lsp.md)
 - [aic diff --semantic deep dive](docs/agent-tooling/commands/aic-diff.md)
+- [aic fmt deep dive](docs/agent-tooling/commands/aic-fmt.md)
 
 ---
 
@@ -747,7 +748,7 @@ AICore provides deterministic behavior across every stage of the pipeline:
 
 - **Stable tokenization/parsing** — same input always produces the same token stream and AST
 - **Stable IR IDs** — `SymbolId`, `TypeId`, `NodeId` follow a deterministic traversal policy
-- **Canonical formatting** — `aic fmt` output is idempotent and IR-driven
+- **Canonical formatting** — `aic fmt` output is idempotent and IR-driven, and keeps comments
 - **Deterministic diagnostics** — ordered by span/code/message for reproducible output
 - **Reproducible builds** — lockfile, checksums, and release manifests ensure byte-identical outputs
 

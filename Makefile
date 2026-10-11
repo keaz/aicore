@@ -96,6 +96,7 @@ test-unit:
 
 test-golden:
 	$(CARGO) test --locked --test golden_tests
+	$(CARGO) test --locked --test formatter_tests
 
 test-exec:
 	RUST_MIN_STACK="$(RUST_MIN_STACK)" $(CARGO) test --locked --test execution_tests -- --test-threads="$(EXEC_TEST_THREADS)"

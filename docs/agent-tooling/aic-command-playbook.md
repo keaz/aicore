@@ -91,7 +91,7 @@ Reasoning metadata notes:
 | `aic diag [input] --json` | Diagnostics stream without full check wrapper | Diagnostics JSON |
 | `aic diag apply-fixes [input] --dry-run --json` | Planning safe automated edits | Planned edit JSON |
 | `aic explain <code> [--json]` | Translating error codes into fix intent | Text/JSON explanation |
-| `aic fmt [input] [--check]` | Deterministic formatting gate (canonical string escapes: `\\n`, `\\r`, `\\t`, `\\0`, `\\u{...}`) | Exit code + file rewrite/check |
+| `aic fmt [input] [--check]` | Deterministic formatting gate; keeps comments, typed holes, and literal spellings ([guide](commands/aic-fmt.md)) | Exit code + file rewrite/check |
 | `aic ir [input] --emit json|text` | Inspecting canonical frontend IR | IR JSON/text |
 | `aic impact <function> [input]` | Blast-radius estimation for refactors | JSON impact report |
 | `aic suggest-effects <input>` | Inferring missing effects/capabilities | JSON suggestions |
@@ -177,3 +177,4 @@ aic fmt src/main.aic --check
 - [`aic init`](commands/aic-init.md)
 - [`aic lsp`](commands/aic-lsp.md)
 - [`aic diff --semantic`](commands/aic-diff.md)
+- [`aic fmt`](commands/aic-fmt.md)

@@ -53,6 +53,7 @@ Diagnostic transport note:
   - [commands/aic-init.md](commands/aic-init.md)
   - [commands/aic-lsp.md](commands/aic-lsp.md)
   - [commands/aic-diff.md](commands/aic-diff.md)
+  - [commands/aic-fmt.md](commands/aic-fmt.md)
 
 ## Core commands
 

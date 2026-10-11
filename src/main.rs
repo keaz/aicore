@@ -32,10 +32,9 @@ use aicore::driver::{
     diagnostics_pretty, has_errors, run_frontend_with_options, sort_and_cap_diagnostics,
     sort_diagnostics, FrontendOptions, FrontendOutput,
 };
-use aicore::formatter::format_program;
+use aicore::formatter::{format_program, format_source, FormatError};
 use aicore::intrinsic_verifier::verify_intrinsics;
 use aicore::ir::migrate_json_to_current;
-use aicore::ir_builder;
 use aicore::lsp;
 use aicore::metrics::{self, MetricsThresholdOverrides};
 use aicore::migration::{run_migration, write_report as write_migration_report};
@@ -2042,27 +2041,31 @@ fn run_cli() -> anyhow::Result<i32> {
         }
         Command::Fmt { input, check } => {
             let source = std::fs::read_to_string(&input)?;
-            let (ast, diags) = parser::parse(&source, &input.to_string_lossy());
-            if diags.iter().any(|d| matches!(d.severity, Severity::Error)) {
-                print!("{}", diagnostics_pretty(&diags));
-                EXIT_DIAGNOSTIC_ERROR
-            } else {
-                let Some(ast) = ast else {
-                    anyhow::bail!("format failed: parser returned no AST");
-                };
-                let ir = ir_builder::build(&ast);
-                let formatted = format_program(&ir);
-                if check {
-                    let current = std::fs::read_to_string(&input)?;
-                    if current != formatted {
-                        eprintln!("format check failed: {}", input.display());
-                        EXIT_DIAGNOSTIC_ERROR
+            match format_source(&source, &input.to_string_lossy()) {
+                Err(FormatError::Diagnostics(diags)) => {
+                    print!("{}", diagnostics_pretty(&diags));
+                    EXIT_DIAGNOSTIC_ERROR
+                }
+                Err(err @ FormatError::Verification(_)) => {
+                    anyhow::bail!(
+                        "format failed for {}: {err}; file left unchanged",
+                        input.display()
+                    );
+                }
+                Ok(formatted) => {
+                    if check {
+                        if source != formatted {
+                            eprintln!("format check failed: {}", input.display());
+                            EXIT_DIAGNOSTIC_ERROR
+                        } else {
+                            EXIT_OK
+                        }
                     } else {
+                        if source != formatted {
+                            std::fs::write(&input, formatted)?;
+                        }
                         EXIT_OK
                     }
-                } else {
-                    std::fs::write(&input, formatted)?;
-                    EXIT_OK
                 }
             }
         }

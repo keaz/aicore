@@ -178,16 +178,33 @@ pub enum TokenKind {
     Eof,
 }
 
+/// A `//` line comment kept as trivia so tools such as the formatter can
+/// re-emit it. `text` starts with `//` and excludes the line terminator and
+/// trailing whitespace; `span` covers exactly `text`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment {
+    pub text: String,
+    pub span: Span,
+}
+
 pub fn lex(source: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
+    let (tokens, _comments, diagnostics) = lex_with_comments(source, file);
+    (tokens, diagnostics)
+}
+
+/// Lexes `source` like [`lex`] and also returns every line comment, in source
+/// order.
+pub fn lex_with_comments(source: &str, file: &str) -> (Vec<Token>, Vec<Comment>, Vec<Diagnostic>) {
     let mut lexer = Lexer {
         source,
         file,
         offset: 0,
         diagnostics: Vec::new(),
         tokens: Vec::new(),
+        comments: Vec::new(),
     };
     lexer.run();
-    (lexer.tokens, lexer.diagnostics)
+    (lexer.tokens, lexer.comments, lexer.diagnostics)
 }
 
 struct Lexer<'a> {
@@ -196,6 +213,7 @@ struct Lexer<'a> {
     offset: usize,
     diagnostics: Vec<Diagnostic>,
     tokens: Vec<Token>,
+    comments: Vec<Comment>,
 }
 
 impl<'a> Lexer<'a> {
@@ -206,6 +224,7 @@ impl<'a> Lexer<'a> {
                     self.bump();
                 }
                 '/' if self.peek_next() == Some('/') => {
+                    let start = self.offset;
                     self.bump();
                     self.bump();
                     while let Some(next) = self.peek() {
@@ -214,6 +233,11 @@ impl<'a> Lexer<'a> {
                         }
                         self.bump();
                     }
+                    let text = self.source[start..self.offset].trim_end();
+                    self.comments.push(Comment {
+                        text: text.to_string(),
+                        span: Span::new(start, start + text.len()),
+                    });
                 }
                 'f' if self.peek_next() == Some('"') => self.lex_template_string(),
                 '$' if self.peek_next() == Some('"') => self.lex_template_string(),
@@ -1008,7 +1032,55 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{lex, FloatLiteralSuffixToken, IntLiteralSuffixToken, TokenKind};
+    use super::{
+        lex, lex_with_comments, Comment, FloatLiteralSuffixToken, IntLiteralSuffixToken, TokenKind,
+    };
+    use crate::span::Span;
+
+    #[test]
+    fn keeps_line_comments_as_trivia_with_spans() {
+        let src = "// head   \nfn main() -> Int { // brace\r\n    \"// not a comment\" /// doc\n}";
+        let (tokens, comments, diags) = lex_with_comments(src, "test.aic");
+        assert!(diags.is_empty(), "diags={diags:#?}");
+        assert_eq!(
+            comments,
+            vec![
+                Comment {
+                    text: "// head".to_string(),
+                    span: Span::new(0, 7),
+                },
+                Comment {
+                    text: "// brace".to_string(),
+                    span: Span::new(30, 38),
+                },
+                Comment {
+                    text: "/// doc".to_string(),
+                    span: Span::new(63, 70),
+                },
+            ]
+        );
+        for comment in &comments {
+            assert_eq!(&src[comment.span.start..comment.span.end], comment.text);
+        }
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.kind, TokenKind::String(s) if s == "// not a comment")));
+
+        let (plain_tokens, plain_diags) = lex(src, "test.aic");
+        assert_eq!(plain_tokens, tokens);
+        assert_eq!(plain_diags, diags);
+    }
+
+    #[test]
+    fn comment_at_end_of_input_without_newline() {
+        let (tokens, comments, _) = lex_with_comments("fn // tail", "test.aic");
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].text, "// tail");
+        assert!(matches!(
+            tokens.last().map(|t| &t.kind),
+            Some(TokenKind::Eof)
+        ));
+    }
 
     #[test]
     fn lexes_keywords_and_symbols() {

@@ -7,8 +7,7 @@ use serde_json::{json, Value};
 
 use crate::ast;
 use crate::driver::run_frontend;
-use crate::formatter::format_program;
-use crate::ir_builder;
+use crate::formatter::format_source;
 use crate::parser;
 use crate::span::Span;
 use crate::std_policy;
@@ -1121,15 +1120,9 @@ impl LspServer {
         }
 
         let source = self.document_text(&uri)?;
-        let (program, diagnostics) = parser::parse(&source, &uri);
-        if diagnostics.iter().any(|d| d.is_error()) {
-            return Ok(json!([]));
-        }
-        let Some(program) = program else {
+        let Ok(formatted) = format_source(&source, &uri) else {
             return Ok(json!([]));
         };
-        let ir = ir_builder::build(&program);
-        let formatted = format_program(&ir);
 
         let range = full_document_range(&source);
         Ok(json!([

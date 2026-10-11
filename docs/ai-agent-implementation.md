@@ -49,6 +49,20 @@ Core language-specific deep dive:
 - Cross-target execution matrix runner: `src/execution_matrix.rs`
 - Performance budget runner: `src/perf_gate.rs`
 - CLI command surface: `src/main.rs`
+- Source formatter (`aic fmt`, LSP formatting): `src/formatter.rs`
+
+## Source Formatter Trivia (`aic fmt`)
+
+- `lexer::lex_with_comments` returns `Comment { text, span }` for every `//` comment; `lexer::lex` drops them, so the parser is unaffected.
+- `formatter::format_source(source, file)` is the only entry point for formatting a file a person wrote. It prints from the IR and threads a `SourceContext` (source text, tokens, comment cursor) through the printer:
+  - comments are flushed before each item, attribute, statement, block tail, struct field, enum variant, trait/impl method, match arm, and closing `}`; a comment on the same line after an element is appended to that line;
+  - comments inside an element that is printed on one line are flushed above it (`first_nested_region` finds where the element's own comment slots start);
+  - literal tokens are re-emitted from source by exact span (`0xFF`, escapes, template prefix); `self` receivers come from source tokens because the IR drops `&`/`&mut`;
+  - lowered sugar is re-sugared: `for` (range and iterator protocol), `else if`, tuple `let` (`__tuple_let_N` temporaries), and the synthesized `Name::default` function for defaulted structs is skipped.
+- `format_source` re-parses its output and compares comment texts plus the span-free, canonicalized AST (`verify_formatted`). Any mismatch returns `FormatError::Verification`, and `aic fmt` exits `3` without writing.
+- `formatter::format_program(&ir)` remains the trivia-free printer for generated code (synthesize, scaffold, differential, fuzzing).
+- When adding syntax that the parser lowers, extend the printer to re-sugar it; `tests/formatter_tests.rs` formats every checked-in `.aic` file and fails on a guard trip, a changed comment, or a non-idempotent result.
+- User guide: [`docs/agent-tooling/commands/aic-fmt.md`](agent-tooling/commands/aic-fmt.md).
 
 ## Named Function Arguments (`[ERGO-T6]`)
 

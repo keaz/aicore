@@ -63,7 +63,7 @@ Workspace builds use `package_workflow::workspace_build_plan` and deterministic 
 - `aic check` / `aic diag`: frontend diagnostics, optional JSON/SARIF output (`src/sarif.rs`)
 - `aic impact`: frontend + typecheck call graph + test/contract cross-reference (`src/impact.rs`)
 - `aic coverage`: deterministic coverage JSON from scanned source functions + diagnostics (`src/coverage.rs`)
-- `aic fmt`: parse + IR format (`canonical formatting implementation`)
+- `aic fmt`: parse + IR format with comment trivia from `lexer::lex_with_comments`, then re-parse self-check (`src/formatter.rs::format_source`, see [`aic fmt` guide](agent-tooling/commands/aic-fmt.md))
 - `aic ir`: frontend + IR emit
 - `aic build`: frontend + contract lowering + codegen + clang
 - `aic run`: build pipeline + sandboxed process execution (`src/sandbox.rs`)

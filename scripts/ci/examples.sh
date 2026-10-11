@@ -158,6 +158,7 @@ check_pass=(
   "examples/core/trait_sort.aic"
   "examples/core/trait_methods.aic"
   "examples/core/for_in_loop.aic"
+  "examples/core/formatter_comments.aic"
   "examples/core/borrow_checker_completeness.aic"
   "examples/core/result_propagation.aic"
   "examples/core/mut_vec.aic"
@@ -208,6 +209,23 @@ check_pass=(
   "examples/verify/qv_contract_proof_fixed.aic"
   "examples/verify/method_contracts.aic"
   "examples/verify/method_contract_violation.aic"
+)
+# Files that must already be in `aic fmt` canonical form.
+fmt_check_pass=(
+  "examples/core/formatter_comments.aic"
+)
+# Files whose formatted copy must stay valid, keep every comment, and be a
+# fixed point of `aic fmt` (the checked-in file itself is not rewritten).
+fmt_roundtrip=(
+  "examples/core/formatter_comments.aic"
+  "examples/e7/typed_holes.aic"
+  "examples/e1/syntax_showcase.aic"
+  "examples/core/struct_defaults.aic"
+  "examples/core/tuple_types.aic"
+  "examples/core/for_in_loop.aic"
+  "examples/data/template_literals.aic"
+  "examples/core/visibility_modifiers_demo/src/api.aic"
+  "std/vec.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -342,6 +360,7 @@ run_pass=(
   "examples/core/trait_sort.aic"
   "examples/core/trait_methods.aic"
   "examples/core/for_in_loop.aic"
+  "examples/core/formatter_comments.aic"
   "examples/core/borrow_checker_completeness.aic"
   "examples/core/result_propagation.aic"
   "examples/core/mut_vec.aic"
@@ -479,6 +498,50 @@ expect_check_fail() {
     cat /tmp/aic-example.err >&2 || true
     exit 1
   fi
+}
+
+expect_fmt_roundtrip() {
+  local file="$1"
+  local copy="$ARTIFACT_DIR/fmt-roundtrip/${file//\//__}"
+  mkdir -p "$ARTIFACT_DIR/fmt-roundtrip"
+  cp "$file" "$copy"
+  if ! "${AIC[@]}" fmt "$copy" >/tmp/aic-example.out 2>/tmp/aic-example.err; then
+    echo "aic fmt failed for: $file" >&2
+    cat /tmp/aic-example.out >&2 || true
+    cat /tmp/aic-example.err >&2 || true
+    exit 1
+  fi
+  if ! "${AIC[@]}" fmt "$copy" --check >/dev/null 2>/tmp/aic-example.err; then
+    echo "aic fmt is not idempotent for: $file" >&2
+    exit 1
+  fi
+  python3 - "$file" "$copy" <<'PY'
+import pathlib, sys
+
+def comments(path):
+    out = []
+    for line in pathlib.Path(path).read_text().splitlines():
+        in_string = False
+        idx = 0
+        while idx < len(line):
+            ch = line[idx]
+            if ch == "\\" and in_string:
+                idx += 2
+                continue
+            if ch == '"':
+                in_string = not in_string
+            elif not in_string and line.startswith("//", idx):
+                out.append(line[idx:].rstrip())
+                break
+            idx += 1
+    return sorted(out)
+
+before, after = comments(sys.argv[1]), comments(sys.argv[2])
+if before != after:
+    raise SystemExit(f"aic fmt changed comments in {sys.argv[1]}: {len(before)} -> {len(after)}")
+if "<?>" in pathlib.Path(sys.argv[2]).read_text():
+    raise SystemExit(f"aic fmt printed an internal type marker for {sys.argv[1]}")
+PY
 }
 
 expect_run_fail() {
@@ -754,6 +817,12 @@ case "$MODE" in
     for f in "${check_pass[@]}"; do
       "${AIC[@]}" check "$f" >/dev/null
     done
+    for f in "${fmt_check_pass[@]}"; do
+      "${AIC[@]}" fmt "$f" --check
+    done
+    for f in "${fmt_roundtrip[@]}"; do
+      expect_fmt_roundtrip "$f"
+    done
     for f in "${check_fail[@]}"; do
       expect_check_fail "$f"
     done
@@ -861,6 +930,7 @@ case "$MODE" in
     expect_run_value "examples/core/trait_sort.aic" "42"
     expect_run_value "examples/core/trait_methods.aic" "42"
     expect_run_value "examples/core/for_in_loop.aic" "35"
+    expect_run_value "examples/core/formatter_comments.aic" "42"
     expect_run_value "examples/core/borrow_checker_completeness.aic" "2"
     expect_run_value "examples/core/result_propagation.aic" "42"
     expect_run_value "examples/core/mut_vec.aic" "2"

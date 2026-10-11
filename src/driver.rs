@@ -17,7 +17,6 @@ use crate::diagnostics::{attach_line_columns, Diagnostic, Severity, SuggestedFix
 use crate::effects::{
     normalize_capability_declarations_with_context, normalize_effect_declarations_with_context,
 };
-use crate::formatter::format_program;
 use crate::ir;
 use crate::ir_builder;
 use crate::machine_paths;
@@ -1082,8 +1081,9 @@ pub fn format_source(path: &Path, write: bool) -> anyhow::Result<String> {
     if has_errors(&front.diagnostics) {
         anyhow::bail!("cannot format file with diagnostics errors")
     }
-    let formatted = format_program(&front.ir);
-    if write {
+    let source = fs::read_to_string(path)?;
+    let formatted = crate::formatter::format_source(&source, &path.to_string_lossy())?;
+    if write && formatted != source {
         fs::write(path, &formatted)?;
     }
     Ok(formatted)

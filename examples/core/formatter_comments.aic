@@ -1,0 +1,55 @@
+// `aic fmt` keeps every comment in this file where it is.
+// Run `aic fmt examples/core/formatter_comments.aic --check` to confirm.
+module examples.core.formatter_comments;
+
+import std.io; // print_int
+import std.vec;
+
+/// A 2D point. Comments before fields stay with the field.
+struct Point {
+    // horizontal position
+    x: Int,
+    y: Int = 0x10, // field default keeps its hex spelling
+}
+
+enum Step {
+    // move right by the payload
+    Right(Int),
+    Stay,
+}
+
+// A comment directly above an item stays attached to it.
+fn plus_one(x: Int) -> Int {
+    x + 1
+}
+
+fn walk(steps: Vec[Int]) -> Int {
+    let mut total = 0;
+    for step in steps {
+        // accumulate each step
+        total = total + step;
+    };
+    total // sum of all steps
+}
+
+fn apply(p: Point, step: Step) -> Point {
+    match step {
+        // only the x coordinate moves
+        Right(n) => Point {x: p.x + n, y: p.y},
+        Stay => p, // unchanged
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let start = Point {x: 1, y: 2};
+    let (moved, _) = (apply(start, Right(9)), 0);
+    let mut steps: Vec[Int] = vec.new_vec();
+    steps = vec.push(steps, 4);
+    steps = vec.push(steps, 5);
+    steps = vec.push(steps, 6);
+
+    // 10 + 16 + 15 + 1 = 42
+    let answer = moved.x + 0x10 + walk(steps) + plus_one(0);
+    print_int(answer);
+    0
+}

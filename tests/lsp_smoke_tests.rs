@@ -319,6 +319,80 @@ fn lsp_hover_definition_and_formatting_smoke() {
 }
 
 #[test]
+fn lsp_formatting_keeps_comments_and_typed_holes() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("main.aic");
+    let text = "// keep me\nfn plus_one(x: _) -> _ { x + 1 }\n\nfn main() -> Int {\n    plus_one(1) // call\n}\n";
+    fs::write(&file, text).expect("write source");
+    let uri = file_uri(&file);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aic"))
+        .arg("lsp")
+        .current_dir(dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn lsp");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout"));
+
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"rootUri": file_uri(dir.path()), "capabilities": {}}
+        }),
+    );
+    assert_eq!(read_message(&mut stdout)["id"], 1);
+
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {"uri": uri, "languageId": "aic", "version": 1, "text": text}
+            }
+        }),
+    );
+    let publish = read_message(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+
+    send_message(
+        &mut stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "textDocument/formatting",
+            "params": {
+                "textDocument": {"uri": uri},
+                "options": {"tabSize": 4, "insertSpaces": true}
+            }
+        }),
+    );
+    let formatting = read_message(&mut stdout);
+    assert_eq!(formatting["id"], 2);
+    let edits = formatting["result"].as_array().expect("edit array");
+    assert_eq!(edits.len(), 1, "formatting={formatting:#}");
+    assert_eq!(
+        edits[0]["newText"],
+        "// keep me\nfn plus_one(x: _) -> _ {\n    x + 1\n}\n\nfn main() -> Int {\n    plus_one(1) // call\n}\n"
+    );
+
+    send_message(
+        &mut stdin,
+        &json!({"jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": null}),
+    );
+    assert_eq!(read_message(&mut stdout)["id"], 3);
+    drop(stdin);
+    let status = child.wait().expect("wait lsp");
+    assert!(status.success(), "status={status:?}");
+}
+
+#[test]
 fn lsp_diagnostics_codes_match_cli_check() {
     let repo = repo_root();
     let file = repo.join("examples/e7/diag_errors.aic");

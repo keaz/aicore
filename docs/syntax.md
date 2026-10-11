@@ -246,6 +246,10 @@ Mutability and references:
 
 ## Canonical formatting contract
 
-- Formatting is IR-driven (not token-preserving).
-- `aic fmt` output is deterministic for equivalent IR.
+- Layout is IR-driven: indentation, line breaks, and spacing are re-printed from the IR.
+- `aic fmt` never loses source text other than whitespace. `//` comments (including `///`) are lexed as trivia and re-emitted before the next item, statement, field, variant, method, or match arm, or at the end of the line they trailed. Typed holes print as `_`; visibility, receivers, field defaults, and literal spellings are kept.
+- The only non-whitespace rewrites are documented canonicalizations: `UInt` → `USize`, `Float` → `Float64`, `where` bounds moved inline, sorted imports/effects/capabilities, and normalized parentheses.
+- `aic fmt` re-parses its output and refuses to write if a comment, a literal spelling, or the program changed.
+- `aic fmt` output is deterministic for equivalent source.
 - Formatting is idempotent: applying formatter to formatter output must produce byte-identical text.
+- Full rules: [`aic fmt` guide](agent-tooling/commands/aic-fmt.md).
