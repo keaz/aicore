@@ -848,6 +848,7 @@ fn build_invariant_helpers(
                 name: field.name.clone(),
                 attrs: Vec::new(),
                 ty: field.ty,
+                mutable_receiver: false,
                 span: field.span,
             })
             .collect::<Vec<_>>();
@@ -1088,11 +1089,17 @@ fn lower_ensures_in_block(
             }
             ir::Stmt::Assign {
                 target,
+                path,
                 mut expr,
                 span,
             } => {
                 lower_ensures_in_expr(&mut expr, ensures, ret_type, function_name, alloc);
-                lowered_stmts.push(ir::Stmt::Assign { target, expr, span });
+                lowered_stmts.push(ir::Stmt::Assign {
+                    target,
+                    path,
+                    expr,
+                    span,
+                });
             }
             ir::Stmt::Expr { mut expr, span } => {
                 lower_ensures_in_expr(&mut expr, ensures, ret_type, function_name, alloc);
@@ -1684,8 +1691,14 @@ fn clone_block(block: &ir::Block, alloc: &mut IdAlloc) -> ir::Block {
                     expr: clone_expr(expr, alloc),
                     span: *span,
                 },
-                ir::Stmt::Assign { target, expr, span } => ir::Stmt::Assign {
+                ir::Stmt::Assign {
+                    target,
+                    path,
+                    expr,
+                    span,
+                } => ir::Stmt::Assign {
                     target: target.clone(),
+                    path: path.clone(),
                     expr: clone_expr(expr, alloc),
                     span: *span,
                 },

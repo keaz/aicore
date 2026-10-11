@@ -164,6 +164,34 @@ pub fn validate_type_fast(
     checker.preflight_validate_type(ty)
 }
 
+/// A call of a `&mut self` method.
+#[derive(Debug, Clone)]
+struct MutableReceiverCall {
+    method: String,
+    /// `value.method(...)`: the receiver is the callee's base. Otherwise
+    /// (`Type::method(value, ...)`) it is the first argument.
+    method_syntax: bool,
+}
+
+impl MutableReceiverCall {
+    fn receiver<'e>(&self, callee: &'e ir::Expr, args: &'e [ir::Expr]) -> Option<&'e ir::Expr> {
+        if self.method_syntax {
+            match &callee.kind {
+                ir::ExprKind::FieldAccess { base, .. } => Some(base),
+                _ => None,
+            }
+        } else {
+            args.first()
+        }
+    }
+}
+
+fn projection_span(projection: &ir::PlaceProjection) -> crate::span::Span {
+    match projection {
+        ir::PlaceProjection::Field { span, .. } | ir::PlaceProjection::Index { span, .. } => *span,
+    }
+}
+
 #[derive(Debug, Clone)]
 struct FnSig {
     symbol: Option<ir::SymbolId>,
@@ -173,6 +201,8 @@ struct FnSig {
     extern_abi: Option<String>,
     params: Vec<String>,
     param_names: Vec<String>,
+    /// The first parameter is a `&mut self` receiver.
+    mutable_receiver: bool,
     ret: String,
     effects: BTreeSet<String>,
     capabilities: BTreeSet<String>,
@@ -231,6 +261,9 @@ struct Checker<'a> {
     struct_field_holes: BTreeMap<(String, String), DeferredHole>,
     struct_field_inferred: BTreeMap<(String, String), String>,
     hole_function_symbols: BTreeMap<String, ir::SymbolId>,
+    /// Calls of `&mut self` methods, by call node. The borrow pass requires
+    /// their receiver to be a mutable place.
+    mutable_receiver_calls: BTreeMap<ir::NodeId, MutableReceiverCall>,
     // Type parameters each generic function compares with `==`/`!=`, and
     // the generic calls that bind them; `finish` checks that every concrete
     // binding supports equality (E1291).
@@ -561,6 +594,7 @@ impl<'a> Checker<'a> {
                     extern_abi: info.extern_abi.clone(),
                     params,
                     param_names: info.param_names.clone(),
+                    mutable_receiver: info.mutable_receiver,
                     ret: types
                         .get(&info.ret_type)
                         .cloned()
@@ -589,6 +623,7 @@ impl<'a> Checker<'a> {
                     extern_abi: info.extern_abi.clone(),
                     params,
                     param_names: info.param_names.clone(),
+                    mutable_receiver: info.mutable_receiver,
                     ret: types
                         .get(&info.ret_type)
                         .cloned()
@@ -622,6 +657,7 @@ impl<'a> Checker<'a> {
                 extern_abi: None,
                 params: vec!["Int".to_string()],
                 param_names: vec!["value".to_string()],
+                mutable_receiver: false,
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 capabilities: BTreeSet::from(["io".to_string()]),
@@ -639,6 +675,7 @@ impl<'a> Checker<'a> {
                 extern_abi: None,
                 params: vec!["String".to_string()],
                 param_names: vec!["value".to_string()],
+                mutable_receiver: false,
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 capabilities: BTreeSet::from(["io".to_string()]),
@@ -656,6 +693,7 @@ impl<'a> Checker<'a> {
                 extern_abi: None,
                 params: vec!["Float".to_string()],
                 param_names: vec!["value".to_string()],
+                mutable_receiver: false,
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 capabilities: BTreeSet::from(["io".to_string()]),
@@ -673,6 +711,7 @@ impl<'a> Checker<'a> {
                 extern_abi: None,
                 params: vec!["String".to_string()],
                 param_names: vec!["value".to_string()],
+                mutable_receiver: false,
                 ret: "Int".to_string(),
                 effects: BTreeSet::new(),
                 capabilities: BTreeSet::new(),
@@ -690,6 +729,7 @@ impl<'a> Checker<'a> {
                 extern_abi: None,
                 params: vec!["String".to_string()],
                 param_names: vec!["message".to_string()],
+                mutable_receiver: false,
                 ret: "()".to_string(),
                 effects: BTreeSet::from(["io".to_string()]),
                 capabilities: BTreeSet::from(["io".to_string()]),
@@ -742,6 +782,7 @@ impl<'a> Checker<'a> {
             struct_field_holes: BTreeMap::new(),
             struct_field_inferred: BTreeMap::new(),
             hole_function_symbols: BTreeMap::new(),
+            mutable_receiver_calls: BTreeMap::new(),
             equality_type_params: BTreeMap::new(),
             generic_call_sites: Vec::new(),
             current_param_positions: BTreeMap::new(),
@@ -1864,6 +1905,24 @@ impl<'a> Checker<'a> {
     }
 
     fn check_function(&mut self, func: &ir::Function) {
+        if let Some(receiver) = func.params.first().filter(|p| p.mutable_receiver) {
+            if func.is_async {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1299",
+                        format!(
+                            "async method '{}' cannot take a `&mut self` receiver",
+                            func.name
+                        ),
+                        self.file,
+                        receiver.span,
+                    )
+                    .with_help(
+                        "the caller's value may change or go away while the future is pending; take `self` and return the updated value",
+                    ),
+                );
+            }
+        }
         let previous_enforce = self.enforce_import_visibility;
         let previous_function = self.current_function.clone();
         let previous_module = self.current_module.clone();
@@ -3324,7 +3383,8 @@ impl<'a> Checker<'a> {
         let mut mutability = BTreeMap::new();
         let mut binding_types = BTreeMap::new();
         for param in &func.params {
-            mutability.insert(param.name.clone(), false);
+            // A `&mut self` receiver can be updated in place.
+            mutability.insert(param.name.clone(), param.mutable_receiver);
             let ty = self
                 .types
                 .get(&param.ty)
@@ -3374,8 +3434,15 @@ impl<'a> Checker<'a> {
                         binding_types.remove(name);
                     }
                 }
-                ir::Stmt::Assign { target, expr, .. } => {
+                ir::Stmt::Assign {
+                    target, path, expr, ..
+                } => {
                     self.check_resource_protocol_expr(expr, state, binding_types);
+                    if !path.is_empty() {
+                        // Updating part of a value keeps the binding's
+                        // resource state.
+                        continue;
+                    }
                     clear_resource_state_for_var(target, state);
                     if let Some(binding_ty) =
                         self.infer_resource_binding_type(expr, None, binding_types)
@@ -3717,7 +3784,12 @@ impl<'a> Checker<'a> {
                     let previous_move = state.moved_by_binding.remove(name);
                     introduced_move_states.push((name.clone(), previous_move));
                 }
-                ir::Stmt::Assign { target, expr, span } => {
+                ir::Stmt::Assign {
+                    target,
+                    path,
+                    expr,
+                    span,
+                } => {
                     let temp_borrows =
                         self.check_borrow_expr(expr, mutability, state, binding_types);
                     self.release_temp_borrows(&temp_borrows, state);
@@ -3725,19 +3797,44 @@ impl<'a> Checker<'a> {
                     let Some(is_mutable_binding) = mutability.get(target).copied() else {
                         continue;
                     };
-                    if !is_mutable_binding {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                "E1266",
-                                format!(
-                                    "cannot assign to immutable binding '{}'; declare it as `let mut {}`",
-                                    target, target
-                                ),
-                                self.file,
-                                *span,
+                    let through_reference = !path.is_empty()
+                        && binding_types.get(target).is_some_and(|ty| {
+                            matches!(base_type_name(&self.normalize_type(ty)), "Ref" | "RefMut")
+                        });
+                    // Writes through `Ref`/`RefMut` are reported as E1298 by
+                    // the type checker.
+                    if !is_mutable_binding && !through_reference {
+                        let message = if target == "self" {
+                            format!(
+                                "cannot assign to '{}': the method receiver is not `&mut self`",
+                                ir::render_place(target, path)
                             )
-                            .with_help("use `let mut` for bindings that are reassigned"),
+                        } else if path.is_empty() {
+                            format!(
+                                "cannot assign to immutable binding '{}'; declare it as `let mut {}`",
+                                target, target
+                            )
+                        } else {
+                            format!(
+                                "cannot assign to '{}': binding '{}' is immutable; declare it as `let mut {}`",
+                                ir::render_place(target, path),
+                                target,
+                                target
+                            )
+                        };
+                        let help = if target == "self" {
+                            "declare the method receiver as `&mut self` to update the caller's value"
+                        } else {
+                            "use `let mut` for bindings that are reassigned"
+                        };
+                        self.diagnostics.push(
+                            Diagnostic::error("E1266", message, self.file, *span).with_help(help),
                         );
+                    }
+                    if !path.is_empty() {
+                        // A place assignment reads the rest of the value, so
+                        // the root must still hold a value.
+                        self.check_use_after_move(target, *span, state);
                     }
                     if let Some((conflict_target, conflict)) =
                         self.find_first_overlapping_borrow(target, state)
@@ -3746,7 +3843,7 @@ impl<'a> Checker<'a> {
                             "E1265",
                             format!(
                                 "cannot assign to '{}' while it is actively borrowed",
-                                target
+                                ir::render_place(target, path)
                             ),
                             self.file,
                             *span,
@@ -3768,9 +3865,11 @@ impl<'a> Checker<'a> {
                         );
                         self.diagnostics.push(diag);
                     }
-                    state.moved_by_binding.remove(target);
-                    if let Some(inferred) = self.infer_binding_type(expr, binding_types) {
-                        binding_types.insert(target.clone(), inferred);
+                    if path.is_empty() {
+                        state.moved_by_binding.remove(target);
+                        if let Some(inferred) = self.infer_binding_type(expr, binding_types) {
+                            binding_types.insert(target.clone(), inferred);
+                        }
                     }
                 }
                 ir::Stmt::Expr { expr, .. } => {
@@ -3884,6 +3983,7 @@ impl<'a> Checker<'a> {
                 for arg in args {
                     borrows.extend(self.check_borrow_expr(arg, mutability, state, binding_types));
                 }
+                self.check_mutable_receiver_call(expr, callee, args, mutability, state);
                 self.track_call_boundary_moves(
                     callee,
                     args,
@@ -4075,6 +4175,65 @@ impl<'a> Checker<'a> {
         };
         let target = self.borrow_target_path(inner)?;
         Some((target, *mutable, expr.span))
+    }
+
+    /// A `&mut self` method call updates its receiver, so a receiver that
+    /// is a place must be rooted in a mutable binding and must not be
+    /// borrowed. The mutable borrow lasts for the call only. A receiver
+    /// that is not a place (a call result) is a temporary.
+    fn check_mutable_receiver_call(
+        &mut self,
+        call: &ir::Expr,
+        callee: &ir::Expr,
+        args: &[ir::Expr],
+        mutability: &BTreeMap<String, bool>,
+        state: &mut BorrowState,
+    ) {
+        let Some(receiver_call) = self.mutable_receiver_calls.get(&call.node).cloned() else {
+            return;
+        };
+        let method = receiver_call.method.clone();
+        let Some(receiver) = receiver_call.receiver(callee, args) else {
+            return;
+        };
+        let Some(target) = self.borrow_target_path(receiver) else {
+            return;
+        };
+        let root = binding_root(&target).to_string();
+        let Some(is_mutable) = mutability.get(&root).copied() else {
+            return;
+        };
+        if !is_mutable {
+            let help = if root == "self" {
+                "declare the method receiver as `&mut self` to update the caller's value"
+                    .to_string()
+            } else {
+                format!("declare `{root}` as `let mut {root}`")
+            };
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1266",
+                    format!(
+                        "cannot call `&mut self` method '{}' on '{}': binding '{}' is immutable",
+                        method, target, root
+                    ),
+                    self.file,
+                    call.span,
+                )
+                .with_help(help),
+            );
+            return;
+        }
+        if self.acquire_borrow(&target, true, call.span, None, mutability, state) {
+            self.release_temp_borrows(
+                &[TempBorrow {
+                    target,
+                    mutable: true,
+                    span: call.span,
+                }],
+                state,
+            );
+        }
     }
 
     fn acquire_borrow(
@@ -4719,14 +4878,29 @@ impl<'a> Checker<'a> {
                         scope.insert(name.clone(), expr_ty);
                     }
                 }
-                ir::Stmt::Assign { target, expr, span } => {
-                    let Some(target_ty) = scope.get(target).cloned() else {
+                ir::Stmt::Assign {
+                    target,
+                    path,
+                    expr,
+                    span,
+                } => {
+                    let Some(root_ty) = scope.get(target).cloned() else {
                         self.diagnostics.push(Diagnostic::error(
                             "E1208",
                             format!("unknown symbol '{}'", target),
                             self.file,
                             *span,
                         ));
+                        continue;
+                    };
+                    let target_ty = if path.is_empty() {
+                        Some(root_ty)
+                    } else {
+                        self.place_type(target, &root_ty, path, &scope)
+                    };
+                    let Some(target_ty) = target_ty else {
+                        // The place is invalid; still check the value.
+                        self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                         continue;
                     };
                     let expr_ty = self.check_expr_with_expected(
@@ -4743,7 +4917,9 @@ impl<'a> Checker<'a> {
                                 "E1269",
                                 format!(
                                     "assignment to '{}' expects '{}', found '{}'",
-                                    target, target_ty, expr_ty
+                                    ir::render_place(target, path),
+                                    target_ty,
+                                    expr_ty
                                 ),
                                 self.file,
                                 *span,
@@ -4837,7 +5013,13 @@ impl<'a> Checker<'a> {
             .map(|param| param.name.clone())
             .collect::<BTreeSet<_>>()];
         let mut violations = Vec::new();
-        collect_captured_mutations_in_block(body, outer_locals, &mut scopes, &mut violations);
+        collect_captured_mutations_in_block(
+            body,
+            outer_locals,
+            &self.mutable_receiver_calls,
+            &mut scopes,
+            &mut violations,
+        );
         for violation in violations {
             let (message, help) = match violation.kind {
                 CapturedMutationKind::Assign => (
@@ -4856,6 +5038,13 @@ impl<'a> Checker<'a> {
                         violation.name
                     ),
                     "closures capture variables by value, so changes through the borrow would be lost; pass the value as a closure parameter and return the updated value".to_string(),
+                ),
+                CapturedMutationKind::MutatingMethodCall(method) => (
+                    format!(
+                        "closure cannot call `&mut self` method '{}' on captured variable '{}'",
+                        method, violation.name
+                    ),
+                    "closures capture variables by value, so the method's changes would be lost; pass the value as a closure parameter and return the updated value".to_string(),
                 ),
             };
             self.diagnostics.push(
@@ -5278,6 +5467,23 @@ impl<'a> Checker<'a> {
                         }
                     }
 
+                    if sig.mutable_receiver {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1303",
+                                format!(
+                                    "`&mut self` method '{}' cannot be used as a function value",
+                                    name
+                                ),
+                                self.file,
+                                expr.span,
+                            )
+                            .with_help(
+                                "call the method directly, or wrap the call in a closure that takes and returns the value",
+                            ),
+                        );
+                        return "<?>".to_string();
+                    }
                     if !sig.generic_params.is_empty() {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -5765,6 +5971,16 @@ impl<'a> Checker<'a> {
                     }
                     if let Some(symbol) = sig.symbol {
                         self.call_symbols.insert(expr.node, symbol);
+                    }
+                    if sig.mutable_receiver {
+                        // A method call reaches here through a synthetic call
+                        // with the same node; keep its method-syntax entry.
+                        self.mutable_receiver_calls
+                            .entry(expr.node)
+                            .or_insert_with(|| MutableReceiverCall {
+                                method: resolved_name.clone(),
+                                method_syntax: false,
+                            });
                     }
 
                     for (idx, param_ty) in sig.params.iter_mut().enumerate() {
@@ -6528,7 +6744,6 @@ impl<'a> Checker<'a> {
                     closure_param_tys.push(param_ty);
                 }
 
-                self.check_closure_capture_mutation(params, body, locals);
                 // `return` in a closure leaves the closure, and `break`/`continue`
                 // cannot target loops outside it.
                 let outer_fn_ret = ctx.fn_ret.replace(declared_ret.clone());
@@ -6543,6 +6758,9 @@ impl<'a> Checker<'a> {
                 );
                 ctx.fn_ret = outer_fn_ret;
                 ctx.loop_stack = outer_loops;
+                // Runs after the body is checked so `&mut self` method calls
+                // in it are resolved.
+                self.check_closure_capture_mutation(params, body, locals);
                 if !self.types_compatible(&declared_ret, &body_ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E1281",
@@ -7409,119 +7627,223 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::FieldAccess { base, field } => {
                 let base_ty = self.check_expr(base, locals, allowed_effects, ctx, contract_mode);
-                let base_ty_norm = self.normalize_type(&base_ty);
-                if base_type_name(&base_ty_norm) == TUPLE_INTERNAL_NAME {
-                    let Ok(index) = field.parse::<usize>() else {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E1228",
-                            format!(
-                                "tuple field access requires numeric index like `.0`, found '.{}'",
-                                field
-                            ),
-                            self.file,
-                            expr.span,
-                        ));
-                        return "<?>".to_string();
-                    };
-                    let elements = extract_generic_args(&base_ty_norm).unwrap_or_default();
-                    if let Some(ty) = elements.get(index) {
-                        return ty.clone();
-                    }
-                    self.diagnostics.push(Diagnostic::error(
-                        "E1228",
+                self.field_projection_type(&base_ty, field, expr.span)
+            }
+        }
+    }
+
+    /// Type of the place `target.path`. Reports E1297 for an invalid
+    /// projection and E1298 for a write through a reference, and returns
+    /// `None` after reporting.
+    fn place_type(
+        &mut self,
+        target: &str,
+        root_ty: &str,
+        path: &[ir::PlaceProjection],
+        scope: &BTreeMap<String, String>,
+    ) -> Option<String> {
+        let mut current = root_ty.to_string();
+        let mut rendered = target.to_string();
+        for projection in path {
+            let normalized = self.normalize_type(&current);
+            if matches!(base_type_name(&normalized), "Ref" | "RefMut") {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1298",
                         format!(
-                            "tuple index .{} is out of range for type '{}' with {} elements",
-                            index,
-                            base_ty,
-                            elements.len()
+                            "cannot assign through '{}' of reference type '{}'",
+                            rendered, current
                         ),
                         self.file,
-                        expr.span,
-                    ));
-                    return "<?>".to_string();
+                        projection_span(projection),
+                    )
+                    .with_help(
+                        "assign to a `let mut` binding or to `self` in a `&mut self` method; \
+                         writes through `Ref`/`RefMut` values are not supported",
+                    ),
+                );
+                return None;
+            }
+            match projection {
+                ir::PlaceProjection::Field { name, span } => {
+                    if base_type_name(&normalized) != TUPLE_INTERNAL_NAME
+                        && self.find_struct(&current).is_none()
+                    {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1297",
+                            format!(
+                                "cannot assign to field '{}' of '{}': type '{}' has no fields",
+                                name, rendered, current
+                            ),
+                            self.file,
+                            *span,
+                        ));
+                        return None;
+                    }
+                    let field_ty = self.field_projection_type(&current, name, *span);
+                    if field_ty == "<?>" {
+                        return None;
+                    }
+                    rendered = format!("{rendered}.{name}");
+                    current = field_ty;
                 }
-                if let Some(info) = self.find_struct(&base_ty) {
-                    let struct_name = base_type_name(&base_ty_norm).to_string();
-                    if let Some(field_ty_id) = info.fields.get(field) {
-                        if let Some(field_visibility) = info.field_visibility.get(field).copied() {
-                            if !self
-                                .field_is_accessible_from_current(&info.module, field_visibility)
-                            {
-                                self.diagnostics.push(
-                                    Diagnostic::error(
-                                        "E2102",
-                                        format!(
-                                            "field '{}.{}' is private and not accessible from this module",
-                                            struct_name, field
-                                        ),
-                                        self.file,
-                                        expr.span,
-                                    )
-                                    .with_help(format!(
-                                        "mark '{}.{}' as `pub` or access it within module '{}'.",
-                                        struct_name, field, info.module
-                                    )),
-                                );
-                                return "<?>".to_string();
-                            }
-                        }
-                        let mut field_ty = self
-                            .types
-                            .get(field_ty_id)
-                            .cloned()
-                            .unwrap_or_else(|| "<?>".to_string());
-                        if contains_unresolved_type(&field_ty) {
-                            if let Some(inferred) = self
-                                .struct_field_inferred
-                                .get(&(struct_name.clone(), field.clone()))
-                            {
-                                field_ty = merge_types(&field_ty, inferred);
-                            }
-                        }
-                        if info.generics.is_empty() {
-                            return field_ty;
-                        }
-
-                        if let Some(bindings) =
-                            bindings_from_applied_type(&base_ty_norm, &info.generics)
-                        {
-                            let generic_set =
-                                info.generics.iter().cloned().collect::<BTreeSet<_>>();
-                            return substitute_type_vars(&field_ty, &bindings, &generic_set);
-                        }
-
+                ir::PlaceProjection::Index { binding, span } => {
+                    if base_type_name(&normalized) != "Vec" {
                         self.diagnostics.push(
                             Diagnostic::error(
-                                "E1250",
+                                "E1297",
                                 format!(
-                                    "generic arity mismatch for struct type '{}': expected {} arguments",
-                                    base_type_name(&base_ty),
-                                    info.generics.len()
+                                    "cannot assign to an element of '{}': type '{}' is not a Vec",
+                                    rendered, current
                                 ),
                                 self.file,
-                                expr.span,
+                                *span,
                             )
-                            .with_help("provide the correct number of generic arguments"),
+                            .with_help(
+                                "only `Vec` elements can be assigned with `place[index] = value`",
+                            ),
+                        );
+                        return None;
+                    }
+                    let index_ty = scope
+                        .get(binding)
+                        .cloned()
+                        .unwrap_or_else(|| "<?>".to_string());
+                    if !contains_unresolved_type(&index_ty)
+                        && self.normalize_type(&index_ty) != "Int"
+                    {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1297",
+                            format!("Vec index must be 'Int', found '{}'", index_ty),
+                            self.file,
+                            *span,
+                        ));
+                        return None;
+                    }
+                    let element = extract_generic_args(&normalized)
+                        .and_then(|args| args.into_iter().next())?;
+                    rendered = format!("{rendered}[index]");
+                    current = element;
+                }
+            }
+        }
+        Some(current)
+    }
+
+    /// Type of `base.field` for a struct field or a tuple element (`.0`).
+    /// Reports a diagnostic and returns `<?>` when the projection is invalid.
+    fn field_projection_type(
+        &mut self,
+        base_ty: &str,
+        field: &str,
+        span: crate::span::Span,
+    ) -> String {
+        let base_ty_norm = self.normalize_type(base_ty);
+        if base_type_name(&base_ty_norm) == TUPLE_INTERNAL_NAME {
+            let Ok(index) = field.parse::<usize>() else {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1228",
+                    format!(
+                        "tuple field access requires numeric index like `.0`, found '.{}'",
+                        field
+                    ),
+                    self.file,
+                    span,
+                ));
+                return "<?>".to_string();
+            };
+            let elements = extract_generic_args(&base_ty_norm).unwrap_or_default();
+            if let Some(ty) = elements.get(index) {
+                return ty.clone();
+            }
+            self.diagnostics.push(Diagnostic::error(
+                "E1228",
+                format!(
+                    "tuple index .{} is out of range for type '{}' with {} elements",
+                    index,
+                    base_ty,
+                    elements.len()
+                ),
+                self.file,
+                span,
+            ));
+            return "<?>".to_string();
+        }
+        if let Some(info) = self.find_struct(base_ty) {
+            let struct_name = base_type_name(&base_ty_norm).to_string();
+            if let Some(field_ty_id) = info.fields.get(field) {
+                if let Some(field_visibility) = info.field_visibility.get(field).copied() {
+                    if !self.field_is_accessible_from_current(&info.module, field_visibility) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E2102",
+                                format!(
+                                    "field '{}.{}' is private and not accessible from this module",
+                                    struct_name, field
+                                ),
+                                self.file,
+                                span,
+                            )
+                            .with_help(format!(
+                                "mark '{}.{}' as `pub` or access it within module '{}'.",
+                                struct_name, field, info.module
+                            )),
                         );
                         return "<?>".to_string();
                     }
-                    self.diagnostics.push(Diagnostic::error(
-                        "E1228",
-                        format!("struct '{}' has no field '{}'", base_ty, field),
-                        self.file,
-                        expr.span,
-                    ));
-                    return "<?>".to_string();
                 }
-                self.diagnostics.push(Diagnostic::error(
-                    "E1229",
-                    format!("field access requires struct type, found '{}'", base_ty),
-                    self.file,
-                    expr.span,
-                ));
-                "<?>".to_string()
+                let mut field_ty = self
+                    .types
+                    .get(field_ty_id)
+                    .cloned()
+                    .unwrap_or_else(|| "<?>".to_string());
+                if contains_unresolved_type(&field_ty) {
+                    if let Some(inferred) = self
+                        .struct_field_inferred
+                        .get(&(struct_name.clone(), field.to_string()))
+                    {
+                        field_ty = merge_types(&field_ty, inferred);
+                    }
+                }
+                if info.generics.is_empty() {
+                    return field_ty;
+                }
+
+                if let Some(bindings) = bindings_from_applied_type(&base_ty_norm, &info.generics) {
+                    let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+                    return substitute_type_vars(&field_ty, &bindings, &generic_set);
+                }
+
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1250",
+                        format!(
+                            "generic arity mismatch for struct type '{}': expected {} arguments",
+                            base_type_name(base_ty),
+                            info.generics.len()
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("provide the correct number of generic arguments"),
+                );
+                return "<?>".to_string();
             }
+            self.diagnostics.push(Diagnostic::error(
+                "E1228",
+                format!("struct '{}' has no field '{}'", base_ty, field),
+                self.file,
+                span,
+            ));
+            return "<?>".to_string();
         }
+        self.diagnostics.push(Diagnostic::error(
+            "E1229",
+            format!("field access requires struct type, found '{}'", base_ty),
+            self.file,
+            span,
+        ));
+        "<?>".to_string()
     }
 
     fn check_fn_value_call(
@@ -7712,7 +8034,16 @@ impl<'a> Checker<'a> {
             );
         }
 
-        if self.functions.contains_key(&assoc_name) {
+        if let Some(sig) = self.functions.get(&assoc_name) {
+            if sig.mutable_receiver {
+                self.mutable_receiver_calls.insert(
+                    call_expr.node,
+                    MutableReceiverCall {
+                        method: field.to_string(),
+                        method_syntax: true,
+                    },
+                );
+            }
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(base.clone());
             call_args.extend(args.iter().cloned());
@@ -7743,6 +8074,15 @@ impl<'a> Checker<'a> {
         if let Some((trait_name, method_sig, mut type_bindings)) =
             self.find_trait_bound_method(&receiver_ty, field)
         {
+            if method_sig.mutable_receiver {
+                self.mutable_receiver_calls.insert(
+                    call_expr.node,
+                    MutableReceiverCall {
+                        method: field.to_string(),
+                        method_syntax: true,
+                    },
+                );
+            }
             type_bindings
                 .entry("Self".to_string())
                 .or_insert_with(|| receiver_ty.clone());
@@ -7984,6 +8324,23 @@ impl<'a> Checker<'a> {
                         span,
                     )
                     .with_help("remove method generics for dyn-compatible trait methods"),
+                );
+                ok = false;
+            }
+            if method_sig.mutable_receiver {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1214",
+                        format!(
+                            "trait '{}.{}' is not object-safe: `&mut self` methods are not supported for dyn dispatch",
+                            resolved_trait_name, method_name
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help(
+                        "use a generic parameter bounded by the trait, or return the updated value from a `self` method",
+                    ),
                 );
                 ok = false;
             }
@@ -11281,10 +11638,21 @@ fn foreign_primitive_type_name(name: &str) -> Option<&'static str> {
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum CapturedMutationKind {
     Assign,
     MutableBorrow,
+    /// A call of the named `&mut self` method on the captured variable.
+    MutatingMethodCall(String),
+}
+
+/// The binding at the root of a place expression (`a` in `a.b.c`).
+fn place_root_name(expr: &ir::Expr) -> Option<&str> {
+    match &expr.kind {
+        ir::ExprKind::Var(name) => Some(name),
+        ir::ExprKind::FieldAccess { base, .. } => place_root_name(base),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -11301,6 +11669,7 @@ fn bound_in_scopes(scopes: &[BTreeSet<String>], name: &str) -> bool {
 fn collect_captured_mutations_in_block(
     block: &ir::Block,
     outer: &BTreeMap<String, String>,
+    mutating_calls: &BTreeMap<ir::NodeId, MutableReceiverCall>,
     scopes: &mut Vec<BTreeSet<String>>,
     out: &mut Vec<CapturedMutation>,
 ) {
@@ -11308,11 +11677,13 @@ fn collect_captured_mutations_in_block(
     for stmt in &block.stmts {
         match stmt {
             ir::Stmt::Let { name, expr, .. } => {
-                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
                 scopes.last_mut().expect("block scope").insert(name.clone());
             }
-            ir::Stmt::Assign { target, expr, span } => {
-                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+            ir::Stmt::Assign {
+                target, expr, span, ..
+            } => {
+                collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
                 if !bound_in_scopes(scopes, target) && outer.contains_key(target) {
                     out.push(CapturedMutation {
                         name: target.clone(),
@@ -11322,17 +11693,17 @@ fn collect_captured_mutations_in_block(
                 }
             }
             ir::Stmt::Expr { expr, .. } | ir::Stmt::Assert { expr, .. } => {
-                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
             }
             ir::Stmt::Return { expr, .. } => {
                 if let Some(expr) = expr {
-                    collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                    collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
                 }
             }
         }
     }
     if let Some(tail) = &block.tail {
-        collect_captured_mutations_in_expr(tail, outer, scopes, out);
+        collect_captured_mutations_in_expr(tail, outer, mutating_calls, scopes, out);
     }
     scopes.pop();
 }
@@ -11340,6 +11711,7 @@ fn collect_captured_mutations_in_block(
 fn collect_captured_mutations_in_expr(
     expr: &ir::Expr,
     outer: &BTreeMap<String, String>,
+    mutating_calls: &BTreeMap<ir::NodeId, MutableReceiverCall>,
     scopes: &mut Vec<BTreeSet<String>>,
     out: &mut Vec<CapturedMutation>,
 ) {
@@ -11359,19 +11731,19 @@ fn collect_captured_mutations_in_expr(
                     });
                 }
             } else {
-                collect_captured_mutations_in_expr(inner, outer, scopes, out);
+                collect_captured_mutations_in_expr(inner, outer, mutating_calls, scopes, out);
             }
         }
         ir::ExprKind::Match { expr, arms } => {
-            collect_captured_mutations_in_expr(expr, outer, scopes, out);
+            collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
             for arm in arms {
                 let mut bindings = BTreeSet::new();
                 collect_pattern_bindings(&arm.pattern, &mut bindings);
                 scopes.push(bindings);
                 if let Some(guard) = &arm.guard {
-                    collect_captured_mutations_in_expr(guard, outer, scopes, out);
+                    collect_captured_mutations_in_expr(guard, outer, mutating_calls, scopes, out);
                 }
-                collect_captured_mutations_in_expr(&arm.body, outer, scopes, out);
+                collect_captured_mutations_in_expr(&arm.body, outer, mutating_calls, scopes, out);
                 scopes.pop();
             }
         }
@@ -11380,47 +11752,58 @@ fn collect_captured_mutations_in_expr(
             then_block,
             else_block,
         } => {
-            collect_captured_mutations_in_expr(cond, outer, scopes, out);
-            collect_captured_mutations_in_block(then_block, outer, scopes, out);
-            collect_captured_mutations_in_block(else_block, outer, scopes, out);
+            collect_captured_mutations_in_expr(cond, outer, mutating_calls, scopes, out);
+            collect_captured_mutations_in_block(then_block, outer, mutating_calls, scopes, out);
+            collect_captured_mutations_in_block(else_block, outer, mutating_calls, scopes, out);
         }
         ir::ExprKind::While { cond, body } => {
-            collect_captured_mutations_in_expr(cond, outer, scopes, out);
-            collect_captured_mutations_in_block(body, outer, scopes, out);
+            collect_captured_mutations_in_expr(cond, outer, mutating_calls, scopes, out);
+            collect_captured_mutations_in_block(body, outer, mutating_calls, scopes, out);
         }
         ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
-            collect_captured_mutations_in_block(body, outer, scopes, out);
+            collect_captured_mutations_in_block(body, outer, mutating_calls, scopes, out);
         }
         ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
-                collect_captured_mutations_in_expr(expr, outer, scopes, out);
+                collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
             }
         }
         ir::ExprKind::Call { callee, args, .. } => {
-            collect_captured_mutations_in_expr(callee, outer, scopes, out);
+            if let Some(call) = mutating_calls.get(&expr.node) {
+                if let Some(root) = call.receiver(callee, args).and_then(place_root_name) {
+                    if !bound_in_scopes(scopes, root) && outer.contains_key(root) {
+                        out.push(CapturedMutation {
+                            name: root.to_string(),
+                            span: expr.span,
+                            kind: CapturedMutationKind::MutatingMethodCall(call.method.clone()),
+                        });
+                    }
+                }
+            }
+            collect_captured_mutations_in_expr(callee, outer, mutating_calls, scopes, out);
             for arg in args {
-                collect_captured_mutations_in_expr(arg, outer, scopes, out);
+                collect_captured_mutations_in_expr(arg, outer, mutating_calls, scopes, out);
             }
         }
         ir::ExprKind::TemplateLiteral { args, .. } => {
             for arg in args {
-                collect_captured_mutations_in_expr(arg, outer, scopes, out);
+                collect_captured_mutations_in_expr(arg, outer, mutating_calls, scopes, out);
             }
         }
         ir::ExprKind::Binary { lhs, rhs, .. } => {
-            collect_captured_mutations_in_expr(lhs, outer, scopes, out);
-            collect_captured_mutations_in_expr(rhs, outer, scopes, out);
+            collect_captured_mutations_in_expr(lhs, outer, mutating_calls, scopes, out);
+            collect_captured_mutations_in_expr(rhs, outer, mutating_calls, scopes, out);
         }
         ir::ExprKind::Unary { expr, .. }
         | ir::ExprKind::Borrow { expr, .. }
         | ir::ExprKind::Await { expr }
         | ir::ExprKind::Try { expr }
         | ir::ExprKind::FieldAccess { base: expr, .. } => {
-            collect_captured_mutations_in_expr(expr, outer, scopes, out)
+            collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out)
         }
         ir::ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields {
-                collect_captured_mutations_in_expr(value, outer, scopes, out);
+                collect_captured_mutations_in_expr(value, outer, mutating_calls, scopes, out);
             }
         }
         ir::ExprKind::Int(_, ..)
@@ -13798,6 +14181,114 @@ fn main() -> Int {
         let wrong_arity =
             "struct C { n: Int } impl C { fn get(self) -> Int { self.n } } fn main() -> Int { let f: Fn() -> Int = C::get; 0 }";
         assert!(!error_codes(wrong_arity).is_empty());
+    }
+
+    #[test]
+    fn place_assignment_targets_are_type_checked() {
+        let ok = r#"
+struct Inner { b: Int }
+struct Outer { a: Inner, pair: (Int, Bool) }
+fn update(items: Vec[Outer]) -> Vec[Outer] {
+    let mut v = items;
+    v[0].a.b = 4;
+    v
+}
+fn main() -> Int {
+    let mut o = Outer { a: Inner { b: 1 }, pair: (2, false) };
+    o.a.b = 3;
+    o.pair.1 = true;
+    0
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+
+        let cases = [
+            // Wrong value type for the place.
+            ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; p.x = true; 0 }", "E1269"),
+            // Unknown field and out-of-range tuple element.
+            ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; p.y = 1; 0 }", "E1228"),
+            ("fn main() -> Int { let mut t = (1, 2); t.2 = 1; 0 }", "E1228"),
+            // Projecting a value without fields, or indexing a non-Vec.
+            ("fn main() -> Int { let mut x = 1; x.y = 1; 0 }", "E1297"),
+            ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; p[0] = 1; 0 }", "E1297"),
+            // Non-Int Vec index.
+            ("fn set(items: Vec[Int]) -> Int { let mut v = items; v[true] = 1; 0 } fn main() -> Int { 0 }", "E1297"),
+            // Immutable root.
+            ("struct P { x: Int } fn main() -> Int { let p = P { x: 1 }; p.x = 2; 0 }", "E1266"),
+            // Writes through references are rejected.
+            ("struct P { x: Int } fn set(r: RefMut[P]) -> Int { r.x = 5; 0 } fn main() -> Int { 0 }", "E1298"),
+            // A borrowed root cannot be assigned through.
+            ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let r = &p; p.x = 2; 0 }", "E1265"),
+            // A moved root has no value to update.
+            ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
+            // Closures cannot update captured variables.
+            ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mutable_self_receivers_are_checked() {
+        let ok = r#"
+struct C { n: Int }
+impl C {
+    fn bump(&mut self) -> Int { self.n = self.n + 1; self.n }
+    fn twice(&mut self) -> Int { self.bump(); self.bump() }
+}
+fn make() -> C { C { n: 0 } }
+fn main() -> Int {
+    let mut c = C { n: 0 };
+    c.bump();
+    make().bump()
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+
+        let methods = "struct C { n: Int } impl C { fn bump(&mut self) -> Int { self.n = self.n + 1; self.n } fn peek(self) -> Int { self.n = 2; self.n } }";
+        let cases = [
+            // `self` is immutable outside `&mut self` methods.
+            (format!("{methods} fn main() -> Int {{ 0 }}"), "E1266"),
+            // The receiver of a `&mut self` call must be a mutable place.
+            (format!("{methods} fn main() -> Int {{ let c = C {{ n: 0 }}; c.bump() }}"), "E1266"),
+            // ... that is not borrowed during the call.
+            (format!("{methods} fn main() -> Int {{ let mut c = C {{ n: 0 }}; let r = &c; c.bump() }}"), "E1263"),
+            // A closure cannot update a captured receiver.
+            (format!("{methods} fn main() -> Int {{ let mut c = C {{ n: 0 }}; let f = || -> Int {{ c.bump() }}; 0 }}"), "E1289"),
+            // Async methods cannot take `&mut self`.
+            ("struct C { n: Int } impl C { async fn later(&mut self) -> Int { 1 } } fn main() -> Int { 0 }".to_string(), "E1299"),
+            // `&mut self` methods are not function values.
+            (format!("{methods} fn main() -> Int {{ let f = C::bump; 0 }}"), "E1303"),
+            // Traits with `&mut self` methods are not dyn-compatible.
+            ("trait D { fn hit(&mut self) -> Int; } fn use_dyn(x: dyn D) -> Int { 0 } fn main() -> Int { 0 }".to_string(), "E1214"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(&src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn trait_impl_receiver_mode_must_match() {
+        let src = "struct C { n: Int } trait T2[X] { fn go(&mut self) -> Int; } impl T2[C] { fn go(self) -> Int { 1 } } fn main() -> Int { 0 }";
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "{d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (_, diagnostics) = resolve(&ir, "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1108"
+                && d.message
+                    .contains("the trait declares a `&mut self` receiver")),
+            "{diagnostics:#?}"
+        );
     }
 
     #[test]

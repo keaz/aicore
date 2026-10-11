@@ -172,6 +172,7 @@ check_pass=(
   "examples/core/generic_argument_inference.aic"
   "examples/core/check_build_parity.aic"
   "examples/core/method_values.aic"
+  "examples/core/place_assignment.aic"
   "examples/core/match_exhaustiveness.aic"
   "examples/core/vec_value_semantics.aic"
   "examples/core/integer_division_by_zero.aic"
@@ -219,6 +220,7 @@ fmt_check_pass=(
 # fixed point of `aic fmt` (the checked-in file itself is not rewritten).
 fmt_roundtrip=(
   "examples/core/formatter_comments.aic"
+  "examples/core/place_assignment.aic"
   "examples/e7/typed_holes.aic"
   "examples/e1/syntax_showcase.aic"
   "examples/core/struct_defaults.aic"
@@ -375,6 +377,7 @@ run_pass=(
   "examples/core/generic_argument_inference.aic"
   "examples/core/check_build_parity.aic"
   "examples/core/method_values.aic"
+  "examples/core/place_assignment.aic"
   "examples/core/match_exhaustiveness.aic"
   "examples/core/vec_value_semantics.aic"
   "examples/core/trait_members_workaround.aic"
@@ -946,6 +949,7 @@ case "$MODE" in
     expect_run_value "examples/core/generic_argument_inference.aic" "42"
     expect_run_value "examples/core/check_build_parity.aic" "42"
     expect_run_value "examples/core/method_values.aic" "42"
+    expect_run_value "examples/core/place_assignment.aic" "42"
     expect_run_value "examples/core/match_exhaustiveness.aic" "213"
     expect_run_value "examples/core/vec_value_semantics.aic" "1"
     expect_run_value "examples/core/trait_members_workaround.aic" "13"

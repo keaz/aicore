@@ -727,6 +727,9 @@ fn render_function_signature(func: &ir::Function, types: &BTreeMap<ir::TypeId, S
         .params
         .iter()
         .map(|param| {
+            if param.mutable_receiver {
+                return "&mut self".to_string();
+            }
             let ty = types
                 .get(&param.ty)
                 .cloned()

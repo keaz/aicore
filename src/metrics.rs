@@ -341,7 +341,12 @@ impl ComplexityAnalyzer {
     fn visit_stmt(&mut self, stmt: &Stmt, depth: u32) {
         match stmt {
             Stmt::Let { expr, .. } => self.visit_expr(expr, depth),
-            Stmt::Assign { expr, .. } => self.visit_expr(expr, depth),
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    self.visit_expr(index, depth);
+                }
+                self.visit_expr(expr, depth);
+            }
             Stmt::Expr { expr, .. } => self.visit_expr(expr, depth),
             Stmt::Return { expr, .. } => {
                 if let Some(expr) = expr {

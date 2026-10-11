@@ -1036,10 +1036,15 @@ fn find_functions_by_name<'a>(program: &'a ast::Program, target: &str) -> Vec<&'
 fn collect_match_expr_candidates_from_block(block: &ast::Block, out: &mut Vec<MatchExprCandidate>) {
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Let { expr, .. }
-            | Stmt::Assign { expr, .. }
-            | Stmt::Expr { expr, .. }
-            | Stmt::Assert { expr, .. } => collect_match_expr_candidates_from_expr(expr, out),
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } | Stmt::Assert { expr, .. } => {
+                collect_match_expr_candidates_from_expr(expr, out)
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_match_expr_candidates_from_expr(index, out);
+                }
+                collect_match_expr_candidates_from_expr(expr, out);
+            }
             Stmt::Return { expr, .. } => {
                 if let Some(expr) = expr {
                     collect_match_expr_candidates_from_expr(expr, out);

@@ -1,0 +1,57 @@
+module examples.core.place_assignment;
+
+import std.io;
+import std.vec;
+
+// Place assignment updates part of a value in place: struct fields, nested
+// fields, tuple elements and Vec elements. Methods with a `&mut self`
+// receiver update the caller's value.
+
+struct Stock {
+    sku: Int,
+    qty: Int,
+} invariant qty >= 0
+
+struct Warehouse {
+    items: Vec[Stock],
+    totals: (Int, Int),
+    moves: Int,
+}
+
+impl Warehouse {
+    fn receive(&mut self, index: Int, amount: Int) -> () {
+        self.items[index].qty = self.qty_at(index) + amount;
+        self.totals.0 = self.totals.0 + amount;
+        self.moves = self.moves + 1;
+    }
+
+    fn ship(&mut self, index: Int, amount: Int) -> () {
+        self.items[index].qty = self.qty_at(index) - amount;
+        self.totals.1 = self.totals.1 + amount;
+        self.moves = self.moves + 1;
+    }
+
+    fn qty_at(self, index: Int) -> Int {
+        match vec.get(self.items, index) {
+            Some(stock) => stock.qty,
+            None => 0,
+        }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut stock: Vec[Stock] = vec.new_vec();
+    stock = vec.push(stock, Stock { sku: 100, qty: 5 });
+    stock = vec.push(stock, Stock { sku: 200, qty: 0 });
+    let mut w = Warehouse { items: stock, totals: (0, 0), moves: 0 };
+
+    w.receive(1, 12);
+    w.ship(0, 3);
+    w.totals.1 = w.totals.1 + 0;
+
+    // received + shipped + remaining quantities + moves = 12 + 3 + 2 + 12 + 2 = 31,
+    // so this prints 31 + 11 = 42.
+    let answer = w.totals.0 + w.totals.1 + w.qty_at(0) + w.qty_at(1) + w.moves + 11;
+    print_int(answer);
+    0
+}

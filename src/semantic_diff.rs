@@ -593,7 +593,25 @@ fn render_stmt(stmt: &Stmt) -> String {
                 render_expr(expr)
             )
         }
-        Stmt::Assign { target, expr, .. } => format!("{target} = {}", render_expr(expr)),
+        Stmt::Assign {
+            target, path, expr, ..
+        } => {
+            let mut place = target.clone();
+            for projection in path {
+                match projection {
+                    crate::ast::PlaceProjection::Field { name, .. } => {
+                        place.push('.');
+                        place.push_str(name);
+                    }
+                    crate::ast::PlaceProjection::Index { index, .. } => {
+                        place.push('[');
+                        place.push_str(&render_expr(index));
+                        place.push(']');
+                    }
+                }
+            }
+            format!("{place} = {}", render_expr(expr))
+        }
         Stmt::Expr { expr, .. } => render_expr(expr),
         Stmt::Return { expr, .. } => match expr {
             Some(expr) => format!("return {}", render_expr(expr)),

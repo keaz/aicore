@@ -1714,7 +1714,10 @@ fn collect_block_semantic_tokens(
                 push_named_semantic_token(tokens, source, name, *span, TOKEN_VARIABLE, modifiers);
                 collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
             }
-            ast::Stmt::Assign { expr, .. } => {
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    collect_expr_semantic_tokens(tokens, source, index, effectful_functions);
+                }
                 collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
             }
             ast::Stmt::Expr { expr, .. } => {
@@ -2424,13 +2427,24 @@ fn collect_block_call_sites(
                 caller_name,
                 call_sites_by_caller,
             ),
-            ast::Stmt::Assign { expr, .. } => collect_expr_call_sites(
-                expr,
-                file,
-                caller_module.clone(),
-                caller_name,
-                call_sites_by_caller,
-            ),
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    collect_expr_call_sites(
+                        index,
+                        file,
+                        caller_module.clone(),
+                        caller_name,
+                        call_sites_by_caller,
+                    );
+                }
+                collect_expr_call_sites(
+                    expr,
+                    file,
+                    caller_module.clone(),
+                    caller_name,
+                    call_sites_by_caller,
+                )
+            }
             ast::Stmt::Expr { expr, .. } => collect_expr_call_sites(
                 expr,
                 file,
@@ -2931,9 +2945,14 @@ fn collect_block_folding_ranges(block: &ast::Block, source: &str, ranges: &mut V
     for stmt in &block.stmts {
         match stmt {
             ast::Stmt::Let { expr, .. }
-            | ast::Stmt::Assign { expr, .. }
             | ast::Stmt::Expr { expr, .. }
             | ast::Stmt::Assert { expr, .. } => collect_expr_folding_ranges(expr, source, ranges),
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    collect_expr_folding_ranges(index, source, ranges);
+                }
+                collect_expr_folding_ranges(expr, source, ranges);
+            }
             ast::Stmt::Return { expr, .. } => {
                 if let Some(expr) = expr {
                     collect_expr_folding_ranges(expr, source, ranges);
@@ -3351,9 +3370,20 @@ fn collect_block_selection_spans(
         }
         match stmt {
             ast::Stmt::Let { expr, .. }
-            | ast::Stmt::Assign { expr, .. }
             | ast::Stmt::Expr { expr, .. }
             | ast::Stmt::Assert { expr, .. } => {
+                collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans)
+            }
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    collect_expr_selection_spans(
+                        index,
+                        offset,
+                        stmt_spans,
+                        block_spans,
+                        expr_spans,
+                    );
+                }
                 collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans)
             }
             ast::Stmt::Return { expr, .. } => {
@@ -3924,9 +3954,19 @@ fn collect_block_inlay_hints(
                 }
                 collect_expr_inlay_hints(expr, source, show_effect_hints, signature_lookup, hints);
             }
-            ast::Stmt::Assign { expr, .. }
-            | ast::Stmt::Expr { expr, .. }
-            | ast::Stmt::Assert { expr, .. } => {
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    collect_expr_inlay_hints(
+                        index,
+                        source,
+                        show_effect_hints,
+                        signature_lookup,
+                        hints,
+                    );
+                }
+                collect_expr_inlay_hints(expr, source, show_effect_hints, signature_lookup, hints);
+            }
+            ast::Stmt::Expr { expr, .. } | ast::Stmt::Assert { expr, .. } => {
                 collect_expr_inlay_hints(expr, source, show_effect_hints, signature_lookup, hints);
             }
             ast::Stmt::Return {
@@ -4371,6 +4411,9 @@ fn render_impl_signature(impl_def: &ast::ImplDef) -> String {
 }
 
 fn render_param_signature(param: &ast::Param) -> String {
+    if param.mutable_receiver {
+        return format!("{}&mut self", render_attribute_prefix(&param.attrs));
+    }
     format!(
         "{}{}: {}",
         render_attribute_prefix(&param.attrs),

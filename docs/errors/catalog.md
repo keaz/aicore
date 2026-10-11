@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `diagnostic registry` (311 codes).
+This catalog covers all registered diagnostics from `diagnostic registry` (316 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -136,6 +136,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1103` | Unknown trait referenced in impl declaration. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1104` | Trait implementation arity mismatch. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1105` | Conflicting duplicate trait implementation. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
+| `E1110` | Compound assignment to an indexed place (parser). | `v[0] \|= 1;` | `v[0] = 1;` |
 | `E1200` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1201` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1202` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
@@ -233,8 +234,12 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1294` | Recursive struct or enum (contains itself directly or through other types); not supported yet. | `struct Node { next: Option[Node] }` | `struct Node { next_index: Int }` |
 | `E1295` | Invalid entry `main` signature. | `fn main(name: String) -> String { name }` | `fn main() -> Int { 0 }` |
 | `E1296` | Typed hole (`_`) whose type cannot be inferred. | `fn unused(x: _) -> Int { 0 } fn main() -> Int { 0 }` | `fn unused(x: Int) -> Int { 0 } fn main() -> Int { 0 }` |
+| `E1297` | Invalid assignment place: no such projection, index into a non-`Vec`, or non-`Int` index. | `fn main() -> Int { let mut x = 1; x.y = 2; 0 }` | `struct P { y: Int } fn main() -> Int { let mut x = P { y: 1 }; x.y = 2; 0 }` |
+| `E1298` | Assignment through a `Ref`/`RefMut` value. | `struct P { x: Int } fn set(r: RefMut[P]) -> Int { r.x = 1; 0 }` | `struct P { x: Int } impl P { fn set(&mut self) -> () { self.x = 1; } }` |
+| `E1299` | `async` method with a `&mut self` receiver. | `struct C { n: Int } impl C { async fn f(&mut self) -> Int { 0 } }` | `struct C { n: Int } impl C { async fn f(self) -> Int { 0 } }` |
 | `E1300` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1301` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
+| `E1303` | `&mut self` method used as a function value. | `struct C { n: Int } impl C { fn bump(&mut self) -> () { self.n = 1; } } fn main() -> Int { let f = C::bump; 0 }` | `struct C { n: Int } impl C { fn bump(&mut self) -> () { self.n = 1; } } fn main() -> Int { let mut c = C { n: 0 }; c.bump(); 0 }` |
 | `E2001` | Effectful call used without required effects declaration. | `fn read_cfg() -> Result[String, FsError] { std.fs.read_file("cfg.txt") }` | `fn read_cfg() -> Result[String, FsError] effects { fs } { std.fs.read_file("cfg.txt") }` |
 | `E2002` | Effectful operation used inside a contract expression that must remain pure. | `fn read_cfg() -> Result[String, FsError] { std.fs.read_file("cfg.txt") }` | `fn read_cfg() -> Result[String, FsError] effects { fs } { std.fs.read_file("cfg.txt") }` |
 | `E2003` | Unknown effect name in function signature. | `fn read_cfg() -> Result[String, FsError] { std.fs.read_file("cfg.txt") }` | `fn read_cfg() -> Result[String, FsError] effects { fs } { std.fs.read_file("cfg.txt") }` |

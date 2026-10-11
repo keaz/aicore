@@ -8,6 +8,44 @@ use crate::span::Span;
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
 const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
 
+/// Reads the current value of an assignment place as an expression, for
+/// compound assignment. Returns `None` when the place has an index, which
+/// has no expression form.
+fn place_read_expr(target: &str, target_span: Span, path: &[PlaceProjection]) -> Option<Expr> {
+    let mut expr = Expr::var(target.to_string(), target_span);
+    for projection in path {
+        match projection {
+            PlaceProjection::Field { name, span } => {
+                let span = Span::new(expr.span.start, span.end);
+                expr = Expr {
+                    kind: ExprKind::FieldAccess {
+                        base: Box::new(expr),
+                        field: name.clone(),
+                    },
+                    span,
+                };
+            }
+            PlaceProjection::Index { .. } => return None,
+        }
+    }
+    Some(expr)
+}
+
+/// Splits the float token of a nested tuple index (`t.0.1` lexes `0.1` as
+/// one float) into its two element indexes.
+fn split_nested_tuple_index(literal: &crate::lexer::FloatLiteralToken) -> Option<(String, String)> {
+    if literal.suffix.is_some() {
+        return None;
+    }
+    let (first, second) = literal.raw_text.split_once('.')?;
+    let is_index = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    if !is_index(first) || !is_index(second) {
+        return None;
+    }
+    let normalize = |part: &str| part.parse::<u64>().ok().map(|value| value.to_string());
+    Some((normalize(first)?, normalize(second)?))
+}
+
 pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
     let (program, diagnostics, _stats) = parse_with_stats(source, file);
     (program, diagnostics)
@@ -1738,7 +1776,8 @@ impl<'a> Parser<'a> {
                 if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
                     let recv_start = self.current_span().start;
                     self.bump();
-                    if self.at_kind(|k| matches!(k, TokenKind::KwMut)) {
+                    let mutable_receiver = self.at_kind(|k| matches!(k, TokenKind::KwMut));
+                    if mutable_receiver {
                         self.bump();
                     }
                     let (recv_name, recv_span) =
@@ -1757,6 +1796,7 @@ impl<'a> Parser<'a> {
                         name: "self".to_string(),
                         attrs,
                         ty: self.self_type_expr(span),
+                        mutable_receiver,
                         span,
                     });
                     if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
@@ -1776,6 +1816,7 @@ impl<'a> Parser<'a> {
                         name: "self".to_string(),
                         attrs,
                         ty: self.self_type_expr(span),
+                        mutable_receiver: false,
                         span,
                     });
                     if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
@@ -1797,6 +1838,7 @@ impl<'a> Parser<'a> {
                 name,
                 attrs,
                 ty: ty.clone(),
+                mutable_receiver: false,
                 span: Span::new(start, ty.span.end),
             });
             if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
@@ -2223,6 +2265,7 @@ impl<'a> Parser<'a> {
     fn parse_assign_stmt(&mut self) -> Option<Stmt> {
         let start = self.current_span().start;
         let (target, target_span) = self.expect_ident("E1060", "expected assignment target")?;
+        let path = self.parse_place_path()?;
         let compound_op = match &self.current().kind {
             TokenKind::Eq => None,
             TokenKind::AmpEq => Some(BinOp::BitAnd),
@@ -2241,10 +2284,22 @@ impl<'a> Parser<'a> {
                 return None;
             }
         };
+        let op_span = self.current_span();
         self.bump();
         let rhs_expr = self.parse_expr()?;
         let expr = if let Some(op) = compound_op {
-            let lhs_expr = Expr::var(target.clone(), target_span);
+            let Some(lhs_expr) = place_read_expr(&target, target_span, &path) else {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1110",
+                        "compound assignment to an indexed place is not supported",
+                        self.file,
+                        op_span,
+                    )
+                    .with_help("write the element back with plain `=`, for example `v[i] = value`"),
+                );
+                return None;
+            };
             let span = lhs_expr.span.join(rhs_expr.span);
             Expr {
                 kind: ExprKind::Binary {
@@ -2276,9 +2331,85 @@ impl<'a> Parser<'a> {
         };
         Some(Stmt::Assign {
             target,
+            path,
             expr,
             span: Span::new(start, end),
         })
+    }
+
+    /// Parses the projections after an assignment target: `.field`, `.0`
+    /// (tuple element) and `[index]`.
+    fn parse_place_path(&mut self) -> Option<Vec<PlaceProjection>> {
+        let mut path = Vec::new();
+        loop {
+            if self.at_kind(|k| matches!(k, TokenKind::Dot)) {
+                self.bump();
+                let token = self.current().clone();
+                match token.kind {
+                    TokenKind::Ident(name) => {
+                        self.bump();
+                        path.push(PlaceProjection::Field {
+                            name,
+                            span: token.span,
+                        });
+                    }
+                    TokenKind::Int(literal) if literal.value >= 0 && literal.suffix.is_none() => {
+                        self.bump();
+                        path.push(PlaceProjection::Field {
+                            name: literal.value.to_string(),
+                            span: token.span,
+                        });
+                    }
+                    TokenKind::Float(literal) => {
+                        // `t.0.1` lexes `0.1` as one float token.
+                        let Some((first, second)) = split_nested_tuple_index(&literal) else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1036",
+                                "expected field name or tuple index after '.'",
+                                self.file,
+                                token.span,
+                            ));
+                            return None;
+                        };
+                        self.bump();
+                        path.push(PlaceProjection::Field {
+                            name: first,
+                            span: token.span,
+                        });
+                        path.push(PlaceProjection::Field {
+                            name: second,
+                            span: token.span,
+                        });
+                    }
+                    _ => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1036",
+                            "expected field name or tuple index after '.'",
+                            self.file,
+                            token.span,
+                        ));
+                        return None;
+                    }
+                }
+                continue;
+            }
+            if self.at_kind(|k| matches!(k, TokenKind::LBracket)) {
+                let open = self.current_span();
+                self.bump();
+                let index = self.parse_expr()?;
+                let close = self.expect(
+                    |k| matches!(k, TokenKind::RBracket),
+                    "E1036",
+                    "expected ']' after index",
+                )?;
+                path.push(PlaceProjection::Index {
+                    index,
+                    span: Span::new(open.start, close.end),
+                });
+                continue;
+            }
+            return Some(path);
+        }
     }
 
     /// Parses `return [expr]` at statement position. With a trailing `;` it
@@ -2773,6 +2904,29 @@ impl<'a> Parser<'a> {
                         let span = self.current_span();
                         self.bump();
                         (literal.value.to_string(), span)
+                    }
+                    TokenKind::Float(literal) => {
+                        // `t.0.1` lexes `0.1` as one float token.
+                        let span = self.current_span();
+                        let Some((first, second)) = split_nested_tuple_index(&literal) else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1036",
+                                "expected field name or tuple index after '.'",
+                                self.file,
+                                span,
+                            ));
+                            return None;
+                        };
+                        self.bump();
+                        let inner_span = Span::new(expr.span.start, span.end);
+                        expr = Expr {
+                            kind: ExprKind::FieldAccess {
+                                base: Box::new(expr),
+                                field: first,
+                            },
+                            span: inner_span,
+                        };
+                        (second, span)
                     }
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
@@ -3684,6 +3838,7 @@ impl<'a> Parser<'a> {
 
         let mut some_body_stmts = vec![Stmt::Assign {
             target: iter_name.clone(),
+            path: Vec::new(),
             expr: step_iter_expr,
             span,
         }];
@@ -3806,6 +3961,7 @@ impl<'a> Parser<'a> {
             },
             Stmt::Assign {
                 target: cur_name.clone(),
+                path: Vec::new(),
                 expr: Expr {
                     kind: ExprKind::Binary {
                         op: BinOp::Add,
@@ -4341,13 +4497,48 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Returns `true` at `name`, `name.field...` or `name[index]...`
+    /// followed by an assignment operator.
     fn at_assignment_stmt_start(&self) -> bool {
-        matches!(self.current().kind, TokenKind::Ident(_))
-            && self
-                .peek(1)
-                .map(|token| {
-                    matches!(
-                        token.kind,
+        if !matches!(self.current().kind, TokenKind::Ident(_)) {
+            return false;
+        }
+        let mut offset = 1;
+        loop {
+            match self.peek(offset).map(|token| &token.kind) {
+                Some(TokenKind::Dot) => {
+                    let is_projection = matches!(
+                        self.peek(offset + 1).map(|token| &token.kind),
+                        Some(TokenKind::Ident(_) | TokenKind::Int(_) | TokenKind::Float(_))
+                    );
+                    if !is_projection {
+                        return false;
+                    }
+                    offset += 2;
+                }
+                Some(TokenKind::LBracket) => {
+                    let mut depth = 0usize;
+                    loop {
+                        match self.peek(offset).map(|token| &token.kind) {
+                            Some(TokenKind::LBracket) => depth += 1,
+                            Some(TokenKind::RBracket) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            Some(TokenKind::Semi | TokenKind::LBrace | TokenKind::RBrace)
+                            | Some(TokenKind::Eof)
+                            | None => return false,
+                            Some(_) => {}
+                        }
+                        offset += 1;
+                    }
+                    offset += 1;
+                }
+                Some(kind) => {
+                    return matches!(
+                        kind,
                         TokenKind::Eq
                             | TokenKind::AmpEq
                             | TokenKind::PipeEq
@@ -4356,8 +4547,10 @@ impl<'a> Parser<'a> {
                             | TokenKind::RShiftEq
                             | TokenKind::URShiftEq
                     )
-                })
-                .unwrap_or(false)
+                }
+                None => return false,
+            }
+        }
     }
 
     fn looks_like_struct_literal(&self) -> bool {
@@ -4459,6 +4652,118 @@ mod tests {
         BinOp, Expr, ExprKind, FloatLiteralSuffix, FloatLiteralWidth, IntLiteralSignedness,
         IntLiteralSuffix, IntLiteralWidth, Item, PatternKind, Stmt, TypeKind,
     };
+
+    fn body_stmts(src: &str) -> Vec<Stmt> {
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        f.body.stmts.clone()
+    }
+
+    fn rendered_place(stmt: &Stmt) -> String {
+        let Stmt::Assign { target, path, .. } = stmt else {
+            panic!("expected assignment, found {stmt:?}");
+        };
+        let mut out = target.clone();
+        for projection in path {
+            match projection {
+                crate::ast::PlaceProjection::Field { name, .. } => {
+                    out.push('.');
+                    out.push_str(name);
+                }
+                crate::ast::PlaceProjection::Index { .. } => out.push_str("[_]"),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn parses_place_assignment_targets() {
+        let stmts = body_stmts(
+            "fn f() -> () { p.x = 1; p.a.b = 2; t.0 = 3; t.1.0 = 4; v[i + 1] = 5; items[0].qty = 6; self.n |= 7; x = 8; }",
+        );
+        let places = stmts.iter().map(rendered_place).collect::<Vec<_>>();
+        assert_eq!(
+            places,
+            [
+                "p.x",
+                "p.a.b",
+                "t.0",
+                "t.1.0",
+                "v[_]",
+                "items[_].qty",
+                "self.n",
+                "x"
+            ]
+        );
+        // `self.n |= 7` reads the place on the right-hand side.
+        let Stmt::Assign { expr, .. } = &stmts[6] else {
+            panic!("expected assignment");
+        };
+        let ExprKind::Binary { op, lhs, .. } = &expr.kind else {
+            panic!("expected compound assignment desugaring");
+        };
+        assert_eq!(*op, BinOp::BitOr);
+        assert!(matches!(&lhs.kind, ExprKind::FieldAccess { field, .. } if field == "n"));
+    }
+
+    #[test]
+    fn place_assignment_lookahead_leaves_expressions_alone() {
+        // Comparisons and method calls are expression statements.
+        let stmts = body_stmts("fn f() -> () { p.x == 1; p.go(); p.a.b < 2; }");
+        assert!(
+            stmts.iter().all(|stmt| matches!(stmt, Stmt::Expr { .. })),
+            "{stmts:#?}"
+        );
+    }
+
+    #[test]
+    fn nested_tuple_index_reads_parse() {
+        let (program, diagnostics) =
+            parse("fn f(t: (Int, (Int, Int))) -> Int { t.1.0 }", "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let tail = f.body.tail.as_ref().expect("tail");
+        let ExprKind::FieldAccess { base, field } = &tail.kind else {
+            panic!("expected field access");
+        };
+        assert_eq!(field, "0");
+        assert!(matches!(&base.kind, ExprKind::FieldAccess { field, .. } if field == "1"));
+    }
+
+    #[test]
+    fn compound_assignment_to_indexed_place_is_rejected() {
+        let (_, diagnostics) = parse("fn f() -> () { v[0] |= 1; }", "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1110"),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn mutable_self_receiver_is_recorded() {
+        let (program, diagnostics) = parse(
+            "struct C { n: Int } impl C { fn a(&mut self) -> () { } fn b(&self) -> () { } fn c(self) -> () { } }",
+            "test.aic",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Impl(impl_def) = &program.items[1] else {
+            panic!("expected impl");
+        };
+        let receivers = impl_def
+            .methods
+            .iter()
+            .map(|method| method.params[0].mutable_receiver)
+            .collect::<Vec<_>>();
+        assert_eq!(receivers, [true, false, false]);
+    }
 
     #[test]
     fn parses_simple_function() {

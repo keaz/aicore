@@ -918,8 +918,18 @@ Verifier-focused examples:
 - Language surface: `C::get` names an impl method (inherent or trait impl) as a value. The `self` receiver is the first parameter, so `fn get(self) -> Int` gives `Fn(C) -> Int`; `fn scaled(&self, k: Int) -> Int` gives `Fn(C, Int) -> Int`.
 - Checker (`src/typecheck.rs`, `ExprKind::Var` value path): the same rules as named functions apply (`E1282` generic, `E1283` effectful).
 - Codegen (`src/codegen/generator_core.rs`): `resolve_function_value_symbol` considers impl methods as well as top-level functions, skipping generic ones; `ensure_fn_value_adapter` builds the usual env-ignoring adapter that forwards to the method's LLVM symbol.
-- When `&mut self` receivers (SYNTAX-T1, #448) land on this line, such methods take the receiver by pointer and must be rejected as values (`E1302`) and skipped by `resolve_function_value_symbol`.
+- `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`.
 - Verification: `src/typecheck.rs` test `method_values_take_the_receiver_as_first_parameter`, `src/codegen/tests.rs` test `impl_methods_lower_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+## Place Assignment and `&mut self` (SYNTAX-T1, #448)
+
+- Language surface: `p.x = v`, `p.a.b = v`, `t.0 = v`, `t.1.0 = v`, `v[i] = x`, `items[i].qty = x`, and `self.n = v` / `self = v` in `&mut self` methods. Rules and diagnostics are in `docs/reference/statements.md`.
+- Data model:
+  - `ast::Stmt::Assign` / `ir::Stmt::Assign` carry `path: Vec<PlaceProjection>` after the root `target`.
+  - The IR builder binds each index expression to a hidden `$place_index<N>` local (`ir_builder::PLACE_INDEX_BINDING_PREFIX`) emitted just before the assignment; `ir::PlaceProjection::Index` names that binding. The formatter prints the expression back inside the brackets.
+  - `Param.mutable_receiver` marks a `&mut self` receiver; the resolver copies it to `FunctionInfo.mutable_receiver`.
+- Checker (`src/typecheck.rs`): `place_type` types the path (`E1297`, `E1298`); the borrow pass checks the root's mutability, borrows and moves; `mutable_receiver_calls` records `&mut self` calls so `check_mutable_receiver_call` and the closure capture check can validate the receiver.
+- Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
+- Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
 ## Connectivity Primitive: Bitwise Operators (CONN-T1)
 

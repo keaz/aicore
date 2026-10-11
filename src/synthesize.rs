@@ -2121,9 +2121,13 @@ fn visit_expr(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
 fn visit_block(block: &ast::Block, visit: &mut dyn FnMut(&Expr)) {
     for stmt in &block.stmts {
         match stmt {
-            ast::Stmt::Let { expr, .. }
-            | ast::Stmt::Assign { expr, .. }
-            | ast::Stmt::Expr { expr, .. } => {
+            ast::Stmt::Let { expr, .. } | ast::Stmt::Expr { expr, .. } => {
+                visit_expr(expr, visit);
+            }
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    visit_expr(index, visit);
+                }
                 visit_expr(expr, visit);
             }
             ast::Stmt::Return { expr, .. } => {

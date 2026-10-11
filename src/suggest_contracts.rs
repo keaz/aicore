@@ -211,7 +211,13 @@ fn collect_requires_from_block(
 ) {
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Let { expr, .. } | Stmt::Assign { expr, .. } | Stmt::Expr { expr, .. } => {
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
+                collect_requires_from_expr(expr, param_names, requires);
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_requires_from_expr(index, param_names, requires);
+                }
                 collect_requires_from_expr(expr, param_names, requires);
             }
             Stmt::Return { expr, .. } => {
@@ -435,8 +441,14 @@ fn collect_explicit_returns_from_block<'a>(
                 Some(expr) => observations.push(ReturnObservation::Expr(expr)),
                 None => observations.push(ReturnObservation::Unit),
             },
-            Stmt::Let { expr, .. } | Stmt::Assign { expr, .. } | Stmt::Expr { expr, .. } => {
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
                 collect_explicit_returns_from_expr(expr, observations)
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_explicit_returns_from_expr(index, observations);
+                }
+                collect_explicit_returns_from_expr(expr, observations);
             }
             Stmt::Assert { expr, .. } => collect_explicit_returns_from_expr(expr, observations),
         }
@@ -658,7 +670,13 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
 fn collect_value_vars_block(block: &Block, out: &mut BTreeSet<String>) {
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Let { expr, .. } | Stmt::Assign { expr, .. } | Stmt::Expr { expr, .. } => {
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
+                collect_value_vars(expr, VarContext::Value, out);
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_value_vars(index, VarContext::Value, out);
+                }
                 collect_value_vars(expr, VarContext::Value, out);
             }
             Stmt::Return { expr, .. } => {

@@ -132,6 +132,10 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attrs: Vec<Attribute>,
     pub ty: TypeExpr,
+    /// `true` for a `&mut self` receiver: the method updates the caller's
+    /// value in place.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mutable_receiver: bool,
     pub span: Span,
 }
 
@@ -484,6 +488,23 @@ pub struct Block {
     pub span: Span,
 }
 
+/// The index expressions of an assignment place, in source order.
+pub fn place_index_exprs(path: &[PlaceProjection]) -> impl Iterator<Item = &Expr> {
+    path.iter().filter_map(|projection| match projection {
+        PlaceProjection::Index { index, .. } => Some(index),
+        PlaceProjection::Field { .. } => None,
+    })
+}
+
+/// One step from a binding to the place an assignment writes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PlaceProjection {
+    /// A struct field, or a tuple element when the name is a decimal index.
+    Field { name: String, span: Span },
+    /// A `Vec` element.
+    Index { index: Expr, span: Span },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Stmt {
     Let {
@@ -494,8 +515,13 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    /// `target = expr`, or a place assignment such as `target.a.0 = expr`
+    /// or `target[i].b = expr` when `path` is not empty. `target` is the
+    /// root binding.
     Assign {
         target: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        path: Vec<PlaceProjection>,
         expr: Expr,
         span: Span,
     },

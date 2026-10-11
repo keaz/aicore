@@ -116,8 +116,14 @@ impl TemplateLowerer {
                 expr: self.lower_expr(expr),
                 span: *span,
             },
-            ir::Stmt::Assign { target, expr, span } => ir::Stmt::Assign {
+            ir::Stmt::Assign {
+                target,
+                path,
+                expr,
+                span,
+            } => ir::Stmt::Assign {
                 target: target.clone(),
+                path: path.clone(),
                 expr: self.lower_expr(expr),
                 span: *span,
             },

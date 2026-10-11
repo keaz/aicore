@@ -30,6 +30,7 @@ mod generator_json_regex;
 mod generator_match;
 mod generator_net_tls_buffer;
 mod generator_path_proc;
+mod generator_place;
 mod generator_string_math;
 
 #[cfg(test)]
@@ -3511,6 +3512,9 @@ struct Generator<'a> {
     closure_counter: usize,
     async_counter: usize,
     deferred_fn_defs: Vec<Vec<String>>,
+    /// Functions whose first parameter is a `&mut self` receiver. They take
+    /// the receiver as a pointer to the caller's storage.
+    mutable_receiver_fns: BTreeSet<String>,
     async_ready_helpers: BTreeMap<String, (String, String)>,
     fn_value_adapters: BTreeMap<String, String>,
     function_modules_by_symbol: BTreeMap<ir::SymbolId, String>,

@@ -3,9 +3,14 @@ use std::collections::BTreeMap;
 use crate::ast;
 use crate::ir;
 
+/// Name prefix of the hidden `Int` bindings that hold place-assignment
+/// indexes (`v[i] = x`). The prefix cannot be written in source.
+pub const PLACE_INDEX_BINDING_PREFIX: &str = "$place_index";
+
 pub fn build(program: &ast::Program) -> ir::Program {
     let mut builder = Builder {
         next_symbol: 1,
+        next_place_index: 0,
         next_node: 1,
         next_type: 1,
         symbols: Vec::new(),
@@ -41,6 +46,7 @@ pub fn build(program: &ast::Program) -> ir::Program {
 
 struct Builder {
     next_symbol: u32,
+    next_place_index: u32,
     next_node: u32,
     next_type: u32,
     symbols: Vec<ir::Symbol>,
@@ -71,6 +77,7 @@ impl Builder {
                     name: param.name.clone(),
                     attrs: param.attrs.clone(),
                     ty: self.lower_type(&param.ty),
+                    mutable_receiver: param.mutable_receiver,
                     span: param.span,
                 }
             })
@@ -351,6 +358,7 @@ impl Builder {
                     name: param.name.clone(),
                     attrs: param.attrs.clone(),
                     ty: self.lower_type(&param.ty),
+                    mutable_receiver: param.mutable_receiver,
                     span: param.span,
                 }
             })
@@ -404,6 +412,7 @@ impl Builder {
                     name: param.name.clone(),
                     attrs: param.attrs.clone(),
                     ty: self.lower_type(&param_ty),
+                    mutable_receiver: param.mutable_receiver,
                     span: param.span,
                 }
             })
@@ -452,20 +461,70 @@ impl Builder {
     }
 
     fn lower_block(&mut self, block: &ast::Block) -> ir::Block {
+        let node = self.next_node_id();
+        let mut stmts = Vec::with_capacity(block.stmts.len());
+        for stmt in &block.stmts {
+            self.lower_stmt(stmt, &mut stmts);
+        }
         ir::Block {
-            node: self.next_node_id(),
-            stmts: block
-                .stmts
-                .iter()
-                .map(|stmt| self.lower_stmt(stmt))
-                .collect(),
+            node,
+            stmts,
             tail: block.tail.as_ref().map(|e| Box::new(self.lower_expr(e))),
             span: block.span,
         }
     }
 
-    fn lower_stmt(&mut self, stmt: &ast::Stmt) -> ir::Stmt {
-        match stmt {
+    /// Lowers `target.path = expr`. Each index expression is bound to a
+    /// hidden `Int` local first, so it is evaluated once, left to right,
+    /// before the right-hand side.
+    fn lower_place_assign(
+        &mut self,
+        target: &str,
+        path: &[ast::PlaceProjection],
+        expr: &ast::Expr,
+        span: crate::span::Span,
+        out: &mut Vec<ir::Stmt>,
+    ) {
+        let mut lowered_path = Vec::with_capacity(path.len());
+        for projection in path {
+            match projection {
+                ast::PlaceProjection::Field { name, span } => {
+                    lowered_path.push(ir::PlaceProjection::Field {
+                        name: name.clone(),
+                        span: *span,
+                    });
+                }
+                ast::PlaceProjection::Index { index, span } => {
+                    let binding = format!("{PLACE_INDEX_BINDING_PREFIX}{}", self.next_place_index);
+                    self.next_place_index += 1;
+                    let symbol = self.push_symbol(&binding, ir::SymbolKind::Local, *span);
+                    out.push(ir::Stmt::Let {
+                        symbol,
+                        name: binding.clone(),
+                        mutable: false,
+                        ty: None,
+                        expr: self.lower_expr(index),
+                        span: *span,
+                    });
+                    lowered_path.push(ir::PlaceProjection::Index {
+                        binding,
+                        span: *span,
+                    });
+                }
+            }
+        }
+        out.push(ir::Stmt::Assign {
+            target: target.to_string(),
+            path: lowered_path,
+            expr: self.lower_expr(expr),
+            span,
+        });
+    }
+
+    /// Lowers one statement into `out`. A place assignment with an index
+    /// emits the hidden index bindings before the assignment.
+    fn lower_stmt(&mut self, stmt: &ast::Stmt, out: &mut Vec<ir::Stmt>) {
+        let lowered = match stmt {
             ast::Stmt::Let {
                 name,
                 mutable,
@@ -483,11 +542,15 @@ impl Builder {
                     span: *span,
                 }
             }
-            ast::Stmt::Assign { target, expr, span } => ir::Stmt::Assign {
-                target: target.clone(),
-                expr: self.lower_expr(expr),
-                span: *span,
-            },
+            ast::Stmt::Assign {
+                target,
+                path,
+                expr,
+                span,
+            } => {
+                self.lower_place_assign(target, path, expr, *span, out);
+                return;
+            }
             ast::Stmt::Expr { expr, span } => ir::Stmt::Expr {
                 expr: self.lower_expr(expr),
                 span: *span,
@@ -505,7 +568,8 @@ impl Builder {
                 message: message.clone(),
                 span: *span,
             },
-        }
+        };
+        out.push(lowered);
     }
 
     fn lower_expr(&mut self, expr: &ast::Expr) -> ir::Expr {

@@ -239,7 +239,12 @@ impl<'a> Analyzer<'a> {
                     }
                     self.visit_expr(expr, module_name, caller);
                 }
-                ast::Stmt::Assign { expr, .. } => self.visit_expr(expr, module_name, caller),
+                ast::Stmt::Assign { path, expr, .. } => {
+                    for index in ast::place_index_exprs(path) {
+                        self.visit_expr(index, module_name, caller);
+                    }
+                    self.visit_expr(expr, module_name, caller);
+                }
                 ast::Stmt::Expr { expr, .. } => self.visit_expr(expr, module_name, caller),
                 ast::Stmt::Return { expr, .. } => {
                     if let Some(expr) = expr {
@@ -738,8 +743,13 @@ impl<'a> VariableAnalyzer<'a> {
                 let fix_span = find_let_binding_name_span(self.source, *span, name);
                 self.declare_binding(name.clone(), *span, fix_span);
             }
-            ast::Stmt::Assign { target, expr, .. } => {
+            ast::Stmt::Assign {
+                target, path, expr, ..
+            } => {
                 self.mark_used(target);
+                for index in ast::place_index_exprs(path) {
+                    self.visit_expr(index);
+                }
                 self.visit_expr(expr);
             }
             ast::Stmt::Expr { expr, .. } => self.visit_expr(expr),

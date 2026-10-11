@@ -57,6 +57,11 @@ Recent core-language additions:
 - `E1294`: recursive struct or enum (contains itself directly or through other types); not supported yet.
 - `E1295`: invalid entry `main` signature (type parameters, parameters, or a return type other than an integer type, `Bool`, or `()`).
 - `E1296`: a typed hole (`_`) whose type cannot be inferred, for example a parameter of a function that is never called.
+- `E1297`: invalid assignment place: a field of a value without fields, an index into a value that is not a `Vec`, or a `Vec` index that is not `Int`.
+- `E1298`: assignment through a `Ref`/`RefMut` value (`r.x = 1` where `r: RefMut[P]`); writes through references are not supported.
+- `E1299`: an `async` method declares a `&mut self` receiver.
+- `E1303`: a `&mut self` method used as a function value (`let f = C::bump;`).
+- `E1110` (parser): compound assignment (`&=`, `|=`, ...) to a place with an index (`v[i] |= 1`).
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.
 - `E1259`: invalid or unknown trait bound declaration.
@@ -166,6 +171,11 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
 | `E6003` | Typed hole (`_`) was accepted and inferred from context. | Replace `_` with the inferred concrete type when finalizing API/contracts. |
 | `E1296` | Typed hole (`_`) type could not be inferred, so the program cannot be built. | Write the concrete type, or call the function/use the field so the type can be inferred. |
+| `E1297` | Invalid assignment place (`x.f` on a value without fields, `p[i]` on a non-`Vec`, non-`Int` index). | Assign to a struct field, tuple element (`t.0`) or `Vec` element with an `Int` index. |
+| `E1298` | Assignment through a `Ref`/`RefMut` value. | Assign to a `let mut` binding, or to `self` in a `&mut self` method. |
+| `E1299` | `async` method with a `&mut self` receiver. | Take `self` and return the updated value. |
+| `E1303` | `&mut self` method used as a function value. | Call the method directly or wrap the call in a closure. |
+| `E1110` | Compound assignment to an indexed place (`v[i] |= 1`). | Write the element back with plain `=`. |
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
 | `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |

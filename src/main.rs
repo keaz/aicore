@@ -4123,7 +4123,14 @@ fn eval_repl_statement(
                 binding: Some(name.clone()),
             })
         }
-        aicore::ast::Stmt::Assign { target, expr, .. } => {
+        aicore::ast::Stmt::Assign {
+            target, path, expr, ..
+        } => {
+            if !path.is_empty() {
+                return Err(format!(
+                    "cannot assign to a field or element of `{target}`: REPL values are Int, Float, Bool, String and Unit"
+                ));
+            }
             let value = eval_repl_expr(expr, &state.env)?;
             let Some(binding) = state.env.get_mut(target) else {
                 return Err(format!("unknown variable `{target}`"));
