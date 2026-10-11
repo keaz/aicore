@@ -978,19 +978,19 @@ fn rewrite_struct_inits_in_expr(
             rewrite_struct_inits_in_block(then_block, helper_names, field_orders, alloc);
             rewrite_struct_inits_in_block(else_block, helper_names, field_orders, alloc);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             rewrite_struct_inits_in_expr(cond, helper_names, field_orders, alloc);
             rewrite_struct_inits_in_block(body, helper_names, field_orders, alloc);
         }
-        ir::ExprKind::Loop { body } => {
+        ir::ExprKind::Loop { body, .. } => {
             rewrite_struct_inits_in_block(body, helper_names, field_orders, alloc);
         }
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
             }
         }
-        ir::ExprKind::Continue => {}
+        ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match { expr, arms } => {
             rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
             for arm in arms {
@@ -1176,14 +1176,14 @@ fn lower_ensures_in_expr(
             lower_ensures_in_block(then_block, ensures, ret_type, function_name, alloc, false);
             lower_ensures_in_block(else_block, ensures, ret_type, function_name, alloc, false);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             lower_ensures_in_expr(cond, ensures, ret_type, function_name, alloc);
             lower_ensures_in_block(body, ensures, ret_type, function_name, alloc, false);
         }
-        ir::ExprKind::Loop { body } => {
+        ir::ExprKind::Loop { body, .. } => {
             lower_ensures_in_block(body, ensures, ret_type, function_name, alloc, false);
         }
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr, .. } => {
             if let Some(expr) = expr {
                 lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
             }
@@ -1222,7 +1222,7 @@ fn lower_ensures_in_expr(
                 span,
             }));
         }
-        ir::ExprKind::Continue => {}
+        ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match { expr, arms } => {
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
             for arm in arms {
@@ -1508,14 +1508,14 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
                 max = max.max(max_node_expr(arg));
             }
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             max = max.max(max_node_expr(cond));
             max = max.max(max_node_block(body));
         }
-        ir::ExprKind::Loop { body } => {
+        ir::ExprKind::Loop { body, .. } => {
             max = max.max(max_node_block(body));
         }
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 max = max.max(max_node_expr(expr));
             }
@@ -1527,7 +1527,7 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_)
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
     }
     max
 }
@@ -1603,20 +1603,25 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             then_block: clone_block(then_block, alloc),
             else_block: clone_block(else_block, alloc),
         },
-        ir::ExprKind::While { cond, body } => ir::ExprKind::While {
+        ir::ExprKind::While { cond, body, label } => ir::ExprKind::While {
+            label: label.clone(),
             cond: Box::new(clone_expr(cond, alloc)),
             body: clone_block(body, alloc),
         },
-        ir::ExprKind::Loop { body } => ir::ExprKind::Loop {
+        ir::ExprKind::Loop { body, label } => ir::ExprKind::Loop {
+            label: label.clone(),
             body: clone_block(body, alloc),
         },
-        ir::ExprKind::Break { expr } => ir::ExprKind::Break {
+        ir::ExprKind::Break { expr, label } => ir::ExprKind::Break {
+            label: label.clone(),
             expr: expr.as_ref().map(|expr| Box::new(clone_expr(expr, alloc))),
         },
         ir::ExprKind::Return { expr } => ir::ExprKind::Return {
             expr: expr.as_ref().map(|expr| Box::new(clone_expr(expr, alloc))),
         },
-        ir::ExprKind::Continue => ir::ExprKind::Continue,
+        ir::ExprKind::Continue { label } => ir::ExprKind::Continue {
+            label: label.clone(),
+        },
         ir::ExprKind::Match { expr, arms } => ir::ExprKind::Match {
             expr: Box::new(clone_expr(expr, alloc)),
             arms: arms
@@ -1821,14 +1826,17 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
             then_block: clone_block(then_block, alloc),
             else_block: clone_block(else_block, alloc),
         },
-        ir::ExprKind::While { cond, body } => ir::ExprKind::While {
+        ir::ExprKind::While { cond, body, label } => ir::ExprKind::While {
+            label: label.clone(),
             cond: Box::new(substitute_result_var(cond, result_name, alloc)),
             body: clone_block(body, alloc),
         },
-        ir::ExprKind::Loop { body } => ir::ExprKind::Loop {
+        ir::ExprKind::Loop { body, label } => ir::ExprKind::Loop {
+            label: label.clone(),
             body: clone_block(body, alloc),
         },
-        ir::ExprKind::Break { expr } => ir::ExprKind::Break {
+        ir::ExprKind::Break { expr, label } => ir::ExprKind::Break {
+            label: label.clone(),
             expr: expr
                 .as_ref()
                 .map(|expr| Box::new(substitute_result_var(expr, result_name, alloc))),
@@ -1838,7 +1846,9 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
                 .as_ref()
                 .map(|expr| Box::new(substitute_result_var(expr, result_name, alloc))),
         },
-        ir::ExprKind::Continue => ir::ExprKind::Continue,
+        ir::ExprKind::Continue { label } => ir::ExprKind::Continue {
+            label: label.clone(),
+        },
         ir::ExprKind::Match { expr, arms } => ir::ExprKind::Match {
             expr: Box::new(substitute_result_var(expr, result_name, alloc)),
             arms: arms
@@ -2287,14 +2297,14 @@ fn make(x: Int) -> NonEmpty {
                     + count_asserts_in_block(then_block)
                     + count_asserts_in_block(else_block)
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, .. } => {
                 count_asserts_in_expr(cond) + count_asserts_in_block(body)
             }
-            ir::ExprKind::Loop { body } => count_asserts_in_block(body),
-            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+            ir::ExprKind::Loop { body, .. } => count_asserts_in_block(body),
+            ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
                 expr.as_ref().map_or(0, |expr| count_asserts_in_expr(expr))
             }
-            ir::ExprKind::Continue => 0,
+            ir::ExprKind::Continue { .. } => 0,
             ir::ExprKind::Match { expr, arms } => {
                 count_asserts_in_expr(expr)
                     + arms

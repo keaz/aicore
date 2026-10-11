@@ -462,11 +462,11 @@ fn render_expr(expr: &Expr) -> String {
             render_block(then_block),
             render_block(else_block)
         ),
-        ExprKind::While { cond, body } => {
+        ExprKind::While { cond, body, .. } => {
             format!("while {} {}", render_expr(cond), render_block(body))
         }
-        ExprKind::Loop { body } => format!("loop {}", render_block(body)),
-        ExprKind::Break { expr } => match expr {
+        ExprKind::Loop { body, .. } => format!("loop {}", render_block(body)),
+        ExprKind::Break { expr, .. } => match expr {
             Some(expr) => format!("break {}", render_expr(expr)),
             None => "break".to_string(),
         },
@@ -474,7 +474,7 @@ fn render_expr(expr: &Expr) -> String {
             Some(expr) => format!("return {}", render_expr(expr)),
             None => "return".to_string(),
         },
-        ExprKind::Continue => "continue".to_string(),
+        ExprKind::Continue { .. } => "continue".to_string(),
         ExprKind::Match { expr, arms } => {
             let rendered_arms = arms
                 .iter()

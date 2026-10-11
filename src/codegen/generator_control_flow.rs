@@ -1211,6 +1211,7 @@ impl<'a> Generator<'a> {
         &mut self,
         cond_expr: &ir::Expr,
         body: &ir::Block,
+        source_label: Option<&str>,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let cond_label = self.new_label("while_cond");
@@ -1223,6 +1224,7 @@ impl<'a> Generator<'a> {
 
         fctx.lines.push(format!("  br label %{}", cond_label));
         fctx.loop_stack.push(LoopFrame {
+            source_label: source_label.map(str::to_string),
             break_label: exit_label.clone(),
             continue_label: cond_label.clone(),
             result_ty: None,
@@ -1292,7 +1294,12 @@ impl<'a> Generator<'a> {
         }
     }
 
-    pub(super) fn gen_loop(&mut self, body: &ir::Block, fctx: &mut FnCtx) -> Option<Value> {
+    pub(super) fn gen_loop(
+        &mut self,
+        body: &ir::Block,
+        source_label: Option<&str>,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
         let body_label = self.new_label("loop_body");
         let exit_label = self.new_label("loop_exit");
 
@@ -1302,6 +1309,7 @@ impl<'a> Generator<'a> {
 
         fctx.lines.push(format!("  br label %{}", body_label));
         fctx.loop_stack.push(LoopFrame {
+            source_label: source_label.map(str::to_string),
             break_label: exit_label.clone(),
             continue_label: body_label.clone(),
             result_ty: None,
@@ -1359,13 +1367,26 @@ impl<'a> Generator<'a> {
         }
     }
 
+    /// The frame a `break`/`continue` targets: the innermost loop, or the
+    /// enclosing loop with `source_label`.
+    fn loop_frame_index(fctx: &FnCtx, source_label: Option<&str>) -> Option<usize> {
+        match source_label {
+            None => fctx.loop_stack.len().checked_sub(1),
+            Some(label) => fctx
+                .loop_stack
+                .iter()
+                .rposition(|frame| frame.source_label.as_deref() == Some(label)),
+        }
+    }
+
     pub(super) fn gen_break(
         &mut self,
         break_expr: Option<&ir::Expr>,
+        source_label: Option<&str>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        if fctx.loop_stack.is_empty() {
+        let Some(loop_index) = Self::loop_frame_index(fctx, source_label) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5025",
                 "`break` used outside of a loop during codegen",
@@ -1373,9 +1394,7 @@ impl<'a> Generator<'a> {
                 span,
             ));
             return None;
-        }
-
-        let loop_index = fctx.loop_stack.len() - 1;
+        };
         fctx.loop_stack[loop_index].broken = true;
         if let Some(break_expr) = break_expr {
             let value = self.gen_expr(break_expr, fctx)?;
@@ -1438,12 +1457,12 @@ impl<'a> Generator<'a> {
 
     pub(super) fn gen_continue(
         &mut self,
+        source_label: Option<&str>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        let Some((scope_depth, continue_label)) = fctx
-            .loop_stack
-            .last()
+        let Some((scope_depth, continue_label)) = Self::loop_frame_index(fctx, source_label)
+            .map(|index| &fctx.loop_stack[index])
             .map(|frame| (frame.scope_depth, frame.continue_label.clone()))
         else {
             self.diagnostics.push(Diagnostic::error(
@@ -3162,7 +3181,7 @@ impl<'a> Generator<'a> {
                 ));
                 None
             }
-            ir::ExprKind::Continue => {
+            ir::ExprKind::Continue { .. } => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5023",
                     format!(

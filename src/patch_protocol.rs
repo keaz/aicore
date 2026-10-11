@@ -1099,12 +1099,12 @@ fn collect_match_expr_candidates_from_expr(expr: &Expr, out: &mut Vec<MatchExprC
             collect_match_expr_candidates_from_block(then_block, out);
             collect_match_expr_candidates_from_block(else_block, out);
         }
-        ExprKind::While { cond, body } => {
+        ExprKind::While { cond, body, .. } => {
             collect_match_expr_candidates_from_expr(cond, out);
             collect_match_expr_candidates_from_block(body, out);
         }
-        ExprKind::Loop { body } => collect_match_expr_candidates_from_block(body, out),
-        ExprKind::Break { expr } | ExprKind::Return { expr } => {
+        ExprKind::Loop { body, .. } => collect_match_expr_candidates_from_block(body, out),
+        ExprKind::Break { expr, .. } | ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_match_expr_candidates_from_expr(expr, out);
             }
@@ -1126,7 +1126,7 @@ fn collect_match_expr_candidates_from_expr(expr: &Expr, out: &mut Vec<MatchExprC
             }
         }
         ExprKind::FieldAccess { base, .. } => collect_match_expr_candidates_from_expr(base, out),
-        ExprKind::Continue
+        ExprKind::Continue { .. }
         | ExprKind::Int(_, ..)
         | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)

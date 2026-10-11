@@ -685,19 +685,19 @@ fn collect_expr_call_names(
             collect_block_call_names(then_block, caller_name, call_graph);
             collect_block_call_names(else_block, caller_name, call_graph);
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             collect_expr_call_names(cond, caller_name, call_graph);
             collect_block_call_names(body, caller_name, call_graph);
         }
-        ast::ExprKind::Loop { body } => {
+        ast::ExprKind::Loop { body, .. } => {
             collect_block_call_names(body, caller_name, call_graph);
         }
-        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+        ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_call_names(expr, caller_name, call_graph);
             }
         }
-        ast::ExprKind::Continue => {}
+        ast::ExprKind::Continue { .. } => {}
         ast::ExprKind::Match { expr, arms } => {
             collect_expr_call_names(expr, caller_name, call_graph);
             for arm in arms {

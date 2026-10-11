@@ -1,0 +1,21 @@
+fn main() -> Int {
+    let mut total = 0;
+    'rows: for r in 0..4 {
+        'cols: for c in 0..4 {
+            if c > r {
+                continue 'rows;
+            };
+            if r == 3 {
+                break 'rows;
+            };
+            total = total + c;
+        };
+    };
+    let found = 'scan: loop {
+        while total > 0 {
+            break 'scan total;
+        };
+        break 0;
+    };
+    found
+}

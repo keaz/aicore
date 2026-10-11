@@ -965,6 +965,16 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Loop Labels (SYNTAX-T10, #457)
+
+- Language surface: `'name: while|loop|for`, `break 'name [value]`, `continue 'name`. Rules: `docs/reference/expressions.md`.
+- Lexer: a quote followed by a name and no closing quote is `TokenKind::Label(name)`; `'a'` stays a `Char`.
+- AST/IR: `While`, `Loop`, `Break` and `Continue` carry `label: Option<String>` (omitted from JSON when absent). `parse_labeled_loop` parses the loop and `set_loop_label` puts the label on the loop node, including the `loop` inside the `if true { ..; loop { .. } }` a `for` desugars to. Passes that rebuild expressions (`ir_builder`, `contracts.rs`, `template_lowering.rs`) copy the label.
+- Checker: `LoopContext.label`; `loop_target` resolves the frame a `break`/`continue` targets (E1307), `check_new_loop_label` rejects reused labels (E1308). A labeled break with a value types the target loop.
+- Codegen: `LoopFrame.source_label`; `loop_frame_index` picks the frame, and the break/continue runs drops down to that frame's scope depth before branching.
+- Formatter: prints `'name: ` before `while`, `while let`, `loop` and `for` (`for_loop_label`), and the label after `break`/`continue`.
+- Verification: `exec_labeled_break_and_continue_target_outer_loops`, `loop_labels_are_resolved_and_typed`, `parses_loop_labels_on_while_loop_and_for`, `lexes_loop_labels_apart_from_char_literals`, formatter test `loop_labels_round_trip`, golden `case32_loop_labels.aic`, `examples/core/loop_labels.aic`.
+
 ## Numeric Casts and Conversion Methods (SYNTAX-T9, #456)
 
 - Language surface: `x as T` (lossless numeric conversions only) and `checked_to_<t>()` (`Option[T]`), `saturating_to_<t>()`, `wrapping_to_<t>()`, `to_f32()`, `to_f64()` on every integer and float type. Rules: `docs/reference/expressions.md`.

@@ -1788,6 +1788,15 @@ impl<'a> Printer<'a> {
         self.source.as_ref()?.literal_text(span, matches)
     }
 
+    /// `'label: ` before a labeled loop.
+    fn loop_label(&mut self, label: Option<&str>) {
+        if let Some(label) = label {
+            self.out.push('\'');
+            self.out.push_str(label);
+            self.out.push_str(": ");
+        }
+    }
+
     fn expr(&mut self, expr: &ir::Expr, parent_prec: u8, indent: usize) {
         // A prefix operator or a negative literal before `.field`, a call,
         // an index or `?` needs parens: `(-1).abs()`, not `-1.abs()`.
@@ -1798,6 +1807,7 @@ impl<'a> Printer<'a> {
             return;
         }
         if let Some(rendered_for) = extract_for_syntax(expr) {
+            self.loop_label(for_loop_label(expr));
             self.out.push_str("for ");
             self.out.push_str(&rendered_for.binding);
             self.out.push_str(" in ");
@@ -1835,6 +1845,9 @@ impl<'a> Printer<'a> {
             return;
         }
         if let Some((pattern, scrutinee, body)) = while_let_parts(expr) {
+            if let ir::ExprKind::Loop { label, .. } = &expr.kind {
+                self.loop_label(label.as_deref());
+            }
             self.out.push_str("while let ");
             self.pattern(pattern);
             self.out.push_str(" = ");
@@ -2021,18 +2034,24 @@ impl<'a> Printer<'a> {
                     None => self.block(else_block, indent),
                 }
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, label } => {
+                self.loop_label(label.as_deref());
                 self.out.push_str("while ");
                 self.expr(cond, 0, indent);
                 self.out.push(' ');
                 self.block(body, indent);
             }
-            ir::ExprKind::Loop { body } => {
+            ir::ExprKind::Loop { body, label } => {
+                self.loop_label(label.as_deref());
                 self.out.push_str("loop ");
                 self.block(body, indent);
             }
-            ir::ExprKind::Break { expr } => {
+            ir::ExprKind::Break { expr, label } => {
                 self.out.push_str("break");
+                if let Some(label) = label {
+                    self.out.push_str(" '");
+                    self.out.push_str(label);
+                }
                 if let Some(expr) = expr {
                     self.out.push(' ');
                     self.expr(expr, 0, indent);
@@ -2045,7 +2064,13 @@ impl<'a> Printer<'a> {
                     self.expr(expr, 0, indent);
                 }
             }
-            ir::ExprKind::Continue => self.out.push_str("continue"),
+            ir::ExprKind::Continue { label } => {
+                self.out.push_str("continue");
+                if let Some(label) = label {
+                    self.out.push_str(" '");
+                    self.out.push_str(label);
+                }
+            }
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
@@ -2398,11 +2423,11 @@ fn nested_regions(expr: &ir::Expr, out: &mut Vec<(usize, usize)>) {
                 None => out.push(block_region(else_block)),
             }
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             nested_regions(cond, out);
             out.push(block_region(body));
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::Closure { body, .. } => {
+        ir::ExprKind::Loop { body, .. } | ir::ExprKind::Closure { body, .. } => {
             out.push(block_region(body));
         }
         ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
@@ -2429,7 +2454,7 @@ fn nested_regions(expr: &ir::Expr, out: &mut Vec<(usize, usize)>) {
         | ir::ExprKind::Borrow { expr, .. }
         | ir::ExprKind::Await { expr }
         | ir::ExprKind::Try { expr } => nested_regions(expr, out),
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 nested_regions(expr, out);
             }
@@ -2447,7 +2472,7 @@ fn nested_regions(expr: &ir::Expr, out: &mut Vec<(usize, usize)>) {
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_)
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
     }
 }
 
@@ -2473,11 +2498,11 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
             let start = then_block.span.start;
             return Some(first_nested_region(cond).map_or(start, |region| region.min(start)));
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             let start = body.span.start;
             return Some(first_nested_region(cond).map_or(start, |region| region.min(start)));
         }
-        ir::ExprKind::Loop { body } => return Some(body.span.start),
+        ir::ExprKind::Loop { body, .. } => return Some(body.span.start),
         ir::ExprKind::Closure { body, .. } => return Some(body.span.start),
         ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
             return Some(block.span.start)
@@ -2492,7 +2517,7 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
         | ir::ExprKind::Borrow { expr, .. }
         | ir::ExprKind::Await { expr }
         | ir::ExprKind::Try { expr } => vec![expr],
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             expr.iter().map(|expr| &**expr).collect()
         }
         ir::ExprKind::StructInit { fields, .. } => fields.iter().map(|(_, expr, _)| expr).collect(),
@@ -2504,7 +2529,7 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_)
-        | ir::ExprKind::Continue => Vec::new(),
+        | ir::ExprKind::Continue { .. } => Vec::new(),
     };
     children.into_iter().filter_map(first_nested_region).min()
 }
@@ -2559,7 +2584,7 @@ fn if_let_parts(expr: &ir::Expr) -> Option<IfLetParts<'_>> {
 
 /// Pattern, scrutinee and body of a desugared `while let P = e { .. }`.
 fn while_let_parts(expr: &ir::Expr) -> Option<(&ir::Pattern, &ir::Expr, &ir::Block)> {
-    let ir::ExprKind::Loop { body } = &expr.kind else {
+    let ir::ExprKind::Loop { body, .. } = &expr.kind else {
         return None;
     };
     let tail = body.tail.as_deref().filter(|_| body.stmts.is_empty())?;
@@ -2678,6 +2703,17 @@ struct RenderedFor {
     body: ir::Block,
 }
 
+/// The label of the loop a desugared `for` expression contains.
+fn for_loop_label(expr: &ir::Expr) -> Option<&str> {
+    let ir::ExprKind::If { then_block, .. } = &expr.kind else {
+        return None;
+    };
+    match then_block.tail.as_deref().map(|tail| &tail.kind) {
+        Some(ir::ExprKind::Loop { label, .. }) => label.as_deref(),
+        _ => None,
+    }
+}
+
 fn extract_for_syntax(expr: &ir::Expr) -> Option<RenderedFor> {
     let ir::ExprKind::If {
         cond,
@@ -2691,7 +2727,10 @@ fn extract_for_syntax(expr: &ir::Expr) -> Option<RenderedFor> {
         return None;
     }
     let loop_expr = then_block.tail.as_ref()?;
-    let ir::ExprKind::Loop { body: loop_body } = &loop_expr.kind else {
+    let ir::ExprKind::Loop {
+        body: loop_body, ..
+    } = &loop_expr.kind
+    else {
         return None;
     };
 
@@ -3041,7 +3080,13 @@ fn is_unit_block(block: &ir::Block) -> bool {
 }
 
 fn is_break_none_expr(expr: &ir::Expr) -> bool {
-    matches!(expr.kind, ir::ExprKind::Break { expr: None })
+    matches!(
+        expr.kind,
+        ir::ExprKind::Break {
+            expr: None,
+            label: None
+        }
+    )
 }
 
 fn is_increment_expr(expr: &ir::Expr, target: &str) -> bool {
@@ -3182,6 +3227,12 @@ mod tests {
     #[test]
     fn prefix_operators_before_postfix_operators_keep_parens() {
         let src = "fn f(x: Int, o: Option[Int]) -> Option[Int] {\n    let a = (-1).checked_to_u32();\n    let b = (-x).saturating_to_u8();\n    let c = (-2.5).saturating_to_int();\n    let d = -x.wrapping_to_u8();\n    let e = (x as Int64).wrapping_to_int();\n    o\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn loop_labels_round_trip() {
+        let src = "fn f(o: Option[Int]) -> Int {\n    'rows: for r in 0..3 {\n        'cols: while r > 0 {\n            continue 'rows;\n        };\n    };\n    'w: while let Some(x) = o {\n        break 'w;\n    };\n    'l: loop {\n        break 'l 7;\n    }\n}\n";
         assert_eq!(fmt(src), src);
     }
 

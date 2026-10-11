@@ -623,17 +623,22 @@ impl Builder {
                 then_block: self.lower_block(then_block),
                 else_block: self.lower_block(else_block),
             },
-            ast::ExprKind::While { cond, body } => ir::ExprKind::While {
+            ast::ExprKind::While { cond, body, label } => ir::ExprKind::While {
+                label: label.clone(),
                 cond: Box::new(self.lower_expr(cond)),
                 body: self.lower_block(body),
             },
-            ast::ExprKind::Loop { body } => ir::ExprKind::Loop {
+            ast::ExprKind::Loop { body, label } => ir::ExprKind::Loop {
+                label: label.clone(),
                 body: self.lower_block(body),
             },
-            ast::ExprKind::Break { expr } => ir::ExprKind::Break {
+            ast::ExprKind::Break { expr, label } => ir::ExprKind::Break {
+                label: label.clone(),
                 expr: expr.as_ref().map(|expr| Box::new(self.lower_expr(expr))),
             },
-            ast::ExprKind::Continue => ir::ExprKind::Continue,
+            ast::ExprKind::Continue { label } => ir::ExprKind::Continue {
+                label: label.clone(),
+            },
             ast::ExprKind::Return { expr } => ir::ExprKind::Return {
                 expr: expr.as_ref().map(|expr| Box::new(self.lower_expr(expr))),
             },

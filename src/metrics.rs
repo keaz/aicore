@@ -366,7 +366,7 @@ impl ComplexityAnalyzer {
             | ExprKind::String(_)
             | ExprKind::Unit
             | ExprKind::Var(_)
-            | ExprKind::Continue => {}
+            | ExprKind::Continue { .. } => {}
             ExprKind::Call { callee, args, .. } => {
                 self.visit_expr(callee, depth);
                 for arg in args {
@@ -391,16 +391,16 @@ impl ComplexityAnalyzer {
                 self.visit_block(then_block, depth + 1);
                 self.visit_block(else_block, depth + 1);
             }
-            ExprKind::While { cond, body } => {
+            ExprKind::While { cond, body, .. } => {
                 self.bump_decision(depth);
                 self.visit_expr(cond, depth);
                 self.visit_block(body, depth + 1);
             }
-            ExprKind::Loop { body } => {
+            ExprKind::Loop { body, .. } => {
                 self.bump_decision(depth);
                 self.visit_block(body, depth + 1);
             }
-            ExprKind::Break { expr } | ExprKind::Return { expr } => {
+            ExprKind::Break { expr, .. } | ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.visit_expr(expr, depth);
                 }

@@ -1800,14 +1800,14 @@ fn collect_expr_semantic_tokens(
             collect_block_semantic_tokens(tokens, source, then_block, effectful_functions);
             collect_block_semantic_tokens(tokens, source, else_block, effectful_functions);
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             collect_expr_semantic_tokens(tokens, source, cond, effectful_functions);
             collect_block_semantic_tokens(tokens, source, body, effectful_functions);
         }
-        ast::ExprKind::Loop { body } => {
+        ast::ExprKind::Loop { body, .. } => {
             collect_block_semantic_tokens(tokens, source, body, effectful_functions);
         }
-        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+        ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
             }
@@ -1867,7 +1867,7 @@ fn collect_expr_semantic_tokens(
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
-        | ast::ExprKind::Continue
+        | ast::ExprKind::Continue { .. }
         | ast::ExprKind::Unit => {}
     }
 }
@@ -2564,7 +2564,7 @@ fn collect_expr_call_sites(
                 call_sites_by_caller,
             );
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             collect_expr_call_sites(
                 cond,
                 file,
@@ -2580,7 +2580,7 @@ fn collect_expr_call_sites(
                 call_sites_by_caller,
             );
         }
-        ast::ExprKind::Loop { body } => {
+        ast::ExprKind::Loop { body, .. } => {
             collect_block_call_sites(
                 body,
                 file,
@@ -2589,7 +2589,7 @@ fn collect_expr_call_sites(
                 call_sites_by_caller,
             );
         }
-        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+        ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_call_sites(
                     expr,
@@ -2600,7 +2600,7 @@ fn collect_expr_call_sites(
                 );
             }
         }
-        ast::ExprKind::Continue => {}
+        ast::ExprKind::Continue { .. } => {}
         ast::ExprKind::Match { expr, arms } => {
             collect_expr_call_sites(
                 expr,
@@ -2988,17 +2988,17 @@ fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<
             collect_block_folding_ranges(then_block, source, ranges);
             collect_block_folding_ranges(else_block, source, ranges);
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             collect_expr_folding_ranges(cond, source, ranges);
             collect_block_folding_ranges(body, source, ranges);
         }
-        ast::ExprKind::Loop { body } => collect_block_folding_ranges(body, source, ranges),
-        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+        ast::ExprKind::Loop { body, .. } => collect_block_folding_ranges(body, source, ranges),
+        ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_folding_ranges(expr, source, ranges);
             }
         }
-        ast::ExprKind::Continue => {}
+        ast::ExprKind::Continue { .. } => {}
         ast::ExprKind::Match { expr, arms } => {
             collect_expr_folding_ranges(expr, source, ranges);
             for arm in arms {
@@ -3436,19 +3436,19 @@ fn collect_expr_selection_spans(
             collect_block_selection_spans(then_block, offset, stmt_spans, block_spans, expr_spans);
             collect_block_selection_spans(else_block, offset, stmt_spans, block_spans, expr_spans);
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             collect_expr_selection_spans(cond, offset, stmt_spans, block_spans, expr_spans);
             collect_block_selection_spans(body, offset, stmt_spans, block_spans, expr_spans);
         }
-        ast::ExprKind::Loop { body } => {
+        ast::ExprKind::Loop { body, .. } => {
             collect_block_selection_spans(body, offset, stmt_spans, block_spans, expr_spans);
         }
-        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+        ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
             }
         }
-        ast::ExprKind::Continue => {}
+        ast::ExprKind::Continue { .. } => {}
         ast::ExprKind::Match { expr, arms } => {
             collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
             for arm in arms {
@@ -4047,7 +4047,7 @@ fn collect_expr_inlay_hints(
                 hints,
             );
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             collect_expr_inlay_hints(cond, source, show_effect_hints, signature_lookup, hints);
             collect_block_inlay_hints(
                 body,
@@ -4058,7 +4058,7 @@ fn collect_expr_inlay_hints(
                 hints,
             );
         }
-        ast::ExprKind::Loop { body } => {
+        ast::ExprKind::Loop { body, .. } => {
             collect_block_inlay_hints(
                 body,
                 source,
@@ -4068,7 +4068,9 @@ fn collect_expr_inlay_hints(
                 hints,
             );
         }
-        ast::ExprKind::Break { expr: Some(value) }
+        ast::ExprKind::Break {
+            expr: Some(value), ..
+        }
         | ast::ExprKind::Return { expr: Some(value) }
         | ast::ExprKind::Await { expr: value }
         | ast::ExprKind::Try { expr: value }
@@ -4119,9 +4121,9 @@ fn collect_expr_inlay_hints(
         ast::ExprKind::FieldAccess { base, .. } => {
             collect_expr_inlay_hints(base, source, show_effect_hints, signature_lookup, hints);
         }
-        ast::ExprKind::Break { expr: None }
+        ast::ExprKind::Break { expr: None, .. }
         | ast::ExprKind::Return { expr: None }
-        | ast::ExprKind::Continue
+        | ast::ExprKind::Continue { .. }
         | ast::ExprKind::Int(_, ..)
         | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)

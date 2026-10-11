@@ -403,17 +403,18 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
             reorder_call_args_in_block(then_block, orders);
             reorder_call_args_in_block(else_block, orders);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             reorder_call_args_in_expr(cond, orders);
             reorder_call_args_in_block(body, orders);
         }
-        ir::ExprKind::Loop { body } => reorder_call_args_in_block(body, orders),
-        ir::ExprKind::Break { expr: Some(inner) } | ir::ExprKind::Return { expr: Some(inner) } => {
-            reorder_call_args_in_expr(inner, orders)
+        ir::ExprKind::Loop { body, .. } => reorder_call_args_in_block(body, orders),
+        ir::ExprKind::Break {
+            expr: Some(inner), ..
         }
-        ir::ExprKind::Break { expr: None }
+        | ir::ExprKind::Return { expr: Some(inner) } => reorder_call_args_in_expr(inner, orders),
+        ir::ExprKind::Break { expr: None, .. }
         | ir::ExprKind::Return { expr: None }
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match {
             expr: scrutinee,
             arms,
@@ -635,21 +636,24 @@ fn apply_let_binding_types_in_expr(expr: &mut ir::Expr, let_binding_types: &LetT
             apply_let_binding_types_in_block(then_block, let_binding_types);
             apply_let_binding_types_in_block(else_block, let_binding_types);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             apply_let_binding_types_in_expr(cond, let_binding_types);
             apply_let_binding_types_in_block(body, let_binding_types);
         }
-        ir::ExprKind::Loop { body }
+        ir::ExprKind::Loop { body, .. }
         | ir::ExprKind::UnsafeBlock { block: body }
         | ir::ExprKind::Block { block: body } => {
             apply_let_binding_types_in_block(body, let_binding_types);
         }
-        ir::ExprKind::Break { expr: Some(inner) } | ir::ExprKind::Return { expr: Some(inner) } => {
+        ir::ExprKind::Break {
+            expr: Some(inner), ..
+        }
+        | ir::ExprKind::Return { expr: Some(inner) } => {
             apply_let_binding_types_in_expr(inner, let_binding_types);
         }
-        ir::ExprKind::Break { expr: None }
+        ir::ExprKind::Break { expr: None, .. }
         | ir::ExprKind::Return { expr: None }
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match {
             expr: scrutinee,
             arms,
@@ -975,21 +979,22 @@ fn attach_call_symbols_in_expr(expr: &mut ir::Expr, symbols: &BTreeMap<ir::NodeI
             attach_call_symbols_in_block(then_block, symbols);
             attach_call_symbols_in_block(else_block, symbols);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             attach_call_symbols_in_expr(cond, symbols);
             attach_call_symbols_in_block(body, symbols);
         }
-        ir::ExprKind::Loop { body }
+        ir::ExprKind::Loop { body, .. }
         | ir::ExprKind::UnsafeBlock { block: body }
         | ir::ExprKind::Block { block: body } => {
             attach_call_symbols_in_block(body, symbols);
         }
-        ir::ExprKind::Break { expr: Some(inner) } | ir::ExprKind::Return { expr: Some(inner) } => {
-            attach_call_symbols_in_expr(inner, symbols)
+        ir::ExprKind::Break {
+            expr: Some(inner), ..
         }
-        ir::ExprKind::Break { expr: None }
+        | ir::ExprKind::Return { expr: Some(inner) } => attach_call_symbols_in_expr(inner, symbols),
+        ir::ExprKind::Break { expr: None, .. }
         | ir::ExprKind::Return { expr: None }
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match { expr: inner, arms } => {
             attach_call_symbols_in_expr(inner, symbols);
             for arm in arms {
@@ -1060,17 +1065,20 @@ fn qualify_call_targets_in_expr(expr: &mut ir::Expr, modules: &BTreeMap<ir::Node
             qualify_call_targets_in_block(then_block, modules);
             qualify_call_targets_in_block(else_block, modules);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             qualify_call_targets_in_expr(cond, modules);
             qualify_call_targets_in_block(body, modules);
         }
-        ir::ExprKind::Loop { body } => qualify_call_targets_in_block(body, modules),
-        ir::ExprKind::Break { expr: Some(inner) } | ir::ExprKind::Return { expr: Some(inner) } => {
+        ir::ExprKind::Loop { body, .. } => qualify_call_targets_in_block(body, modules),
+        ir::ExprKind::Break {
+            expr: Some(inner), ..
+        }
+        | ir::ExprKind::Return { expr: Some(inner) } => {
             qualify_call_targets_in_expr(inner, modules)
         }
-        ir::ExprKind::Break { expr: None }
+        ir::ExprKind::Break { expr: None, .. }
         | ir::ExprKind::Return { expr: None }
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match {
             expr: scrutinee,
             arms,

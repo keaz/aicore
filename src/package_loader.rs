@@ -746,11 +746,11 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
                 || block_uses_compiler_iterator_helpers(then_block)
                 || block_uses_compiler_iterator_helpers(else_block)
         }
-        ast::ExprKind::While { cond, body } => {
+        ast::ExprKind::While { cond, body, .. } => {
             expr_uses_compiler_iterator_helpers(cond) || block_uses_compiler_iterator_helpers(body)
         }
-        ast::ExprKind::Loop { body } => block_uses_compiler_iterator_helpers(body),
-        ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => expr
+        ast::ExprKind::Loop { body, .. } => block_uses_compiler_iterator_helpers(body),
+        ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => expr
             .as_ref()
             .map(|value| expr_uses_compiler_iterator_helpers(value))
             .unwrap_or(false),
@@ -785,7 +785,7 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
         | ast::ExprKind::String(_)
         | ast::ExprKind::Unit
         | ast::ExprKind::Var(_)
-        | ast::ExprKind::Continue => false,
+        | ast::ExprKind::Continue { .. } => false,
     }
 }
 

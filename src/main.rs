@@ -4523,7 +4523,7 @@ fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
         aicore::ast::ExprKind::While { .. } => "while expression",
         aicore::ast::ExprKind::Loop { .. } => "loop expression",
         aicore::ast::ExprKind::Break { .. } => "break expression",
-        aicore::ast::ExprKind::Continue => "continue expression",
+        aicore::ast::ExprKind::Continue { .. } => "continue expression",
         aicore::ast::ExprKind::Return { .. } => "return expression",
         aicore::ast::ExprKind::Match { .. } => "match expression",
         aicore::ast::ExprKind::Binary { .. } => "binary expression",

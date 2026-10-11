@@ -1,0 +1,38 @@
+module examples.core.loop_labels;
+
+import std.io;
+
+// Labeled loops: `break 'label` and `continue 'label` leave or restart an
+// outer loop, and `break 'label value` gives a labeled `loop` its value.
+
+fn first_pair_with_product(limit: Int, product: Int) -> Int {
+    let mut index = 0;
+    'outer: loop {
+        if index >= limit {
+            break 0;
+        };
+        let a = index;
+        index += 1;
+        for b in 0..limit {
+            if b > a {
+                continue 'outer;
+            };
+            if a * b == product {
+                break 'outer a * 10 + b;
+            };
+        }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut skipped = 0;
+    'each: for n in 0..10 {
+        if n % 3 == 0 {
+            skipped += 1;
+            continue 'each;
+        };
+    };
+    // 4 * 3 = 12 gives 43; 43 - skipped (0, 3, 6, 9) + 3 = 42
+    print_int(first_pair_with_product(9, 12) - skipped + 3);
+    0
+}

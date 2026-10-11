@@ -47,6 +47,7 @@ primary_expr   = literal
                | "(" expr ")"
                | "(" ")"
                | if_expr
+               | labeled_loop
                | while_expr
                | loop_expr
                | break_expr
@@ -58,10 +59,12 @@ primary_expr   = literal
 
 if_expr        = "if" expr block ("else" (block | if_expr))? ;
 block_expr     = block ;
+labeled_loop   = label ":" (while_expr | loop_expr | for_expr) ;
+label          = "'" ident ;
 while_expr     = "while" expr block ;
 loop_expr      = "loop" block ;
-break_expr     = "break" expr? ;
-continue_expr  = "continue" ;
+break_expr     = "break" label? expr? ;
+continue_expr  = "continue" label? ;
 return_expr    = "return" expr? ;
 match_expr     = "match" expr "{" match_arm ("," match_arm)* ","? "}" ;
 match_arm      = pattern ("if" expr)? "=>" expr ;
@@ -98,6 +101,7 @@ hex_int        = "0x" hexdigit+ ;
 - `while` requires a `Bool` condition. Its expression type is unit unless broken with typed flow.
 - `loop` and `break` are typed together: all breaks in one loop must agree on one break type.
 - `continue` and `break` are valid only inside loop contexts.
+- Loop labels: `'name: while ...`, `'name: loop ...` and `'name: for ...` name a loop. `break 'name` leaves that loop and `continue 'name` starts its next iteration (the next element for `for`, the condition for `while`), from any depth of nested loops. `break 'name value` gives a labeled `loop` its value, and it is typed together with the loop's other breaks (`E1274` on a mismatch). `while` and `for` loops have type `()`, so a break with a value cannot target them (`E1274`). A label that no enclosing loop has is `E1307`; a nested loop may not reuse an enclosing loop's label (`E1308`); a label not followed by `while`, `loop` or `for`, or without its `:`, is `E1306`. Labels do not reach into closures (`E1275`/`E1276`). Without a label, `break` and `continue` apply to the innermost loop. `'a'` is still a character literal: a quote followed by a name and no closing quote is a label.
 - `if let PATTERN = expr { ... } else { ... }` runs the first block with the pattern's bindings when it matches, otherwise the `else` block (optional, as for `if`; `else if` and `else if let` chain). `while let PATTERN = expr { ... }` repeats while the pattern matches; `break` and `continue` work as in `loop`. A pattern that always matches is reported (`E1251`). Both are written back unchanged by `aic fmt`.
 - Indexing `base[index]` reads one element and panics with `index_out_of_bounds{op:index}` when it does not exist. It works on `Vec[T]` (`Int` index, element `T`), `Map[K, V]` (key `K`, value `V`; a missing key panics), `String` (`Int` character index, one-character `String`) and `Bytes` (`Int` byte index, `UInt8`). The operation comes from the type's std module, which must be imported (`E1304`). Use `vec.get`, `map.get`, `string.char_at` or `bytes.byte_at` for an `Option`/`Result` instead of a panic. Assignment `v[i] = x` is described in [Statements](./statements.md). There is no `Slice[T]` type (it is reported as unknown, `E1228`); use `Vec[T]`.
 - Numeric casts `x as T` convert between numeric types only when every value of the source type is kept exactly: integer widening that keeps the sign (`Int8` to `Int16`, `UInt8` to `Int16`, `UInt32` to `UInt64`), integers of 16 bits or fewer to `Float32`, integers of 32 bits or fewer to `Float64`, and `Float32` to `Float64`. Every other pair, and any non-numeric type, is `E1305`, whose help names the method to use. `as` binds tighter than the binary operators and looser than the unary ones (`-x as Int64` is `(-x) as Int64`; `a * b as Int` is `a * (b as Int)`). `as` is a contextual keyword, so it is still usable as a name.

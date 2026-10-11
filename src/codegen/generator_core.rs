@@ -2346,16 +2346,16 @@ impl<'a> Generator<'a> {
                 self.collect_async_locals_in_block(then_block, locals)?;
                 self.collect_async_locals_in_block(else_block, locals)?;
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, .. } => {
                 self.collect_async_locals_in_expr(cond, locals)?;
                 self.collect_async_locals_in_block(body, locals)?;
             }
-            ir::ExprKind::Loop { body }
+            ir::ExprKind::Loop { body, .. }
             | ir::ExprKind::UnsafeBlock { block: body }
             | ir::ExprKind::Block { block: body } => {
                 self.collect_async_locals_in_block(body, locals)?;
             }
-            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+            ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.collect_async_locals_in_expr(expr, locals)?;
                 }
@@ -2386,7 +2386,7 @@ impl<'a> Generator<'a> {
             | ir::ExprKind::String(_)
             | ir::ExprKind::TemplateLiteral { .. }
             | ir::ExprKind::Unit
-            | ir::ExprKind::Continue => {}
+            | ir::ExprKind::Continue { .. } => {}
         }
         Some(())
     }
@@ -2977,16 +2977,16 @@ impl<'a> Generator<'a> {
                     self.mark_moved_resource_locals_in_expr(&arm.body, fctx);
                 }
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, .. } => {
                 self.mark_moved_resource_locals_in_expr(cond, fctx);
                 self.mark_moved_resource_locals_in_block(body, fctx);
             }
-            ir::ExprKind::Loop { body }
+            ir::ExprKind::Loop { body, .. }
             | ir::ExprKind::UnsafeBlock { block: body }
             | ir::ExprKind::Block { block: body } => {
                 self.mark_moved_resource_locals_in_block(body, fctx);
             }
-            ir::ExprKind::Break { expr } => {
+            ir::ExprKind::Break { expr, .. } => {
                 if let Some(expr) = expr {
                     self.mark_moved_resource_locals_in_expr(expr, fctx);
                 }
@@ -4850,8 +4850,10 @@ impl<'a> Generator<'a> {
                 then_block,
                 else_block,
             } => self.gen_if(cond, then_block, else_block, expected_ty, fctx),
-            ir::ExprKind::While { cond, body } => self.gen_while(cond, body, fctx),
-            ir::ExprKind::Loop { body } => self.gen_loop(body, fctx),
+            ir::ExprKind::While { cond, body, label } => {
+                self.gen_while(cond, body, label.as_deref(), fctx)
+            }
+            ir::ExprKind::Loop { body, label } => self.gen_loop(body, label.as_deref(), fctx),
             ir::ExprKind::Return { expr: value } => {
                 self.gen_return(value.as_deref(), expr.span, fctx);
                 Some(Value {
@@ -4859,10 +4861,13 @@ impl<'a> Generator<'a> {
                     repr: None,
                 })
             }
-            ir::ExprKind::Break { expr: break_expr } => {
-                self.gen_break(break_expr.as_deref(), expr.span, fctx)
+            ir::ExprKind::Break {
+                expr: break_expr,
+                label,
+            } => self.gen_break(break_expr.as_deref(), label.as_deref(), expr.span, fctx),
+            ir::ExprKind::Continue { label } => {
+                self.gen_continue(label.as_deref(), expr.span, fctx)
             }
-            ir::ExprKind::Continue => self.gen_continue(expr.span, fctx),
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,

@@ -220,16 +220,16 @@ fn collect_bound_names_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
             collect_bound_names_in_block(then_block, out);
             collect_bound_names_in_block(else_block, out);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             collect_bound_names_in_expr(cond, out);
             collect_bound_names_in_block(body, out);
         }
-        ir::ExprKind::Loop { body }
+        ir::ExprKind::Loop { body, .. }
         | ir::ExprKind::UnsafeBlock { block: body }
         | ir::ExprKind::Block { block: body } => {
             collect_bound_names_in_block(body, out);
         }
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_bound_names_in_expr(expr, out);
             }
@@ -266,7 +266,7 @@ fn collect_bound_names_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_)
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
     }
 }
 

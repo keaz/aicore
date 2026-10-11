@@ -3432,16 +3432,16 @@ fn collect_direct_calls_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
                 collect_direct_calls_in_expr(&arm.body, out);
             }
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             collect_direct_calls_in_expr(cond, out);
             collect_direct_calls_in_block(body, out);
         }
-        ir::ExprKind::Loop { body }
+        ir::ExprKind::Loop { body, .. }
         | ir::ExprKind::UnsafeBlock { block: body }
         | ir::ExprKind::Block { block: body } => {
             collect_direct_calls_in_block(body, out);
         }
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr, .. } => {
             if let Some(expr) = expr {
                 collect_direct_calls_in_expr(expr, out);
             }
@@ -3638,6 +3638,8 @@ impl Drop for TypeModuleGuard {
 
 #[derive(Debug, Clone)]
 struct LoopFrame {
+    /// Source label (`'outer`, without the quote) of a labeled loop.
+    source_label: Option<String>,
     break_label: String,
     continue_label: String,
     result_ty: Option<LType>,
@@ -3800,19 +3802,19 @@ fn collect_closure_captures_expr(
             collect_closure_captures_block(then_block, scopes, captures, known_functions);
             collect_closure_captures_block(else_block, scopes, captures, known_functions);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             collect_closure_captures_expr(cond, scopes, captures, known_functions);
             collect_closure_captures_block(body, scopes, captures, known_functions);
         }
-        ir::ExprKind::Loop { body } => {
+        ir::ExprKind::Loop { body, .. } => {
             collect_closure_captures_block(body, scopes, captures, known_functions);
         }
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_closure_captures_expr(expr, scopes, captures, known_functions);
             }
         }
-        ir::ExprKind::Continue => {}
+        ir::ExprKind::Continue { .. } => {}
         ir::ExprKind::Match { expr, arms } => {
             collect_closure_captures_expr(expr, scopes, captures, known_functions);
             for arm in arms {

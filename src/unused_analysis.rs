@@ -325,17 +325,17 @@ impl<'a> Analyzer<'a> {
                 self.visit_block(then_block, module_name, caller);
                 self.visit_block(else_block, module_name, caller);
             }
-            ast::ExprKind::While { cond, body } => {
+            ast::ExprKind::While { cond, body, .. } => {
                 self.visit_expr(cond, module_name, caller);
                 self.visit_block(body, module_name, caller);
             }
-            ast::ExprKind::Loop { body } => self.visit_block(body, module_name, caller),
-            ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+            ast::ExprKind::Loop { body, .. } => self.visit_block(body, module_name, caller),
+            ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.visit_expr(expr, module_name, caller);
                 }
             }
-            ast::ExprKind::Continue => {}
+            ast::ExprKind::Continue { .. } => {}
             ast::ExprKind::Match { expr, arms } => {
                 self.visit_expr(expr, module_name, caller);
                 for arm in arms {
@@ -796,17 +796,17 @@ impl<'a> VariableAnalyzer<'a> {
                 self.visit_block(then_block);
                 self.visit_block(else_block);
             }
-            ast::ExprKind::While { cond, body } => {
+            ast::ExprKind::While { cond, body, .. } => {
                 self.visit_expr(cond);
                 self.visit_block(body);
             }
-            ast::ExprKind::Loop { body } => self.visit_block(body),
-            ast::ExprKind::Break { expr } | ast::ExprKind::Return { expr } => {
+            ast::ExprKind::Loop { body, .. } => self.visit_block(body),
+            ast::ExprKind::Break { expr, .. } | ast::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.visit_expr(expr);
                 }
             }
-            ast::ExprKind::Continue => {}
+            ast::ExprKind::Continue { .. } => {}
             ast::ExprKind::Match { expr, arms } => {
                 self.visit_expr(expr);
                 for arm in arms {

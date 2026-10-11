@@ -914,7 +914,7 @@ fn render_expr(expr: &ir::Expr) -> String {
         }
         ir::ExprKind::While { cond, .. } => format!("while {} {{ ... }}", render_expr(cond)),
         ir::ExprKind::Loop { .. } => "loop { ... }".to_string(),
-        ir::ExprKind::Break { expr } => {
+        ir::ExprKind::Break { expr, .. } => {
             if let Some(expr) = expr {
                 format!("break {}", render_expr(expr))
             } else {
@@ -928,7 +928,7 @@ fn render_expr(expr: &ir::Expr) -> String {
                 "return".to_string()
             }
         }
-        ir::ExprKind::Continue => "continue".to_string(),
+        ir::ExprKind::Continue { .. } => "continue".to_string(),
         ir::ExprKind::Match { expr, .. } => format!("match {} {{ ... }}", render_expr(expr)),
         ir::ExprKind::Binary { op, lhs, rhs } => {
             format!(

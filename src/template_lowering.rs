@@ -195,24 +195,27 @@ impl TemplateLowerer {
                 },
                 span: expr.span,
             },
-            ir::ExprKind::While { cond, body } => ir::Expr {
+            ir::ExprKind::While { cond, body, label } => ir::Expr {
                 node: expr.node,
                 kind: ir::ExprKind::While {
+                    label: label.clone(),
                     cond: Box::new(self.lower_expr(cond)),
                     body: self.lower_block(body),
                 },
                 span: expr.span,
             },
-            ir::ExprKind::Loop { body } => ir::Expr {
+            ir::ExprKind::Loop { body, label } => ir::Expr {
                 node: expr.node,
                 kind: ir::ExprKind::Loop {
+                    label: label.clone(),
                     body: self.lower_block(body),
                 },
                 span: expr.span,
             },
-            ir::ExprKind::Break { expr: inner } => ir::Expr {
+            ir::ExprKind::Break { expr: inner, label } => ir::Expr {
                 node: expr.node,
                 kind: ir::ExprKind::Break {
+                    label: label.clone(),
                     expr: inner.as_ref().map(|value| Box::new(self.lower_expr(value))),
                 },
                 span: expr.span,
@@ -325,7 +328,7 @@ impl TemplateLowerer {
             | ir::ExprKind::String(_)
             | ir::ExprKind::Unit
             | ir::ExprKind::Var(_)
-            | ir::ExprKind::Continue => expr.clone(),
+            | ir::ExprKind::Continue { .. } => expr.clone(),
         }
     }
 
@@ -505,16 +508,16 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
             max = max.max(max_node_block(then_block));
             max = max.max(max_node_block(else_block));
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             max = max.max(max_node_expr(cond));
             max = max.max(max_node_block(body));
         }
-        ir::ExprKind::Loop { body }
+        ir::ExprKind::Loop { body, .. }
         | ir::ExprKind::UnsafeBlock { block: body }
         | ir::ExprKind::Block { block: body } => {
             max = max.max(max_node_block(body));
         }
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(value) = expr {
                 max = max.max(max_node_expr(value));
             }
@@ -553,7 +556,7 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_)
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
     }
     max
 }
@@ -700,7 +703,7 @@ fn main(name: String) -> String {
             | ir::ExprKind::Loop { .. }
             | ir::ExprKind::Break { .. }
             | ir::ExprKind::Return { .. }
-            | ir::ExprKind::Continue
+            | ir::ExprKind::Continue { .. }
             | ir::ExprKind::UnsafeBlock { .. }
             | ir::ExprKind::Block { .. } => false,
         }

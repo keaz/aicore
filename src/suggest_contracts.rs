@@ -262,7 +262,7 @@ fn collect_requires_from_expr(
             collect_requires_from_block(then_block, param_names, requires);
             collect_requires_from_block(else_block, param_names, requires);
         }
-        ExprKind::While { cond, body } => {
+        ExprKind::While { cond, body, .. } => {
             add_condition_candidates(
                 cond,
                 param_names,
@@ -272,7 +272,7 @@ fn collect_requires_from_expr(
             );
             collect_requires_from_block(body, param_names, requires);
         }
-        ExprKind::Loop { body } => collect_requires_from_block(body, param_names, requires),
+        ExprKind::Loop { body, .. } => collect_requires_from_block(body, param_names, requires),
         ExprKind::Match { expr, arms } => {
             collect_requires_from_expr(expr, param_names, requires);
             for arm in arms {
@@ -331,13 +331,13 @@ fn collect_requires_from_expr(
         ExprKind::UnsafeBlock { block } | ExprKind::Block { block } => {
             collect_requires_from_block(block, param_names, requires)
         }
-        ExprKind::Break { expr } | ExprKind::Return { expr } => {
+        ExprKind::Break { expr, .. } | ExprKind::Return { expr } => {
             if let Some(expr) = expr.as_deref() {
                 collect_requires_from_expr(expr, param_names, requires);
             }
         }
         ExprKind::Closure { .. }
-        | ExprKind::Continue
+        | ExprKind::Continue { .. }
         | ExprKind::Int(_, ..)
         | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
@@ -471,7 +471,7 @@ fn collect_explicit_returns_from_expr<'a>(
             collect_explicit_returns_from_block(then_block, observations);
             collect_explicit_returns_from_block(else_block, observations);
         }
-        ExprKind::While { body, .. } | ExprKind::Loop { body } => {
+        ExprKind::While { body, .. } | ExprKind::Loop { body, .. } => {
             collect_explicit_returns_from_block(body, observations);
         }
         ExprKind::Match { arms, .. } => {
@@ -509,7 +509,7 @@ fn collect_explicit_returns_from_expr<'a>(
         ExprKind::FieldAccess { base, .. } => {
             collect_explicit_returns_from_expr(base, observations)
         }
-        ExprKind::Break { expr } => {
+        ExprKind::Break { expr, .. } => {
             if let Some(value) = expr.as_deref() {
                 collect_explicit_returns_from_expr(value, observations);
             }
@@ -519,7 +519,7 @@ fn collect_explicit_returns_from_expr<'a>(
             None => observations.push(ReturnObservation::Unit),
         },
         ExprKind::Closure { .. }
-        | ExprKind::Continue
+        | ExprKind::Continue { .. }
         | ExprKind::Int(_, ..)
         | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
@@ -630,11 +630,11 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
             collect_value_vars_block(then_block, out);
             collect_value_vars_block(else_block, out);
         }
-        ExprKind::While { cond, body } => {
+        ExprKind::While { cond, body, .. } => {
             collect_value_vars(cond, VarContext::Value, out);
             collect_value_vars_block(body, out);
         }
-        ExprKind::Loop { body }
+        ExprKind::Loop { body, .. }
         | ExprKind::UnsafeBlock { block: body }
         | ExprKind::Block { block: body } => {
             collect_value_vars_block(body, out);
@@ -653,13 +653,13 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
                 collect_value_vars(value, VarContext::Value, out);
             }
         }
-        ExprKind::Break { expr } | ExprKind::Return { expr } => {
+        ExprKind::Break { expr, .. } | ExprKind::Return { expr } => {
             if let Some(value) = expr.as_deref() {
                 collect_value_vars(value, VarContext::Value, out);
             }
         }
         ExprKind::Closure { .. }
-        | ExprKind::Continue
+        | ExprKind::Continue { .. }
         | ExprKind::Int(_, ..)
         | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
@@ -829,7 +829,7 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
         | ExprKind::Closure { .. }
         | ExprKind::Break { .. }
         | ExprKind::Return { .. }
-        | ExprKind::Continue
+        | ExprKind::Continue { .. }
         | ExprKind::UnsafeBlock { .. }
         | ExprKind::Block { .. } => None,
     }

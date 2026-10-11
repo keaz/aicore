@@ -631,17 +631,28 @@ pub enum ExprKind {
         then_block: Block,
         else_block: Block,
     },
+    /// `'label: while cond { .. }`; `label` is the name without the quote.
     While {
         cond: Box<Expr>,
         body: Block,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
     Loop {
         body: Block,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
+    /// `break 'label value`: without a label it leaves the innermost loop.
     Break {
         expr: Option<Box<Expr>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
-    Continue,
+    Continue {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
     /// `return` in expression position (match arms, branch tails). It never
     /// produces a value: control leaves the enclosing function.
     Return {

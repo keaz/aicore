@@ -19447,3 +19447,97 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "299\n");
 }
+
+#[test]
+fn exec_labeled_break_and_continue_target_outer_loops() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.string;
+
+fn find(grid: Int, target: Int) -> Int {
+    let mut found = -1;
+    'rows: for r in 0..grid {
+        for c in 0..grid {
+            if r * c == target {
+                found = r * 10 + c;
+                break 'rows;
+            }
+            if c > r {
+                continue 'rows;
+            }
+        }
+    }
+    found
+}
+
+fn first_long(words: Vec[String]) -> String {
+    let mut index = 0;
+    'search: loop {
+        if index >= words.len() {
+            break "none";
+        }
+        let word = words[index];
+        index += 1;
+        let shout = string.join([word, "!"], "");
+        for i in 0..string.len(word) {
+            if i >= 4 {
+                break 'search shout;
+            }
+        }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(find(9, 12));
+    let mut n = 0;
+    let v = 'outer: loop {
+        let mut i = 0;
+        'inner: while i < 10 {
+            i += 1;
+            n += 1;
+            if i == 3 {
+                continue 'inner;
+            }
+            if n > 20 {
+                break 'outer n * 2;
+            }
+            if i == 7 {
+                continue 'outer;
+            }
+        }
+    };
+    print_int(v);
+    let mut k = 0;
+    'w: while let Some(x) = if k < 5 { Some(k) } else { None } {
+        k += 1;
+        match x {
+            3 => break 'w,
+            _ => (),
+        }
+    }
+    print_int(k);
+    let mut skipped = 0;
+    'each: for item in [1, 2, 3, 4, 5, 6] {
+        let mut j = 0;
+        loop {
+            j += 1;
+            if item % 2 == 0 {
+                skipped += 1;
+                continue 'each;
+            }
+            if j == item {
+                break;
+            }
+        }
+    }
+    print_int(skipped);
+    print_str(first_long(["ab", "abc", "abcdef", "xyzxyz"]));
+    print_str("\n");
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "34\n42\n4\n3\nabcdef!\n");
+}

@@ -182,3 +182,8 @@ fn golden_case30_indexing() {
 fn golden_case31_numeric_casts() {
     run_golden_case("case31_numeric_casts.aic");
 }
+
+#[test]
+fn golden_case32_loop_labels() {
+    run_golden_case("case32_loop_labels.aic");
+}

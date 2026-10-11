@@ -365,6 +365,8 @@ struct ExprContext {
 #[derive(Debug, Clone, Default)]
 struct LoopContext {
     break_ty: Option<String>,
+    /// `'label` of a labeled loop, without the quote.
+    label: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -3661,23 +3663,23 @@ impl<'a> Checker<'a> {
                     &mut else_binding_types,
                 );
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, .. } => {
                 self.check_resource_protocol_expr_mode(cond, state, binding_types, false);
                 let mut loop_state = state.clone();
                 let mut loop_binding_types = binding_types.clone();
                 self.check_resource_protocol_block(body, &mut loop_state, &mut loop_binding_types);
             }
-            ir::ExprKind::Loop { body } => {
+            ir::ExprKind::Loop { body, .. } => {
                 let mut loop_state = state.clone();
                 let mut loop_binding_types = binding_types.clone();
                 self.check_resource_protocol_block(body, &mut loop_state, &mut loop_binding_types);
             }
-            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+            ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.check_resource_protocol_expr_mode(expr, state, binding_types, false);
                 }
             }
-            ir::ExprKind::Continue => {}
+            ir::ExprKind::Continue { .. } => {}
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
@@ -4173,7 +4175,7 @@ impl<'a> Checker<'a> {
                 state.moved_by_binding = merged_moves;
                 Vec::new()
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, .. } => {
                 let cond_borrows = self.check_borrow_expr(cond, mutability, state, binding_types);
                 self.release_temp_borrows(&cond_borrows, state);
 
@@ -4188,7 +4190,7 @@ impl<'a> Checker<'a> {
                 );
                 Vec::new()
             }
-            ir::ExprKind::Loop { body } => {
+            ir::ExprKind::Loop { body, .. } => {
                 let mut loop_mutability = mutability.clone();
                 let mut loop_state = state.clone();
                 let mut loop_types = binding_types.clone();
@@ -4200,14 +4202,14 @@ impl<'a> Checker<'a> {
                 );
                 Vec::new()
             }
-            ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+            ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
                 if let Some(expr) = expr {
                     self.check_borrow_expr(expr, mutability, state, binding_types)
                 } else {
                     Vec::new()
                 }
             }
-            ir::ExprKind::Continue => Vec::new(),
+            ir::ExprKind::Continue { .. } => Vec::new(),
             ir::ExprKind::Match {
                 expr: scrutinee,
                 arms,
@@ -7171,7 +7173,7 @@ impl<'a> Checker<'a> {
                     self.merge_compatible_types(&then_ty, &else_ty)
                 }
             }
-            ir::ExprKind::While { cond, body } => {
+            ir::ExprKind::While { cond, body, label } => {
                 let cond_ty = self.check_expr(cond, locals, allowed_effects, ctx, contract_mode);
                 if self.normalize_type(&cond_ty) != "Bool" {
                     self.diagnostics.push(
@@ -7184,22 +7186,31 @@ impl<'a> Checker<'a> {
                         .with_help("use a Bool expression as the while condition"),
                     );
                 }
+                self.check_new_loop_label(label.as_deref(), expr.span, ctx);
                 ctx.loop_stack.push(LoopContext {
                     break_ty: Some("()".to_string()),
+                    label: label.clone(),
                 });
                 let _ = self.check_block(body, locals, "()", allowed_effects, ctx, contract_mode);
                 let loop_ctx = ctx.loop_stack.pop().unwrap_or_default();
                 loop_ctx.break_ty.unwrap_or_else(|| "()".to_string())
             }
-            ir::ExprKind::Loop { body } => {
-                ctx.loop_stack.push(LoopContext { break_ty: None });
+            ir::ExprKind::Loop { body, label } => {
+                self.check_new_loop_label(label.as_deref(), expr.span, ctx);
+                ctx.loop_stack.push(LoopContext {
+                    break_ty: None,
+                    label: label.clone(),
+                });
                 let _ = self.check_block(body, locals, "()", allowed_effects, ctx, contract_mode);
                 let loop_ctx = ctx.loop_stack.pop().unwrap_or_default();
                 // A `loop` without `break` only exits through `return` or a
                 // panic, so it never produces a value.
                 loop_ctx.break_ty.unwrap_or_else(|| NEVER_TYPE.to_string())
             }
-            ir::ExprKind::Break { expr: break_expr } => {
+            ir::ExprKind::Break {
+                expr: break_expr,
+                label,
+            } => {
                 if ctx.loop_stack.is_empty() {
                     self.diagnostics.push(
                         Diagnostic::error(
@@ -7219,7 +7230,11 @@ impl<'a> Checker<'a> {
                     "()".to_string()
                 };
 
-                let loop_ctx = ctx.loop_stack.last_mut().expect("checked non-empty stack");
+                let Some(target) = self.loop_target(label.as_deref(), "break", expr.span, ctx)
+                else {
+                    return NEVER_TYPE.to_string();
+                };
+                let loop_ctx = &mut ctx.loop_stack[target];
                 let break_ty = if break_ty == NEVER_TYPE {
                     "()".to_string()
                 } else {
@@ -7250,7 +7265,7 @@ impl<'a> Checker<'a> {
                 // itself never produces a value.
                 NEVER_TYPE.to_string()
             }
-            ir::ExprKind::Continue => {
+            ir::ExprKind::Continue { label } => {
                 if ctx.loop_stack.is_empty() {
                     self.diagnostics.push(
                         Diagnostic::error(
@@ -7263,6 +7278,7 @@ impl<'a> Checker<'a> {
                     );
                     return "<?>".to_string();
                 }
+                let _ = self.loop_target(label.as_deref(), "continue", expr.span, ctx);
                 NEVER_TYPE.to_string()
             }
             ir::ExprKind::Return { expr: value } => {
@@ -11160,6 +11176,63 @@ impl<'a> Checker<'a> {
         })
     }
 
+    /// The loop a `break`/`continue` leaves: the innermost one, or the
+    /// enclosing loop with `label` (E1307 when there is none).
+    fn loop_target(
+        &mut self,
+        label: Option<&str>,
+        keyword: &str,
+        span: crate::span::Span,
+        ctx: &ExprContext,
+    ) -> Option<usize> {
+        let Some(label) = label else {
+            return ctx.loop_stack.len().checked_sub(1);
+        };
+        let found = ctx
+            .loop_stack
+            .iter()
+            .rposition(|frame| frame.label.as_deref() == Some(label));
+        if found.is_none() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1307",
+                    format!("`{keyword} '{label}` does not name an enclosing loop"),
+                    self.file,
+                    span,
+                )
+                .with_help("label a surrounding loop (`'outer: while ...`), or remove the label"),
+            );
+        }
+        found
+    }
+
+    /// A loop label must differ from the labels of the loops around it.
+    fn check_new_loop_label(
+        &mut self,
+        label: Option<&str>,
+        span: crate::span::Span,
+        ctx: &ExprContext,
+    ) {
+        let Some(label) = label else {
+            return;
+        };
+        if ctx
+            .loop_stack
+            .iter()
+            .any(|frame| frame.label.as_deref() == Some(label))
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1308",
+                    format!("label '{label} is already used by an enclosing loop"),
+                    self.file,
+                    span,
+                )
+                .with_help("give the inner loop a different label"),
+            );
+        }
+    }
+
     fn synthetic_node(&mut self) -> ir::NodeId {
         debug_assert!(self.next_synthetic_node > ir::NodeId::SYNTHETIC_FLOOR);
         self.next_synthetic_node -= 1;
@@ -13030,16 +13103,16 @@ fn collect_captured_mutations_in_expr(
             collect_captured_mutations_in_block(then_block, outer, mutating_calls, scopes, out);
             collect_captured_mutations_in_block(else_block, outer, mutating_calls, scopes, out);
         }
-        ir::ExprKind::While { cond, body } => {
+        ir::ExprKind::While { cond, body, .. } => {
             collect_captured_mutations_in_expr(cond, outer, mutating_calls, scopes, out);
             collect_captured_mutations_in_block(body, outer, mutating_calls, scopes, out);
         }
-        ir::ExprKind::Loop { body }
+        ir::ExprKind::Loop { body, .. }
         | ir::ExprKind::UnsafeBlock { block: body }
         | ir::ExprKind::Block { block: body } => {
             collect_captured_mutations_in_block(body, outer, mutating_calls, scopes, out);
         }
-        ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
+        ir::ExprKind::Break { expr, .. } | ir::ExprKind::Return { expr } => {
             if let Some(expr) = expr {
                 collect_captured_mutations_in_expr(expr, outer, mutating_calls, scopes, out);
             }
@@ -13089,7 +13162,7 @@ fn collect_captured_mutations_in_expr(
         | ir::ExprKind::String(_)
         | ir::ExprKind::Unit
         | ir::ExprKind::Var(_)
-        | ir::ExprKind::Continue => {}
+        | ir::ExprKind::Continue { .. } => {}
     }
 }
 
@@ -13554,6 +13627,60 @@ fn f() -> Int {
 }
 "#;
         assert!(error_codes(src).contains(&"E1275".to_string()));
+    }
+
+    #[test]
+    fn loop_labels_are_resolved_and_typed() {
+        let ok = r#"
+fn f() -> Int {
+    let found = 'outer: loop {
+        let mut i = 0;
+        while i < 3 {
+            i = i + 1;
+            if i == 2 {
+                break 'outer i;
+            }
+        }
+        break 0;
+    };
+    'scan: for j in 0..4 {
+        if j == 1 {
+            continue 'scan;
+        }
+    }
+    found
+}
+fn main() -> Int { f() }
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // No enclosing loop has the label.
+            ("fn main() -> Int { loop { break 'nope; } 0 }", "E1307"),
+            ("fn main() -> Int { 'a: loop { break; } while true { continue 'a; } 0 }", "E1307"),
+            // A nested loop may not reuse an enclosing label.
+            ("fn main() -> Int { 'a: loop { 'a: loop { break 'a; } } }", "E1308"),
+            // `while` loops have type (); a labeled break cannot give them a value.
+            ("fn main() -> Int { 'w: while true { loop { break 'w 5; } } 0 }", "E1274"),
+            // `for` loops have type (), like `while`.
+            ("fn main() -> Int { 'f: for i in 0..3 { break 'f i; } 0 }", "E1274"),
+            // Every break of one loop agrees on its type, labeled or not.
+            (
+                "fn main() -> Int { let x = 'o: loop { loop { break 'o true; } break 'o 1; }; x }",
+                "E1274",
+            ),
+            // A closure body cannot leave a loop outside it.
+            (
+                "fn main() -> Int { 'o: loop { let g = |v: Int| -> Int { break 'o; v }; return g(1); } }",
+                "E1275",
+            ),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
     }
 
     #[test]

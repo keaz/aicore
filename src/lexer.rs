@@ -87,6 +87,8 @@ pub enum TokenKind {
     String(String),
     Template(String),
     Char(char),
+    /// A loop label, `'outer` (the name without the quote).
+    Label(String),
 
     KwModule,
     KwImport,
@@ -869,6 +871,20 @@ impl<'a> Lexer<'a> {
         let start = self.offset;
         self.bump(); // opening quote
 
+        // `'name` not closed by a quote is a loop label (`'a'` stays a char).
+        let label_len = self.source[self.offset..]
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(self.source.len() - self.offset);
+        if label_len > 0
+            && self.peek().is_some_and(Self::is_ident_start)
+            && self.source[self.offset + label_len..].chars().next() != Some('\'')
+        {
+            let name = self.source[self.offset..self.offset + label_len].to_string();
+            self.offset += label_len;
+            self.push(TokenKind::Label(name), Span::new(start, self.offset));
+            return;
+        }
+
         if self.peek() == Some('\'') {
             self.bump();
             self.error(
@@ -1198,6 +1214,30 @@ mod tests {
             .iter()
             .any(|t| matches!(&t.kind, TokenKind::Template(raw) if raw == "x{y}")));
     }
+    #[test]
+    fn lexes_loop_labels_apart_from_char_literals() {
+        let (tokens, diags) = lex(
+            "'outer: loop { break 'outer 'x'; continue 'a_1; } 'b'",
+            "test.aic",
+        );
+        assert!(diags.is_empty(), "{diags:#?}");
+        let kinds: Vec<_> = tokens.iter().map(|t| t.kind.clone()).collect();
+        assert_eq!(kinds[0], TokenKind::Label("outer".to_string()));
+        assert!(kinds.contains(&TokenKind::Char('x')));
+        assert!(kinds.contains(&TokenKind::Label("a_1".to_string())));
+        assert!(kinds.contains(&TokenKind::Char('b')));
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|k| matches!(k, TokenKind::Label(name) if name == "outer"))
+                .count(),
+            2
+        );
+        // A quoted word is still a malformed char literal, not a label.
+        let (_, diags) = lex("let c = 'ab';", "test.aic");
+        assert!(diags.iter().any(|d| d.code == "E0008"), "{diags:#?}");
+    }
+
     #[test]
     fn lexes_char_literals_and_escapes() {
         let src = r#"let a = 'x'; let b = '\n'; let c = '\u{1F600}'; let d = '\'';"#;

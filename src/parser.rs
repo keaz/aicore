@@ -89,6 +89,39 @@ fn type_repr_text(ty: &TypeExpr) -> String {
     }
 }
 
+/// Puts `label` on the loop of a parsed loop form: `while` and `loop`
+/// directly, and the loop inside the expression a `for` desugars to.
+fn set_loop_label(expr: &mut Expr, label: String) -> bool {
+    match &mut expr.kind {
+        ExprKind::While { label: slot, .. } | ExprKind::Loop { label: slot, .. } => {
+            *slot = Some(label);
+            true
+        }
+        // A `for` loop desugars to `if true { let ..; loop { .. } }`.
+        ExprKind::If {
+            then_block: block, ..
+        }
+        | ExprKind::Block { block } => {
+            for stmt in &mut block.stmts {
+                if let Stmt::Expr { expr, .. } = stmt {
+                    if matches!(expr.kind, ExprKind::While { .. } | ExprKind::Loop { .. }) {
+                        return set_loop_label(expr, label);
+                    }
+                }
+            }
+            match block.tail.as_deref_mut() {
+                Some(tail)
+                    if matches!(tail.kind, ExprKind::While { .. } | ExprKind::Loop { .. }) =>
+                {
+                    set_loop_label(tail, label)
+                }
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 /// Expressions that end in a block: they can be statements without `;`,
 /// and a match arm with such a body needs no trailing comma.
 fn is_block_like(expr: &Expr) -> bool {
@@ -3536,6 +3569,7 @@ impl<'a> Parser<'a> {
                 })
             }
             TokenKind::KwIf => self.parse_if_expr(),
+            TokenKind::Label(_) => self.parse_labeled_loop(),
             TokenKind::KwFor => self.parse_for_expr(),
             TokenKind::KwWhile => self.parse_while_expr(),
             TokenKind::KwLoop => self.parse_loop_expr(),
@@ -3805,6 +3839,7 @@ impl<'a> Parser<'a> {
         let end = body.span.end;
         Some(Expr {
             kind: ExprKind::While {
+                label: None,
                 cond: Box::new(cond),
                 body,
             },
@@ -3847,7 +3882,10 @@ impl<'a> Parser<'a> {
                         },
                         guard: None,
                         body: Expr {
-                            kind: ExprKind::Break { expr: None },
+                            kind: ExprKind::Break {
+                                expr: None,
+                                label: None,
+                            },
                             span: end_marker,
                         },
                         span: end_marker,
@@ -3858,6 +3896,7 @@ impl<'a> Parser<'a> {
         };
         Some(Expr {
             kind: ExprKind::Loop {
+                label: None,
                 body: Block {
                     stmts: Vec::new(),
                     tail: Some(Box::new(matched)),
@@ -3874,14 +3913,59 @@ impl<'a> Parser<'a> {
         let body = self.parse_block()?;
         let end = body.span.end;
         Some(Expr {
-            kind: ExprKind::Loop { body },
+            kind: ExprKind::Loop { body, label: None },
             span: Span::new(start, end),
         })
+    }
+
+    /// `'label: while ..`, `'label: loop ..` or `'label: for ..`.
+    fn parse_labeled_loop(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        let label = self.parse_loop_label()?;
+        self.expect(
+            |k| matches!(k, TokenKind::Colon),
+            "E1306",
+            "expected ':' after a loop label",
+        )?;
+        let mut expr = match &self.current().kind {
+            TokenKind::KwWhile => self.parse_while_expr()?,
+            TokenKind::KwLoop => self.parse_loop_expr()?,
+            TokenKind::KwFor => self.parse_for_expr()?,
+            _ => {
+                let span = self.current_span();
+                self.diagnostics.push(Diagnostic::error(
+                    "E1306",
+                    format!("label '{label} must be followed by `while`, `loop` or `for`"),
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+        };
+        let labeled = set_loop_label(&mut expr, label);
+        debug_assert!(labeled, "every loop form contains a loop");
+        expr.span = Span::new(start, expr.span.end);
+        Some(expr)
+    }
+
+    /// Consumes a `'label` token and returns its name.
+    fn parse_loop_label(&mut self) -> Option<String> {
+        let TokenKind::Label(name) = &self.current().kind else {
+            return None;
+        };
+        let name = name.clone();
+        self.bump();
+        Some(name)
     }
 
     fn parse_break_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // break
+        let label = if matches!(self.current().kind, TokenKind::Label(_)) {
+            self.parse_loop_label()
+        } else {
+            None
+        };
         let expr = if self.break_has_value_start() {
             Some(Box::new(self.parse_expr()?))
         } else {
@@ -3892,7 +3976,7 @@ impl<'a> Parser<'a> {
             .map(|expr| expr.span.end)
             .unwrap_or_else(|| self.previous_span().end);
         Some(Expr {
-            kind: ExprKind::Break { expr },
+            kind: ExprKind::Break { expr, label },
             span: Span::new(start, end),
         })
     }
@@ -3920,8 +4004,13 @@ impl<'a> Parser<'a> {
     fn parse_continue_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // continue
+        let label = if matches!(self.current().kind, TokenKind::Label(_)) {
+            self.parse_loop_label()
+        } else {
+            None
+        };
         Some(Expr {
-            kind: ExprKind::Continue,
+            kind: ExprKind::Continue { label },
             span: Span::new(start, self.previous_span().end),
         })
     }
@@ -4517,7 +4606,10 @@ impl<'a> Parser<'a> {
             },
             guard: None,
             body: Expr {
-                kind: ExprKind::Break { expr: None },
+                kind: ExprKind::Break {
+                    expr: None,
+                    label: None,
+                },
                 span,
             },
             span,
@@ -4570,7 +4662,10 @@ impl<'a> Parser<'a> {
                 span,
             }],
             tail: Some(Box::new(Expr {
-                kind: ExprKind::Loop { body: loop_body },
+                kind: ExprKind::Loop {
+                    body: loop_body,
+                    label: None,
+                },
                 span,
             })),
             span,
@@ -4635,7 +4730,10 @@ impl<'a> Parser<'a> {
                 else_block: Block {
                     stmts: Vec::new(),
                     tail: Some(Box::new(Expr {
-                        kind: ExprKind::Break { expr: None },
+                        kind: ExprKind::Break {
+                            expr: None,
+                            label: None,
+                        },
                         span,
                     })),
                     span,
@@ -4671,7 +4769,10 @@ impl<'a> Parser<'a> {
                 },
             ],
             tail: Some(Box::new(Expr {
-                kind: ExprKind::Loop { body: loop_body },
+                kind: ExprKind::Loop {
+                    body: loop_body,
+                    label: None,
+                },
                 span,
             })),
             span,
@@ -5555,13 +5656,16 @@ mod tests {
         let Stmt::Expr { expr, .. } = &stmts[1] else {
             panic!("expected while let statement");
         };
-        let ExprKind::Loop { body } = &expr.kind else {
+        let ExprKind::Loop { body, .. } = &expr.kind else {
             panic!("expected loop");
         };
         let ExprKind::Match { arms, .. } = &body.tail.as_ref().expect("tail").kind else {
             panic!("expected match in loop");
         };
-        assert!(matches!(arms[1].body.kind, ExprKind::Break { expr: None }));
+        assert!(matches!(
+            arms[1].body.kind,
+            ExprKind::Break { expr: None, .. }
+        ));
         // let-else with one binding -> `let z = match ..`.
         assert!(matches!(&stmts[2], Stmt::Let { name, .. } if name == "z"));
         // let-else with two bindings -> temporary plus projections.
@@ -5874,6 +5978,57 @@ fn f(method: String, c: Char, u: User) -> Int {
     }
 
     #[test]
+    fn parses_loop_labels_on_while_loop_and_for() {
+        let src = "fn f() -> Int { 'a: while true { continue 'a; } 'b: for i in 0..3 { break 'b; } 'c: loop { break 'c 1; } }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let Stmt::Expr { expr, .. } = &f.body.stmts[0] else {
+            panic!("expected while statement");
+        };
+        let ExprKind::While { label, body, .. } = &expr.kind else {
+            panic!("expected while, found {expr:?}");
+        };
+        assert_eq!(label.as_deref(), Some("a"));
+        let Some(Stmt::Expr { expr: cont, .. }) = body.stmts.first() else {
+            panic!("expected continue");
+        };
+        assert!(matches!(&cont.kind, ExprKind::Continue { label: Some(l) } if l == "a"));
+        // `for` desugars to `if true { ..; loop { .. } }`; the label is on the loop.
+        let Stmt::Expr { expr, .. } = &f.body.stmts[1] else {
+            panic!("expected for statement");
+        };
+        let ExprKind::If { then_block, .. } = &expr.kind else {
+            panic!("expected desugared for, found {expr:?}");
+        };
+        let tail = then_block.tail.as_deref().expect("loop");
+        assert!(matches!(&tail.kind, ExprKind::Loop { label: Some(l), .. } if l == "b"));
+        let tail = f.body.tail.as_deref().expect("tail loop");
+        let ExprKind::Loop { label, body } = &tail.kind else {
+            panic!("expected loop");
+        };
+        assert_eq!(label.as_deref(), Some("c"));
+        let Some(Stmt::Expr { expr: brk, .. }) = body.stmts.first() else {
+            panic!("expected break");
+        };
+        assert!(matches!(&brk.kind, ExprKind::Break { label: Some(l), expr: Some(_) } if l == "c"));
+
+        for bad in [
+            "fn f() -> () { 'a: if true { } }",
+            "fn f() -> () { 'a while true { } }",
+        ] {
+            let (_, diagnostics) = parse(bad, "test.aic");
+            assert!(
+                diagnostics.iter().any(|d| d.code == "E1306"),
+                "{bad}: {diagnostics:#?}"
+            );
+        }
+    }
+
+    #[test]
     fn parses_while_loop_break_and_continue() {
         let src = r#"
 fn f(mut_n: Int) -> Int {
@@ -5910,7 +6065,7 @@ fn f(mut_n: Int) -> Int {
             }
         ));
         let tail = f.body.tail.as_ref().expect("tail expression");
-        let ExprKind::Loop { body } = &tail.kind else {
+        let ExprKind::Loop { body, .. } = &tail.kind else {
             panic!("expected loop tail");
         };
         assert!(matches!(

@@ -448,17 +448,28 @@ pub enum ExprKind {
         then_block: Block,
         else_block: Block,
     },
+    /// `'label: while cond { .. }`; `label` is the name without the quote.
     While {
         cond: Box<Expr>,
         body: Block,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
     Loop {
         body: Block,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
+    /// `break 'label value`: without a label it leaves the innermost loop.
     Break {
         expr: Option<Box<Expr>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
     },
-    Continue,
+    Continue {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
     Return {
         expr: Option<Box<Expr>>,
     },
@@ -605,7 +616,7 @@ pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
                 }
             }
             ExprKind::Closure { body, .. }
-            | ExprKind::Loop { body }
+            | ExprKind::Loop { body, .. }
             | ExprKind::UnsafeBlock { block: body }
             | ExprKind::Block { block: body } => block(body, f),
             ExprKind::If {
@@ -617,11 +628,11 @@ pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
                 block(then_block, f);
                 block(else_block, f);
             }
-            ExprKind::While { cond, body } => {
+            ExprKind::While { cond, body, .. } => {
                 expr(cond, f);
                 block(body, f);
             }
-            ExprKind::Break { expr: value } | ExprKind::Return { expr: value } => {
+            ExprKind::Break { expr: value, .. } | ExprKind::Return { expr: value } => {
                 if let Some(value) = value {
                     expr(value, f);
                 }
@@ -659,7 +670,7 @@ pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
             | ExprKind::String(_)
             | ExprKind::Unit
             | ExprKind::Var(_)
-            | ExprKind::Continue => {}
+            | ExprKind::Continue { .. } => {}
         }
     }
     for item in &mut program.items {
