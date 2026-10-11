@@ -150,6 +150,9 @@ pub struct ClosureParam {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StructDef {
     pub name: String,
+    /// `struct S { .. }`, `struct S(Int, Bool);` or `struct S;`.
+    #[serde(default, skip_serializing_if = "StructShape::is_named")]
+    pub shape: StructShape,
     #[serde(default)]
     pub visibility: Visibility,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -158,6 +161,22 @@ pub struct StructDef {
     pub fields: Vec<Field>,
     pub invariant: Option<Expr>,
     pub span: Span,
+}
+
+/// How a struct is declared. Tuple struct fields are named `0`, `1`, ...;
+/// a unit struct has none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StructShape {
+    #[default]
+    Named,
+    Tuple,
+    Unit,
+}
+
+impl StructShape {
+    pub fn is_named(&self) -> bool {
+        *self == StructShape::Named
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

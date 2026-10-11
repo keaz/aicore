@@ -1213,10 +1213,14 @@ impl<'a> Parser<'a> {
         self.bump(); // struct
         let (name, _) = self.expect_ident("E1010", "expected struct name")?;
         let generics = self.parse_generics();
+        // `struct S;` and `struct S(Int, Bool);`.
+        if self.at_kind(|k| matches!(k, TokenKind::Semi | TokenKind::LParen)) {
+            return self.parse_tuple_or_unit_struct(start, name, attrs, visibility, generics);
+        }
         self.expect(
             |k| matches!(k, TokenKind::LBrace),
             "E1011",
-            "expected '{' after struct name",
+            "expected '{', '(' or ';' after struct name",
         )?;
         let mut fields = Vec::new();
         while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
@@ -1269,12 +1273,90 @@ impl<'a> Parser<'a> {
 
         Some(StructDef {
             name,
+            shape: StructShape::Named,
             visibility,
             attrs,
             generics,
             fields,
             invariant,
             span: Span::new(start, close.end),
+        })
+    }
+
+    /// `struct S;` (no fields) or `struct S(T, U);` (fields `0`, `1`, ...),
+    /// after the name and generics.
+    fn parse_tuple_or_unit_struct(
+        &mut self,
+        start: usize,
+        name: String,
+        attrs: Vec<Attribute>,
+        visibility: Visibility,
+        generics: Vec<GenericParam>,
+    ) -> Option<StructDef> {
+        let mut fields = Vec::new();
+        let shape = if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+            self.bump();
+            while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                let field_start = self.current_span().start;
+                let field_attrs = self.parse_attributes();
+                self.validate_attributes(&field_attrs, AttributeTarget::Field);
+                let field_visibility = self.parse_visibility_modifier();
+                let ty = self.parse_type()?;
+                fields.push(Field {
+                    name: fields.len().to_string(),
+                    visibility: field_visibility,
+                    attrs: field_attrs,
+                    span: Span::new(field_start, ty.span.end),
+                    ty,
+                    default_value: None,
+                });
+                if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                    self.bump();
+                } else {
+                    break;
+                }
+            }
+            self.expect(
+                |k| matches!(k, TokenKind::RParen),
+                "E1014",
+                "expected ')' after tuple struct fields",
+            )?;
+            if fields.is_empty() {
+                let span = self.previous_span();
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1011",
+                        "a tuple struct needs at least one field",
+                        self.file,
+                        span,
+                    )
+                    .with_help("write `struct S;` for a struct without fields"),
+                );
+            }
+            StructShape::Tuple
+        } else {
+            StructShape::Unit
+        };
+        let invariant = if self.at_kind(|k| matches!(k, TokenKind::KwInvariant)) {
+            self.bump();
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        let semi = self.expect(
+            |k| matches!(k, TokenKind::Semi),
+            "E1014",
+            "expected ';' after a tuple or unit struct",
+        )?;
+        Some(StructDef {
+            name,
+            shape,
+            visibility,
+            attrs,
+            generics,
+            fields,
+            invariant,
+            span: Span::new(start, semi.end),
         })
     }
 
@@ -1405,6 +1487,7 @@ impl<'a> Parser<'a> {
         let struct_name = struct_variant_payload_name(enum_name, variant_name);
         self.pending_items.push(Item::Struct(StructDef {
             name: struct_name.clone(),
+            shape: StructShape::Named,
             visibility,
             attrs: Vec::new(),
             generics: generics.to_vec(),
@@ -6413,9 +6496,54 @@ fn f(method: String, c: Char, u: User) -> Int {
     }
 
     use crate::ast::{
-        RangeBound, RANGE_BUILTIN, RANGE_FROM_BUILTIN, RANGE_FULL_BUILTIN, RANGE_TO_BUILTIN,
-        RANGE_TO_INCLUSIVE_BUILTIN,
+        RangeBound, StructShape, RANGE_BUILTIN, RANGE_FROM_BUILTIN, RANGE_FULL_BUILTIN,
+        RANGE_TO_BUILTIN, RANGE_TO_INCLUSIVE_BUILTIN,
     };
+
+    #[test]
+    fn parses_tuple_and_unit_structs() {
+        let src = "struct Meters(Int);\npub struct Pair[T](T, pub T) invariant 0 == 0;\nstruct Origin;\nstruct Named { x: Int }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let shapes: Vec<(String, StructShape, Vec<String>)> = program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Struct(s) => Some((
+                    s.name.clone(),
+                    s.shape,
+                    s.fields.iter().map(|f| f.name.clone()).collect(),
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            shapes,
+            vec![
+                (
+                    "Meters".to_string(),
+                    StructShape::Tuple,
+                    vec!["0".to_string()]
+                ),
+                (
+                    "Pair".to_string(),
+                    StructShape::Tuple,
+                    vec!["0".to_string(), "1".to_string()]
+                ),
+                ("Origin".to_string(), StructShape::Unit, Vec::new()),
+                (
+                    "Named".to_string(),
+                    StructShape::Named,
+                    vec!["x".to_string()]
+                ),
+            ]
+        );
+        for bad in ["struct S();", "struct S(Int)", "struct S"] {
+            let (_, diagnostics) = parse(bad, "test.aic");
+            assert!(!diagnostics.is_empty(), "{bad} should not parse");
+        }
+    }
 
     #[test]
     fn parses_explicit_type_arguments_on_calls() {

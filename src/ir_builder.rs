@@ -136,6 +136,7 @@ impl Builder {
         ir::StructDef {
             symbol,
             name: def.name.clone(),
+            shape: def.shape,
             visibility: def.visibility,
             attrs: def.attrs.clone(),
             generics: def

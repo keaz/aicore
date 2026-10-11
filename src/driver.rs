@@ -200,6 +200,18 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_typed_hole_types(&mut ir, &typecheck.hole_types);
     apply_expr_rewrites(&mut ir, &typecheck.expr_rewrites);
+    for item in &mut ir.items {
+        if let ir::Item::Struct(strukt) = item {
+            let fields = strukt
+                .fields
+                .iter()
+                .map(|f| f.name.clone())
+                .collect::<Vec<_>>();
+            if let Some(invariant) = strukt.invariant.as_mut() {
+                ir::resolve_invariant_self(invariant, &fields);
+            }
+        }
+    }
     apply_closure_signatures(&mut ir, &typecheck.closure_signatures);
     apply_variant_callees(&mut ir, &typecheck.variant_callees);
     apply_struct_variants(

@@ -108,6 +108,7 @@ Recent core-language additions:
 - `E1309`: a range pattern that matches no value (`5..=1`, `3..3`).
 - `E1310` (parser): a malformed range pattern or range expression (`..5` in a pattern, `..=` without an end, mixed int/char bounds, float bounds).
 - `E1311`: a range used as a value without both bounds (`2..`), or with bounds that are not integers or chars.
+- Tuple and unit structs reuse existing codes: `E1213` (wrong number of values in `Meters(..)`, or `Origin()`), `E1242` (wrong number of sub-patterns), `E1226` (field type mismatch).
 - `E1312`: explicit type arguments (`f::[T](..)`) that do not fit the callee: wrong count, a non-generic callee, a trait-bound or built-in method, an empty list, or no call arguments after them.
 - `E1305`: a numeric conversion that is not available: `x as T` that could change a value (narrowing, sign change, `Int64` to `Float64`, float to integer) or involves a non-numeric type, or a conversion method that does not exist for its target (`to_int`, `checked_to_f64`, `wrapping_to_` with floats).
 - `E1302`: the `else` block of `let PATTERN = expr else { ... };` does not diverge (it must end in `return`, `break`, `continue` or `panic(...)`).

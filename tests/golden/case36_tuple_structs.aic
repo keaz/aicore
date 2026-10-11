@@ -1,0 +1,16 @@
+struct Meters(Int);
+
+struct Pair[T](T, T);
+
+struct Origin;
+
+fn total(p: Pair[Meters]) -> Int {
+    match p {
+        Pair(Meters(a), Meters(b)) => a + b,
+    }
+}
+
+fn main() -> Int {
+    let o = Origin;
+    total(Pair(Meters(40), Meters(2)))
+}

@@ -1,0 +1,25 @@
+module examples.core.tuple_structs;
+
+import std.io;
+
+// Tuple structs name a value without naming its fields; unit structs have
+// exactly one value.
+
+struct Celsius(Int) invariant self.0 >= -273;
+
+struct Point(Int, Int);
+
+struct Origin;
+
+fn distance_from(origin: Origin, p: Point) -> Int {
+    match origin {
+        Origin => p.0 + p.1,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let room = Celsius(21);
+    let p = Point(room.0, 21);
+    print_int(distance_from(Origin, p));
+    0
+}

@@ -19842,3 +19842,74 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "1\nada\n42\n1\n42\n42\n42\n");
 }
+
+#[test]
+fn exec_tuple_and_unit_structs() {
+    let src = r#"
+import std.io;
+
+struct Meters(Int);
+struct Pair[T](T, T);
+struct Origin;
+struct Rgb(UInt8, UInt8, UInt8);
+struct Positive(Int) invariant self.0 > 0;
+
+impl Meters {
+    fn double(self: Meters) -> Meters {
+        Meters(self.0 * 2)
+    }
+}
+
+fn sum(p: Pair[Int]) -> Int {
+    match p {
+        Pair(a, b) => a + b,
+    }
+}
+
+fn describe(o: Origin) -> Int {
+    match o {
+        Origin => 7,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let m = Meters(21).double();
+    print_int(m.0);
+    print_int(sum(Pair(40, 2)));
+    print_int(describe(Origin) * 6);
+    let c = Rgb(10u8, 12u8, 20u8);
+    print_int(c.0 as Int + c.1 as Int + c.2 as Int);
+    let firsts = match Pair(Meters(1), Meters(41)) {
+        Pair(Meters(x), Meters(y)) => x + y,
+    };
+    print_int(firsts);
+    let p = Positive(42);
+    print_int(p.0);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n42\n42\n42\n42\n42\n");
+}
+
+#[test]
+fn exec_tuple_struct_invariant_is_enforced() {
+    let src = r#"
+import std.io;
+
+struct Positive(Int) invariant self.0 > 0;
+
+fn main() -> Int effects { io } capabilities { io } {
+    let ok = Positive(1);
+    print_int(ok.0);
+    let bad = Positive(0);
+    print_int(bad.0);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "1\n");
+    assert!(stderr.contains("Positive"), "stderr={stderr}");
+}

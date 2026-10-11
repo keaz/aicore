@@ -4816,6 +4816,14 @@ impl<'a> Checker<'a> {
         }
 
         if let Some(inv) = &strukt.invariant {
+            let field_names = strukt
+                .fields
+                .iter()
+                .map(|f| f.name.clone())
+                .collect::<Vec<_>>();
+            let mut resolved = inv.clone();
+            ir::resolve_invariant_self(&mut resolved, &field_names);
+            let inv = &resolved;
             let mut locals = BTreeMap::new();
             for field in &strukt.fields {
                 locals.insert(
@@ -5762,6 +5770,30 @@ impl<'a> Checker<'a> {
                         expected_ty,
                     );
                 }
+                // A unit struct used as a value (`Origin`) is its only value.
+                if self
+                    .visible_struct_info(name)
+                    .is_some_and(|info| info.shape == crate::ast::StructShape::Unit)
+                {
+                    let init = ir::Expr {
+                        node: expr.node,
+                        kind: ir::ExprKind::StructInit {
+                            name: name.clone(),
+                            fields: Vec::new(),
+                        },
+                        span: expr.span,
+                    };
+                    let ty = self.check_expr_with_expected(
+                        &init,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_ty,
+                    );
+                    self.expr_rewrites.insert(expr.node, init);
+                    return ty;
+                }
                 self.diagnostics.push(Diagnostic::error(
                     "E1208",
                     format!("unknown symbol '{}'", name),
@@ -6089,6 +6121,24 @@ impl<'a> Checker<'a> {
                         self.check_struct_default_call(&name, args, expr.span, expected_ty)
                     {
                         return default_ty;
+                    }
+                }
+                if !qualified && !locals.contains_key(&name) && !self.functions.contains_key(&name)
+                {
+                    if let Some(shape) = self.visible_struct_info(&name).map(|info| info.shape) {
+                        if shape != crate::ast::StructShape::Named {
+                            return self.check_tuple_struct_ctor(
+                                expr,
+                                &name,
+                                shape,
+                                args,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                                expected_ty,
+                            );
+                        }
                     }
                 }
 
@@ -10007,6 +10057,23 @@ impl<'a> Checker<'a> {
                 .insert(pattern.node, rewritten.clone());
             return self.check_pattern(&rewritten, scrutinee_ty, locals, bound_names);
         }
+        match self.tuple_struct_pattern(pattern) {
+            Some(Ok(rewritten)) => {
+                self.pattern_rewrites
+                    .insert(pattern.node, rewritten.clone());
+                return self.check_pattern(&rewritten, scrutinee_ty, locals, bound_names);
+            }
+            Some(Err((expected, found))) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1242",
+                    format!("struct pattern takes {expected} field(s), found {found}"),
+                    self.file,
+                    pattern.span,
+                ));
+                return;
+            }
+            None => {}
+        }
         match &pattern.kind {
             ir::PatternKind::Wildcard => {}
             ir::PatternKind::Var(name) => {
@@ -10666,6 +10733,9 @@ impl<'a> Checker<'a> {
         use match_usefulness::{Ctor, Pat};
         let ty = self.normalize_type(ty);
         if let Some(rewritten) = self.struct_variant_pattern(pattern, &ty, pattern.node) {
+            return self.pattern_to_usefulness(&rewritten, &ty);
+        }
+        if let Some(Ok(rewritten)) = self.tuple_struct_pattern(pattern) {
             return self.pattern_to_usefulness(&rewritten, &ty);
         }
         match &pattern.kind {
@@ -11960,6 +12030,118 @@ impl<'a> Checker<'a> {
             bindings.insert(generic.clone(), self.normalize_type(&ty));
         }
         bindings
+    }
+
+    /// `Meters(5)` for `struct Meters(Int);` (fields `0`, `1`, ...), checked
+    /// and recorded as the struct literal `Meters { 0: 5 }`. A unit struct
+    /// is written without parentheses.
+    #[allow(clippy::too_many_arguments)]
+    fn check_tuple_struct_ctor(
+        &mut self,
+        expr: &ir::Expr,
+        name: &str,
+        shape: crate::ast::StructShape,
+        args: &[ir::Expr],
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
+        let field_count = self
+            .visible_struct_info(name)
+            .map(|info| info.fields.len())
+            .unwrap_or(0);
+        if shape == crate::ast::StructShape::Unit || args.len() != field_count {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                if shape == crate::ast::StructShape::Unit {
+                    format!("unit struct '{name}' is a value: write `{name}` without parentheses")
+                } else {
+                    format!(
+                        "tuple struct '{}' takes {} field(s), got {}",
+                        name,
+                        field_count,
+                        args.len()
+                    )
+                },
+                self.file,
+                expr.span,
+            ));
+            for arg in args {
+                self.check_expr(arg, locals, allowed_effects, ctx, contract_mode);
+            }
+            return name.to_string();
+        }
+        let init = ir::Expr {
+            node: expr.node,
+            kind: ir::ExprKind::StructInit {
+                name: name.to_string(),
+                fields: args
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, arg)| (idx.to_string(), arg.clone(), arg.span))
+                    .collect(),
+            },
+            span: expr.span,
+        };
+        let ty = self.check_expr_with_expected(
+            &init,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        );
+        self.expr_rewrites.insert(expr.node, init);
+        ty
+    }
+
+    /// `Meters(x)` / `Origin` patterns for tuple and unit structs, as the
+    /// struct patterns `Meters { 0: x }` / `Origin {}`; `Err((expected,
+    /// found))` for a wrong number of fields.
+    fn tuple_struct_pattern(
+        &self,
+        pattern: &ir::Pattern,
+    ) -> Option<Result<ir::Pattern, (usize, usize)>> {
+        let ir::PatternKind::Variant { name, args } = &pattern.kind else {
+            return None;
+        };
+        if name.contains("::") || self.unit_variant_callee(name).is_some() {
+            return None;
+        }
+        let info = self.visible_struct_info(name)?;
+        if info.shape == crate::ast::StructShape::Named {
+            return None;
+        }
+        // The parser reads `Pair(a, b)` as `Pair((a, b))` (multi-field
+        // variant syntax); a struct with several fields takes them apart.
+        let args: &[ir::Pattern] = match args.as_slice() {
+            [single] if info.fields.len() > 1 => match &single.kind {
+                ir::PatternKind::Variant { name, args } if name == TUPLE_INTERNAL_NAME => args,
+                _ => args,
+            },
+            _ => args,
+        };
+        if args.len() != info.fields.len() {
+            return Some(Err((info.fields.len(), args.len())));
+        }
+        Some(Ok(ir::Pattern {
+            node: pattern.node,
+            kind: ir::PatternKind::Struct {
+                name: name.clone(),
+                fields: args
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, arg)| ir::StructPatternField {
+                        name: idx.to_string(),
+                        pattern: arg.clone(),
+                    })
+                    .collect(),
+                has_rest: false,
+            },
+            span: pattern.span,
+        }))
     }
 
     /// The loop a `break`/`continue` leaves: the innermost one, or the
@@ -14379,6 +14561,66 @@ fn f(x: Int) -> Int {
 }
 "#;
         assert!(!error_codes(missing).is_empty());
+    }
+
+    #[test]
+    fn tuple_and_unit_structs_are_checked() {
+        let ok = r#"
+struct Meters(Int);
+struct Pair[T](T, T);
+struct Origin;
+fn length(m: Meters) -> Int { m.0 }
+fn sum(p: Pair[Int]) -> Int { match p { Pair(a, b) => a + b } }
+fn at_origin(o: Origin) -> Bool { match o { Origin => true } }
+fn main() -> Int {
+    let m = Meters(5);
+    let p: Pair[Int] = Pair(1, 2);
+    let o = Origin;
+    let inner = match m { Meters(v) => v };
+    if at_origin(o) { length(m) + sum(p) + inner } else { 0 }
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_messages(ok));
+        let cases = [
+            (
+                "struct Meters(Int); fn main() -> Int { let m = Meters(1, 2); 0 }",
+                "E1213",
+            ),
+            (
+                "struct Origin; fn main() -> Int { let o = Origin(); 0 }",
+                "E1213",
+            ),
+            (
+                "struct Meters(Int); fn main() -> Int { let m = Meters(true); 0 }",
+                "E1226",
+            ),
+            (
+                "struct Pair(Int, Int); fn f(p: Pair) -> Int { match p { Pair(a) => a } }",
+                "E1242",
+            ),
+            (
+                "struct Meters(Int); fn f(m: Meters) -> Int { m.1 }",
+                "E1228",
+            ),
+            // Patterns over a tuple struct are checked for exhaustiveness.
+            (
+                "struct Flag(Bool); fn f(x: Flag) -> Int { match x { Flag(true) => 1 } }",
+                "E1290",
+            ),
+        ];
+        for (src, code) in cases {
+            let src = if src.contains("fn main") {
+                src.to_string()
+            } else {
+                format!("{src} fn main() -> Int {{ 0 }}")
+            };
+            let codes = error_codes(&src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {:?}",
+                error_messages(&src)
+            );
+        }
     }
 
     #[test]

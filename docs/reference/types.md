@@ -17,6 +17,11 @@ type_args      = "[" type ("," type)* ","? "]" ;
 
 fn_type        = "Fn" "(" type_list? ")" "->" type ;
 type_list      = type ("," type)* ","? ;
+
+struct_decl    = "struct" ident generics? ( "{" fields "}" ("invariant" expr)?
+                                          | "(" tuple_fields ")" ("invariant" expr)? ";"
+                                          | ("invariant" expr)? ";" ) ;
+tuple_fields   = visibility? type ("," visibility? type)* ","? ;
 ```
 
 ## Semantics and Rules
@@ -24,6 +29,7 @@ type_list      = type ("," type)* ","? ;
 - Primitive built-in types include `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`, `ISize`, `USize`, `UInt`, `Float32`, `Float64`, `Float`, `Bool`, `Char`, `String`, and `()`.
 - User-defined nominal types come from `struct` and `enum` declarations.
 - `Option` and `Result` are always available. The collection and data types `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, and `JsonValue` are defined in std modules (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) and are not prelude types: code generation takes their layout from the module. Using one in a type position while its module is not loaded fails `aic check` with `E1313`, and the help line names the `import` to add. A module loaded through another import (for example `std.vec` through `std.string`) is enough.
+- Tuple structs (`struct Meters(Int);`, `struct Pair[T](T, T);`) have positional fields named `0`, `1`, ...: they are built by calling the name (`Meters(5)`, `E1213` for a wrong number of values), read with `.0` / `.1`, and matched with `Meters(x)` / `Pair(a, b)` patterns (`E1242` for a wrong number of sub-patterns). Unit structs (`struct Origin;`) have no fields and exactly one value, written `Origin` (as an expression and as a pattern; `Origin()` is `E1213`). Both can have methods and generics, and a tuple struct can have an invariant, which names its fields as `self.0`, `self.1` (`self.field` also works in the invariants of other structs). `aic fmt` writes the declarations back in the same form. Destructure a tuple struct with `match` or `.0`; `let Meters(x) = m;` is not supported.
 - Every type name in a function signature, `let` or closure annotation, struct field, enum payload, type alias, impl header, or trait method signature must name a built-in type, a generic parameter of the enclosing declaration (`Self` inside traits and impls), or a visible struct, enum, trait, or type alias. Unknown names fail `aic check` with `E1228` and a "did you mean" hint, so typos never reach code generation. Spellings from other languages are mapped in the hint: `i32` -> `Int32`, `u8` -> `UInt8`, `f64` -> `Float64`, `bool` -> `Bool`, `str` -> `String`, `Unit` -> `()`, `HashMap` -> `Map`.
 - The checker is strict: there are no implicit casts or coercions between unrelated types.
 - Generic type arity is validated for all known generic families, including built-ins such as `Option`, `Result`, `Async`, `Ref`, `RefMut`, and tuple wrappers.

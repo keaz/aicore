@@ -202,3 +202,8 @@ fn golden_case34_closures() {
 fn golden_case35_type_arguments() {
     run_golden_case("case35_type_arguments.aic");
 }
+
+#[test]
+fn golden_case36_tuple_structs() {
+    run_golden_case("case36_tuple_structs.aic");
+}

@@ -64,6 +64,8 @@ pub struct StructInfo {
     pub default_fields: BTreeSet<String>,
     pub invariant: Option<ir::Expr>,
     pub span: crate::span::Span,
+    /// Named, tuple (`struct S(Int);`) or unit (`struct S;`).
+    pub shape: crate::ast::StructShape,
 }
 
 #[derive(Debug, Clone)]
@@ -369,6 +371,7 @@ pub fn resolve_with_item_modules_imports_and_files(
                     default_fields,
                     invariant: s.invariant.clone(),
                     span: s.span,
+                    shape: s.shape,
                 };
                 struct_modules
                     .entry(s.name.clone())

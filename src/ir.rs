@@ -1,4 +1,4 @@
-use crate::ast::{Attribute, BinOp, RangeBound, UnaryOp, Visibility};
+use crate::ast::{Attribute, BinOp, RangeBound, StructShape, UnaryOp, Visibility};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -223,6 +223,8 @@ pub struct ClosureParam {
 pub struct StructDef {
     pub symbol: SymbolId,
     pub name: String,
+    #[serde(default, skip_serializing_if = "StructShape::is_named")]
+    pub shape: StructShape,
     #[serde(default)]
     pub visibility: Visibility,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -652,102 +654,12 @@ pub fn block_contains_return(block: &Block) -> bool {
 pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
     fn function(func: &mut Function, f: &mut dyn FnMut(&mut Expr)) {
         if let Some(req) = func.requires.as_mut() {
-            expr(req, f);
+            walk_expr_mut(req, f);
         }
         if let Some(ens) = func.ensures.as_mut() {
-            expr(ens, f);
+            walk_expr_mut(ens, f);
         }
-        block(&mut func.body, f);
-    }
-    fn block(block_ref: &mut Block, f: &mut dyn FnMut(&mut Expr)) {
-        for stmt in &mut block_ref.stmts {
-            match stmt {
-                Stmt::Let { expr: value, .. }
-                | Stmt::Assign { expr: value, .. }
-                | Stmt::Expr { expr: value, .. }
-                | Stmt::Assert { expr: value, .. } => expr(value, f),
-                Stmt::Return { expr: value, .. } => {
-                    if let Some(value) = value {
-                        expr(value, f);
-                    }
-                }
-            }
-        }
-        if let Some(tail) = block_ref.tail.as_mut() {
-            expr(tail, f);
-        }
-    }
-    fn expr(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
-        f(e);
-        match &mut e.kind {
-            ExprKind::Call { callee, args, .. } => {
-                expr(callee, f);
-                for arg in args {
-                    expr(arg, f);
-                }
-            }
-            ExprKind::TemplateLiteral { args, .. } => {
-                for arg in args {
-                    expr(arg, f);
-                }
-            }
-            ExprKind::Closure { body, .. }
-            | ExprKind::Loop { body, .. }
-            | ExprKind::UnsafeBlock { block: body }
-            | ExprKind::Block { block: body } => block(body, f),
-            ExprKind::If {
-                cond,
-                then_block,
-                else_block,
-            } => {
-                expr(cond, f);
-                block(then_block, f);
-                block(else_block, f);
-            }
-            ExprKind::While { cond, body, .. } => {
-                expr(cond, f);
-                block(body, f);
-            }
-            ExprKind::Break { expr: value, .. } | ExprKind::Return { expr: value } => {
-                if let Some(value) = value {
-                    expr(value, f);
-                }
-            }
-            ExprKind::Match {
-                expr: scrutinee,
-                arms,
-            } => {
-                expr(scrutinee, f);
-                for arm in arms {
-                    if let Some(guard) = arm.guard.as_mut() {
-                        expr(guard, f);
-                    }
-                    expr(&mut arm.body, f);
-                }
-            }
-            ExprKind::Binary { lhs, rhs, .. } => {
-                expr(lhs, f);
-                expr(rhs, f);
-            }
-            ExprKind::Unary { expr: inner, .. }
-            | ExprKind::Borrow { expr: inner, .. }
-            | ExprKind::Await { expr: inner }
-            | ExprKind::Try { expr: inner } => expr(inner, f),
-            ExprKind::FieldAccess { base, .. } => expr(base, f),
-            ExprKind::StructInit { fields, .. } => {
-                for (_, value, _) in fields {
-                    expr(value, f);
-                }
-            }
-            ExprKind::Int(..)
-            | ExprKind::Float(..)
-            | ExprKind::Bool(_)
-            | ExprKind::Char(_)
-            | ExprKind::String(_)
-            | ExprKind::Unit
-            | ExprKind::Var(_)
-            | ExprKind::Continue { .. } => {}
-        }
+        walk_block_mut(&mut func.body, f);
     }
     for item in &mut program.items {
         match item {
@@ -755,11 +667,11 @@ pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
             Item::Struct(strukt) => {
                 for field in &mut strukt.fields {
                     if let Some(default) = field.default_value.as_mut() {
-                        expr(default, f);
+                        walk_expr_mut(default, f);
                     }
                 }
                 if let Some(invariant) = strukt.invariant.as_mut() {
-                    expr(invariant, f);
+                    walk_expr_mut(invariant, f);
                 }
             }
             Item::Enum(_) => {}
@@ -775,6 +687,117 @@ pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
             }
         }
     }
+}
+
+fn walk_block_mut(block_ref: &mut Block, f: &mut dyn FnMut(&mut Expr)) {
+    for stmt in &mut block_ref.stmts {
+        match stmt {
+            Stmt::Let { expr: value, .. }
+            | Stmt::Assign { expr: value, .. }
+            | Stmt::Expr { expr: value, .. }
+            | Stmt::Assert { expr: value, .. } => walk_expr_mut(value, f),
+            Stmt::Return { expr: value, .. } => {
+                if let Some(value) = value {
+                    walk_expr_mut(value, f);
+                }
+            }
+        }
+    }
+    if let Some(tail) = block_ref.tail.as_mut() {
+        walk_expr_mut(tail, f);
+    }
+}
+
+fn walk_expr_mut(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
+    f(e);
+    match &mut e.kind {
+        ExprKind::Call { callee, args, .. } => {
+            walk_expr_mut(callee, f);
+            for arg in args {
+                walk_expr_mut(arg, f);
+            }
+        }
+        ExprKind::TemplateLiteral { args, .. } => {
+            for arg in args {
+                walk_expr_mut(arg, f);
+            }
+        }
+        ExprKind::Closure { body, .. }
+        | ExprKind::Loop { body, .. }
+        | ExprKind::UnsafeBlock { block: body }
+        | ExprKind::Block { block: body } => walk_block_mut(body, f),
+        ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            walk_expr_mut(cond, f);
+            walk_block_mut(then_block, f);
+            walk_block_mut(else_block, f);
+        }
+        ExprKind::While { cond, body, .. } => {
+            walk_expr_mut(cond, f);
+            walk_block_mut(body, f);
+        }
+        ExprKind::Break { expr: value, .. } | ExprKind::Return { expr: value } => {
+            if let Some(value) = value {
+                walk_expr_mut(value, f);
+            }
+        }
+        ExprKind::Match {
+            expr: scrutinee,
+            arms,
+        } => {
+            walk_expr_mut(scrutinee, f);
+            for arm in arms {
+                if let Some(guard) = arm.guard.as_mut() {
+                    walk_expr_mut(guard, f);
+                }
+                walk_expr_mut(&mut arm.body, f);
+            }
+        }
+        ExprKind::Binary { lhs, rhs, .. } => {
+            walk_expr_mut(lhs, f);
+            walk_expr_mut(rhs, f);
+        }
+        ExprKind::Unary { expr: inner, .. }
+        | ExprKind::Borrow { expr: inner, .. }
+        | ExprKind::Await { expr: inner }
+        | ExprKind::Try { expr: inner } => walk_expr_mut(inner, f),
+        ExprKind::FieldAccess { base, .. } => walk_expr_mut(base, f),
+        ExprKind::StructInit { fields, .. } => {
+            for (_, value, _) in fields {
+                walk_expr_mut(value, f);
+            }
+        }
+        ExprKind::Int(..)
+        | ExprKind::Float(..)
+        | ExprKind::Bool(_)
+        | ExprKind::Char(_)
+        | ExprKind::String(_)
+        | ExprKind::Unit
+        | ExprKind::Var(_)
+        | ExprKind::Continue { .. } => {}
+    }
+}
+
+/// In a struct invariant, `self.field` names the field like the bare
+/// field name does (the only way to name tuple struct fields: `self.0`).
+pub fn resolve_invariant_self(invariant: &mut Expr, fields: &[String]) {
+    visit_expr_mut(invariant, &mut |e| {
+        if let ExprKind::FieldAccess { base, field } = &e.kind {
+            if matches!(&base.kind, ExprKind::Var(name) if name == "self") && fields.contains(field)
+            {
+                e.kind = ExprKind::Var(field.clone());
+            }
+        }
+    });
+}
+
+/// Calls `f` on `e` and every expression inside it, parents before
+/// children (the expression-level form of `visit_exprs_mut`).
+pub fn visit_expr_mut(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
+    walk_expr_mut(e, f);
 }
 
 #[cfg(test)]

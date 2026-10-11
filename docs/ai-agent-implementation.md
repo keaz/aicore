@@ -965,6 +965,15 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Tuple Structs and Unit Structs (SYNTAX-T16, #462)
+
+- Language surface: `struct Meters(Int);`, `struct Origin;`, construction `Meters(5)` / `Origin`, `.0` access, patterns `Meters(x)` / `Origin`, `self.0` in invariants. Rules: `docs/reference/types.md`.
+- AST/IR: `StructDef.shape: StructShape { Named, Tuple, Unit }` (omitted from JSON when `Named`); tuple fields are named `0`, `1`, ... (`parse_tuple_or_unit_struct`). `resolver::StructInfo.shape` carries it to the checker.
+- Checker: `check_tuple_struct_ctor` checks `Meters(5)` as the struct literal `Meters { 0: 5 }` and records it in `expr_rewrites`; a unit struct name used as a value becomes `Origin {}`. `tuple_struct_pattern` turns `Meters(x)` / `Origin` patterns into struct patterns (`pattern_rewrites`), also for exhaustiveness, and takes apart the `Pair((a, b))` form the parser produces for multi-field patterns.
+- Invariants: `ir::resolve_invariant_self` rewrites `self.f` to the field name; the checker applies it to a copy, the driver applies it to the IR before contract lowering. `ir::visit_expr_mut` is the expression-level walker it uses.
+- Formatter: `struct_def` prints the tuple and unit forms.
+- Verification: `exec_tuple_and_unit_structs`, `exec_tuple_struct_invariant_is_enforced`, `tuple_and_unit_structs_are_checked`, `parses_tuple_and_unit_structs`, formatter test `tuple_and_unit_structs_round_trip`, golden `case36_tuple_structs.aic`, `examples/core/tuple_structs.aic`.
+
 ## Explicit Generic Type Arguments (SYNTAX-T15, #461)
 
 - Language surface: `callee::[T, U](args)` for functions (also module-qualified), inherent methods and enum variant constructors including `Some`/`Ok`/`Err`. Rules: `docs/reference/generics.md`.

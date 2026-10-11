@@ -1400,6 +1400,38 @@ impl<'a> Printer<'a> {
     }
 
     fn struct_def(&mut self, s: &ir::StructDef) {
+        if s.shape != ast::StructShape::Named {
+            // `struct S;` / `struct S(Int, pub Bool);`
+            self.attributes(&s.attrs, s.span.start, s.span.start, 0, None);
+            self.out.push_str(visibility_prefix(s.visibility));
+            self.out.push_str("struct ");
+            self.out.push_str(&s.name);
+            self.out.push_str(&format_generic_params(&s.generics));
+            if s.shape == ast::StructShape::Tuple {
+                let fields = s
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        format!(
+                            "{}{}",
+                            visibility_prefix(field.visibility),
+                            self.display_type(&field.ty)
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                self.out.push('(');
+                self.out.push_str(&fields.join(", "));
+                self.out.push(')');
+            }
+            if let Some(inv) = &s.invariant {
+                self.out.push_str(" invariant ");
+                self.expr(inv, 0, 0);
+            }
+            self.out.push(';');
+            self.trailing(s.span.end);
+            self.out.push('\n');
+            return;
+        }
         let open = self.open_brace_after(s.span.start);
         self.attributes(
             &s.attrs,
@@ -3409,6 +3441,12 @@ mod tests {
     #[test]
     fn prefix_operators_before_postfix_operators_keep_parens() {
         let src = "fn f(x: Int, o: Option[Int]) -> Option[Int] {\n    let a = (-1).checked_to_u32();\n    let b = (-x).saturating_to_u8();\n    let c = (-2.5).saturating_to_int();\n    let d = -x.wrapping_to_u8();\n    let e = (x as Int64).wrapping_to_int();\n    o\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn tuple_and_unit_structs_round_trip() {
+        let src = "struct Meters(Int);\n\npub struct Pair[T](T, pub T);\n\nstruct Origin;\n\nfn f(p: Pair[Int], o: Origin) -> Int {\n    let m = Meters(2);\n    let z = Origin;\n    match p {\n        Pair(a, b) => a + b + m.0,\n    }\n}\n";
         assert_eq!(fmt(src), src);
     }
 
