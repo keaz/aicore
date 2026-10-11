@@ -1,0 +1,30 @@
+module examples.core.ranges_and_patterns;
+
+import std.io;
+import std.range;
+import std.vec;
+
+// Range values, slices, and range / negative / `@` patterns.
+
+fn bucket(reading: Int) -> Int {
+    match reading {
+        ..=-1 => 0,
+        0..10 => 1,
+        level @ 10..=99 => level / 10,
+        100.. => 10,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let readings = [-4, 3, 27, 58, 140, 99];
+    let middle = readings[1..=4];
+    let mut total = 0;
+    for value in middle {
+        total += bucket(value);
+    };
+    // 1 + 2 + 5 + 10 = 18 from the middle, 9 from the last, 15 values in 0..15
+    let tail = readings[5..];
+    let counted = range.range_len(0..15);
+    print_int(total + bucket(tail[0]) + counted);
+    0
+}

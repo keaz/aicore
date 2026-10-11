@@ -187,3 +187,8 @@ fn golden_case31_numeric_casts() {
 fn golden_case32_loop_labels() {
     run_golden_case("case32_loop_labels.aic");
 }
+
+#[test]
+fn golden_case33_ranges_and_patterns() {
+    run_golden_case("case33_ranges_and_patterns.aic");
+}

@@ -1,0 +1,17 @@
+fn grade(score: Int) -> Int {
+    match score {
+        ..=-1 => -1,
+        0..60 => 0,
+        top @ 90..=100 => top,
+        60..90 => 1,
+        _ => -2,
+    }
+}
+
+fn main() -> Int {
+    let mut total = 0;
+    for i in 0..=3 {
+        total = total + grade(i * 30);
+    };
+    total
+}

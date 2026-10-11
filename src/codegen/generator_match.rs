@@ -200,8 +200,11 @@ impl<'a> Generator<'a> {
                 if !is_integral_type(&value.ty) {
                     return self.pattern_type_error(pattern, "integer", &value.ty);
                 }
+                // The metadata keeps only the digits; a negative literal
+                // pattern (`-3`) carries its sign in the value.
                 let text = pattern
                     .int_literal_metadata()
+                    .filter(|_| *literal >= 0)
                     .and_then(|meta| {
                         super::generator_core::parse_raw_int_literal_magnitude(
                             &meta.raw_literal_text,
@@ -219,6 +222,84 @@ impl<'a> Generator<'a> {
                 ));
                 self.branch_on(&cond, fail_label, fctx);
                 Some(())
+            }
+            ir::PatternKind::Float(expected) => {
+                let Some(bits) = float_width_bits(&value.ty) else {
+                    return self.pattern_type_error(pattern, "float", &value.ty);
+                };
+                let constant = if bits == 32 {
+                    let narrowed = self.new_temp();
+                    fctx.lines.push(format!(
+                        "  {narrowed} = fptrunc double {} to float",
+                        llvm_float_literal(*expected)
+                    ));
+                    narrowed
+                } else {
+                    llvm_float_literal(*expected)
+                };
+                let cond = self.new_temp();
+                fctx.lines.push(format!(
+                    "  {} = fcmp oeq {} {}, {}",
+                    cond,
+                    llvm_type(&value.ty),
+                    value
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(&value.ty)),
+                    constant
+                ));
+                self.branch_on(&cond, fail_label, fctx);
+                Some(())
+            }
+            ir::PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                use crate::ast::RangeBound;
+                let signed = if value.ty == LType::Char {
+                    false
+                } else if is_integral_type(&value.ty) {
+                    is_signed_integer_type(&value.ty)
+                } else {
+                    return self.pattern_type_error(pattern, "integer or char", &value.ty);
+                };
+                let repr = value.repr.clone().unwrap_or_else(|| "0".to_string());
+                let ty = llvm_type(&value.ty);
+                let bound_text = |bound: &RangeBound| match bound {
+                    RangeBound::Int(v) => v.to_string(),
+                    RangeBound::Char(c) => u32::from(*c).to_string(),
+                };
+                let prefix = if signed { "s" } else { "u" };
+                let mut checks = Vec::new();
+                if let Some(lo) = start {
+                    checks.push((format!("{prefix}ge"), bound_text(lo)));
+                }
+                if let Some(hi) = end {
+                    let op = if *inclusive { "le" } else { "lt" };
+                    checks.push((format!("{prefix}{op}"), bound_text(hi)));
+                }
+                for (op, bound) in checks {
+                    let cond = self.new_temp();
+                    fctx.lines
+                        .push(format!("  {cond} = icmp {op} {ty} {repr}, {bound}"));
+                    self.branch_on(&cond, fail_label, fctx);
+                }
+                Some(())
+            }
+            ir::PatternKind::Binding { name, pattern } => {
+                let ptr = self.binding_slot(name, &value.ty, bindings, fctx);
+                fctx.lines.push(format!(
+                    "  store {} {}, {}* {}",
+                    llvm_type(&value.ty),
+                    value
+                        .repr
+                        .clone()
+                        .unwrap_or_else(|| default_value(&value.ty)),
+                    llvm_type(&value.ty),
+                    ptr
+                ));
+                self.gen_pattern_test(pattern, value, fail_label, bindings, fctx)
             }
             ir::PatternKind::Char(expected) => {
                 if value.ty != LType::Char {
@@ -470,6 +551,9 @@ fn pattern_is_flat(pattern: &ir::Pattern, in_tuple: bool) -> bool {
         ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Char(_)
         | ir::PatternKind::String(_)
+        | ir::PatternKind::Float(_)
+        | ir::PatternKind::Range { .. }
+        | ir::PatternKind::Binding { .. }
         | ir::PatternKind::Unit
         | ir::PatternKind::Struct { .. } => false,
     }

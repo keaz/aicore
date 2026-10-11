@@ -1813,10 +1813,14 @@ impl<'a> Printer<'a> {
             self.out.push_str(" in ");
             match &rendered_for.iterable {
                 RenderedIterable::Expr(iterable) => self.expr(iterable, 0, indent),
-                RenderedIterable::Range { start, end } => {
-                    self.expr(start, 0, indent);
-                    self.out.push_str("..");
-                    self.expr(end, 0, indent);
+                RenderedIterable::Range {
+                    start,
+                    end,
+                    inclusive,
+                } => {
+                    self.expr(start, RANGE_OPERAND_PREC, indent);
+                    self.out.push_str(if *inclusive { "..=" } else { ".." });
+                    self.expr(end, RANGE_OPERAND_PREC, indent);
                 }
             }
             self.out.push(' ');
@@ -1931,6 +1935,33 @@ impl<'a> Printer<'a> {
                 self.out.push_str(" as ");
                 self.out
                     .push_str(&format_type_repr(&name[ast::CAST_BUILTIN_PREFIX.len()..]));
+                if needs_parens {
+                    self.out.push(')');
+                }
+            }
+            ir::ExprKind::Call { callee, args, .. } if matches!(&callee.kind, ir::ExprKind::Var(name) if range_builtin_parts(name, args.len()).is_some()) =>
+            {
+                let ir::ExprKind::Var(name) = &callee.kind else {
+                    return;
+                };
+                let Some((has_start, op)) = range_builtin_parts(name, args.len()) else {
+                    return;
+                };
+                // Ranges bind loosest.
+                let needs_parens = parent_prec > 0;
+                if needs_parens {
+                    self.out.push('(');
+                }
+                let mut rest = args.iter();
+                if has_start {
+                    if let Some(start) = rest.next() {
+                        self.expr(start, RANGE_OPERAND_PREC, indent);
+                    }
+                }
+                self.out.push_str(op);
+                if let Some(end) = rest.next() {
+                    self.expr(end, RANGE_OPERAND_PREC, indent);
+                }
                 if needs_parens {
                     self.out.push(')');
                 }
@@ -2255,11 +2286,42 @@ impl<'a> Printer<'a> {
                 ) {
                     self.out.push_str(text);
                 } else if let Some(meta) = pattern.int_literal_metadata() {
+                    // A negative literal pattern keeps the digits of its token.
+                    if value < 0 && !meta.raw_literal_text.starts_with('-') {
+                        self.out.push('-');
+                    }
                     self.out.push_str(&meta.raw_literal_text);
                     self.out.push_str(&meta.suffix_text);
                 } else {
                     self.out.push_str(&v.to_string());
                 }
+            }
+            ir::PatternKind::Float(v) => {
+                let value = *v;
+                if let Some(text) = self.literal_text(pattern.span, |kind| {
+                    matches!(kind, TokenKind::Float(token) if token.value.to_bits() == value.abs().to_bits())
+                }) {
+                    if value.is_sign_negative() {
+                        self.out.push('-');
+                    }
+                    self.out.push_str(text);
+                } else {
+                    self.out.push_str(&render_float_literal(value));
+                }
+            }
+            ir::PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => self.out.push_str(&ast::render_range_pattern(
+                start.as_ref(),
+                end.as_ref(),
+                *inclusive,
+            )),
+            ir::PatternKind::Binding { name, pattern } => {
+                self.out.push_str(name);
+                self.out.push_str(" @ ");
+                self.pattern(pattern);
             }
             ir::PatternKind::Char(v) => {
                 let value = *v;
@@ -2402,7 +2464,7 @@ fn nested_regions(expr: &ir::Expr, out: &mut Vec<(usize, usize)>) {
     if let Some(rendered) = extract_for_syntax(expr) {
         match &rendered.iterable {
             RenderedIterable::Expr(iterable) => nested_regions(iterable, out),
-            RenderedIterable::Range { start, end } => {
+            RenderedIterable::Range { start, end, .. } => {
                 nested_regions(start, out);
                 nested_regions(end, out);
             }
@@ -2483,7 +2545,7 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
     if let Some(rendered) = extract_for_syntax(expr) {
         let iterable = match &rendered.iterable {
             RenderedIterable::Expr(iterable) => first_nested_region(iterable),
-            RenderedIterable::Range { start, end } => {
+            RenderedIterable::Range { start, end, .. } => {
                 first_nested_region(start).or_else(|| first_nested_region(end))
             }
         };
@@ -2693,7 +2755,11 @@ fn let_else_group(stmts: &[ir::Stmt]) -> Option<LetElseGroup<'_>> {
 #[derive(Debug, Clone)]
 enum RenderedIterable {
     Expr(ir::Expr),
-    Range { start: ir::Expr, end: ir::Expr },
+    Range {
+        start: ir::Expr,
+        end: ir::Expr,
+        inclusive: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -2738,6 +2804,7 @@ fn extract_for_syntax(expr: &ir::Expr) -> Option<RenderedFor> {
         1 => extract_iter_for(&then_block.stmts, loop_body),
         2 => extract_range_for(&then_block.stmts, loop_body)
             .or_else(|| extract_vec_for(&then_block.stmts, loop_body)),
+        3 => extract_range_for(&then_block.stmts, loop_body),
         _ => None,
     }
 }
@@ -2962,7 +3029,20 @@ fn extract_vec_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Rendered
     })
 }
 
+/// `for i in a..b`, or `for i in a..=b` with its third `done` binding
+/// (see the parser's `desugar_for_range`).
 fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<RenderedFor> {
+    let done_name = match stmts.get(2) {
+        None => None,
+        Some(ir::Stmt::Let {
+            name,
+            mutable: true,
+            expr,
+            ..
+        }) if matches!(expr.kind, ir::ExprKind::Bool(false)) => Some(name.as_str()),
+        Some(_) => return None,
+    };
+    let inclusive = done_name.is_some();
     let (cur_name, start_expr) = match &stmts[0] {
         ir::Stmt::Let {
             name,
@@ -2997,10 +3077,35 @@ fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Render
         return None;
     };
 
+    let cond = match done_name {
+        // `!done && cur <= end`
+        Some(done) => {
+            let ir::ExprKind::Binary {
+                op: BinOp::And,
+                lhs: not_done,
+                rhs: in_range,
+            } = &cond.kind
+            else {
+                return None;
+            };
+            let ir::ExprKind::Unary {
+                op: UnaryOp::Not,
+                expr: flag,
+            } = &not_done.kind
+            else {
+                return None;
+            };
+            if !matches!(&flag.kind, ir::ExprKind::Var(name) if name == done) {
+                return None;
+            }
+            in_range.as_ref()
+        }
+        None => cond.as_ref(),
+    };
     let ir::ExprKind::Binary { op, lhs, rhs } = &cond.kind else {
         return None;
     };
-    if *op != BinOp::Lt {
+    if *op != if inclusive { BinOp::Le } else { BinOp::Lt } {
         return None;
     }
     if !matches!(&lhs.kind, ir::ExprKind::Var(name) if name == cur_name) {
@@ -3032,10 +3137,33 @@ fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Render
         }
         _ => return None,
     };
-    match &then_block.stmts[1] {
-        ir::Stmt::Assign {
+    let is_increment = |stmt: &ir::Stmt| {
+        matches!(stmt, ir::Stmt::Assign {
             target, path, expr, ..
-        } if path.is_empty() && target == cur_name && is_increment_expr(expr, cur_name) => {}
+        } if path.is_empty() && target == cur_name && is_increment_expr(expr, cur_name))
+    };
+    match (&then_block.stmts[1], done_name) {
+        (stmt, None) if is_increment(stmt) => {}
+        // `if cur == end { done = true; } else { cur = cur + 1; }`
+        (ir::Stmt::Expr { expr, .. }, Some(done)) => {
+            let ir::ExprKind::If {
+                cond,
+                then_block: last,
+                else_block: step,
+            } = &expr.kind
+            else {
+                return None;
+            };
+            let at_end = matches!(&cond.kind, ir::ExprKind::Binary { op: BinOp::Eq, lhs, rhs }
+                if matches!(&lhs.kind, ir::ExprKind::Var(name) if name == cur_name)
+                    && matches!(&rhs.kind, ir::ExprKind::Var(name) if name == end_name));
+            let sets_done = matches!(last.stmts.as_slice(), [ir::Stmt::Assign { target, path, expr, .. }]
+                if target == done && path.is_empty() && matches!(expr.kind, ir::ExprKind::Bool(true)));
+            let steps = matches!(step.stmts.as_slice(), [stmt] if is_increment(stmt));
+            if !(at_end && sets_done && steps && last.tail.is_none() && step.tail.is_none()) {
+                return None;
+            }
+        }
         _ => return None,
     }
 
@@ -3051,6 +3179,7 @@ fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Render
         iterable: RenderedIterable::Range {
             start: start_expr,
             end: end_expr,
+            inclusive,
         },
         body,
     })
@@ -3164,6 +3293,24 @@ fn type_map(program: &ir::Program) -> BTreeMap<ir::TypeId, String> {
 /// calls: above every binary operator, so a binary operand keeps its parens.
 const PREFIX_OPERAND_PREC: u8 = 11;
 
+/// Parent precedence for the operands of a range: above nothing but the
+/// range itself, so `a + 1..b` keeps no parens and a nested range does.
+const RANGE_OPERAND_PREC: u8 = 1;
+
+/// For a range builtin with `argc` arguments: whether it has a start, and
+/// its operator.
+fn range_builtin_parts(name: &str, argc: usize) -> Option<(bool, &'static str)> {
+    Some(match (name, argc) {
+        (ast::RANGE_BUILTIN, 2) => (true, ".."),
+        (ast::RANGE_INCLUSIVE_BUILTIN, 2) => (true, "..="),
+        (ast::RANGE_FROM_BUILTIN, 1) => (true, ".."),
+        (ast::RANGE_TO_BUILTIN, 1) => (false, ".."),
+        (ast::RANGE_TO_INCLUSIVE_BUILTIN, 1) => (false, "..="),
+        (ast::RANGE_FULL_BUILTIN, 0) => (false, ".."),
+        _ => return None,
+    })
+}
+
 /// Parent precedence for the operand of `.field`, a call, an index or `?`:
 /// prefix operators there need parens too.
 const POSTFIX_OPERAND_PREC: u8 = 12;
@@ -3227,6 +3374,12 @@ mod tests {
     #[test]
     fn prefix_operators_before_postfix_operators_keep_parens() {
         let src = "fn f(x: Int, o: Option[Int]) -> Option[Int] {\n    let a = (-1).checked_to_u32();\n    let b = (-x).saturating_to_u8();\n    let c = (-2.5).saturating_to_int();\n    let d = -x.wrapping_to_u8();\n    let e = (x as Int64).wrapping_to_int();\n    o\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn ranges_and_new_patterns_round_trip() {
+        let src = "fn f(n: Int, v: Vec[Int], x: Float64) -> Int {\n    let r = n + 1..n * 2;\n    let s = v[2..];\n    let t = v[..=3];\n    let w = v[..];\n    for i in 0..=n {\n        print_int(i);\n    };\n    for j in 1..n {\n        print_int(j);\n    };\n    let c = match x {\n        -1.5 => 1,\n        _ => 0,\n    };\n    match n {\n        -5..=-1 => 1,\n        0..10 => 2,\n        big @ 100.. => big,\n        ..=-6 => 4,\n        -7 => 5,\n        _ => 0,\n    }\n}\n";
         assert_eq!(fmt(src), src);
     }
 

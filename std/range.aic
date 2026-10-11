@@ -1,0 +1,321 @@
+/// The `std.range` module provides the `Range[T]` value that range
+/// expressions build, iteration over integer ranges and range slicing.
+///
+/// ## Example
+/// ```aic
+/// import std.range;
+///
+/// fn demo() -> Int {
+///     let r = 2..=4;
+///     let mut total = 0;
+///     for i in r {
+///         total += i;
+///     }
+///     total
+/// }
+/// ```
+module std.range;
+
+import std.bytes;
+import std.iterator;
+import std.option;
+import std.string;
+import std.vec;
+
+/// `Range` is the value of `start..end` (end excluded) and `start..=end`
+/// (end included).
+///
+/// ## Example
+/// ```aic
+/// // `let r = 0..10;` builds `Range { start: 0, end: 10, inclusive: false }`.
+/// ```
+struct Range[T] {
+    start: T,
+    end: T,
+    inclusive: Bool,
+}
+
+/// `new_range` builds a `Range`; range expressions call it.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `new_range` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn new_range[T](start: T, end: T, inclusive: Bool) -> Range[T] {
+    Range {
+        start: start,
+        end: end,
+        inclusive: inclusive,
+    }
+}
+
+/// `range_contains` reports whether `value` lies in the range.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `range_contains` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn range_contains(r: Range[Int], value: Int) -> Bool {
+    if r.inclusive {
+        value >= r.start && value <= r.end
+    } else {
+        value >= r.start && value < r.end
+    }
+}
+
+/// `range_len` is the number of values in the range (0 when it is empty).
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `range_len` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn range_len(r: Range[Int]) -> Int {
+    if range_is_empty(r) {
+        0
+    } else if r.inclusive {
+        r.end - r.start + 1
+    } else {
+        r.end - r.start
+    }
+}
+
+/// `range_is_empty` reports whether the range has no values.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `range_is_empty` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn range_is_empty(r: Range[Int]) -> Bool {
+    if r.inclusive {
+        r.start > r.end
+    } else {
+        r.start >= r.end
+    }
+}
+
+/// `range_next` yields the first value of the range and the rest of it.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `range_next` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn range_next(r: Range[Int]) -> IterStep[Int, Range[Int]] {
+    if range_is_empty(r) {
+        IterStep {
+            item: None,
+            iter: r,
+        }
+    } else if r.inclusive && r.start == r.end {
+        // The last value of an inclusive range; `end + 1` may not exist.
+        IterStep {
+            item: Some(r.start),
+            iter: Range {
+                start: r.start,
+                end: r.end,
+                inclusive: false,
+            },
+        }
+    } else {
+        IterStep {
+            item: Some(r.start),
+            iter: Range {
+                start: r.start + 1,
+                end: r.end,
+                inclusive: r.inclusive,
+            },
+        }
+    }
+}
+
+impl Iterator[Range[Int], Int] {
+    /// `next` in `std.range`: `for i in r` iterates an integer range.
+    ///
+    /// ## Example
+    /// ```aic
+    /// // Import `std.range` and call `next` with module-specific arguments.
+    /// ```
+    ///
+    /// ## Effects
+    /// See the function signature for required effects and capabilities.
+    ///
+    /// ## Errors
+    /// Returns module-defined error variants when the operation fails.
+    fn next[A, B](self: Range[Int]) -> IterStep[Int, Range[Int]] {
+        range_next(self)
+    }
+}
+
+/// `slice_bounds` turns slice bounds into `(start, end)` with the end
+/// excluded, or `None` when they do not lie within `0..=len` in order.
+/// An absent `end` is `len`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_bounds` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_bounds(len: Int, start: Int, end: Option[Int], inclusive: Bool) -> Option[(Int, Int)] {
+    let stop = match end {
+        Some(value) => if inclusive {
+            if value >= len {
+                len + 1
+            } else {
+                value + 1
+            }
+        } else {
+            value
+        },
+        None => len,
+    };
+    if start < 0 || stop < start || stop > len {
+        None
+    } else {
+        Some((start, stop))
+    }
+}
+
+/// `slice_vec` is the elements of `v` in the bounds, or `None` when they
+/// are out of range (`v[a..b]` panics instead).
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_vec` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_vec[T](v: Vec[T], start: Int, end: Option[Int], inclusive: Bool) -> Option[Vec[T]] {
+    match slice_bounds(vec.vec_len(v), start, end, inclusive) {
+        Some(bounds) => Some(vec.slice(v, bounds.0, bounds.1)),
+        None => None,
+    }
+}
+
+/// `slice_vec_by` slices `v` with a `Range` value.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_vec_by` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_vec_by[T](v: Vec[T], r: Range[Int]) -> Option[Vec[T]] {
+    slice_vec(v, r.start, Some(r.end), r.inclusive)
+}
+
+/// `slice_string` is the characters of `s` in the bounds (character
+/// indexes), or `None` when they are out of range.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_string` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_string(s: String, start: Int, end: Option[Int], inclusive: Bool) -> Option[String] {
+    match slice_bounds(string.len(s), start, end, inclusive) {
+        Some(bounds) => Some(string.substring(s, bounds.0, bounds.1)),
+        None => None,
+    }
+}
+
+/// `slice_string_by` slices `s` with a `Range` value.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_string_by` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_string_by(s: String, r: Range[Int]) -> Option[String] {
+    slice_string(s, r.start, Some(r.end), r.inclusive)
+}
+
+/// `slice_bytes` is the bytes of `data` in the bounds, or `None` when they
+/// are out of range.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_bytes` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_bytes(data: Bytes, start: Int, end: Option[Int], inclusive: Bool) -> Option[Bytes] {
+    match slice_bounds(bytes.byte_len(data), start, end, inclusive) {
+        Some(bounds) => match bytes.byte_slice(data, bounds.0, bounds.1) {
+            Ok(part) => Some(part),
+            Err(_) => None,
+        },
+        None => None,
+    }
+}
+
+/// `slice_bytes_by` slices `data` with a `Range` value.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.range` and call `slice_bytes_by` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn slice_bytes_by(data: Bytes, r: Range[Int]) -> Option[Bytes] {
+    slice_bytes(data, r.start, Some(r.end), r.inclusive)
+}

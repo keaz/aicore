@@ -19541,3 +19541,173 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "34\n42\n4\n3\nabcdef!\n");
 }
+
+#[test]
+fn exec_range_negative_float_and_binding_patterns() {
+    let src = r#"
+import std.io;
+
+fn classify(n: Int) -> Int {
+    match n {
+        -5..=-1 => 1,
+        0 => 2,
+        x @ 1..=9 => x * 10,
+        10..100 => 4,
+        100.. => 5,
+        ..=-6 => 6,
+    }
+}
+
+fn byte_kind(b: UInt8) -> Int {
+    match b {
+        0..=127 => 1,
+        128..=255 => 2,
+    }
+}
+
+fn extremes(n: Int8) -> Int {
+    match n {
+        -128 => 1,
+        -127..=-1 => 2,
+        0 => 3,
+        1..=126 => 4,
+        127 => 5,
+    }
+}
+
+fn letter(c: Char) -> Int {
+    match c {
+        'a'..='z' => 1,
+        'A'..='Z' => 2,
+        d @ '0'..='9' => if d == '7' { 30 } else { 3 },
+        _ => 0,
+    }
+}
+
+fn temp(f: Float64) -> Int {
+    match f {
+        0.0 => 0,
+        -1.5 => 1,
+        _ => 2,
+    }
+}
+
+fn narrow(f: Float32) -> Int {
+    match f {
+        0.1 => 1,
+        _ => 0,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(classify(-3) + classify(0) + classify(7) + classify(50) + classify(1000) + classify(-100));
+    print_int(byte_kind(5u8) + byte_kind(127u8) * 10 + byte_kind(128u8) * 100 + byte_kind(255u8) * 1000);
+    let lo: Int8 = -128;
+    let hi: Int8 = 127;
+    let m1: Int8 = -1;
+    print_int(extremes(lo) + extremes(m1) * 10 + extremes(hi) * 100);
+    print_int(letter('q') + letter('Q') + letter('5') + letter('7') + letter('!'));
+    let zero = 0.0;
+    print_int(temp(0.0) + temp(-1.5) + temp(3.0) + temp(zero / zero));
+    let tenth: Float32 = 0.1f32;
+    print_int(narrow(tenth));
+    let o = Some(4);
+    print_int(match o { whole @ Some(1..=5) => match whole { Some(v) => v, None => 0 }, Some(_) => 20, None => 30 });
+    let pair @ (a, b) = (3, 4);
+    print_int(a + b + pair.0);
+    let Some(n @ 1..=9) = Some(5) else { return 1; };
+    print_int(n);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "88\n2211\n521\n36\n5\n1\n4\n10\n5\n");
+}
+
+#[test]
+fn exec_range_values_iteration_and_slices() {
+    let src = r#"
+import std.io;
+import std.range;
+import std.vec;
+import std.string;
+import std.bytes;
+
+fn main() -> Int effects { io } capabilities { io } {
+    let r = 1..=4;
+    let mut total = 0;
+    for i in r {
+        total += i;
+    }
+    for j in 0..=3 {
+        total += j * 100;
+    }
+    let mut count = 0;
+    for k in 250u8..=255u8 {
+        count += 1;
+    }
+    let mut lows = 0;
+    for m in -128i8..=-126i8 {
+        lows += 1;
+    }
+    let mut none = 0;
+    for e in 5..=4 {
+        none += 1;
+    }
+    for e in 5..5 {
+        none += 1;
+    }
+    print_int(total);
+    print_int(count * 100 + lows * 10 + none);
+    print_int(range.range_len(0..10) + range.range_len(5..=5) + range.range_len(3..1));
+    print_int(if range.range_contains(0..10, 10) { 1 } else { 0 } + if range.range_contains(0..=10, 10) { 10 } else { 0 });
+    let v = [10, 20, 30, 40, 50];
+    print_int(vec.vec_len(v[1..3]) * 100 + vec.vec_len(v[2..]) * 10 + vec.vec_len(v[..=1]));
+    print_int(v[1..][0] + v[..][4] + v[4..=4][0]);
+    print_int(vec.vec_len(v[5..]) + vec.vec_len(v[0..0]));
+    let window = 1..3;
+    print_int(vec.vec_len(v[window]));
+    print_str(string.join(["héllo"[1..4], "|", "abc"[..], "|", "xyz"[1..=2]], ""));
+    print_str("\n");
+    let raw = bytes.from_string("abcdef");
+    print_int(bytes.byte_len(raw[2..5]) * 10 + bytes.byte_len(raw[..]));
+    let letters = 'a'..='z';
+    print_int(if letters.inclusive { 1 } else { 0 });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout,
+        "610\n630\n11\n10\n232\n120\n0\n2\néll|abc|yz\n36\n1\n"
+    );
+}
+
+#[test]
+fn exec_out_of_range_slices_panic() {
+    for (body, expected_stdout) in [
+        (
+            "let v = [1, 2, 3]; print_int(vec.vec_len(v[1..3])); print_int(vec.vec_len(v[2..4]));",
+            "2\n",
+        ),
+        (
+            "let v = [1, 2, 3]; let s = 2; print_int(vec.vec_len(v[s..1]));",
+            "",
+        ),
+        ("let v = [1, 2, 3]; print_int(vec.vec_len(v[..=3]));", ""),
+        ("print_str(\"abc\"[1..5]);", ""),
+    ] {
+        let src = format!(
+            "import std.io;\nimport std.vec;\nimport std.range;\nfn main() -> Int effects {{ io }} capabilities {{ io }} {{\n    {body}\n    0\n}}\n"
+        );
+        let (code, stdout, stderr) = compile_and_run(&src);
+        assert_ne!(code, 0, "{body}");
+        assert_eq!(stdout, expected_stdout, "{body}: stderr={stderr}");
+        assert!(
+            stderr.contains("index_out_of_bounds{op:index}"),
+            "{body}: {stderr}"
+        );
+    }
+}

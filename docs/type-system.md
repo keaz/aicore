@@ -194,7 +194,7 @@ fn bad_mixed(a: Float32, b: Float64) -> Int {
 
 ## Wave 1 `std.numeric` contract (`#320`)
 
-- Current behavior (#456): explicit numeric conversion is part of the language rather than a `std.numeric` module.
+- Current behavior (#456): explicit fixed-width numeric conversion is part of the language; `std.numeric` provides the big-number types (`BigInt`, `BigUInt`, `Decimal`).
   - `x as T` accepts only conversions that keep every value; other pairs are `E1305`.
   - `checked_to_*` (`Option[T]`), `saturating_to_*`, `wrapping_to_*` (integers) and `to_f32` / `to_f64` state the policy for values that do not fit.
   - Implicit conversion rules are unchanged: only lossless integer widening at typed boundaries, and integer operators still need the same kind on both sides.
@@ -238,7 +238,7 @@ Type-focused status:
   - Current: `Float32`/`Float64` are available, with `Float` as alias to `Float64`.
   - Target: keep literal and mixed-width diagnostics deterministic while preserving `Float` compatibility.
 - `#320` numeric stdlib module
-  - Current: explicit conversion and overflow policy are provided by `as` and the conversion methods (#456) instead of a `std.numeric` module; implicit-coercion semantics are unchanged.
+  - Current: explicit conversion and overflow policy are provided by `as` and the conversion methods (#456) in the language; `std.numeric` provides big-number types. Implicit-coercion semantics are unchanged.
 
 Related syntax issue with type impact:
 

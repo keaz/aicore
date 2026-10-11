@@ -490,7 +490,63 @@ struct ResourceProtocolOp {
     required_effect: &'static str,
 }
 
+/// Signedness and width of an integer type for range patterns
+/// (`Int`, `ISize` and `USize` are 64-bit).
+fn integer_signedness_bits(kind: IntegerKind) -> (bool, u32) {
+    match kind {
+        IntegerKind::Int | IntegerKind::ISize => (true, 64),
+        IntegerKind::USize => (false, 64),
+        IntegerKind::Fixed { signed, bits } => (signed, u32::from(bits)),
+    }
+}
+
+/// Order-preserving `i128` encoding of an integer value for range
+/// patterns: values are themselves, except `UInt128`, whose upper half
+/// does not fit and is shifted by `2^127`.
+fn encode_pattern_int(kind: IntegerKind, value: i128) -> i128 {
+    match integer_signedness_bits(kind) {
+        (false, 128) => value.wrapping_add(i128::MIN),
+        _ => value,
+    }
+}
+
+fn decode_pattern_int(kind: IntegerKind, value: i128) -> String {
+    match integer_signedness_bits(kind) {
+        (false, 128) => (value.wrapping_sub(i128::MIN) as u128).to_string(),
+        _ => value.to_string(),
+    }
+}
+
 impl match_usefulness::PatternTypes for Checker<'_> {
+    fn int_domain(&self, ty: &str) -> Option<Vec<(i128, i128)>> {
+        let ty = self.normalize_type(ty);
+        if ty == "Char" {
+            return Some(vec![(0, 0xD7FF), (0xE000, 0x10FFFF)]);
+        }
+        let kind = parse_integer_kind(&ty)?;
+        let (signed, bits) = integer_signedness_bits(kind);
+        Some(vec![match (signed, bits) {
+            (_, 128) => (i128::MIN, i128::MAX),
+            (true, bits) => (-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1),
+            (false, bits) => (0, (1i128 << bits) - 1),
+        }])
+    }
+
+    fn render_int(&self, ty: &str, value: i128) -> String {
+        let ty = self.normalize_type(ty);
+        if ty == "Char" {
+            return u32::try_from(value)
+                .ok()
+                .and_then(char::from_u32)
+                .map(|ch| format!("{ch:?}"))
+                .unwrap_or_else(|| value.to_string());
+        }
+        match parse_integer_kind(&ty) {
+            Some(kind) => decode_pattern_int(kind, value),
+            None => value.to_string(),
+        }
+    }
+
     fn constructors(&self, ty: &str) -> Option<Vec<match_usefulness::Ctor>> {
         use match_usefulness::Ctor;
         let ty = self.normalize_type(ty);
@@ -593,7 +649,7 @@ impl match_usefulness::PatternTypes for Checker<'_> {
                     })
                     .collect()
             }
-            Ctor::Bool(_) | Ctor::Unit | Ctor::Literal(_) => Vec::new(),
+            Ctor::Bool(_) | Ctor::Unit | Ctor::Literal(_) | Ctor::Range(..) => Vec::new(),
         }
     }
 
@@ -5726,6 +5782,35 @@ impl<'a> Checker<'a> {
                             );
                         }
                         crate::ast::INDEX_PANIC_BUILTIN => return NEVER_TYPE.to_string(),
+                        crate::ast::RANGE_BUILTIN | crate::ast::RANGE_INCLUSIVE_BUILTIN => {
+                            return self.check_range_value(
+                                expr,
+                                args,
+                                builtin == crate::ast::RANGE_INCLUSIVE_BUILTIN,
+                                locals,
+                                allowed_effects,
+                                ctx,
+                                contract_mode,
+                            );
+                        }
+                        crate::ast::RANGE_FROM_BUILTIN
+                        | crate::ast::RANGE_TO_BUILTIN
+                        | crate::ast::RANGE_TO_INCLUSIVE_BUILTIN
+                        | crate::ast::RANGE_FULL_BUILTIN => {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1311",
+                                    "a range without both bounds is only supported as a slice index (`v[2..]`)",
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help("give the range a start and an end: `a..b` or `a..=b`"),
+                            );
+                            for arg in args {
+                                self.check_expr(arg, locals, allowed_effects, ctx, contract_mode);
+                            }
+                            return "<?>".to_string();
+                        }
                         name if name.starts_with(crate::ast::CAST_BUILTIN_PREFIX) => {
                             let target = &name[crate::ast::CAST_BUILTIN_PREFIX.len()..];
                             return self.check_cast(
@@ -9713,12 +9798,21 @@ impl<'a> Checker<'a> {
                 }
 
                 let pattern_meta = pattern.int_literal_metadata();
+                // A negative literal pattern (`-3`) keeps only its digits in
+                // the metadata; its value carries the sign.
+                let signed_value = |checker: &Self, meta: Option<&ir::IntLiteralMetadata>| {
+                    if *v < 0 {
+                        IntegerLiteralValue::NegativeMagnitude(u128::from(v.unsigned_abs()))
+                    } else {
+                        checker
+                            .non_negative_integer_literal_value(*v, meta)
+                            .unwrap_or(IntegerLiteralValue::NonNegative((*v).max(0) as u128))
+                    }
+                };
                 if let Some(meta) = pattern_meta.as_ref() {
                     let suffix_ty =
                         integer_kind_type_name(integer_kind_from_literal_kind(meta.kind));
-                    let literal_value = self
-                        .non_negative_integer_literal_value(*v, Some(meta))
-                        .unwrap_or(IntegerLiteralValue::NonNegative((*v).max(0) as u128));
+                    let literal_value = signed_value(self, Some(meta));
                     self.validate_integer_literal_range(
                         literal_value,
                         suffix_ty,
@@ -9731,9 +9825,7 @@ impl<'a> Checker<'a> {
                     );
                 }
 
-                let pattern_value = self
-                    .non_negative_integer_literal_value(*v, pattern_meta.as_ref())
-                    .unwrap_or(IntegerLiteralValue::NonNegative((*v).max(0) as u128));
+                let pattern_value = signed_value(self, pattern_meta.as_ref());
                 self.validate_integer_literal_range(
                     pattern_value,
                     &normalized_scrutinee_ty,
@@ -9741,6 +9833,49 @@ impl<'a> Checker<'a> {
                     "E1234",
                     &format!("pattern integer literal '{}'", v),
                 );
+            }
+            ir::PatternKind::Float(_) => {
+                if parse_float_kind(&normalized_scrutinee_ty).is_none() {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1245",
+                        format!(
+                            "float pattern requires Float32 or Float64 scrutinee, found '{}'",
+                            scrutinee_ty
+                        ),
+                        self.file,
+                        pattern.span,
+                    ));
+                }
+            }
+            ir::PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => self.check_range_pattern(
+                start.as_ref(),
+                end.as_ref(),
+                *inclusive,
+                pattern.span,
+                scrutinee_ty,
+                &normalized_scrutinee_ty,
+            ),
+            ir::PatternKind::Binding {
+                name,
+                pattern: inner,
+            } => {
+                if !bound_names.insert(name.clone()) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1252",
+                            format!("duplicate binding '{}' in pattern", name),
+                            self.file,
+                            pattern.span,
+                        )
+                        .with_help("each variable name may be bound at most once per pattern"),
+                    );
+                }
+                locals.insert(name.clone(), scrutinee_ty.to_string());
+                self.check_pattern(inner, scrutinee_ty, locals, bound_names);
             }
             ir::PatternKind::Bool(_v) => {
                 if normalized_scrutinee_ty != "Bool" {
@@ -10295,15 +10430,60 @@ impl<'a> Checker<'a> {
         }
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Pat::Wild,
-            ir::PatternKind::Int(value, ..) => {
-                let text = pattern
-                    .int_literal_metadata()
-                    .map(|meta| format!("{}{}", meta.raw_literal_text, meta.suffix_text))
-                    .unwrap_or_else(|| value.to_string());
-                Pat::Ctor(Ctor::Literal(text), Vec::new())
-            }
+            ir::PatternKind::Binding { pattern, .. } => self.pattern_to_usefulness(pattern, &ty),
+            ir::PatternKind::Int(value, ..) => match parse_integer_kind(&ty) {
+                Some(kind) => {
+                    let encoded = encode_pattern_int(kind, i128::from(*value));
+                    Pat::Ctor(Ctor::Range(encoded, encoded), Vec::new())
+                }
+                None => Pat::Wild,
+            },
             ir::PatternKind::Char(value) => {
+                let code = i128::from(u32::from(*value));
+                Pat::Ctor(Ctor::Range(code, code), Vec::new())
+            }
+            ir::PatternKind::Float(value) => {
                 Pat::Ctor(Ctor::Literal(format!("{value:?}")), Vec::new())
+            }
+            ir::PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                use crate::ast::RangeBound;
+                let Some(domain) = match_usefulness::PatternTypes::int_domain(self, &ty) else {
+                    return Pat::Wild;
+                };
+                let (Some(&(domain_lo, _)), Some(&(_, domain_hi))) =
+                    (domain.first(), domain.last())
+                else {
+                    return Pat::Wild;
+                };
+                let kind = parse_integer_kind(&ty);
+                let encode = |bound: &RangeBound| match (bound, kind) {
+                    (RangeBound::Int(value), Some(kind)) => {
+                        Some(encode_pattern_int(kind, i128::from(*value)))
+                    }
+                    (RangeBound::Char(value), None) => Some(i128::from(u32::from(*value))),
+                    _ => None,
+                };
+                let lo = match start {
+                    Some(bound) => encode(bound),
+                    None => Some(domain_lo),
+                };
+                let hi = match end {
+                    Some(bound) if *inclusive => encode(bound),
+                    Some(bound) => encode(bound).and_then(|value| value.checked_sub(1)),
+                    None => Some(domain_hi),
+                };
+                match (lo, hi) {
+                    (Some(lo), Some(hi)) if lo <= hi => Pat::Ctor(Ctor::Range(lo, hi), Vec::new()),
+                    // An empty range (E1309) matches no value and covers none.
+                    (Some(_), Some(_)) => {
+                        Pat::Ctor(Ctor::Literal("<empty range>".to_string()), Vec::new())
+                    }
+                    _ => Pat::Wild,
+                }
             }
             ir::PatternKind::String(value) => {
                 Pat::Ctor(Ctor::Literal(format!("{value:?}")), Vec::new())
@@ -10819,6 +10999,32 @@ impl<'a> Checker<'a> {
             return "<?>".to_string();
         }
         let normalized = self.normalize_type(&base_ty);
+        if matches!(base_type_name(&normalized), "Vec" | "String" | "Bytes") {
+            if let Some(lookup) = self.slice_lookup(
+                expr,
+                base,
+                index,
+                &normalized,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+            ) {
+                return match lookup {
+                    Some(lookup) => self.finish_index_lookup(
+                        expr,
+                        lookup,
+                        "Option",
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_ty,
+                    ),
+                    None => "<?>".to_string(),
+                };
+            }
+        }
         let (module, function, result_kind, label) = match base_type_name(&normalized) {
             "Vec" => ("std.vec", "get", "Option", "a Vec"),
             "Map" => ("std.map", "get", "Option", "a Map"),
@@ -10843,9 +11049,39 @@ impl<'a> Checker<'a> {
             return "<?>".to_string();
         }
         let alias = module.rsplit('.').next().unwrap_or(module);
+        let lookup = self.synthetic_module_call(
+            alias,
+            function,
+            vec![base.clone(), index.clone()],
+            expr.span,
+        );
+        self.finish_index_lookup(
+            expr,
+            lookup,
+            result_kind,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+            expected_ty,
+        )
+    }
+
+    /// `match lookup { Some(v) | Ok(v) => v, None | Err(_) => panic }`
+    /// for an index or slice, checked and recorded as the rewrite of `expr`.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_index_lookup(
+        &mut self,
+        expr: &ir::Expr,
+        lookup: ir::Expr,
+        result_kind: &str,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+        expected_ty: Option<&str>,
+    ) -> String {
         let span = expr.span;
-        let lookup =
-            self.synthetic_module_call(alias, function, vec![base.clone(), index.clone()], span);
         let (found, missing) = if result_kind == "Option" {
             ("Some", "None")
         } else {
@@ -10926,6 +11162,164 @@ impl<'a> Checker<'a> {
             contract_mode,
             expected_ty,
         );
+        self.expr_rewrites.insert(expr.node, rewritten);
+        ty
+    }
+
+    /// The `std.range` slice call for `base[range]` (`Vec`, `String`,
+    /// `Bytes`): `None` when `index` is not a range; `Some(None)` after a
+    /// reported error. Range syntax gives explicit bounds
+    /// (`range.slice_vec(v, start, end, inclusive)`), a `Range` value uses
+    /// `range.slice_vec_by(v, r)`.
+    #[allow(clippy::too_many_arguments)]
+    fn slice_lookup(
+        &mut self,
+        expr: &ir::Expr,
+        base: &ir::Expr,
+        index: &ir::Expr,
+        base_ty: &str,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+    ) -> Option<Option<ir::Expr>> {
+        use crate::ast::{
+            RANGE_BUILTIN, RANGE_FROM_BUILTIN, RANGE_FULL_BUILTIN, RANGE_INCLUSIVE_BUILTIN,
+            RANGE_TO_BUILTIN, RANGE_TO_INCLUSIVE_BUILTIN,
+        };
+        let suffix = match base_type_name(base_ty) {
+            "Vec" => "vec",
+            "String" => "string",
+            _ => "bytes",
+        };
+        let span = expr.span;
+        let syntax = match &index.kind {
+            ir::ExprKind::Call { callee, args, .. } => match &callee.kind {
+                ir::ExprKind::Var(name) => match (name.as_str(), args.as_slice()) {
+                    (RANGE_BUILTIN, [lo, hi]) => Some((Some(lo), Some(hi), false)),
+                    (RANGE_INCLUSIVE_BUILTIN, [lo, hi]) => Some((Some(lo), Some(hi), true)),
+                    (RANGE_FROM_BUILTIN, [lo]) => Some((Some(lo), None, false)),
+                    (RANGE_TO_BUILTIN, [hi]) => Some((None, Some(hi), false)),
+                    (RANGE_TO_INCLUSIVE_BUILTIN, [hi]) => Some((None, Some(hi), true)),
+                    (RANGE_FULL_BUILTIN, []) => Some((None, None, false)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
+        let by_value = if syntax.is_none() {
+            let before = self.diagnostics.len();
+            let index_ty = self.check_expr(index, locals, allowed_effects, ctx, contract_mode);
+            if self.diagnostics.len() > before {
+                return Some(None);
+            }
+            if base_type_name(&self.normalize_type(&index_ty)) != "Range" {
+                return None;
+            }
+            true
+        } else {
+            false
+        };
+        if !self.require_std_module_for("std.range", "slicing with a range", span) {
+            if let Some((lo, hi, _)) = syntax {
+                for bound in [lo, hi].into_iter().flatten() {
+                    self.check_expr(bound, locals, allowed_effects, ctx, contract_mode);
+                }
+            }
+            return Some(None);
+        }
+        if by_value {
+            return Some(Some(self.synthetic_module_call(
+                "range",
+                &format!("slice_{suffix}_by"),
+                vec![base.clone(), index.clone()],
+                span,
+            )));
+        }
+        let (lo, hi, inclusive) = syntax?;
+        let start = match lo {
+            Some(lo) => lo.clone(),
+            None => self.synthetic_expr(ir::ExprKind::Int(0, None), span),
+        };
+        let end = match hi {
+            Some(hi) => {
+                let some = self.synthetic_expr(ir::ExprKind::Var("Some".to_string()), span);
+                self.synthetic_expr(
+                    ir::ExprKind::Call {
+                        callee: Box::new(some),
+                        args: vec![hi.clone()],
+                        arg_names: Vec::new(),
+                        symbol: None,
+                    },
+                    span,
+                )
+            }
+            None => self.synthetic_expr(ir::ExprKind::Var("None".to_string()), span),
+        };
+        let inclusive = self.synthetic_expr(ir::ExprKind::Bool(inclusive), span);
+        Some(Some(self.synthetic_module_call(
+            "range",
+            &format!("slice_{suffix}"),
+            vec![base.clone(), start, end, inclusive],
+            span,
+        )))
+    }
+
+    /// `a..b` / `a..=b` as a value: `range.new_range(a, b, inclusive)`, a
+    /// `Range[T]` of an integer or `Char` type.
+    #[allow(clippy::too_many_arguments)]
+    fn check_range_value(
+        &mut self,
+        expr: &ir::Expr,
+        args: &[ir::Expr],
+        inclusive: bool,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+    ) -> String {
+        let [lo, hi] = args else {
+            return "<?>".to_string();
+        };
+        if !self.require_std_module_for("std.range", "a range value", expr.span) {
+            self.check_expr(lo, locals, allowed_effects, ctx, contract_mode);
+            self.check_expr(hi, locals, allowed_effects, ctx, contract_mode);
+            return "<?>".to_string();
+        }
+        let before = self.diagnostics.len();
+        let lo_ty = self.check_expr(lo, locals, allowed_effects, ctx, contract_mode);
+        if self.diagnostics.len() > before {
+            self.check_expr(hi, locals, allowed_effects, ctx, contract_mode);
+            return "<?>".to_string();
+        }
+        if !contains_unresolved_type(&lo_ty) {
+            let normalized = self.normalize_type(&lo_ty);
+            if parse_integer_kind(&normalized).is_none() && normalized != "Char" {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1311",
+                        format!("range bounds must be integers or chars, found '{lo_ty}'"),
+                        self.file,
+                        expr.span,
+                    )
+                    .with_help("ranges count integer or char values"),
+                );
+                return "<?>".to_string();
+            }
+        }
+        let inclusive_flag = self.synthetic_expr(ir::ExprKind::Bool(inclusive), expr.span);
+        let call = self.synthetic_module_call(
+            "range",
+            "new_range",
+            vec![lo.clone(), hi.clone(), inclusive_flag],
+            expr.span,
+        );
+        let rewritten = ir::Expr {
+            node: expr.node,
+            ..call
+        };
+        let ty = self.check_expr(&rewritten, locals, allowed_effects, ctx, contract_mode);
         self.expr_rewrites.insert(expr.node, rewritten);
         ty
     }
@@ -11174,6 +11568,89 @@ impl<'a> Checker<'a> {
         } else {
             target.to_string()
         })
+    }
+
+    /// `lo..=hi`, `lo..hi`, `lo..`, `..=hi`: integer bounds for an integer
+    /// scrutinee (each within its range), char bounds for `Char`, and a
+    /// range that contains at least one value (E1309).
+    fn check_range_pattern(
+        &mut self,
+        start: Option<&crate::ast::RangeBound>,
+        end: Option<&crate::ast::RangeBound>,
+        inclusive: bool,
+        span: crate::span::Span,
+        scrutinee_ty: &str,
+        normalized_scrutinee_ty: &str,
+    ) {
+        use crate::ast::RangeBound;
+        let is_char = normalized_scrutinee_ty == "Char";
+        let is_int = parse_integer_kind(normalized_scrutinee_ty).is_some();
+        let mut ok = true;
+        for bound in [start, end].into_iter().flatten() {
+            match bound {
+                RangeBound::Int(value) if is_int => {
+                    let literal = if *value < 0 {
+                        IntegerLiteralValue::NegativeMagnitude(u128::from(value.unsigned_abs()))
+                    } else {
+                        IntegerLiteralValue::NonNegative(*value as u128)
+                    };
+                    ok &= self.validate_integer_literal_range(
+                        literal,
+                        normalized_scrutinee_ty,
+                        span,
+                        "E1234",
+                        &format!("range pattern bound '{value}'"),
+                    );
+                }
+                RangeBound::Char(_) if is_char => {}
+                RangeBound::Int(_) => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1234",
+                        format!(
+                            "integer range pattern requires integer scrutinee, found '{}'",
+                            scrutinee_ty
+                        ),
+                        self.file,
+                        span,
+                    ));
+                    return;
+                }
+                RangeBound::Char(_) => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1245",
+                        format!(
+                            "char range pattern requires Char scrutinee, found '{}'",
+                            scrutinee_ty
+                        ),
+                        self.file,
+                        span,
+                    ));
+                    return;
+                }
+            }
+        }
+        let as_number = |bound: &RangeBound| match bound {
+            RangeBound::Int(value) => i128::from(*value),
+            RangeBound::Char(value) => i128::from(u32::from(*value)),
+        };
+        if let (true, Some(lo), Some(hi)) = (ok, start, end) {
+            let (lo, hi) = (as_number(lo), as_number(hi));
+            let empty = if inclusive { lo > hi } else { lo >= hi };
+            if empty {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1309",
+                        format!(
+                            "range pattern `{}` matches no value",
+                            crate::ast::render_range_pattern(start, end, inclusive)
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help("write the lower bound first; `a..b` excludes `b`"),
+                );
+            }
+        }
     }
 
     /// The loop a `break`/`continue` leaves: the innermost one, or the
@@ -13181,7 +13658,13 @@ fn collect_pattern_bindings(pattern: &ir::Pattern, out: &mut BTreeSet<String>) {
                 collect_pattern_bindings(&field.pattern, out);
             }
         }
+        ir::PatternKind::Binding { name, pattern } => {
+            out.insert(name.clone());
+            collect_pattern_bindings(pattern, out);
+        }
         ir::PatternKind::Wildcard
+        | ir::PatternKind::Float(_)
+        | ir::PatternKind::Range { .. }
         | ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Bool(_)
         | ir::PatternKind::Char(_)
@@ -13627,6 +14110,133 @@ fn f() -> Int {
 }
 "#;
         assert!(error_codes(src).contains(&"E1275".to_string()));
+    }
+
+    fn error_messages(src: &str) -> Vec<String> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _) = resolve(&ir, "test.aic");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| matches!(d.severity, Severity::Error))
+            .map(|d| format!("{}: {}", d.code, d.message))
+            .collect()
+    }
+
+    #[test]
+    fn range_patterns_are_checked_and_split_for_exhaustiveness() {
+        let ok = r#"
+fn byte(b: UInt8) -> Int { match b { 0..=127 => 1, 128..=255 => 2 } }
+fn small(n: Int8) -> Int { match n { ..=-1 => 1, 0 => 2, 1.. => 3 } }
+fn wide(n: Int) -> Int { match n { ..=-1 => 1, 0..10 | 10..=99 => 2, 100.. => 3 } }
+fn letter(c: Char) -> Int { match c { '\0'..='\u{D7FF}' => 1, '\u{E000}'..='\u{10FFFF}' => 2 } }
+fn top(n: UInt128) -> Int { match n { 0 => 1, 1.. => 2 } }
+fn bound(o: Option[Int]) -> Int { match o { Some(x @ 1..=9) => x, Some(_) => 0, None => -1 } }
+fn real(x: Float64) -> Int { match x { 0.0 => 0, -1.5 => 1, _ => 2 } }
+fn main() -> Int { byte(1u8) + small(0i8) + wide(0) + letter('a') + bound(None) + real(0.0) }
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_messages(ok));
+
+        let missing = error_messages("fn f(b: UInt8) -> Int { match b { 0..=100 => 1, 200..=250 => 2 } } fn main() -> Int { 0 }");
+        assert!(
+            missing
+                .iter()
+                .any(|m| m.contains("`101..=199`") && m.contains("`251..=255`")),
+            "{missing:?}"
+        );
+        // Adjacent uncovered pieces are reported as one range.
+        let merged = error_messages(
+            "fn f(n: Int16) -> Int { match n { 0 => 1, 5 => 2 } } fn main() -> Int { 0 }",
+        );
+        assert!(
+            merged.iter().any(|m| m.contains("`-32768..=-1`")
+                && m.contains("`1..=4`")
+                && m.contains("`6..=32767`")),
+            "{merged:?}"
+        );
+        let chars = error_messages(
+            "fn f(c: Char) -> Int { match c { 'a'..='z' => 1 } } fn main() -> Int { 0 }",
+        );
+        assert!(chars.iter().any(|m| m.contains("'{'..")), "{chars:?}");
+
+        let cases = [
+            // Covered by the ranges above it.
+            (
+                "fn f(n: Int8) -> Int { match n { 0..=10 => 1, 5 => 2, _ => 0 } }",
+                "E1251",
+            ),
+            (
+                "fn f(n: UInt8) -> Int { match n { 0..=255 => 1, _ => 0 } }",
+                "E1251",
+            ),
+            // Empty ranges.
+            (
+                "fn f(n: Int) -> Int { match n { 5..=1 => 1, _ => 0 } }",
+                "E1309",
+            ),
+            (
+                "fn f(n: Int) -> Int { match n { 3..3 => 1, _ => 0 } }",
+                "E1309",
+            ),
+            (
+                "fn f(c: Char) -> Int { match c { 'z'..='a' => 1, _ => 0 } }",
+                "E1309",
+            ),
+            // Bounds outside the scrutinee type, and mismatched kinds.
+            (
+                "fn f(n: UInt8) -> Int { match n { -1 => 1, _ => 0 } }",
+                "E1234",
+            ),
+            (
+                "fn f(n: UInt8) -> Int { match n { 0..=300 => 1, _ => 0 } }",
+                "E1234",
+            ),
+            (
+                "fn f(n: Int8) -> Int { match n { -129..=0 => 1, _ => 0 } }",
+                "E1234",
+            ),
+            (
+                "fn f(s: String) -> Int { match s { 1..=3 => 1, _ => 0 } }",
+                "E1234",
+            ),
+            (
+                "fn f(n: Int) -> Int { match n { 'a'..='z' => 1, _ => 0 } }",
+                "E1245",
+            ),
+            (
+                "fn f(n: Int) -> Int { match n { 1.5 => 1, _ => 0 } }",
+                "E1245",
+            ),
+            // `@` names are bound once.
+            (
+                "fn f(o: (Int, Int)) -> Int { match o { x @ (x, _) => 1 } }",
+                "E1252",
+            ),
+        ];
+        for (src, code) in cases {
+            let src = format!("{src} fn main() -> Int {{ 0 }}");
+            let codes = error_codes(&src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+        // An empty range matches nothing, so it does not hide the arms after it.
+        let codes = error_codes(
+            "fn f(n: Int) -> Int { match n { 5..=1 => 1, _ => 0 } } fn main() -> Int { 0 }",
+        );
+        assert_eq!(codes, vec!["E1309".to_string()]);
+    }
+
+    #[test]
+    fn open_ranges_and_non_integer_ranges_are_rejected_as_values() {
+        let codes = error_codes("fn main() -> Int { let r = 2..; 0 }");
+        assert!(codes.contains(&"E1311".to_string()), "{codes:?}");
+        // Range values and slices come from std.range.
+        let codes = error_codes("fn main() -> Int { let r = 0..3; 0 }");
+        assert!(codes.contains(&"E1304".to_string()), "{codes:?}");
     }
 
     #[test]
@@ -14153,9 +14763,10 @@ fn j(s: String) -> Int {
                     "E1290".to_string(),
                     "non-exhaustive match: missing pattern `(Red, false)`".to_string()
                 ),
+                // Integer literals are value ranges: the gaps are reported.
                 (
                     "E1290".to_string(),
-                    "non-exhaustive match: missing pattern `_`".to_string()
+                    "non-exhaustive match: missing patterns `-9223372036854775808..=0`, `3..=9223372036854775807`".to_string()
                 ),
             ]
         );

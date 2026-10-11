@@ -1550,6 +1550,10 @@ fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
                 max = max.max(max_node_pattern(&field.pattern));
             }
         }
+        ir::PatternKind::Binding { pattern, .. } => {
+            max = max.max(max_node_pattern(pattern));
+        }
+        ir::PatternKind::Float(_) | ir::PatternKind::Range { .. } => {}
         ir::PatternKind::Wildcard
         | ir::PatternKind::Var(_)
         | ir::PatternKind::Int(_, ..)
@@ -1747,6 +1751,20 @@ fn clone_pattern(pattern: &ir::Pattern, alloc: &mut IdAlloc) -> ir::Pattern {
         ir::PatternKind::Char(v) => ir::PatternKind::Char(*v),
         ir::PatternKind::String(v) => ir::PatternKind::String(v.clone()),
         ir::PatternKind::Unit => ir::PatternKind::Unit,
+        ir::PatternKind::Float(v) => ir::PatternKind::Float(*v),
+        ir::PatternKind::Range {
+            start,
+            end,
+            inclusive,
+        } => ir::PatternKind::Range {
+            start: *start,
+            end: *end,
+            inclusive: *inclusive,
+        },
+        ir::PatternKind::Binding { name, pattern } => ir::PatternKind::Binding {
+            name: name.clone(),
+            pattern: Box::new(clone_pattern(pattern, alloc)),
+        },
         ir::PatternKind::Or { patterns } => ir::PatternKind::Or {
             patterns: patterns.iter().map(|p| clone_pattern(p, alloc)).collect(),
         },

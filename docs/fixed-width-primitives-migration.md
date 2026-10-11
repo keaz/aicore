@@ -21,7 +21,7 @@ This guide covers practical migration from `Int`/`Float` usage to fixed-width pr
 
 - Current behavior:
   - Fixed-width families are available up to 64-bit (`Int64`/`UInt64`).
-  - Explicit conversions use `as` (lossless) and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods (#456); there is no `std.numeric` module.
+  - Explicit conversions use `as` (lossless) and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods (#456). `std.numeric` holds the big-number types (`BigInt`, `BigUInt`, `Decimal`), not fixed-width conversions.
 - Target behavior:
   - Add `Int128`/`UInt128` for explicit 128-bit storage and arithmetic boundaries.
   - Keep `Int` unchanged as the general signed 64-bit integer.

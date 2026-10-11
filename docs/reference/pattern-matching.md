@@ -15,12 +15,21 @@ pattern         = or_pattern ;
 or_pattern      = pattern_atom ("|" pattern_atom)* ;
 pattern_atom    = "_"
                | ident
-               | int
+               | ident "@" pattern_atom
+               | literal_pattern
+               | range_pattern
                | "true"
                | "false"
                | "(" ")"
                | tuple_pattern
                | variant_pattern ;
+
+literal_pattern = "-"? int | "-"? float | char | string ;
+range_pattern   = range_bound "..=" range_bound    (* both ends included *)
+               | range_bound ".." range_bound      (* end excluded *)
+               | range_bound ".."                  (* from a value up *)
+               | "..=" range_bound ;               (* up to a value *)
+range_bound     = "-"? int | char ;
 
 tuple_pattern   = "(" pattern ("," pattern)+ ","? ")" ;
 variant_pattern = variant_path "(" pattern ("," pattern)* ","? ")"
@@ -38,7 +47,12 @@ variant_path    = ident ("::" ident)? ;   (* `Red`, `Color::Red`, `Option::Some`
   - `Some(Red)` and `Some(Green)` are different arms, and a missing `Some(Blue)` is reported
   - `(Red, true)`, `(Green, _)`, `(Blue, _)` is missing `(Red, false)`
   - `Some(1)` followed by `Some(_)` is reachable
-- Types with finitely many values: `Bool`, `()`, `Option[T]`, `Result[T, E]`, declared enums, tuples and structs of such types. Types with infinitely many values (`Int` and the other integer types, `String`, `Char`, floats, generic parameters) are covered only by a `_` or binding arm.
+- Types with finitely many values: `Bool`, `()`, `Option[T]`, `Result[T, E]`, declared enums, tuples and structs of such types.
+- Integer and `Char` patterns are value ranges over the type's values: a literal (`5`, `-3`, `'a'`) is a one-value range, and `lo..=hi`, `lo..hi`, `lo..` and `..=hi` cover the values between their bounds. Arms are split at every range boundary, so ranges that together cover the type are exhaustive (`0..=127 | 128..=255` for `UInt8`, `..=-1`, `0`, `1..` for any signed type, `'\0'..='\u{D7FF}' | '\u{E000}'..='\u{10FFFF}'` for `Char`), an arm inside earlier ranges is unreachable, and a missing value is reported as the uncovered range (`101..=199`; adjacent gaps are merged).
+- Range pattern rules: bounds are integer literals (an optional `-`) for an integer scrutinee or char literals for `Char`, both of the same kind (`E1310` otherwise, also for `..hi` without `=` and `..=` without an end). Each bound must fit the scrutinee type (`E1234`), and a range must contain a value (`E1309` for `5..=1` or `3..3`). Ranges over floats are not supported.
+- Float literal patterns (`0.0`, `-1.5`) compare with `==` against `Float32`/`Float64` values (`E1245` for other scrutinees); NaN matches no literal. Floats are covered only by a `_` or binding arm.
+- `name @ pattern` binds the whole matched value to `name` and also matches `pattern`, whose own bindings apply too: `x @ 1..=9 => x`, `whole @ Some(_) => whole`. In a plain `let`, `let pair @ (a, b) = expr;` binds `pair`, `a` and `b`.
+- Types with infinitely many values and no ranges (`String`, floats, generic parameters) are covered only by a `_` or binding arm.
 - Binding rules:
   - each variable name may be bound only once per pattern tree
   - bound variable types are derived from the scrutinee and variant payload structure

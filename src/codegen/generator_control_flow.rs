@@ -2780,6 +2780,19 @@ impl<'a> Generator<'a> {
                 ));
                 Some("0".to_string())
             }
+            // Matches with these patterns use the general lowering
+            // (`pattern_is_flat` is false for them).
+            ir::PatternKind::Float(_)
+            | ir::PatternKind::Range { .. }
+            | ir::PatternKind::Binding { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "float, range and `@` patterns are lowered by the general match lowering",
+                    self.file,
+                    pattern.span,
+                ));
+                Some("0".to_string())
+            }
         }
     }
 
@@ -2795,7 +2808,18 @@ impl<'a> Generator<'a> {
             | ir::PatternKind::Char(_)
             | ir::PatternKind::String(_)
             | ir::PatternKind::Bool(_)
+            | ir::PatternKind::Float(_)
+            | ir::PatternKind::Range { .. }
             | ir::PatternKind::Unit => Some(()),
+            ir::PatternKind::Binding { pattern: inner, .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5017",
+                    "`@` patterns are lowered by the general match lowering",
+                    self.file,
+                    pattern.span,
+                ));
+                self.bind_tuple_match_pattern(inner, value, fctx)
+            }
             ir::PatternKind::Var(binding) => {
                 let ptr = self.new_temp();
                 fctx.lines

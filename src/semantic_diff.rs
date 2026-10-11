@@ -644,6 +644,13 @@ fn render_pattern(pattern: &Pattern) -> String {
         }
         PatternKind::Bool(value) => value.to_string(),
         PatternKind::Unit => "()".to_string(),
+        PatternKind::Float(value) => format!("{value:?}"),
+        PatternKind::Range {
+            start,
+            end,
+            inclusive,
+        } => crate::ast::render_range_pattern(start.as_ref(), end.as_ref(), *inclusive),
+        PatternKind::Binding { name, pattern } => format!("{name} @ {}", render_pattern(pattern)),
         PatternKind::Or { patterns } => patterns
             .iter()
             .map(render_pattern)

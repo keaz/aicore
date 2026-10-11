@@ -495,6 +495,17 @@ pub const CAST_BUILTIN_PREFIX: &str = "$as:";
 /// (`x.checked_to_u8()` is checked as `$convert:checked:UInt8(x)`).
 pub const CONVERT_BUILTIN_PREFIX: &str = "$convert:";
 
+/// Builtin callees of range expressions: `a..b` is `$range(a, b)`, `a..=b`
+/// is `$range_inclusive(a, b)`, `a..` is `$range_from(a)`, `..b` is
+/// `$range_to(b)`, `..=b` is `$range_to_inclusive(b)` and `..` is
+/// `$range_full()`. The open forms are slice indexes only.
+pub const RANGE_BUILTIN: &str = "$range";
+pub const RANGE_INCLUSIVE_BUILTIN: &str = "$range_inclusive";
+pub const RANGE_FROM_BUILTIN: &str = "$range_from";
+pub const RANGE_TO_BUILTIN: &str = "$range_to";
+pub const RANGE_TO_INCLUSIVE_BUILTIN: &str = "$range_to_inclusive";
+pub const RANGE_FULL_BUILTIN: &str = "$range_full";
+
 /// Builtin callee of an index expression: `base[index]` parses as
 /// `$index(base, index)`.
 pub const INDEX_BUILTIN: &str = "$index";
@@ -751,6 +762,37 @@ pub struct StructPatternField {
     pub pattern: Pattern,
 }
 
+/// A bound of a range pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RangeBound {
+    Int(i64),
+    Char(char),
+}
+
+impl RangeBound {
+    /// Source form: `-3`, `'a'`.
+    pub fn render(&self) -> String {
+        match self {
+            RangeBound::Int(value) => value.to_string(),
+            RangeBound::Char(value) => format!("{value:?}"),
+        }
+    }
+}
+
+/// Source form of a range pattern: `1..=9`, `0..10`, `5..`, `..=-1`.
+pub fn render_range_pattern(
+    start: Option<&RangeBound>,
+    end: Option<&RangeBound>,
+    inclusive: bool,
+) -> String {
+    format!(
+        "{}{}{}",
+        start.map(RangeBound::render).unwrap_or_default(),
+        if inclusive { "..=" } else { ".." },
+        end.map(RangeBound::render).unwrap_or_default()
+    )
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PatternKind {
     Wildcard,
@@ -771,6 +813,19 @@ pub enum PatternKind {
         name: String,
         fields: Vec<StructPatternField>,
         has_rest: bool,
+    },
+    /// A float literal pattern (`1.5`, `-0.25`); it matches by `==`.
+    Float(f64),
+    /// `lo..=hi`, `lo..hi`, `lo..` or `..=hi` over integers or chars.
+    Range {
+        start: Option<RangeBound>,
+        end: Option<RangeBound>,
+        inclusive: bool,
+    },
+    /// `name @ pattern`: binds the whole value and matches `pattern`.
+    Binding {
+        name: String,
+        pattern: Box<Pattern>,
     },
 }
 

@@ -634,6 +634,11 @@
     {
       "module": "std.bytes",
       "kind": "fn",
+      "signature": "byte_substring(data: String, start: Int, end: Int) -> String"
+    },
+    {
+      "module": "std.bytes",
+      "kind": "fn",
       "signature": "compare_bytes(a: Bytes, b: Bytes) -> Int"
     },
     {
@@ -6322,6 +6327,76 @@
       "signature": "seed(seed_value: Int) -> () effects { rand }"
     },
     {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "new_range[T](start: T, end: T, inclusive: Bool) -> Range[T]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "range_contains(r: Range[Int], value: Int) -> Bool"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "range_is_empty(r: Range[Int]) -> Bool"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "range_len(r: Range[Int]) -> Int"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "range_next(r: Range[Int]) -> IterStep[Int, Range[Int]]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_bounds(len: Int, start: Int, end: Option[Int], inclusive: Bool) -> Option[Tuple[Int, Int]]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_bytes(data: Bytes, start: Int, end: Option[Int], inclusive: Bool) -> Option[Bytes]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_bytes_by(data: Bytes, r: Range[Int]) -> Option[Bytes]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_string(s: String, start: Int, end: Option[Int], inclusive: Bool) -> Option[String]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_string_by(s: String, r: Range[Int]) -> Option[String]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_vec[T](v: Vec[T], start: Int, end: Option[Int], inclusive: Bool) -> Option[Vec[T]]"
+    },
+    {
+      "module": "std.range",
+      "kind": "fn",
+      "signature": "slice_vec_by[T](v: Vec[T], r: Range[Int]) -> Option[Vec[T]]"
+    },
+    {
+      "module": "std.range",
+      "kind": "impl",
+      "signature": "Iterator[Range[Int], Int];"
+    },
+    {
+      "module": "std.range",
+      "kind": "struct",
+      "signature": "Range[T] { start: T, end: T, inclusive: Bool }"
+    },
+    {
       "module": "std.regex",
       "kind": "enum",
       "signature": "RegexError { InvalidPattern, InvalidInput, NoMatch, UnsupportedFeature, TooComplex, Internal }"
@@ -8110,6 +8185,11 @@
       "module": "std.vec",
       "kind": "fn",
       "signature": "map_vec[T, U](v: Vec[T], mapper: Fn[T, U]) -> Vec[U]"
+    },
+    {
+      "module": "std.vec",
+      "kind": "fn",
+      "signature": "merge_sorted[T](left: Vec[T], right: Vec[T], less: Fn[T, T, Bool]) -> Vec[T]"
     },
     {
       "module": "std.vec",

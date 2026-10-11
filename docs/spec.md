@@ -197,7 +197,7 @@ Status summary (`current` -> `target`):
 - `#317` 128-bit integer primitives: fixed-width family up to 64-bit -> add `Int128`/`UInt128` with deterministic literal/range/type-operator semantics.
 - `#318` size-family integers: no dedicated size-typed integer family -> add deterministic `ISize`/`USize` with `UInt` aliasing `USize`.
 - `#319` float-width primitives: single `Float` primitive only -> add `Float32`/`Float64` while keeping `Float` as alias to `Float64` with deterministic literal/operator policy.
-- `#320` numeric conversion surface: provided by `x as T` (lossless only) and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods (#456) instead of a `std.numeric` module; implicit-cast policy is unchanged.
+- `#320` numeric conversion surface: provided by `x as T` (lossless only) and the `checked_to_*` / `saturating_to_*` / `wrapping_to_*` / `to_f32` / `to_f64` methods (#456) in the language itself; `std.numeric` provides big-number types (`BigInt`, `BigUInt`, `Decimal`). Implicit-cast policy is unchanged.
 
 ## 3. Canonical IR
 
@@ -323,7 +323,7 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
   - Literal suffixes include `i8/i16/i32/i64/i128/u8/u16/u32/u64/u128`.
   - Built-in float primitives include `Float32` and `Float64`; `Float` aliases `Float64`.
   - Float literals default to `Float` (`Float64`) and support explicit `f32`/`f64` suffixes.
-  - Numeric conversions are language-level (`as` and conversion methods); there is no `std.numeric` module.
+  - Fixed-width numeric conversions are language-level (`as` and conversion methods); `std.numeric` provides big-number types (`BigInt`, `BigUInt`, `Decimal`).
 - Target behavior (remaining contract scope):
   - Keep `ISize`/`USize` deterministic (64-bit) and keep `UInt` as an alias of `USize`.
   - Keep `Float` as compatibility alias to `Float64` and keep `Float32`/`Float64` mixed-width diagnostics deterministic.

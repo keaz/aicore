@@ -44,6 +44,7 @@ fn first_refutable_pattern(pattern: &Pattern) -> Option<&Pattern> {
         PatternKind::Struct { fields, .. } => fields
             .iter()
             .find_map(|field| first_refutable_pattern(&field.pattern)),
+        PatternKind::Binding { pattern, .. } => first_refutable_pattern(pattern),
         _ => Some(pattern),
     }
 }
@@ -67,6 +68,10 @@ fn collect_pattern_binding_names(pattern: &Pattern, out: &mut Vec<String>) {
                 collect_pattern_binding_names(first, out);
             }
         }
+        PatternKind::Binding { name, pattern } => {
+            out.push(name.clone());
+            collect_pattern_binding_names(pattern, out);
+        }
         _ => {}
     }
 }
@@ -86,6 +91,43 @@ fn type_repr_text(ty: &TypeExpr) -> String {
         TypeKind::Unit => "()".to_string(),
         TypeKind::DynTrait { trait_name } => format!("dyn {trait_name}"),
         TypeKind::Hole => "_".to_string(),
+    }
+}
+
+/// `(start, end, inclusive)` of a bounded range expression (`a..b`,
+/// `a..=b`); any other expression is handed back.
+fn split_range_call(expr: Expr) -> Result<(Expr, Expr, bool), Expr> {
+    let range_kind = |callee: &Expr| match &callee.kind {
+        ExprKind::Var(name) if name == RANGE_BUILTIN => Some(false),
+        ExprKind::Var(name) if name == RANGE_INCLUSIVE_BUILTIN => Some(true),
+        _ => None,
+    };
+    let span = expr.span;
+    match expr.kind {
+        ExprKind::Call {
+            callee,
+            args,
+            arg_names,
+        } => match (range_kind(&callee), <[Expr; 2]>::try_from(args)) {
+            (Some(inclusive), Ok([lo, hi])) => Ok((lo, hi, inclusive)),
+            (_, Ok(args)) => Err(Expr {
+                kind: ExprKind::Call {
+                    callee,
+                    args: args.into(),
+                    arg_names,
+                },
+                span,
+            }),
+            (_, Err(args)) => Err(Expr {
+                kind: ExprKind::Call {
+                    callee,
+                    args,
+                    arg_names,
+                },
+                span,
+            }),
+        },
+        kind => Err(Expr { kind, span }),
     }
 }
 
@@ -2340,7 +2382,12 @@ impl<'a> Parser<'a> {
             || (matches!(self.current().kind, TokenKind::Ident(_))
                 && matches!(
                     self.peek(1).map(|token| &token.kind),
-                    Some(TokenKind::LBrace | TokenKind::LParen | TokenKind::ColonColon)
+                    Some(
+                        TokenKind::LBrace
+                            | TokenKind::LParen
+                            | TokenKind::ColonColon
+                            | TokenKind::At
+                    )
                 ));
         if starts_pattern {
             return self.parse_pattern_let(start, mutable);
@@ -2467,6 +2514,36 @@ impl<'a> Parser<'a> {
             );
             // The statement is consumed; keep parsing the block.
             return Some(Vec::new());
+        }
+        // `let whole @ PATTERN = expr;` binds `whole`, then destructures it.
+        if let PatternKind::Binding {
+            name,
+            pattern: inner,
+        } = pattern.kind
+        {
+            let whole = Expr::var(name.clone(), span);
+            let mut stmts = vec![Stmt::Let {
+                name,
+                mutable,
+                ty,
+                expr,
+                span,
+            }];
+            match inner.kind {
+                PatternKind::Wildcard => {}
+                PatternKind::Var(binding) => stmts.push(Stmt::Let {
+                    name: binding,
+                    mutable: false,
+                    ty: None,
+                    expr: whole,
+                    span,
+                }),
+                _ => {
+                    let converted = self.convert_let_pattern(&inner)?;
+                    stmts.extend(self.expand_tuple_let(converted, None, whole, span));
+                }
+            }
+            return Some(stmts);
         }
         let converted = self.convert_let_pattern(&pattern)?;
         if mutable {
@@ -2885,7 +2962,74 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> Option<Expr> {
-        self.parse_or()
+        self.parse_range()
+    }
+
+    /// Range expressions bind loosest: `a..b`, `a..=b`, `a..`, `..b`,
+    /// `..=b`, `..`. Each is a builtin call (`ast::RANGE_BUILTIN` etc.).
+    fn parse_range(&mut self) -> Option<Expr> {
+        let start = self.current_span().start;
+        let lower = if self.at_kind(|k| matches!(k, TokenKind::DotDot | TokenKind::DotDotEq)) {
+            None
+        } else {
+            let lhs = self.parse_or()?;
+            if !self.at_kind(|k| matches!(k, TokenKind::DotDot | TokenKind::DotDotEq)) {
+                return Some(lhs);
+            }
+            Some(lhs)
+        };
+        let inclusive = self.at_kind(|k| matches!(k, TokenKind::DotDotEq));
+        let op_end = self.current_span().end;
+        self.bump(); // .. or ..=
+        let upper = if self.range_end_follows() {
+            Some(self.parse_or()?)
+        } else {
+            None
+        };
+        let (callee, args) = match (lower, upper, inclusive) {
+            (Some(lo), Some(hi), false) => (RANGE_BUILTIN, vec![lo, hi]),
+            (Some(lo), Some(hi), true) => (RANGE_INCLUSIVE_BUILTIN, vec![lo, hi]),
+            (Some(lo), None, false) => (RANGE_FROM_BUILTIN, vec![lo]),
+            (None, Some(hi), false) => (RANGE_TO_BUILTIN, vec![hi]),
+            (None, Some(hi), true) => (RANGE_TO_INCLUSIVE_BUILTIN, vec![hi]),
+            (None, None, false) => (RANGE_FULL_BUILTIN, Vec::new()),
+            (_, None, true) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1310",
+                    "`..=` needs an end value",
+                    self.file,
+                    Span::new(start, op_end),
+                ));
+                return None;
+            }
+        };
+        let end = args.last().map_or(op_end, |arg| arg.span.end);
+        let span = Span::new(start, end);
+        Some(Expr {
+            kind: ExprKind::Call {
+                callee: Box::new(Expr::var(callee.to_string(), Span::new(start, op_end))),
+                args,
+                arg_names: Vec::new(),
+            },
+            span,
+        })
+    }
+
+    /// Whether an end value follows `..` (not a closing bracket, separator
+    /// or the block of a `for`/`if`/`while` header).
+    fn range_end_follows(&self) -> bool {
+        !self.at_kind(|k| {
+            matches!(
+                k,
+                TokenKind::RBracket
+                    | TokenKind::RParen
+                    | TokenKind::RBrace
+                    | TokenKind::Comma
+                    | TokenKind::Semi
+                    | TokenKind::FatArrow
+                    | TokenKind::Eof
+            )
+        }) && !(self.disallow_block_expr && self.at_kind(|k| matches!(k, TokenKind::LBrace)))
     }
 
     fn parse_or(&mut self) -> Option<Expr> {
@@ -3750,16 +3894,15 @@ impl<'a> Parser<'a> {
         )?;
 
         let iterable = self.parse_expr_without_struct_literals()?;
-        let body = if self.at_kind(|k| matches!(k, TokenKind::DotDot)) {
-            self.bump(); // ..
-            let end = self.parse_expr_without_struct_literals()?;
-            let body = self.parse_block()?;
-            return Some(self.desugar_for_range(binding, iterable, end, body, start));
-        } else {
-            self.parse_block()?
-        };
-
-        Some(self.desugar_for_iter(binding, iterable, body, start))
+        let body = self.parse_block()?;
+        // `for i in a..b` and `for i in a..=b` count directly; other
+        // iterables (including `Range` values) use the iterator protocol.
+        match split_range_call(iterable) {
+            Ok((lo, hi, inclusive)) => {
+                Some(self.desugar_for_range(binding, lo, hi, inclusive, body, start))
+            }
+            Err(iterable) => Some(self.desugar_for_iter(binding, iterable, body, start)),
+        }
     }
 
     /// `if let P = e { .. } [else ..]` after `if`: desugars to
@@ -4674,11 +4817,15 @@ impl<'a> Parser<'a> {
         self.wrap_if_true_expr(then_block, span)
     }
 
+    /// `for i in a..b` counts `cur` from `a` while `cur < end`. `a..=b`
+    /// also stops after `end` without computing `end + 1` (which may not
+    /// exist): a `done` flag is set instead of incrementing at the end.
     fn desugar_for_range(
         &mut self,
         binding: String,
         start_expr: Expr,
         end_expr: Expr,
+        inclusive: bool,
         body: Block,
         start: usize,
     ) -> Expr {
@@ -4686,7 +4833,62 @@ impl<'a> Parser<'a> {
         let span = Span::new(start, body.span.end);
         let cur_name = self.make_for_name("range_cur", id);
         let end_name = self.make_for_name("range_end", id);
+        let done_name = self.make_for_name("range_done", id);
 
+        let increment = Stmt::Assign {
+            target: cur_name.clone(),
+            path: Vec::new(),
+            op: None,
+            expr: Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::Add,
+                    lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
+                    rhs: Box::new(self.make_int_expr(1, span)),
+                },
+                span,
+            },
+            span,
+        };
+        let advance = if inclusive {
+            // `if cur == end { done = true; } else { cur = cur + 1; }`
+            Stmt::Expr {
+                expr: Expr {
+                    kind: ExprKind::If {
+                        cond: Box::new(Expr {
+                            kind: ExprKind::Binary {
+                                op: BinOp::Eq,
+                                lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
+                                rhs: Box::new(self.make_var_expr(end_name.clone(), span)),
+                            },
+                            span,
+                        }),
+                        then_block: Block {
+                            stmts: vec![Stmt::Assign {
+                                target: done_name.clone(),
+                                path: Vec::new(),
+                                op: None,
+                                expr: Expr {
+                                    kind: ExprKind::Bool(true),
+                                    span,
+                                },
+                                span,
+                            }],
+                            tail: None,
+                            span,
+                        },
+                        else_block: Block {
+                            stmts: vec![increment],
+                            tail: None,
+                            span,
+                        },
+                    },
+                    span,
+                },
+                span,
+            }
+        } else {
+            increment
+        };
         let mut range_then_stmts = vec![
             Stmt::Let {
                 name: binding,
@@ -4695,33 +4897,41 @@ impl<'a> Parser<'a> {
                 expr: self.make_var_expr(cur_name.clone(), span),
                 span,
             },
-            Stmt::Assign {
-                target: cur_name.clone(),
-                path: Vec::new(),
-                op: None,
-                expr: Expr {
-                    kind: ExprKind::Binary {
-                        op: BinOp::Add,
-                        lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
-                        rhs: Box::new(self.make_int_expr(1, span)),
-                    },
-                    span,
-                },
-                span,
-            },
+            advance,
         ];
         range_then_stmts.extend(self.for_body_to_stmts(&body));
 
+        let in_range = Expr {
+            kind: ExprKind::Binary {
+                op: if inclusive { BinOp::Le } else { BinOp::Lt },
+                lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
+                rhs: Box::new(self.make_var_expr(end_name.clone(), span)),
+            },
+            span,
+        };
+        let cond = if inclusive {
+            // `!done && cur <= end`
+            Expr {
+                kind: ExprKind::Binary {
+                    op: BinOp::And,
+                    lhs: Box::new(Expr {
+                        kind: ExprKind::Unary {
+                            op: UnaryOp::Not,
+                            expr: Box::new(self.make_var_expr(done_name.clone(), span)),
+                        },
+                        span,
+                    }),
+                    rhs: Box::new(in_range),
+                },
+                span,
+            }
+        } else {
+            in_range
+        };
+
         let range_if_expr = Expr {
             kind: ExprKind::If {
-                cond: Box::new(Expr {
-                    kind: ExprKind::Binary {
-                        op: BinOp::Lt,
-                        lhs: Box::new(self.make_var_expr(cur_name.clone(), span)),
-                        rhs: Box::new(self.make_var_expr(end_name.clone(), span)),
-                    },
-                    span,
-                }),
+                cond: Box::new(cond),
                 then_block: Block {
                     stmts: range_then_stmts,
                     tail: None,
@@ -4767,7 +4977,19 @@ impl<'a> Parser<'a> {
                     expr: end_expr,
                     span,
                 },
-            ],
+            ]
+            .into_iter()
+            .chain(inclusive.then(|| Stmt::Let {
+                name: done_name,
+                mutable: true,
+                ty: None,
+                expr: Expr {
+                    kind: ExprKind::Bool(false),
+                    span,
+                },
+                span,
+            }))
+            .collect(),
             tail: Some(Box::new(Expr {
                 kind: ExprKind::Loop {
                     body: loop_body,
@@ -4849,6 +5071,122 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// An integer, char or float literal pattern, with an optional `-`.
+    fn parse_literal_pattern(&mut self) -> Option<Pattern> {
+        let start = self.current_span().start;
+        let negative = self.at_kind(|k| matches!(k, TokenKind::Minus));
+        if negative {
+            self.bump();
+        }
+        let token = self.current().clone();
+        let span = Span::new(start, token.span.end);
+        let kind = match token.kind {
+            TokenKind::Int(literal) => {
+                let meta = Self::typed_int_literal_metadata(
+                    literal.suffix,
+                    literal.raw_value_span,
+                    literal.raw_text,
+                );
+                let value = if negative {
+                    literal.value.checked_neg()?
+                } else {
+                    literal.value
+                };
+                PatternKind::Int(value, meta)
+            }
+            TokenKind::Float(literal) => PatternKind::Float(if negative {
+                -literal.value
+            } else {
+                literal.value
+            }),
+            TokenKind::Char(value) if !negative => PatternKind::Char(value),
+            _ => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1310",
+                    "expected a number after '-' in a pattern",
+                    self.file,
+                    token.span,
+                ));
+                return None;
+            }
+        };
+        self.bump();
+        Some(Pattern { kind, span })
+    }
+
+    /// The bound a literal pattern gives a range pattern.
+    fn range_bound(&mut self, literal: &Pattern) -> Option<RangeBound> {
+        match &literal.kind {
+            PatternKind::Int(value, _) => Some(RangeBound::Int(*value)),
+            PatternKind::Char(value) => Some(RangeBound::Char(*value)),
+            _ => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E1310",
+                    "range pattern bounds must be integer or char literals",
+                    self.file,
+                    literal.span,
+                ));
+                None
+            }
+        }
+    }
+
+    /// The rest of a range pattern at `..` / `..=`: `lo..=hi`, `lo..hi`,
+    /// `lo..` or `..=hi`.
+    fn parse_range_pattern_rest(
+        &mut self,
+        start: usize,
+        lower: Option<RangeBound>,
+    ) -> Option<Pattern> {
+        let inclusive = self.at_kind(|k| matches!(k, TokenKind::DotDotEq));
+        let op_span = self.current_span();
+        self.bump(); // .. or ..=
+        let has_upper = matches!(
+            self.current().kind,
+            TokenKind::Int(_) | TokenKind::Char(_) | TokenKind::Float(_)
+        ) || (self.at_kind(|k| matches!(k, TokenKind::Minus))
+            && matches!(
+                self.peek(1).map(|token| &token.kind),
+                Some(TokenKind::Int(_) | TokenKind::Float(_))
+            ));
+        let upper = if has_upper {
+            let literal = self.parse_literal_pattern()?;
+            Some(self.range_bound(&literal)?)
+        } else {
+            None
+        };
+        let problem = match (&lower, &upper) {
+            (_, None) if inclusive => Some("`..=` needs an upper bound"),
+            (None, _) if !inclusive => Some("a range pattern without a lower bound uses `..=`"),
+            (Some(RangeBound::Int(_)), Some(RangeBound::Char(_)))
+            | (Some(RangeBound::Char(_)), Some(RangeBound::Int(_))) => {
+                Some("range pattern bounds must both be integers or both be chars")
+            }
+            _ => None,
+        };
+        if let Some(problem) = problem {
+            self.diagnostics.push(Diagnostic::error(
+                "E1310",
+                format!("invalid range pattern: {problem}"),
+                self.file,
+                Span::new(start, self.previous_span().end.max(op_span.end)),
+            ));
+            // Keep parsing the match after the reported pattern.
+            return Some(Pattern {
+                kind: PatternKind::Wildcard,
+                span: Span::new(start, self.previous_span().end),
+            });
+        }
+        Some(Pattern {
+            kind: PatternKind::Range {
+                start: lower,
+                end: upper,
+                inclusive,
+            },
+            span: Span::new(start, self.previous_span().end),
+        })
+    }
+
     fn parse_pattern(&mut self) -> Option<Pattern> {
         let mut patterns = vec![self.parse_pattern_atom()?];
         while self.at_kind(|k| matches!(k, TokenKind::Pipe)) {
@@ -4870,30 +5208,32 @@ impl<'a> Parser<'a> {
 
     fn parse_pattern_atom(&mut self) -> Option<Pattern> {
         let token = self.current().clone();
+        // Literal patterns that can start a range: `-3`, `7`, `'a'`, `1.5`.
+        let starts_literal = match &token.kind {
+            TokenKind::Minus => matches!(
+                self.peek(1).map(|token| &token.kind),
+                Some(TokenKind::Int(_) | TokenKind::Float(_))
+            ),
+            TokenKind::Int(_) | TokenKind::Char(_) | TokenKind::Float(_) => true,
+            _ => false,
+        };
+        if starts_literal {
+            let start = token.span.start;
+            let literal = self.parse_literal_pattern()?;
+            if !self.at_kind(|k| matches!(k, TokenKind::DotDot | TokenKind::DotDotEq)) {
+                return Some(literal);
+            }
+            let lower = self.range_bound(&literal)?;
+            return self.parse_range_pattern_rest(start, Some(lower));
+        }
+        if matches!(token.kind, TokenKind::DotDotEq | TokenKind::DotDot) {
+            return self.parse_range_pattern_rest(token.span.start, None);
+        }
         match token.kind {
             TokenKind::Underscore => {
                 self.bump();
                 Some(Pattern {
                     kind: PatternKind::Wildcard,
-                    span: token.span,
-                })
-            }
-            TokenKind::Int(literal) => {
-                self.bump();
-                let meta = Self::typed_int_literal_metadata(
-                    literal.suffix,
-                    literal.raw_value_span,
-                    literal.raw_text,
-                );
-                Some(Pattern {
-                    kind: PatternKind::Int(literal.value, meta),
-                    span: token.span,
-                })
-            }
-            TokenKind::Char(value) => {
-                self.bump();
-                Some(Pattern {
-                    kind: PatternKind::Char(value),
                     span: token.span,
                 })
             }
@@ -4961,6 +5301,21 @@ impl<'a> Parser<'a> {
                 Some(Pattern {
                     kind: first.kind,
                     span: Span::new(start, close.end),
+                })
+            }
+            TokenKind::Ident(name)
+                if matches!(self.peek(1).map(|token| &token.kind), Some(TokenKind::At)) =>
+            {
+                self.bump(); // name
+                self.bump(); // @
+                let inner = self.parse_pattern_atom()?;
+                let span = Span::new(token.span.start, inner.span.end);
+                Some(Pattern {
+                    kind: PatternKind::Binding {
+                        name,
+                        pattern: Box::new(inner),
+                    },
+                    span,
                 })
             }
             TokenKind::Ident(name) => {
@@ -5975,6 +6330,151 @@ fn f(method: String, c: Char, u: User) -> Int {
         assert!(matches!(fields[0].pattern.kind, PatternKind::Var(ref v) if v == "name"));
         assert_eq!(fields[1].name, "age");
         assert!(matches!(fields[1].pattern.kind, PatternKind::Var(ref v) if v == "years"));
+    }
+
+    use crate::ast::{
+        RangeBound, RANGE_BUILTIN, RANGE_FROM_BUILTIN, RANGE_FULL_BUILTIN, RANGE_TO_BUILTIN,
+        RANGE_TO_INCLUSIVE_BUILTIN,
+    };
+
+    #[test]
+    fn parses_range_float_negative_and_binding_patterns() {
+        let src = "fn f(n: Int) -> Int { match n { -5..=-1 => 1, 0..10 => 2, 100.. => 3, ..=-6 => 4, x @ 10..=99 => x, -7 => 5, _ => 0 } }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let tail = f.body.tail.as_deref().expect("match");
+        let ExprKind::Match { arms, .. } = &tail.kind else {
+            panic!("expected match");
+        };
+        let kinds: Vec<&PatternKind> = arms.iter().map(|arm| &arm.pattern.kind).collect();
+        assert!(matches!(
+            kinds[0],
+            PatternKind::Range {
+                start: Some(RangeBound::Int(-5)),
+                end: Some(RangeBound::Int(-1)),
+                inclusive: true
+            }
+        ));
+        assert!(matches!(
+            kinds[1],
+            PatternKind::Range {
+                start: Some(RangeBound::Int(0)),
+                end: Some(RangeBound::Int(10)),
+                inclusive: false
+            }
+        ));
+        assert!(matches!(
+            kinds[2],
+            PatternKind::Range {
+                start: Some(RangeBound::Int(100)),
+                end: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            kinds[3],
+            PatternKind::Range {
+                start: None,
+                end: Some(RangeBound::Int(-6)),
+                inclusive: true
+            }
+        ));
+        assert!(
+            matches!(kinds[4], PatternKind::Binding { name, pattern } if name == "x" && matches!(pattern.kind, PatternKind::Range { .. }))
+        );
+        assert!(matches!(kinds[5], PatternKind::Int(-7, _)));
+
+        let (program, diagnostics) = parse(
+            "fn g(c: Char, x: Float64) -> Int { match c { 'a'..='z' => 1, _ => 0 } + match x { -0.5 => 1, 2.5 => 2, _ => 0 } }",
+            "test.aic",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        assert!(program.is_some());
+
+        for bad in [
+            "fn f(n: Int) -> Int { match n { ..5 => 1, _ => 0 } }",
+            "fn f(n: Int) -> Int { match n { 1..= => 1, _ => 0 } }",
+            "fn f(n: Int) -> Int { match n { 1..='z' => 1, _ => 0 } }",
+            "fn f(n: Int) -> Int { match n { 1.5..2.5 => 1, _ => 0 } }",
+        ] {
+            let (_, diagnostics) = parse(bad, "test.aic");
+            assert!(
+                diagnostics.iter().any(|d| d.code == "E1310"),
+                "{bad}: {diagnostics:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_range_expressions_with_lowest_precedence() {
+        let src = "fn f(a: Int, v: Vec[Int]) -> Int { let r = a + 1..a * 2; let s = v[2..]; let t = v[..=3]; let u = v[..]; let w = ..a; for i in 0..=a { }; 0 }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let callee = |stmt: &Stmt| match stmt {
+            Stmt::Let { expr, .. } => match &expr.kind {
+                ExprKind::Call { callee, args, .. } => match &callee.kind {
+                    ExprKind::Var(name) => (name.clone(), args.clone()),
+                    other => panic!("unexpected callee {other:?}"),
+                },
+                other => panic!("expected call, found {other:?}"),
+            },
+            other => panic!("expected let, found {other:?}"),
+        };
+        let (name, args) = callee(&f.body.stmts[0]);
+        assert_eq!(name, RANGE_BUILTIN);
+        assert!(matches!(
+            args[0].kind,
+            ExprKind::Binary { op: BinOp::Add, .. }
+        ));
+        assert!(matches!(
+            args[1].kind,
+            ExprKind::Binary { op: BinOp::Mul, .. }
+        ));
+        let index_arg = |stmt: &Stmt| {
+            let (_, args) = callee(stmt);
+            match &args[1].kind {
+                ExprKind::Call { callee, args, .. } => match &callee.kind {
+                    ExprKind::Var(name) => (name.clone(), args.len()),
+                    other => panic!("unexpected callee {other:?}"),
+                },
+                other => panic!("expected range, found {other:?}"),
+            }
+        };
+        assert_eq!(
+            index_arg(&f.body.stmts[1]),
+            (RANGE_FROM_BUILTIN.to_string(), 1)
+        );
+        assert_eq!(
+            index_arg(&f.body.stmts[2]),
+            (RANGE_TO_INCLUSIVE_BUILTIN.to_string(), 1)
+        );
+        assert_eq!(
+            index_arg(&f.body.stmts[3]),
+            (RANGE_FULL_BUILTIN.to_string(), 0)
+        );
+        assert_eq!(callee(&f.body.stmts[4]).0, RANGE_TO_BUILTIN);
+        // `for i in 0..=a` counts directly, with a `done` flag instead of `a + 1`.
+        let Stmt::Expr { expr, .. } = &f.body.stmts[5] else {
+            panic!("expected for statement");
+        };
+        let ExprKind::If { then_block, .. } = &expr.kind else {
+            panic!("expected desugared for");
+        };
+        assert_eq!(then_block.stmts.len(), 3, "start, end and done bindings");
+
+        let (_, diagnostics) = parse("fn f() -> Int { let r = 1..=; 0 }", "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1310"),
+            "{diagnostics:#?}"
+        );
     }
 
     #[test]

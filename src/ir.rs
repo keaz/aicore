@@ -1,4 +1,4 @@
-use crate::ast::{Attribute, BinOp, UnaryOp, Visibility};
+use crate::ast::{Attribute, BinOp, RangeBound, UnaryOp, Visibility};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -566,6 +566,19 @@ pub enum PatternKind {
         name: String,
         fields: Vec<StructPatternField>,
         has_rest: bool,
+    },
+    /// A float literal pattern (`1.5`, `-0.25`); it matches by `==`.
+    Float(f64),
+    /// `lo..=hi`, `lo..hi`, `lo..` or `..=hi` over integers or chars.
+    Range {
+        start: Option<RangeBound>,
+        end: Option<RangeBound>,
+        inclusive: bool,
+    },
+    /// `name @ pattern`: binds the whole value and matches `pattern`.
+    Binding {
+        name: String,
+        pattern: Box<Pattern>,
     },
 }
 

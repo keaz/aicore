@@ -7,7 +7,11 @@ This page covers expression grammar and typing/effect rules implemented by `comp
 ## Grammar
 
 ```ebnf
-expr           = or_expr ;
+expr           = range_expr ;
+range_expr     = or_expr ((".." | "..=") or_expr)?
+               | or_expr ".."                       (* slice index only *)
+               | (".." | "..=") or_expr             (* slice index only *)
+               | ".." ;                             (* slice index only *)
 or_expr        = and_expr ("||" and_expr)* ;
 and_expr       = bit_or_expr ("&&" bit_or_expr)* ;
 bit_or_expr    = bit_xor_expr ("|" bit_xor_expr)* ;
@@ -112,6 +116,8 @@ hex_int        = "0x" hexdigit+ ;
   - `x.to_f32()` / `x.to_f64()` round to the nearest float; `Float64` values beyond the `Float32` range become infinities, and NaN stays NaN.
   - A float converted to an integer truncates toward zero (`3.9.saturating_to_i8()` is `3`, `(-0.5).checked_to_u8()` is `Some(0)`).
   - Methods that do not exist for a target (`to_int`, `checked_to_f64`, `wrapping_to_` from or to a float) are `E1305`; an unknown suffix is an unknown method (`E1228`). `aic fmt` writes casts and conversion methods back unchanged.
+- Ranges: `a..b` (end excluded) and `a..=b` (end included) are `Range[T]` values of an integer or `Char` type (`E1311` otherwise), defined in `std.range` (which must be imported, `E1304`). A range binds looser than every other operator: `a + 1..b * 2` is `(a + 1)..(b * 2)`. `for i in a..b` and `for i in a..=b` count directly (an inclusive range up to the type's maximum ends without overflow); `for i in r` iterates a `Range[Int]` value. `std.range` provides `range_contains`, `range_len`, `range_is_empty` and the `Range` fields `start`, `end` and `inclusive`.
+- Slicing: `v[a..b]`, `v[a..=b]`, `v[a..]`, `v[..b]`, `v[..=b]` and `v[..]` take a part of a `Vec`, a `String` (character indexes) or `Bytes`; a `Range[Int]` value works too (`v[r]`). Bounds outside `0..=len`, or a start after the end, panic with `index_out_of_bounds{op:index}`; `range.slice_vec` / `slice_string` / `slice_bytes` return an `Option` instead. Slicing needs `import std.range`. The open forms (`a..`, `..b`, `..`) are only allowed as slice indexes (`E1311`).
 - List literals `[a, b, c]` build a `Vec` (needs `import std.vec`); `[]` needs a known element type (`let empty: Vec[Int] = [];`).
 - Method syntax on std collections: when a `Vec`, `Map`, `Set`, `String`, `Bytes` or `Deque` value has no inherent method of that name, `value.f(args)` calls the std module function `f(value, args)`, or `<module>_f` (`v.len()` is `vec.vec_len(v)`, `v.push(x)` is `vec.push(v, x)`). The module must be imported.
 - Enum variants as values: a unit variant is written bare (`Red`, `None`) or qualified (`Color::Red`, `Option::None`); a payload variant is called (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`). A bare name that more than one visible enum declares needs a typed context or a qualifier (`E2104`). Local bindings shadow variant names. The legacy `None()` spelling is accepted, and `aic fmt` prints it as `None`.

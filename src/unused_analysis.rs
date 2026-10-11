@@ -398,6 +398,8 @@ impl<'a> Analyzer<'a> {
                     self.visit_pattern(&field.pattern);
                 }
             }
+            ast::PatternKind::Binding { pattern, .. } => self.visit_pattern(pattern),
+            ast::PatternKind::Float(_) | ast::PatternKind::Range { .. } => {}
             ast::PatternKind::Wildcard
             | ast::PatternKind::Var(_)
             | ast::PatternKind::Int(_, ..)
@@ -881,6 +883,14 @@ fn collect_pattern_vars(pattern: &ast::Pattern, out: &mut Vec<(String, Span)>) {
                 collect_pattern_vars(&field.pattern, out);
             }
         }
+        ast::PatternKind::Binding {
+            name,
+            pattern: inner,
+        } => {
+            out.push((name.clone(), pattern.span));
+            collect_pattern_vars(inner, out);
+        }
+        ast::PatternKind::Float(_) | ast::PatternKind::Range { .. } => {}
         ast::PatternKind::Wildcard
         | ast::PatternKind::Int(_, ..)
         | ast::PatternKind::Char(_)

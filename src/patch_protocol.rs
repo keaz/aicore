@@ -1146,6 +1146,13 @@ fn render_pattern(pattern: &Pattern) -> String {
         PatternKind::Char(value) => format!("{:?}", value),
         PatternKind::String(value) => format!("\"{}\"", value),
         PatternKind::Unit => "()".to_string(),
+        PatternKind::Float(value) => format!("{value:?}"),
+        PatternKind::Range {
+            start,
+            end,
+            inclusive,
+        } => crate::ast::render_range_pattern(start.as_ref(), end.as_ref(), *inclusive),
+        PatternKind::Binding { name, pattern } => format!("{name} @ {}", render_pattern(pattern)),
         PatternKind::Or { patterns } => patterns
             .iter()
             .map(render_pattern)

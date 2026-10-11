@@ -708,6 +708,20 @@ impl Builder {
             ast::PatternKind::Char(v) => ir::PatternKind::Char(*v),
             ast::PatternKind::String(v) => ir::PatternKind::String(v.clone()),
             ast::PatternKind::Unit => ir::PatternKind::Unit,
+            ast::PatternKind::Float(v) => ir::PatternKind::Float(*v),
+            ast::PatternKind::Range {
+                start,
+                end,
+                inclusive,
+            } => ir::PatternKind::Range {
+                start: *start,
+                end: *end,
+                inclusive: *inclusive,
+            },
+            ast::PatternKind::Binding { name, pattern } => ir::PatternKind::Binding {
+                name: name.clone(),
+                pattern: Box::new(self.lower_pattern(pattern)),
+            },
             ast::PatternKind::Or { patterns } => ir::PatternKind::Or {
                 patterns: patterns.iter().map(|a| self.lower_pattern(a)).collect(),
             },

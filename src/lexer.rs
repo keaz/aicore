@@ -141,6 +141,10 @@ pub enum TokenKind {
     Semi,
     Dot,
     DotDot,
+    /// `..=` (inclusive range).
+    DotDotEq,
+    /// `@` (pattern binding).
+    At,
     Arrow,
     FatArrow,
     ColonColon,
@@ -272,13 +276,19 @@ impl<'a> Lexer<'a> {
                 '[' => self.single(TokenKind::LBracket),
                 ']' => self.single(TokenKind::RBracket),
                 ',' => self.single(TokenKind::Comma),
+                '@' => self.single(TokenKind::At),
                 ';' => self.single(TokenKind::Semi),
                 '.' => {
                     let start = self.offset;
                     self.bump();
                     if self.peek() == Some('.') {
                         self.bump();
-                        self.push(TokenKind::DotDot, Span::new(start, self.offset));
+                        if self.peek() == Some('=') {
+                            self.bump();
+                            self.push(TokenKind::DotDotEq, Span::new(start, self.offset));
+                        } else {
+                            self.push(TokenKind::DotDot, Span::new(start, self.offset));
+                        }
                     } else {
                         self.push(TokenKind::Dot, Span::new(start, self.offset));
                     }
@@ -1214,6 +1224,28 @@ mod tests {
             .iter()
             .any(|t| matches!(&t.kind, TokenKind::Template(raw) if raw == "x{y}")));
     }
+    #[test]
+    fn lexes_range_operators_and_at() {
+        let (tokens, diags) = lex("0..5 0..=5 x @ 1..", "test.aic");
+        assert!(diags.is_empty(), "{diags:#?}");
+        let kinds: Vec<_> = tokens.iter().map(|t| t.kind.clone()).collect();
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|k| matches!(k, TokenKind::DotDot))
+                .count(),
+            2
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|k| matches!(k, TokenKind::DotDotEq))
+                .count(),
+            1
+        );
+        assert!(kinds.contains(&TokenKind::At));
+    }
+
     #[test]
     fn lexes_loop_labels_apart_from_char_literals() {
         let (tokens, diags) = lex(

@@ -12,9 +12,13 @@
 //!   values that no arm matches.
 //!
 //! Types are described by a [`PatternTypes`] oracle so the algorithm itself
-//! is independent of the checker. Types with infinitely many values (`Int`,
-//! `String`, `Char`, generic parameters, unknown types) have no complete
-//! constructor set; only a wildcard or binding covers them.
+//! is independent of the checker. Integer and `Char` values are value
+//! ranges ([`Ctor::Range`]) over the type's domain: a column of ranges is
+//! split at every range boundary, so `0..=127 | 128..=255` covers `UInt8`
+//! and a missing value is reported as the uncovered range. Types with
+//! infinitely many values and no domain (`String`, floats, generic
+//! parameters, unknown types) have no complete constructor set; only a
+//! wildcard or binding covers them.
 
 use std::collections::BTreeSet;
 
@@ -29,8 +33,11 @@ pub enum Ctor {
     Tuple(usize),
     /// Struct with the given name; fields follow [`PatternTypes::field_types`].
     Struct(String),
-    /// Integer, string or char literal, rendered as written in source.
+    /// String or float literal, rendered as written in source.
     Literal(String),
+    /// Inclusive range of integer or char values, in the order-preserving
+    /// encoding of [`PatternTypes::int_domain`]; a literal is `Range(v, v)`.
+    Range(i128, i128),
 }
 
 /// A deconstructed pattern.
@@ -52,6 +59,18 @@ pub trait PatternTypes {
 
     /// Field names of a struct constructor, in the order of `field_types`.
     fn struct_field_names(&self, ty: &str) -> Vec<String>;
+
+    /// For integer and `Char` types: the encoded values of the type as
+    /// disjoint inclusive ranges in ascending order (one range for an
+    /// integer type; two for `Char`, around the surrogates).
+    fn int_domain(&self, _ty: &str) -> Option<Vec<(i128, i128)>> {
+        None
+    }
+
+    /// Source form of the encoded value `value` of `ty` (`-3`, `'a'`).
+    fn render_int(&self, _ty: &str, value: i128) -> String {
+        value.to_string()
+    }
 }
 
 /// Maximum number of witnesses reported for one match.
@@ -69,6 +88,17 @@ pub fn is_useful(
     };
     let ty = &tys[0];
     match head {
+        Pat::Ctor(Ctor::Range(lo, hi), _) => {
+            // Useful when some piece of the range, split at the column's
+            // boundaries, is.
+            let boundaries = range_boundaries(matrix);
+            split_range(*lo, *hi, &boundaries)
+                .into_iter()
+                .any(|(a, b)| {
+                    let specialized = specialize(matrix, &Ctor::Range(a, b), 0);
+                    is_useful(&specialized, rest, &tys[1..], types)
+                })
+        }
         Pat::Ctor(ctor, args) => {
             let fields = types.field_types(ty, ctor);
             let specialized = specialize(matrix, ctor, fields.len());
@@ -83,6 +113,12 @@ pub fn is_useful(
             is_useful(matrix, &next_row, tys, types)
         }),
         Pat::Wild => {
+            if let Some(pieces) = domain_pieces(matrix, ty, types) {
+                return pieces.into_iter().any(|(a, b)| {
+                    let specialized = specialize(matrix, &Ctor::Range(a, b), 0);
+                    is_useful(&specialized, rest, &tys[1..], types)
+                });
+            }
             let seen = head_constructors(matrix);
             match complete_signature(ty, &seen, types) {
                 Some(all) => all.iter().any(|ctor| {
@@ -121,6 +157,34 @@ pub fn missing_rows(
     // constructor: unmentioned constructors specialize to the wildcard rows,
     // so this enumerates every uncovered combination. Otherwise (an infinite
     // type, or a column of wildcards only) any head value works: `_`.
+    if let Some(pieces) = domain_pieces(matrix, ty, types) {
+        let mut out: Vec<Vec<Pat>> = Vec::new();
+        for (a, b) in pieces {
+            let specialized = specialize(matrix, &Ctor::Range(a, b), 0);
+            for rest in missing_rows(&specialized, &tys[1..], types, limit) {
+                // Adjacent uncovered pieces with the same remaining columns
+                // are reported as one range.
+                if let Some(last) = out.last_mut() {
+                    let same_rest = last[1..] == rest[..];
+                    if let (Some(Pat::Ctor(Ctor::Range(_, prev_hi), _)), true) =
+                        (last.first_mut(), same_rest)
+                    {
+                        if prev_hi.checked_add(1) == Some(a) {
+                            *prev_hi = b;
+                            continue;
+                        }
+                    }
+                }
+                if out.len() >= limit {
+                    return out;
+                }
+                let mut witness = vec![Pat::Ctor(Ctor::Range(a, b), Vec::new())];
+                witness.extend(rest);
+                out.push(witness);
+            }
+        }
+        return out;
+    }
     let seen = head_constructors(matrix);
     if let Some(all) = types.constructors(ty).filter(|_| !seen.is_empty()) {
         let mut out = Vec::new();
@@ -245,6 +309,12 @@ pub fn render(pat: &Pat, ty: &str, types: &dyn PatternTypes) -> String {
                     }
                 }
                 Ctor::Literal(text) => text.clone(),
+                Ctor::Range(lo, hi) if lo == hi => types.render_int(ty, *lo),
+                Ctor::Range(lo, hi) => format!(
+                    "{}..={}",
+                    types.render_int(ty, *lo),
+                    types.render_int(ty, *hi)
+                ),
             }
         }
     }
@@ -309,7 +379,7 @@ fn specialize_row(row: &[Pat], ctor: &Ctor, arity: usize, out: &mut Vec<Vec<Pat>
             next.extend(rest.iter().cloned());
             out.push(next);
         }
-        Pat::Ctor(head_ctor, args) if head_ctor == ctor => {
+        Pat::Ctor(head_ctor, args) if ctor_covers(head_ctor, ctor) => {
             let mut next = pad(args, arity);
             next.extend(rest.iter().cloned());
             out.push(next);
@@ -323,6 +393,67 @@ fn specialize_row(row: &[Pat], ctor: &Ctor, arity: usize, out: &mut Vec<Vec<Pat>
             }
         }
     }
+}
+
+/// Whether a row headed by `head` matches every value of `ctor`. Ranges
+/// are compared after splitting, so a row range either contains a piece or
+/// is disjoint from it.
+fn ctor_covers(head: &Ctor, ctor: &Ctor) -> bool {
+    match (head, ctor) {
+        (Ctor::Range(a, b), Ctor::Range(lo, hi)) => a <= lo && hi <= b,
+        _ => head == ctor,
+    }
+}
+
+/// Start points of the pieces the column's ranges divide the values into:
+/// each range's first value and the value after its last.
+fn range_boundaries(matrix: &[Vec<Pat>]) -> BTreeSet<i128> {
+    let mut out = BTreeSet::new();
+    for ctor in head_constructors(matrix) {
+        if let Ctor::Range(lo, hi) = ctor {
+            out.insert(lo);
+            if let Some(next) = hi.checked_add(1) {
+                out.insert(next);
+            }
+        }
+    }
+    out
+}
+
+/// `[lo, hi]` cut at every boundary inside it.
+fn split_range(lo: i128, hi: i128, boundaries: &BTreeSet<i128>) -> Vec<(i128, i128)> {
+    let mut pieces = Vec::new();
+    let mut start = lo;
+    for &point in boundaries.range((std::ops::Bound::Excluded(lo), std::ops::Bound::Included(hi))) {
+        pieces.push((start, point - 1));
+        start = point;
+    }
+    pieces.push((start, hi));
+    pieces
+}
+
+/// For an integer or `Char` column that mentions a range: the type's
+/// domain split at the column's boundaries. `None` for other types, and
+/// when the column has only wildcards (then any value works).
+fn domain_pieces(
+    matrix: &[Vec<Pat>],
+    ty: &str,
+    types: &dyn PatternTypes,
+) -> Option<Vec<(i128, i128)>> {
+    let domain = types.int_domain(ty)?;
+    let boundaries = range_boundaries(matrix);
+    let mentions_range = head_constructors(matrix)
+        .iter()
+        .any(|ctor| matches!(ctor, Ctor::Range(..)));
+    if !mentions_range {
+        return None;
+    }
+    Some(
+        domain
+            .into_iter()
+            .flat_map(|(lo, hi)| split_range(lo, hi, &boundaries))
+            .collect(),
+    )
 }
 
 /// Rows whose head is a wildcard, with the head removed.

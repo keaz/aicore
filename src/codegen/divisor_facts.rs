@@ -285,7 +285,13 @@ fn collect_bound_names_in_pattern(pattern: &ir::Pattern, out: &mut BTreeSet<Stri
                 collect_bound_names_in_pattern(&field.pattern, out);
             }
         }
+        ir::PatternKind::Binding { name, pattern } => {
+            out.insert(name.clone());
+            collect_bound_names_in_pattern(pattern, out);
+        }
         ir::PatternKind::Wildcard
+        | ir::PatternKind::Float(_)
+        | ir::PatternKind::Range { .. }
         | ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Bool(_)
         | ir::PatternKind::Char(_)

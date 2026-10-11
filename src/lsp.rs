@@ -1905,6 +1905,21 @@ fn collect_pattern_semantic_tokens(
                 MOD_DECLARATION,
             );
         }
+        ast::PatternKind::Binding {
+            name,
+            pattern: inner,
+        } => {
+            push_named_semantic_token(
+                tokens,
+                source,
+                name,
+                pattern.span,
+                TOKEN_VARIABLE,
+                MOD_DECLARATION,
+            );
+            collect_pattern_semantic_tokens(tokens, source, inner);
+        }
+        ast::PatternKind::Float(_) | ast::PatternKind::Range { .. } => {}
         ast::PatternKind::Wildcard
         | ast::PatternKind::Int(_, ..)
         | ast::PatternKind::Char(_)
