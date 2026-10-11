@@ -2003,9 +2003,19 @@ impl<'a> Printer<'a> {
                 callee,
                 args,
                 arg_names,
+                type_args,
                 ..
             } => {
                 self.expr(callee, POSTFIX_OPERAND_PREC, indent);
+                if !type_args.is_empty() {
+                    self.out.push_str("::[");
+                    let rendered = type_args
+                        .iter()
+                        .map(|ty| self.display_type(ty))
+                        .collect::<Vec<_>>();
+                    self.out.push_str(&rendered.join(", "));
+                    self.out.push(']');
+                }
                 self.out.push('(');
                 for (idx, arg) in args.iter().enumerate() {
                     if idx > 0 {
@@ -3399,6 +3409,12 @@ mod tests {
     #[test]
     fn prefix_operators_before_postfix_operators_keep_parens() {
         let src = "fn f(x: Int, o: Option[Int]) -> Option[Int] {\n    let a = (-1).checked_to_u32();\n    let b = (-x).saturating_to_u8();\n    let c = (-2.5).saturating_to_int();\n    let d = -x.wrapping_to_u8();\n    let e = (x as Int64).wrapping_to_int();\n    o\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn explicit_type_arguments_round_trip() {
+        let src = "fn f(o: Option[Int]) -> Int {\n    let a = make::[Int]();\n    let b = pair::[Int, Vec[Bool]](1, v);\n    let c = o.map_or::[Int, Int](0, |x| x);\n    let d = Some::[Int](3);\n    a + c\n}\n";
         assert_eq!(fmt(src), src);
     }
 

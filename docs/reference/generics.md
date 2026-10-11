@@ -14,6 +14,7 @@ where_clause     = "where" where_item ("," where_item)* ;
 where_item       = ident ":" trait_bounds ;
 
 type_args        = "[" type ("," type)* ","? "]" ;
+call_type_args   = "::" type_args ;   (* before a call's arguments: f::[Int](x) *)
 
 fn_decl          = "fn" ident generics? "(" ... ")" "->" type where_clause? ... ;
 struct_decl      = "struct" ident generics? "{" ... "}" ... ;
@@ -38,6 +39,7 @@ impl_decl        = "impl" type (";" | "{" impl_method* "}") ;
   - a generic struct literal or generic call used directly as an argument is inferred from its own fields or arguments (`unbox(Box { value: 41 })`)
   - an argument whose type is still incomplete after all arguments were checked is checked again once the sibling arguments have fixed the bindings, so generic constructors need no annotation: `vec.push(vec.new_vec(), 5)` is `Vec[Int]`
 - If generic inference is incomplete, checker reports inference failure and requests stronger type context.
+- Explicit type arguments: `f::[Int](x)`, `pair::[Int, Bool](1, true)`, `vec.new_vec::[Int]()`, `x.map_or::[Int, Int](0, f)`, `Some::[Int](5)`, `Ok::[Int, String](1)`, `Filled::[Int](5)`. They give the callee's generic parameters in declaration order (for a method, all of the method's generic parameters, including the ones its receiver fixes) and take precedence over inference, so arguments are checked against them (`E1214` on a mismatch). A wrong count, type arguments on a non-generic callee, on trait-bound or built-in methods, an empty list, or `::[..]` without call arguments is `E1312`. `::[` is used instead of `f[Int](x)` because `f[Int]` already means indexing.
 - Trait bounds on generic params are validated:
   - bound traits must exist
   - bound arity must match current bound syntax model

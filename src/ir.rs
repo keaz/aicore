@@ -437,6 +437,9 @@ pub enum ExprKind {
         arg_names: Vec<Option<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         symbol: Option<SymbolId>,
+        /// Explicit generic arguments: `f::[Int](x)`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        type_args: Vec<TypeId>,
     },
     Closure {
         params: Vec<ClosureParam>,

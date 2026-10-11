@@ -1,0 +1,13 @@
+fn id[T](x: T) -> T {
+    x
+}
+
+fn pick[A, B](a: A, b: B) -> B {
+    b
+}
+
+fn main() -> Int {
+    let n = id::[Int](40);
+    let flag = pick::[Int, Bool](0, true);
+    n + id::[Int](2)
+}

@@ -417,6 +417,7 @@ fn render_expr(expr: &Expr) -> String {
             callee,
             args,
             arg_names,
+            ..
         } => {
             let rendered_args = args
                 .iter()

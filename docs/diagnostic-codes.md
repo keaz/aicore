@@ -108,6 +108,7 @@ Recent core-language additions:
 - `E1309`: a range pattern that matches no value (`5..=1`, `3..3`).
 - `E1310` (parser): a malformed range pattern or range expression (`..5` in a pattern, `..=` without an end, mixed int/char bounds, float bounds).
 - `E1311`: a range used as a value without both bounds (`2..`), or with bounds that are not integers or chars.
+- `E1312`: explicit type arguments (`f::[T](..)`) that do not fit the callee: wrong count, a non-generic callee, a trait-bound or built-in method, an empty list, or no call arguments after them.
 - `E1305`: a numeric conversion that is not available: `x as T` that could change a value (narrowing, sign change, `Int64` to `Float64`, float to integer) or involves a non-numeric type, or a conversion method that does not exist for its target (`to_int`, `checked_to_f64`, `wrapping_to_` with floats).
 - `E1302`: the `else` block of `let PATTERN = expr else { ... };` does not diverge (it must end in `return`, `break`, `continue` or `panic(...)`).
 - `E1110` (parser): refutable pattern in a plain `let` (`let Some(x) = o;`); use `let ... else` or `if let`.
@@ -261,6 +262,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E1309` | Range pattern matches no value. | Write the lower bound first; `a..b` excludes `b`. |
 | `E1310` | Malformed range pattern or range expression. | Use `lo..=hi`, `lo..hi`, `lo..` or `..=hi` with integer or char bounds. |
 | `E1311` | Open range used as a value, or non-integer range bounds. | Give both bounds (`a..b`); use open ranges only as slice indexes. |
+| `E1312` | Explicit type arguments do not fit the callee. | Give one type per generic parameter, in order, directly before the call's arguments. |
 | `E1305` | Lossy or non-numeric `as`, or an unavailable conversion method. | Use `checked_to_*` (Option), `saturating_to_*` or `wrapping_to_*` for integers, `to_f32` / `to_f64` for floats. |
 | `E1302` | `let ... else` block does not diverge. | End the block with `return`, `break`, `continue` or `panic(...)`. |
 | `E1110` | Refutable pattern in a plain `let`. | Use `let PATTERN = expr else { return ...; };` or `if let`. |

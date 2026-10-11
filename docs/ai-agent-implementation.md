@@ -965,6 +965,14 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Explicit Generic Type Arguments (SYNTAX-T15, #461)
+
+- Language surface: `callee::[T, U](args)` for functions (also module-qualified), inherent methods and enum variant constructors including `Some`/`Ok`/`Err`. Rules: `docs/reference/generics.md`.
+- Parser: `parse_postfix` reads `::[..]` and attaches it to the following call (`ExprKind::Call.type_args`, also in the IR as `TypeId`s, omitted from JSON when empty); an identifier path stops at `::[`. E1312 for an empty list or no call.
+- Checker: `Checker::explicit_type_args` turns them into initial generic bindings for the function path, user enum variant constructors and the builtin `Some`/`Ok`/`Err`; inherent method calls pass them on to the `Type::method` call they become. Other method paths report E1312. The call's result type goes into `expr_type_hints`, which is how code generation picks the instance (`make::[Int]()` has no argument to infer from).
+- Formatter: prints `::[..]` after the callee.
+- Verification: `exec_explicit_type_arguments_select_instances`, `explicit_type_arguments_bind_generics`, `parses_explicit_type_arguments_on_calls`, formatter test `explicit_type_arguments_round_trip`, golden `case35_type_arguments.aic`, `examples/core/explicit_type_arguments.aic`.
+
 ## Closure Inference and Callee Expressions (SYNTAX-T14, #460)
 
 - Language surface: `|x| x + 1`, `|x| { .. }` (return type inferred), parameter types from the expected `Fn` type (including generic calls and the enclosing function's own type variables), calls on any `Fn`-typed expression, and calls of `Fn`-typed struct fields. Rules: `docs/reference/expressions.md`.

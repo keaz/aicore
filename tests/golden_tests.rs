@@ -197,3 +197,8 @@ fn golden_case33_ranges_and_patterns() {
 fn golden_case34_closures() {
     run_golden_case("case34_closures.aic");
 }
+
+#[test]
+fn golden_case35_type_arguments() {
+    run_golden_case("case35_type_arguments.aic");
+}

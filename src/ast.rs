@@ -631,6 +631,9 @@ pub enum ExprKind {
         args: Vec<Expr>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         arg_names: Vec<Option<String>>,
+        /// Explicit generic arguments: `f::[Int](x)`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        type_args: Vec<TypeExpr>,
     },
     /// `|x: Int| -> Int { .. }`, `|x| { .. }` or `|x| x + 1`; without
     /// `-> T` the checker infers the return type from the body.

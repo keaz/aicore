@@ -108,6 +108,7 @@ fn split_range_call(expr: Expr) -> Result<(Expr, Expr, bool), Expr> {
             callee,
             args,
             arg_names,
+            type_args,
         } => match (range_kind(&callee), <[Expr; 2]>::try_from(args)) {
             (Some(inclusive), Ok([lo, hi])) => Ok((lo, hi, inclusive)),
             (_, Ok(args)) => Err(Expr {
@@ -115,6 +116,7 @@ fn split_range_call(expr: Expr) -> Result<(Expr, Expr, bool), Expr> {
                     callee,
                     args: args.into(),
                     arg_names,
+                    type_args,
                 },
                 span,
             }),
@@ -123,6 +125,7 @@ fn split_range_call(expr: Expr) -> Result<(Expr, Expr, bool), Expr> {
                     callee,
                     args,
                     arg_names,
+                    type_args,
                 },
                 span,
             }),
@@ -3010,6 +3013,7 @@ impl<'a> Parser<'a> {
                 callee: Box::new(Expr::var(callee.to_string(), Span::new(start, op_end))),
                 args,
                 arg_names: Vec::new(),
+                type_args: Vec::new(),
             },
             span,
         })
@@ -3276,6 +3280,7 @@ impl<'a> Parser<'a> {
                     callee: Box::new(Expr::var(callee, ty.span)),
                     args: vec![expr],
                     arg_names: Vec::new(),
+                    type_args: Vec::new(),
                 },
                 span,
             };
@@ -3439,7 +3444,48 @@ impl<'a> Parser<'a> {
 
     fn parse_postfix(&mut self) -> Option<Expr> {
         let mut expr = self.parse_primary()?;
+        // `::[T, U]` before a call's arguments: explicit generic arguments.
+        let mut type_args: Option<Vec<TypeExpr>> = None;
         loop {
+            if type_args.is_none()
+                && self.at_kind(|k| matches!(k, TokenKind::ColonColon))
+                && matches!(
+                    self.peek(1).map(|token| &token.kind),
+                    Some(TokenKind::LBracket)
+                )
+            {
+                self.bump(); // ::
+                self.bump(); // [
+                let mut types = Vec::new();
+                while !self.at_kind(|k| matches!(k, TokenKind::RBracket)) {
+                    types.push(self.parse_type()?);
+                    if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+                let close = self.expect(
+                    |k| matches!(k, TokenKind::RBracket),
+                    "E1312",
+                    "expected ']' after explicit type arguments",
+                )?;
+                if types.is_empty() || !self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E1312",
+                        if types.is_empty() {
+                            "explicit type arguments `::[..]` need at least one type"
+                        } else {
+                            "explicit type arguments `::[..]` must be followed by call arguments"
+                        },
+                        self.file,
+                        Span::new(expr.span.end, close.end),
+                    ));
+                    return None;
+                }
+                type_args = Some(types);
+                continue;
+            }
             if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
                 self.bump();
                 let mut args = Vec::new();
@@ -3507,6 +3553,7 @@ impl<'a> Parser<'a> {
                         callee: Box::new(expr),
                         args,
                         arg_names,
+                        type_args: type_args.take().unwrap_or_default(),
                     },
                     span,
                 };
@@ -3585,6 +3632,7 @@ impl<'a> Parser<'a> {
                         callee: Box::new(Expr::var(INDEX_BUILTIN.to_string(), span)),
                         args: vec![expr, index],
                         arg_names: Vec::new(),
+                        type_args: Vec::new(),
                     },
                     span,
                 };
@@ -3775,6 +3823,7 @@ impl<'a> Parser<'a> {
                         callee: Box::new(Expr::var(VEC_LITERAL_BUILTIN.to_string(), span)),
                         args: items,
                         arg_names: Vec::new(),
+                        type_args: Vec::new(),
                     },
                     span,
                 })
@@ -3790,7 +3839,13 @@ impl<'a> Parser<'a> {
                 self.bump();
                 let mut full_name = name;
                 let mut end = token.span.end;
-                while self.at_kind(|k| matches!(k, TokenKind::ColonColon)) {
+                // `f::[Int](x)` ends the path at `::[`.
+                while self.at_kind(|k| matches!(k, TokenKind::ColonColon))
+                    && !matches!(
+                        self.peek(1).map(|token| &token.kind),
+                        Some(TokenKind::LBracket)
+                    )
+                {
                     self.bump();
                     let (segment, seg_span) =
                         self.expect_ident("E1088", "expected path segment after '::'")?;
@@ -4792,6 +4847,7 @@ impl<'a> Parser<'a> {
                             callee: Box::new(self.make_var_expr("aic_for_next_iter", span)),
                             args: vec![self.make_var_expr(iter_name.clone(), span)],
                             arg_names: Vec::new(),
+                            type_args: Vec::new(),
                         },
                         span,
                     },
@@ -4822,6 +4878,7 @@ impl<'a> Parser<'a> {
                         callee: Box::new(self.make_var_expr("aic_for_into_iter", span)),
                         args: vec![iterable],
                         arg_names: Vec::new(),
+                        type_args: Vec::new(),
                     },
                     span,
                 },
@@ -6359,6 +6416,48 @@ fn f(method: String, c: Char, u: User) -> Int {
         RangeBound, RANGE_BUILTIN, RANGE_FROM_BUILTIN, RANGE_FULL_BUILTIN, RANGE_TO_BUILTIN,
         RANGE_TO_INCLUSIVE_BUILTIN,
     };
+
+    #[test]
+    fn parses_explicit_type_arguments_on_calls() {
+        let src = "fn f() -> Int { let a = make::[Int](); let b = pair::[Int, Vec[Bool]](1, v); let c = x.m::[Int](2); let d = Box::Full::[Int](3); 0 }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let call = |idx: usize| match &f.body.stmts[idx] {
+            Stmt::Let { expr, .. } => match &expr.kind {
+                ExprKind::Call {
+                    callee, type_args, ..
+                } => (
+                    match &callee.kind {
+                        ExprKind::Var(name) => name.clone(),
+                        ExprKind::FieldAccess { field, .. } => format!(".{field}"),
+                        other => panic!("unexpected callee {other:?}"),
+                    },
+                    type_args.len(),
+                ),
+                other => panic!("expected call, found {other:?}"),
+            },
+            other => panic!("expected let, found {other:?}"),
+        };
+        assert_eq!(call(0), ("make".to_string(), 1));
+        assert_eq!(call(1), ("pair".to_string(), 2));
+        assert_eq!(call(2), (".m".to_string(), 1));
+        assert_eq!(call(3), ("Box::Full".to_string(), 1));
+
+        for bad in [
+            "fn f() -> Int { make::[Int] }",
+            "fn f() -> Int { make::[]() }",
+        ] {
+            let (_, diagnostics) = parse(bad, "test.aic");
+            assert!(
+                diagnostics.iter().any(|d| d.code == "E1312"),
+                "{bad}: {diagnostics:#?}"
+            );
+        }
+    }
 
     #[test]
     fn parses_closures_with_and_without_return_annotations() {

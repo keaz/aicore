@@ -1,0 +1,25 @@
+module examples.core.explicit_type_arguments;
+
+import std.io;
+import std.vec;
+
+// `f::[T](..)` chooses generic parameters when nothing else fixes them.
+
+fn empty_of[T]() -> Vec[T] {
+    vec.new_vec()
+}
+
+fn count_or[T](v: Vec[T], fallback: Int) -> Int {
+    if vec.vec_len(v) == 0 {
+        fallback
+    } else {
+        vec.vec_len(v)
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let none = empty_of::[String]();
+    let answer = vec.push(empty_of::[Int](), 42);
+    print_int(count_or::[String](none, 41) + count_or::[Int](answer, 0));
+    0
+}

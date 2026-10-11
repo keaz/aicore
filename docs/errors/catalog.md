@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (325 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (326 codes).
 
 Each code has one row: what the compiler reports, how to produce it, and how to fix it.
 `tests/diagnostic_catalog_tests.rs` runs every trigger and fix program in this table, so the
@@ -262,6 +262,7 @@ Programs are written on one line; `\|` in a program stands for `|`.
 | `E1309` | check | Range pattern matches no value. | `fn f(n: Int) -> Int { match n { 5..=1 => 1, _ => 0 } }` | `fn f(n: Int) -> Int { match n { 1..=5 => 1, _ => 0 } }` |
 | `E1310` | check | Malformed range pattern or range expression. | `fn f(n: Int) -> Int { match n { ..5 => 1, _ => 0 } }` | `fn f(n: Int) -> Int { match n { ..=4 => 1, _ => 0 } }` |
 | `E1311` | check | Open range used as a value, or non-integer range bounds. | `import std.range; fn main() -> Int { let r = 2..; 0 }` | `import std.range; fn main() -> Int { let r = 2..9; 0 }` |
+| `E1312` | check | Explicit type arguments do not fit the callee. | `fn id[T](x: T) -> T { x } fn main() -> Int { id::[Int, Bool](1) }` | `fn id[T](x: T) -> T { x } fn main() -> Int { id::[Int](1) }` |
 | `E1313` | check | A std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. The help line names the `import` to add. | `fn f(items: Vec[Int]) -> Vec[Int] { items } fn main() -> Int { 0 }` | `import std.vec; fn f(items: Vec[Int]) -> Vec[Int] { items } fn main() -> Int { 0 }` |
 | `E2001` | check | A function body (or a call inside it) uses an effect, directly or through a callee's signature, that is not listed in the enclosing function's `effects { ... }` clause. | `import std.io; fn main() -> Int { print_int(1); 0 }` | `import std.io; fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` |
 | `E2002` | check | A `requires`/`ensures`/`invariant` contract expression calls a function or method whose signature declares effects; contracts must be pure. | `import std.time; fn f(x: Int) -> Int effects { time } capabilities { time } requires now_ms() > 0 { x } fn main() -> Int { 0 }` | `fn f(x: Int) -> Int requires x > 0 { x } fn main() -> Int { 0 }` |

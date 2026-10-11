@@ -1042,6 +1042,7 @@ fn rewrite_struct_inits_in_expr(
                 }),
                 args,
                 arg_names: Vec::new(),
+                type_args: Vec::new(),
                 symbol: None,
             };
         }
@@ -1579,11 +1580,13 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             args,
             arg_names,
             symbol,
+            type_args,
         } => ir::ExprKind::Call {
             callee: Box::new(clone_expr(callee, alloc)),
             args: args.iter().map(|a| clone_expr(a, alloc)).collect(),
             arg_names: arg_names.clone(),
             symbol: *symbol,
+            type_args: type_args.clone(),
         },
         ir::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
             template: template.clone(),
@@ -1810,6 +1813,7 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
             args,
             arg_names,
             symbol,
+            type_args,
         } => ir::ExprKind::Call {
             callee: Box::new(substitute_result_var(callee, result_name, alloc)),
             args: args
@@ -1818,6 +1822,7 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
                 .collect(),
             arg_names: arg_names.clone(),
             symbol: *symbol,
+            type_args: type_args.clone(),
         },
         ir::ExprKind::TemplateLiteral { template, args } => ir::ExprKind::TemplateLiteral {
             template: template.clone(),

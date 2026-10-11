@@ -5747,6 +5747,7 @@ impl<'a> Checker<'a> {
                             }),
                             args: Vec::new(),
                             arg_names: Vec::new(),
+                            type_args: Vec::new(),
                             symbol: None,
                         },
                         span: expr.span,
@@ -5959,6 +5960,59 @@ impl<'a> Checker<'a> {
                 }
 
                 // Option / Result constructors.
+                // `Some::[Int](x)`, `Ok::[Int, String](x)`, `Err::[Int, String](e)`.
+                if !qualified
+                    && matches!(name.as_str(), "Some" | "Ok" | "Err")
+                    && matches!(&expr.kind, ir::ExprKind::Call { type_args, .. } if !type_args.is_empty())
+                {
+                    let generics = if name == "Some" {
+                        vec!["T".to_string()]
+                    } else {
+                        vec!["T".to_string(), "E".to_string()]
+                    };
+                    let bindings = self.explicit_type_args(expr, &generics, &name);
+                    if bindings.len() == generics.len() {
+                        let full = if name == "Some" {
+                            format!("Option[{}]", bindings["T"])
+                        } else {
+                            format!("Result[{}, {}]", bindings["T"], bindings["E"])
+                        };
+                        let payload = if name == "Err" {
+                            &bindings["E"]
+                        } else {
+                            &bindings["T"]
+                        };
+                        let [arg] = args.as_slice() else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1210",
+                                format!("{name} constructor takes exactly one argument"),
+                                self.file,
+                                expr.span,
+                            ));
+                            return full;
+                        };
+                        let found = self.check_expr_with_expected(
+                            arg,
+                            locals,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            Some(payload),
+                        );
+                        if !self.types_compatible(payload, &found) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1214",
+                                format!(
+                                    "argument to '{name}' expected '{payload}', found '{found}'"
+                                ),
+                                self.file,
+                                arg.span,
+                            ));
+                        }
+                        self.expr_type_hints.insert(expr.node, full.clone());
+                        return full;
+                    }
+                }
                 if !qualified && name == "Some" {
                     if args.len() != 1 {
                         self.diagnostics.push(Diagnostic::error(
@@ -6417,7 +6471,8 @@ impl<'a> Checker<'a> {
                     // other arguments have fixed the bindings
                     // (`vec.push(vec.new_vec(), 5)`).
                     let generic_set = sig.generic_params.iter().cloned().collect::<BTreeSet<_>>();
-                    let mut generic_bindings = BTreeMap::new();
+                    let mut generic_bindings =
+                        self.explicit_type_args(expr, &sig.generic_params, &rendered_path);
                     let mut arg_types = vec!["<?>".to_string(); args.len()];
                     let mut arg_diag_ranges = vec![(0usize, 0usize); args.len()];
                     for (arg_idx, arg) in args.iter().enumerate() {
@@ -6775,6 +6830,14 @@ impl<'a> Checker<'a> {
                     if contains_unresolved_type(&ret_ty) {
                         self.observe_fn_return_hole(&resolved_name, &ret_ty);
                     }
+                    // Code generation sees the explicitly chosen instance
+                    // through the call's result type.
+                    if matches!(&expr.kind, ir::ExprKind::Call { type_args, .. } if !type_args.is_empty())
+                        && !contains_unresolved_type(&ret_ty)
+                    {
+                        self.expr_type_hints
+                            .insert(expr.node, self.normalize_type(&ret_ty));
+                    }
                     let param_inferred = (0..sig.params.len())
                         .map(|idx| {
                             self.fn_param_inferred
@@ -6907,7 +6970,8 @@ impl<'a> Checker<'a> {
                             .iter()
                             .cloned()
                             .collect::<BTreeSet<_>>();
-                        let mut generic_bindings = BTreeMap::new();
+                        let mut generic_bindings =
+                            self.explicit_type_args(expr, &candidate.generic_params, &name);
 
                         if let Some(payload_ty) = &candidate.payload {
                             let payload_norm = self.normalize_type(payload_ty);
@@ -7929,6 +7993,7 @@ impl<'a> Checker<'a> {
                                     span: expr.span,
                                 }],
                                 arg_names: Vec::new(),
+                                type_args: Vec::new(),
                                 symbol: None,
                             },
                             span: expr.span,
@@ -8659,6 +8724,11 @@ impl<'a> Checker<'a> {
                     }),
                     args: call_args,
                     arg_names: Vec::new(),
+                    // `x.m::[A, B](..)` names all of `m`'s generic parameters.
+                    type_args: match &call_expr.kind {
+                        ir::ExprKind::Call { type_args, .. } => type_args.clone(),
+                        _ => Vec::new(),
+                    },
                     symbol: None,
                 },
                 span: call_expr.span,
@@ -8673,6 +8743,24 @@ impl<'a> Checker<'a> {
             );
         }
 
+        if matches!(&call_expr.kind, ir::ExprKind::Call { type_args, .. } if !type_args.is_empty())
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1312",
+                    format!(
+                        "explicit type arguments are not supported on '{}.{}'",
+                        base_type_name(&receiver_ty),
+                        field
+                    ),
+                    self.file,
+                    call_expr.span,
+                )
+                .with_help(
+                    "type arguments apply to functions, inherent methods and enum variant constructors",
+                ),
+            );
+        }
         if let Some((trait_name, method_sig, mut type_bindings)) =
             self.find_trait_bound_method(&receiver_ty, field)
         {
@@ -8939,6 +9027,7 @@ impl<'a> Checker<'a> {
                 callee: Box::new(callee),
                 args: args.to_vec(),
                 arg_names: Vec::new(),
+                type_args: Vec::new(),
                 symbol: None,
             },
             span,
@@ -11096,6 +11185,7 @@ impl<'a> Checker<'a> {
                 callee: Box::new(callee),
                 args,
                 arg_names: Vec::new(),
+                type_args: Vec::new(),
                 symbol: None,
             },
             span,
@@ -11280,6 +11370,7 @@ impl<'a> Checker<'a> {
                 callee: Box::new(panic_callee),
                 args: Vec::new(),
                 arg_names: Vec::new(),
+                type_args: Vec::new(),
                 symbol: None,
             },
             span,
@@ -11401,6 +11492,7 @@ impl<'a> Checker<'a> {
                         callee: Box::new(some),
                         args: vec![hi.clone()],
                         arg_names: Vec::new(),
+                        type_args: Vec::new(),
                         symbol: None,
                     },
                     span,
@@ -11709,6 +11801,7 @@ impl<'a> Checker<'a> {
                     callee: Box::new(callee),
                     args: vec![base.clone()],
                     arg_names: Vec::new(),
+                    type_args: Vec::new(),
                     symbol: None,
                 },
                 span: call_expr.span,
@@ -11816,6 +11909,57 @@ impl<'a> Checker<'a> {
                 .unwrap_or(true)
         }
         !contains_unresolved_type(ty) && symbolic_names_fixed(ty, &self.current_function_generics)
+    }
+
+    /// Bindings from explicit type arguments (`f::[Int, Bool](..)`) for the
+    /// callee's `generics`, in order. E1312 when the count does not match.
+    fn explicit_type_args(
+        &mut self,
+        call: &ir::Expr,
+        generics: &[String],
+        callee: &str,
+    ) -> BTreeMap<String, String> {
+        let ir::ExprKind::Call { type_args, .. } = &call.kind else {
+            return BTreeMap::new();
+        };
+        if type_args.is_empty() {
+            return BTreeMap::new();
+        }
+        if type_args.len() != generics.len() {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1312",
+                    format!(
+                        "'{}' takes {} type argument(s), found {}",
+                        callee,
+                        generics.len(),
+                        type_args.len()
+                    ),
+                    self.file,
+                    call.span,
+                )
+                .with_help(if generics.is_empty() {
+                    "remove `::[..]`: this callee is not generic".to_string()
+                } else {
+                    format!(
+                        "give one type per generic parameter: [{}]",
+                        generics.join(", ")
+                    )
+                }),
+            );
+            return BTreeMap::new();
+        }
+        let mut bindings = BTreeMap::new();
+        for (generic, id) in generics.iter().zip(type_args) {
+            let ty = self
+                .types
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string());
+            self.check_generic_arity(&ty, call.span);
+            bindings.insert(generic.clone(), self.normalize_type(&ty));
+        }
+        bindings
     }
 
     /// The loop a `break`/`continue` leaves: the innermost one, or the
@@ -14235,6 +14379,64 @@ fn f(x: Int) -> Int {
 }
 "#;
         assert!(!error_codes(missing).is_empty());
+    }
+
+    #[test]
+    fn explicit_type_arguments_bind_generics() {
+        let ok = r#"
+enum Slot[T] { Filled(T), Blank }
+fn id[T](x: T) -> T { x }
+fn pick[A, B](a: A, b: B) -> B { b }
+fn fallback[T](x: Option[T]) -> Option[T] { x }
+fn main() -> Int {
+    let a: Int = id::[Int](1);
+    let b: Bool = pick::[Int, Bool](1, true);
+    let c = fallback::[Int](None);
+    let d = Some::[Int](4);
+    let e = Ok::[Int, Bool](5);
+    let f = Err::[Int, Bool](false);
+    let g = Filled::[Int](6);
+    a
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_messages(ok));
+        let cases = [
+            (
+                "fn id[T](x: T) -> T { x } fn main() -> Int { id::[Int, Bool](1) }",
+                "E1312",
+            ),
+            (
+                "fn g(x: Int) -> Int { x } fn main() -> Int { g::[Int](1) }",
+                "E1312",
+            ),
+            (
+                "fn main() -> Int { let o = Some::[Int, Bool](1); 0 }",
+                "E1312",
+            ),
+            (
+                "enum Slot[T] { Filled(T) } fn main() -> Int { let s = Filled::[Int, Int](1); 0 }",
+                "E1312",
+            ),
+            // The chosen type wins over the argument.
+            (
+                "fn id[T](x: T) -> T { x } fn main() -> Int { let b = id::[Bool](1); 0 }",
+                "E1214",
+            ),
+            ("fn main() -> Int { let o = Some::[Bool](1); 0 }", "E1214"),
+            // Not supported on built-in conversion methods and other non-generic calls.
+            (
+                "fn main() -> Int { let x = 1; let y = x.to_f64::[Int](); 0 }",
+                "E1312",
+            ),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {:?}",
+                error_messages(src)
+            );
+        }
     }
 
     #[test]

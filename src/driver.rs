@@ -837,6 +837,7 @@ fn apply_variant_callees(program: &mut ir::Program, callees: &BTreeMap<ir::NodeI
                     }),
                     args: Vec::new(),
                     arg_names: Vec::new(),
+                    type_args: Vec::new(),
                     symbol: None,
                 };
             }
@@ -899,6 +900,7 @@ fn apply_struct_variants(
                         span: expr.span,
                     }],
                     arg_names: Vec::new(),
+                    type_args: Vec::new(),
                     symbol: None,
                 };
             }

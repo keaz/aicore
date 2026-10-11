@@ -19793,3 +19793,52 @@ fn main() -> Int effects { io } capabilities { io } {
         "42\n1\n42\n42\n42100\n42\n42\n42\n42\n42\n42\ndouble\n"
     );
 }
+
+#[test]
+fn exec_explicit_type_arguments_select_instances() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.option;
+
+enum Slot[T] {
+    Filled(T),
+    Blank,
+}
+
+fn make[T]() -> Vec[T] {
+    vec.new_vec()
+}
+
+fn first_or[T](v: Vec[T], fallback: T) -> T {
+    match vec.get(v, 0) {
+        Some(x) => x,
+        None => fallback,
+    }
+}
+
+fn pick[A, B](a: A, b: B) -> B {
+    b
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let empty = make::[Int]();
+    let names = vec.push(make::[String](), "ada");
+    print_int(vec.vec_len(empty) + vec.vec_len(names));
+    print_str(first_or::[String](names, "none"));
+    print_str("\n");
+    print_int(first_or::[Int](vec.push(vec.new_vec::[Int](), 41), 0) + 1);
+    print_int(if pick::[Int, Bool](0, true) { 1 } else { 0 });
+    let maybe = Some::[Int](20);
+    print_int(maybe.map_or::[Int, Int](0, |x| x * 2) + 2);
+    let r = Ok::[Int, String](42);
+    print_int(match r { Ok(v) => v, Err(_) => 0 });
+    let s = Filled::[Int](42);
+    print_int(match s { Filled(v) => v, Blank => 0 });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\nada\n42\n1\n42\n42\n42\n");
+}

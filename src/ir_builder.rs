@@ -592,11 +592,13 @@ impl Builder {
                 callee,
                 args,
                 arg_names,
+                type_args,
             } => ir::ExprKind::Call {
                 callee: Box::new(self.lower_expr(callee)),
                 args: args.iter().map(|a| self.lower_expr(a)).collect(),
                 arg_names: arg_names.clone(),
                 symbol: None,
+                type_args: type_args.iter().map(|ty| self.lower_type(ty)).collect(),
             },
             ast::ExprKind::Closure {
                 params,
