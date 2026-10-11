@@ -13,7 +13,7 @@ use crate::codegen::{
     CodegenOptions, CompileOptions, LinkOptions, OptimizationLevel,
 };
 use crate::contracts::{lower_runtime_asserts, verify_static_with_context};
-use crate::diagnostics::{Diagnostic, Severity, SuggestedFix};
+use crate::diagnostics::{attach_line_columns, Diagnostic, Severity, SuggestedFix};
 use crate::effects::{
     normalize_capability_declarations_with_context, normalize_effect_declarations_with_context,
 };
@@ -80,6 +80,12 @@ pub fn run_frontend_with_options(
     path: &Path,
     options: FrontendOptions,
 ) -> anyhow::Result<FrontendOutput> {
+    let mut front = run_frontend_passes(path, options)?;
+    attach_line_columns(&mut front.diagnostics);
+    Ok(front)
+}
+
+fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<FrontendOutput> {
     let file = machine_paths::canonical_machine_path(path);
     let mut timings = FrontendTimings::default();
     let load_started = Instant::now();
@@ -1071,8 +1077,10 @@ pub fn diagnostics_json(path: &Path) -> anyhow::Result<String> {
 }
 
 pub fn diagnostics_pretty(diags: &[Diagnostic]) -> String {
+    let mut diags = diags.to_vec();
+    attach_line_columns(&mut diags);
     let mut out = String::new();
-    for d in diags {
+    for d in &diags {
         let sev = match d.severity {
             Severity::Error => "error",
             Severity::Warning => "warning",
@@ -1080,10 +1088,15 @@ pub fn diagnostics_pretty(diags: &[Diagnostic]) -> String {
         };
         out.push_str(&format!("{}[{}]: {}\n", sev, d.code, d.message));
         for span in &d.spans {
-            out.push_str(&format!(
-                "  --> {}:{}-{}\n",
-                span.file, span.start, span.end
-            ));
+            match (span.start_line, span.start_column) {
+                (Some(line), Some(column)) => {
+                    out.push_str(&format!("  --> {}:{}:{}\n", span.file, line, column))
+                }
+                _ => out.push_str(&format!(
+                    "  --> {}:{}-{}\n",
+                    span.file, span.start, span.end
+                )),
+            }
             if let Some(label) = &span.label {
                 out.push_str(&format!("      = {}\n", label));
             }

@@ -772,12 +772,29 @@ aic check src/main.aic --json
     "severity": "error",
     "message": "calling 'io_fn' requires undeclared effects: io",
     "spans": [
-      { "file": "src/main.aic", "start": 95, "end": 102, "label": null }
+      {
+        "file": "/work/app/src/main.aic",
+        "start": 95,
+        "end": 102,
+        "label": null,
+        "start_line": 6,
+        "start_column": 5,
+        "end_line": 6,
+        "end_column": 12
+      }
     ],
     "help": ["add `effects { io }` on the enclosing function"],
     "suggested_fixes": []
   }
 ]
+```
+
+`start`/`end` are byte offsets (`end` exclusive). `start_line`, `start_column`, `end_line` and `end_column` are 1-based; columns count Unicode characters and `end_column` is exclusive. They are present whenever the source file is readable. Text output prints the start position as `file:line:column`:
+
+```text
+error[E2001]: calling 'io_fn' requires undeclared effects: io
+  --> /work/app/src/main.aic:6:5
+      help: add `effects { io }` on the enclosing function
 ```
 
 ### SARIF Export

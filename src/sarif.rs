@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::diagnostics::{Diagnostic, Severity};
+use crate::diagnostics::{offset_to_line_col, Diagnostic, Severity};
 
 pub fn diagnostics_to_sarif(diags: &[Diagnostic], tool_name: &str, tool_version: &str) -> Value {
     let rules = collect_rules(diags);
@@ -158,24 +158,6 @@ fn to_artifact_uri(file: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
-fn offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
-    let mut line = 1usize;
-    let mut col = 1usize;
-    let clamped = offset.min(source.len());
-    for (idx, ch) in source.char_indices() {
-        if idx >= clamped {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-    (line, col)
-}
-
 pub fn write_sarif(path: &Path, sarif: &Value) -> anyhow::Result<()> {
     let text = serde_json::to_string_pretty(sarif)?;
     fs::write(path, format!("{text}\n"))?;
@@ -188,7 +170,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::diagnostics::Diagnostic;
+    use crate::diagnostics::{offset_to_line_col, Diagnostic};
     use crate::span::Span;
 
     use super::diagnostics_to_sarif;

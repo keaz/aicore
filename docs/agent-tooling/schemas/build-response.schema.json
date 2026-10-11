@@ -127,6 +127,26 @@
                   "string",
                   "null"
                 ]
+              },
+              "start_line": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-based line of `start`; present when the source file is readable."
+              },
+              "start_column": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-based column of `start`, counted in Unicode scalar values."
+              },
+              "end_line": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-based line of `end`."
+              },
+              "end_column": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-based column of `end` (exclusive, like `end`)."
               }
             }
           }

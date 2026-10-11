@@ -2851,6 +2851,7 @@ impl<'a> Checker<'a> {
                     start: previous.closed_at.start,
                     end: previous.closed_at.end,
                     label: Some("resource was closed here".to_string()),
+                    ..DiagnosticSpan::default()
                 });
                 self.diagnostics.push(diag);
             }
@@ -3017,6 +3018,7 @@ impl<'a> Checker<'a> {
                                 "active borrow of '{}' starts here",
                                 conflict_target
                             )),
+                            ..DiagnosticSpan::default()
                         });
                         diag.help.push(
                             "release or narrow the borrow scope before mutating this binding"
@@ -3382,6 +3384,7 @@ impl<'a> Checker<'a> {
                         "conflicting borrow of '{}' starts here",
                         conflict_target
                     )),
+                    ..DiagnosticSpan::default()
                 });
                 diag.help
                     .push("release the previous borrow before taking a mutable borrow".to_string());
@@ -3409,6 +3412,7 @@ impl<'a> Checker<'a> {
                     "active mutable borrow of '{}' starts here",
                     conflict_target
                 )),
+                ..DiagnosticSpan::default()
             });
             diag.help
                 .push("end the mutable borrow before taking shared borrows".to_string());
@@ -3538,6 +3542,7 @@ impl<'a> Checker<'a> {
             start: moved_at.start,
             end: moved_at.end,
             label: Some("value moved here".to_string()),
+            ..DiagnosticSpan::default()
         });
         self.diagnostics.push(diag);
         false
@@ -3615,6 +3620,7 @@ impl<'a> Checker<'a> {
                 start: borrow.span.start,
                 end: borrow.span.end,
                 label: Some("active borrow starts here".to_string()),
+                ..DiagnosticSpan::default()
             });
             self.diagnostics.push(diag);
             return false;

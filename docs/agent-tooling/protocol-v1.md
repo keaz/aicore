@@ -105,6 +105,13 @@ Negative/error fixtures:
 - Within `reasoning`, `hypotheses[]` are sorted deterministically by descending `confidence`, then stable identity fields.
 - For multi-file programs, `diagnostics[*].spans[*].file` must identify the originating source file for that span (not the entry file fallback) whenever the span comes from real source.
 
+## Diagnostic span positions
+
+- `spans[*].start` and `spans[*].end` are byte offsets into the file; `end` is exclusive.
+- `spans[*].start_line`, `start_column`, `end_line` and `end_column` are optional 1-based positions for the same offsets. Columns count Unicode scalar values (not bytes or UTF-16 units); `end_column` is exclusive. They are emitted whenever the span's file is readable and omitted otherwise, so consumers must fall back to byte offsets when they are absent.
+- Human-readable output prints `file:line:column` when positions are known, otherwise `file:start-end`.
+- Each diagnostic is emitted once: `aic check` and `aic diag` drop exact duplicates while keeping the original order.
+
 ## Path normalization guarantees
 
 Machine-facing filesystem path fields use one canonical policy:

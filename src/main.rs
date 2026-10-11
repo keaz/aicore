@@ -4920,6 +4920,17 @@ fn collect_check_data(
     offline: bool,
     warn_unused: bool,
 ) -> anyhow::Result<(Vec<Diagnostic>, Vec<aicore::typecheck::TypedHole>)> {
+    let (mut diagnostics, holes) = collect_check_data_unpositioned(input, offline, warn_unused)?;
+    aicore::diagnostics::dedup_diagnostics(&mut diagnostics);
+    aicore::diagnostics::attach_line_columns(&mut diagnostics);
+    Ok((diagnostics, holes))
+}
+
+fn collect_check_data_unpositioned(
+    input: &Path,
+    offline: bool,
+    warn_unused: bool,
+) -> anyhow::Result<(Vec<Diagnostic>, Vec<aicore::typecheck::TypedHole>)> {
     if input.is_dir() {
         match workspace_build_plan(input) {
             Ok(Some(plan)) => {

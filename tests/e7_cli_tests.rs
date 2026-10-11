@@ -665,6 +665,7 @@ fn make_diag(code: &str, message: &str, file: &str, start: usize, end: usize) ->
             start,
             end,
             label: Some("label".to_string()),
+            ..DiagnosticSpan::default()
         }],
         help: vec!["help".to_string()],
         suggested_fixes: vec![],
@@ -5577,6 +5578,62 @@ fn check_single_file_is_fast_regardless_of_path_form_and_cwd() {
             cwd.display()
         );
     }
+}
+
+#[test]
+fn check_reports_line_column_positions_once_per_diagnostic() {
+    let dir = tempdir().expect("tempdir");
+    let file = dir.path().join("positions.aic");
+    fs::write(
+        &file,
+        "fn helper() -> Int {\n    missing_one\n}\n\nfn main() -> Int {\n    // é\n    missing_two\n}\n",
+    )
+    .expect("write source");
+    let file_arg = file.to_string_lossy().to_string();
+
+    let json_out = run_aic(&["check", &file_arg, "--json"]);
+    assert_eq!(json_out.status.code(), Some(1));
+    let diags: Value = serde_json::from_slice(&json_out.stdout).expect("diagnostics json");
+    let diags = diags.as_array().expect("array");
+    let positions: Vec<(u64, u64, u64, u64)> = diags
+        .iter()
+        .map(|diag| {
+            let span = &diag["spans"][0];
+            (
+                span["start_line"].as_u64().expect("start_line"),
+                span["start_column"].as_u64().expect("start_column"),
+                span["end_line"].as_u64().expect("end_line"),
+                span["end_column"].as_u64().expect("end_column"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        positions,
+        vec![(2, 5, 2, 16), (7, 5, 7, 16)],
+        "diags={diags:#?}"
+    );
+
+    let text_out = run_aic(&["check", &file_arg]);
+    assert_eq!(text_out.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&text_out.stdout).to_string();
+    let headers = text
+        .lines()
+        .filter(|line| line.starts_with("error["))
+        .count();
+    assert_eq!(
+        headers,
+        diags.len(),
+        "each diagnostic printed once:\n{text}"
+    );
+    let canonical = diags[0]["spans"][0]["file"].as_str().expect("span file");
+    assert!(
+        text.contains(&format!("  --> {canonical}:2:5\n")),
+        "text={text}"
+    );
+    assert!(
+        text.contains(&format!("  --> {canonical}:7:5\n")),
+        "text={text}"
+    );
 }
 
 #[test]
