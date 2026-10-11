@@ -1987,9 +1987,84 @@ static int64_t aic_rt_proc_validate_env_items(const AicString* items, int64_t co
 }
 
 #ifdef _WIN32
+static int aic_rt_proc_env_name_overridden(
+    const char* entry,
+    const AicString* items,
+    size_t count
+) {
+    const char* eq = strchr(entry, '=');
+    // Entries such as "=C:=C:\dir" track per-drive working directories; never drop them.
+    if (eq == NULL || eq == entry) {
+        return 0;
+    }
+    size_t name_n = (size_t)(eq - entry);
+    for (size_t i = 0; i < count; ++i) {
+        const char* item_eq = memchr(items[i].ptr, '=', (size_t)items[i].len);
+        if (item_eq == NULL) {
+            continue;
+        }
+        size_t item_name_n = (size_t)(item_eq - items[i].ptr);
+        if (item_name_n == name_n && _strnicmp(entry, items[i].ptr, name_n) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Builds an ANSI environment block for CreateProcessA: the current environment with
+// `items` (NAME=VALUE) overriding variables of the same (case-insensitive) name.
+static int64_t aic_rt_proc_build_windows_env_block(
+    const AicString* items,
+    int64_t count,
+    char** out_block
+) {
+    *out_block = NULL;
+    if (count <= 0) {
+        return 0;
+    }
+    size_t count_n = (size_t)count;
+    LPCH current = GetEnvironmentStringsA();
+    if (current == NULL) {
+        return aic_rt_proc_map_win_error(GetLastError());
+    }
+    size_t total = 1;
+    for (const char* entry = current; *entry != '\0'; entry += strlen(entry) + 1) {
+        if (!aic_rt_proc_env_name_overridden(entry, items, count_n)) {
+            total += strlen(entry) + 1;
+        }
+    }
+    for (size_t i = 0; i < count_n; ++i) {
+        total += (size_t)items[i].len + 1;
+    }
+    char* block = (char*)malloc(total);
+    if (block == NULL) {
+        FreeEnvironmentStringsA(current);
+        return 4;
+    }
+    size_t pos = 0;
+    for (const char* entry = current; *entry != '\0'; entry += strlen(entry) + 1) {
+        if (!aic_rt_proc_env_name_overridden(entry, items, count_n)) {
+            size_t entry_n = strlen(entry) + 1;
+            memcpy(block + pos, entry, entry_n);
+            pos += entry_n;
+        }
+    }
+    FreeEnvironmentStringsA(current);
+    for (size_t i = 0; i < count_n; ++i) {
+        size_t item_n = (size_t)items[i].len;
+        memcpy(block + pos, items[i].ptr, item_n);
+        pos += item_n;
+        block[pos++] = '\0';
+    }
+    block[pos] = '\0';
+    *out_block = block;
+    return 0;
+}
+
 static int64_t aic_rt_proc_run_windows_command(
     const char* command_line,
     const char* cwd,
+    char* env_block,
     int64_t timeout_ms,
     int64_t* out_status,
     int* out_timed_out
@@ -2025,7 +2100,7 @@ static int64_t aic_rt_proc_run_windows_command(
         NULL,
         FALSE,
         CREATE_NO_WINDOW,
-        NULL,
+        env_block,
         launch_cwd,
         &startup,
         &process_info
@@ -2139,25 +2214,7 @@ static int64_t aic_rt_proc_run_shell_with_options(
         return wrote;
     }
 
-    size_t env_prefix_n = 0;
-    size_t env_count_n = env_count > 0 ? (size_t)env_count : 0;
-    for (size_t i = 0; i < env_count_n; ++i) {
-        size_t item_n = (size_t)env_items[i].len;
-        if (memchr(env_items[i].ptr, '"', item_n) != NULL ||
-            memchr(env_items[i].ptr, '\n', item_n) != NULL ||
-            memchr(env_items[i].ptr, '\r', item_n) != NULL) {
-            remove(stdout_path);
-            remove(stderr_path);
-            remove(stdin_path);
-            free(stdout_path);
-            free(stderr_path);
-            free(stdin_path);
-            return 3;
-        }
-        env_prefix_n += 5 + item_n + 5;
-    }
-
-    size_t body_n = env_prefix_n + strlen(command) + strlen(stdin_path) +
+    size_t body_n = strlen(command) + strlen(stdin_path) +
                     strlen(stdout_path) + strlen(stderr_path) + 64;
     char* body = (char*)malloc(body_n);
     if (body == NULL) {
@@ -2171,15 +2228,6 @@ static int64_t aic_rt_proc_run_shell_with_options(
     }
 
     size_t pos = 0;
-    for (size_t i = 0; i < env_count_n; ++i) {
-        size_t item_n = (size_t)env_items[i].len;
-        memcpy(body + pos, "set \"", 5);
-        pos += 5;
-        memcpy(body + pos, env_items[i].ptr, item_n);
-        pos += item_n;
-        memcpy(body + pos, "\" && ", 5);
-        pos += 5;
-    }
     int written_n = snprintf(
         body + pos,
         body_n - pos,
@@ -2218,15 +2266,22 @@ static int64_t aic_rt_proc_run_shell_with_options(
     command_line[11 + pos] = '\0';
     free(body);
 
+    char* env_block = NULL;
+    int64_t env_rc = aic_rt_proc_build_windows_env_block(env_items, env_count, &env_block);
     int64_t run_status = 0;
     int timed_out = 0;
-    int64_t run_rc = aic_rt_proc_run_windows_command(
-        command_line,
-        cwd,
-        timeout_ms,
-        &run_status,
-        &timed_out
-    );
+    int64_t run_rc = env_rc;
+    if (env_rc == 0) {
+        run_rc = aic_rt_proc_run_windows_command(
+            command_line,
+            cwd,
+            env_block,
+            timeout_ms,
+            &run_status,
+            &timed_out
+        );
+    }
+    free(env_block);
     free(command_line);
 
     int64_t stdout_n = 0;

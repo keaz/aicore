@@ -7698,7 +7698,7 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
         env: vec.vec_of("AIC_PROC_ENV=from-env"),
         timeout_ms: 0,
     };
-    let out = match run_with("type input.txt & set /p =\"|\" <NUL & set /p =\"%AIC_PROC_ENV%|\" <NUL & set /p STDINVAL= & echo %STDINVAL%", opts) {
+    let out = match run_with("type input.txt & set /p =\"|\" <NUL & set /p =\"%AIC_PROC_ENV%|\" <NUL & findstr \"^\"", opts) {
         Ok(value) => value,
         Err(_) => ProcResult { status: proc_nonnegative_int_to_i32(99), stdout: "", stderr: "" },
     };
