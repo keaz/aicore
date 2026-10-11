@@ -1,0 +1,44 @@
+module examples.core.pattern_lets;
+
+import std.io;
+import std.vec;
+
+// `if let`, `while let`, `let ... else` and struct destructuring.
+
+struct Order {
+    id: Int,
+    qty: Int,
+}
+
+fn qty_at(orders: Vec[Order], index: Int) -> Int {
+    let Some(order) = vec.get(orders, index) else {
+        return 0;
+    };
+    let Order { qty, .. } = order;
+    qty
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut orders: Vec[Order] = vec.new_vec();
+    orders = vec.push(orders, Order { id: 1, qty: 10 });
+    orders = vec.push(orders, Order { id: 2, qty: 20 });
+    orders = vec.push(orders, Order { id: 3, qty: 5 });
+
+    let mut total = 0;
+    let mut index = 0;
+    while let Some(order) = vec.get(orders, index) {
+        let Order { id, qty } = order;
+        if id != 2 {
+            total += qty;
+        }
+        index += 1;
+    }
+
+    let missing = qty_at(orders, 7);
+    if let Some(order) = vec.get(orders, 1) {
+        total += order.qty + missing;
+    }
+    // 10 + 5 + 20 + 0 + 7 = 42
+    print_int(total + 7);
+    0
+}

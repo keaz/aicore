@@ -191,6 +191,27 @@ impl MutableReceiverCall {
     }
 }
 
+/// The catch-all arm the parser adds when it desugars `if let`, `while let`
+/// or `let ... else` into a `match`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesugaredArm {
+    IfLetElse,
+    WhileLetEnd,
+    LetElse,
+}
+
+fn desugared_arm_kind(pattern: &ir::Pattern) -> Option<DesugaredArm> {
+    let ir::PatternKind::Var(name) = &pattern.kind else {
+        return None;
+    };
+    match name.as_str() {
+        crate::ast::IF_LET_ELSE_BINDING => Some(DesugaredArm::IfLetElse),
+        crate::ast::WHILE_LET_END_BINDING => Some(DesugaredArm::WhileLetEnd),
+        crate::ast::LET_ELSE_BINDING => Some(DesugaredArm::LetElse),
+        _ => None,
+    }
+}
+
 /// Splits `Enum::Variant` into its enum and variant names.
 fn split_variant_path(name: &str) -> Option<(&str, &str)> {
     let (enum_name, variant) = name.rsplit_once("::")?;
@@ -4941,6 +4962,7 @@ impl<'a> Checker<'a> {
                         if contains_unresolved_type(&expr_ty) {
                             pending_unresolved_lets.push((name.clone(), *span));
                         }
+                        self.check_struct_let_pattern(name, &expr_ty, *span);
                         self.let_binding_types.insert(*symbol, expr_ty.clone());
                         scope.insert(name.clone(), expr_ty);
                     }
@@ -7150,16 +7172,30 @@ impl<'a> Checker<'a> {
                         self,
                     );
                     if redundant {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                "E1251",
+                        // The catch-all arm of a desugared `if let`,
+                        // `while let` or `let ... else` is unreachable when
+                        // the pattern always matches.
+                        let (message, help) = match desugared_arm_kind(&arm.pattern) {
+                            Some(DesugaredArm::IfLetElse) => (
+                                "`if let` pattern always matches",
+                                "use `let` instead of `if let`",
+                            ),
+                            Some(DesugaredArm::WhileLetEnd) => (
+                                "`while let` pattern always matches, so the loop never ends this way",
+                                "use `loop` with a plain `let`",
+                            ),
+                            Some(DesugaredArm::LetElse) => (
+                                "`let ... else` pattern always matches",
+                                "remove the `else` block",
+                            ),
+                            None => (
                                 "unreachable match arm",
-                                self.file,
-                                arm.span,
-                            )
-                            .with_help(
                                 "remove this arm or place it before earlier overlapping patterns",
                             ),
+                        };
+                        self.diagnostics.push(
+                            Diagnostic::error("E1251", message, self.file, arm.span)
+                                .with_help(help),
                         );
                     }
                     let mut arm_scope = locals.clone();
@@ -7192,7 +7228,7 @@ impl<'a> Checker<'a> {
                     } else {
                         covered.push(vec![arm_pat]);
                     }
-                    let body_ty = self.check_expr_with_expected(
+                    let mut body_ty = self.check_expr_with_expected(
                         &arm.body,
                         &mut arm_scope,
                         allowed_effects,
@@ -7200,6 +7236,24 @@ impl<'a> Checker<'a> {
                         contract_mode,
                         expected_ty,
                     );
+                    if desugared_arm_kind(&arm.pattern) == Some(DesugaredArm::LetElse)
+                        && !self.is_never_type(&body_ty)
+                        && !contains_unresolved_type(&body_ty)
+                    {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1302",
+                                format!(
+                                    "the `else` block of `let ... else` must diverge, but it has type '{}'",
+                                    body_ty
+                                ),
+                                self.file,
+                                arm.body.span,
+                            )
+                            .with_help("end the block with `return`, `break`, `continue` or `panic(...)`"),
+                        );
+                        body_ty = NEVER_TYPE.to_string();
+                    }
                     arm_types.push(body_ty);
                 }
 
@@ -7219,15 +7273,33 @@ impl<'a> Checker<'a> {
                     for ty in arm_types.iter().skip(1) {
                         if !self.types_compatible(&first, ty) && !self.types_compatible(ty, &first)
                         {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E1221",
-                                format!(
-                                    "match arms must return same type (found '{}' and '{}')",
-                                    first, ty
-                                ),
-                                self.file,
-                                expr.span,
-                            ));
+                            let missing_if_let_else = arms.get(1).is_some_and(|arm| {
+                                desugared_arm_kind(&arm.pattern) == Some(DesugaredArm::IfLetElse)
+                                    && arm.body.span.start == arm.body.span.end
+                            });
+                            let diagnostic = if missing_if_let_else {
+                                Diagnostic::error(
+                                    "E1220",
+                                    format!(
+                                        "`if let` without `else` has type '()', but its branch has type '{}'",
+                                        first
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help("add an `else` branch, or end the branch with `;` to discard its value")
+                            } else {
+                                Diagnostic::error(
+                                    "E1221",
+                                    format!(
+                                        "match arms must return same type (found '{}' and '{}')",
+                                        first, ty
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                )
+                            };
+                            self.diagnostics.push(diagnostic);
                             return "<?>".to_string();
                         }
                     }
@@ -10314,6 +10386,34 @@ impl<'a> Checker<'a> {
             return Some(Self::unqualified_name(base).to_string());
         }
         None
+    }
+
+    /// `let Point { x, y } = value;` binds `value` to a temporary named
+    /// after the struct (`__struct_let_0__Point`); the value must have that
+    /// struct type.
+    fn check_struct_let_pattern(&mut self, binding: &str, value_ty: &str, span: crate::span::Span) {
+        let Some(rest) = binding.strip_prefix(crate::parser::STRUCT_LET_TMP_PREFIX) else {
+            return;
+        };
+        let Some((_, struct_name)) = rest.split_once("__") else {
+            return;
+        };
+        if contains_unresolved_type(value_ty) {
+            return;
+        }
+        let normalized = self.normalize_type(value_ty);
+        let actual = Self::unqualified_name(base_type_name(&normalized));
+        if actual != Self::unqualified_name(struct_name) {
+            self.diagnostics.push(Diagnostic::error(
+                "E1245",
+                format!(
+                    "struct pattern '{}' not valid for type '{}'",
+                    struct_name, value_ty
+                ),
+                self.file,
+                span,
+            ));
+        }
     }
 
     /// The constructor name for `name` used as a value when it names a unit
@@ -14593,6 +14693,46 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pattern_lets_are_checked() {
+        let ok = r#"
+struct P { x: Int, y: Int }
+fn f(o: Option[Int], p: P) -> Int {
+    let P { x, .. } = p;
+    let Some(v) = o else { return x; };
+    let mut total = 0;
+    if let Some(w) = o { total = w; }
+    let mut i = 0;
+    while let Some(k) = o {
+        if k > i { break; }
+        i = i + 1;
+    }
+    v + total
+}
+fn main() -> Int { 0 }
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // The else block of `let ... else` must diverge.
+            ("fn f(o: Option[Int]) -> Int { let Some(v) = o else { 0 }; v } fn main() -> Int { 0 }", "E1302"),
+            // A struct pattern must match the value's type.
+            ("struct P { x: Int } struct Q { x: Int } fn main() -> Int { let Q { x } = P { x: 1 }; x }", "E1245"),
+            // `if let` that always matches.
+            ("fn main() -> Int { if let n = 5 { n } else { 0 } }", "E1251"),
+            // `if let` without `else` has type `()`.
+            ("fn f(o: Option[Int]) -> Int { let r = if let Some(z) = o { z }; 0 } fn main() -> Int { 0 }", "E1220"),
+            // Bindings from `if let` are scoped to the branch.
+            ("fn f(o: Option[Int]) -> Int { if let Some(z) = o { z; } z } fn main() -> Int { 0 }", "E1208"),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);

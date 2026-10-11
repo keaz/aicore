@@ -18735,3 +18735,65 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "132\n105\n7\n40\n");
 }
+
+#[test]
+fn exec_if_let_while_let_let_else_and_struct_destructuring() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct Point { x: Int, y: Int }
+struct Segment { from: Point, to: Point }
+
+fn length(s: Segment) -> Int {
+    let Segment { from: Point { x: x1, y: y1 }, to } = s;
+    let Point { x: x2, y: y2 } = to;
+    (x2 - x1) + (y2 - y1)
+}
+
+fn at_or(v: Vec[Int], i: Int, fallback: Int) -> Int {
+    let Some(value) = vec.get(v, i) else {
+        return fallback;
+    };
+    value
+}
+
+fn describe(o: Option[Int]) -> Int {
+    if let Some(n) = o {
+        n * 10
+    } else if let None = o {
+        -1
+    } else {
+        0
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(length(Segment { from: Point { x: 1, y: 2 }, to: Point { x: 4, y: 8 } }));
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 5);
+    v = vec.push(v, 6);
+    v = vec.push(v, 7);
+    print_int(at_or(v, 1, 0) + at_or(v, 9, 100));
+    print_int(describe(Some(4)) + describe(None));
+    let mut i = 0;
+    let mut sum = 0;
+    while let Some(item) = vec.get(v, i) {
+        i += 1;
+        if item == 6 {
+            continue;
+        }
+        sum += item;
+    }
+    print_int(sum);
+    let (first, Some(second)) = (2, vec.get(v, 2)) else {
+        return 1;
+    };
+    print_int(first * second);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "9\n106\n39\n12\n14\n");
+}

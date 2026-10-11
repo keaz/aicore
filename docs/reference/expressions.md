@@ -95,6 +95,7 @@ hex_int        = "0x" hexdigit+ ;
 - `while` requires a `Bool` condition. Its expression type is unit unless broken with typed flow.
 - `loop` and `break` are typed together: all breaks in one loop must agree on one break type.
 - `continue` and `break` are valid only inside loop contexts.
+- `if let PATTERN = expr { ... } else { ... }` runs the first block with the pattern's bindings when it matches, otherwise the `else` block (optional, as for `if`; `else if` and `else if let` chain). `while let PATTERN = expr { ... }` repeats while the pattern matches; `break` and `continue` work as in `loop`. A pattern that always matches is reported (`E1251`). Both are written back unchanged by `aic fmt`.
 - Enum variants as values: a unit variant is written bare (`Red`, `None`) or qualified (`Color::Red`, `Option::None`); a payload variant is called (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`). A bare name that more than one visible enum declares needs a typed context or a qualifier (`E2104`). Local bindings shadow variant names. The legacy `None()` spelling is accepted, and `aic fmt` prints it as `None`.
 - Block expressions (`{ stmts; tail }`) open a new scope; bindings declared inside end with the block. The block's value is its tail expression, or `()` without one: `let x = { let a = 1; a + 1 };`.
 - `if cond { ... }` without `else` has type `()`: the branch's value must be `()` (end it with `;` to discard a value). Otherwise `E1220` reports "`if` without `else` has type '()'".

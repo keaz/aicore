@@ -964,6 +964,14 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## `if let`, `while let`, `let ... else` and Destructuring `let` (SYNTAX-T5, #452)
+
+- Language surface and rules: `docs/reference/expressions.md`, `docs/reference/statements.md`.
+- Parser desugaring (no new IR): `if let P = e {A} else {B}` → `match e { P => {A}, _$if_let_else => {B} }`; `while let P = e {A}` → `loop { match e { P => {A}, _$while_let_end => break } }`; `let P = e else {B};` → a match whose catch-all arm binds `_$let_else` (one binding: `let x = match ..`; several: a `_$let_else_value_N` temporary plus projections); struct patterns in `let` → a `__struct_let_N__Struct` temporary plus field projections. The marker names are `ast::IF_LET_ELSE_BINDING`, `WHILE_LET_END_BINDING`, `LET_ELSE_BINDING` and `LET_ELSE_TMP_PREFIX` (`_$` cannot be written in source, and the leading `_` keeps unused-variable analysis quiet).
+- Checker: `desugared_arm_kind` recognizes the marker arms to require a diverging let-else block (`E1302`) and to explain an always-matching pattern (`E1251`) or a missing `else` (`E1220`); `check_struct_let_pattern` matches the struct temporary against the value's type (`E1245`). The parser rejects refutable plain `let` (`E1110`).
+- Formatter: `if_let_parts`, `while_let_parts`, `let_else_group` and the generalized `tuple_let_group` print the sugar back from IR (with or without source text).
+- Verification: `exec_if_let_while_let_let_else_and_struct_destructuring`, `pattern_lets_are_checked`, parser tests `desugars_if_let_while_let_and_let_else` and `destructures_structs_in_let_and_rejects_refutable_patterns`, formatter test `pattern_lets_keep_their_sugar`, golden `case28_pattern_lets.aic`, `examples/core/pattern_lets.aic`.
+
 ## Bare and Qualified Unit Variants (SYNTAX-T7, #451)
 
 - Language surface: unit variants as values (`Red`, `Color::Red`, `None`, `Option::None`), qualified constructor calls (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`), and qualified patterns (`Color::Red =>`, `Option::Some(x) =>`).

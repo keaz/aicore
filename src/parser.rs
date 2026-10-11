@@ -7,6 +7,9 @@ use crate::span::Span;
 
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
 const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
+/// Prefix of the temporary of a destructured struct pattern in `let`; the
+/// struct name follows `__` (`__struct_let_0__Point`).
+pub const STRUCT_LET_TMP_PREFIX: &str = "__struct_let_";
 
 /// The operator of an assignment token: `Some(None)` for `=`,
 /// `Some(Some(op))` for a compound operator, `None` for anything else.
@@ -27,6 +30,45 @@ fn assignment_operator(kind: &TokenKind) -> Option<Option<BinOp>> {
         _ => return None,
     };
     Some(Some(op))
+}
+
+/// The first sub-pattern that does not match every value: a literal, a
+/// variant, or an or-pattern. Tuples and structs are irrefutable when their
+/// parts are.
+fn first_refutable_pattern(pattern: &Pattern) -> Option<&Pattern> {
+    match &pattern.kind {
+        PatternKind::Wildcard | PatternKind::Var(_) => None,
+        PatternKind::Variant { name, args } if name == TUPLE_INTERNAL_NAME => {
+            args.iter().find_map(first_refutable_pattern)
+        }
+        PatternKind::Struct { fields, .. } => fields
+            .iter()
+            .find_map(|field| first_refutable_pattern(&field.pattern)),
+        _ => Some(pattern),
+    }
+}
+
+/// Names bound by `pattern`, in source order.
+fn collect_pattern_binding_names(pattern: &Pattern, out: &mut Vec<String>) {
+    match &pattern.kind {
+        PatternKind::Var(name) => out.push(name.clone()),
+        PatternKind::Variant { args, .. } => {
+            for arg in args {
+                collect_pattern_binding_names(arg, out);
+            }
+        }
+        PatternKind::Struct { fields, .. } => {
+            for field in fields {
+                collect_pattern_binding_names(&field.pattern, out);
+            }
+        }
+        PatternKind::Or { patterns } => {
+            if let Some(first) = patterns.first() {
+                collect_pattern_binding_names(first, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Expressions that end in a block: they can be statements without `;`,
@@ -154,9 +196,19 @@ enum ReturnInBlock {
 
 #[derive(Debug, Clone)]
 enum TupleLetPattern {
-    Binding { name: String, span: Span },
+    Binding {
+        name: String,
+        span: Span,
+    },
     Wildcard,
-    Tuple { items: Vec<TupleLetPattern> },
+    Tuple {
+        items: Vec<TupleLetPattern>,
+    },
+    /// `Point { x, y: py, .. }`: each field is projected by name.
+    Struct {
+        name: String,
+        fields: Vec<(String, TupleLetPattern)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2132,21 +2184,19 @@ impl<'a> Parser<'a> {
             false
         };
 
-        let tuple_pattern = if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
-            let parsed = self.parse_pattern()?;
-            Some(self.convert_let_pattern(&parsed)?)
-        } else {
-            None
-        };
-
-        let name = if tuple_pattern.is_none() {
-            Some(
-                self.expect_ident("E1031", "expected binding name after let")?
-                    .0,
-            )
-        } else {
-            None
-        };
+        // `let (a, b) = ..`, `let P { x, y } = ..`, `let Some(x) = .. else ..`.
+        let starts_pattern = self.at_kind(|k| matches!(k, TokenKind::LParen))
+            || (matches!(self.current().kind, TokenKind::Ident(_))
+                && matches!(
+                    self.peek(1).map(|token| &token.kind),
+                    Some(TokenKind::LBrace | TokenKind::LParen | TokenKind::ColonColon)
+                ));
+        if starts_pattern {
+            return self.parse_pattern_let(start, mutable);
+        }
+        let name = self
+            .expect_ident("E1031", "expected binding name after let")?
+            .0;
 
         let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
             self.bump();
@@ -2179,28 +2229,216 @@ impl<'a> Parser<'a> {
         };
 
         let span = Span::new(start, end);
-        if let Some(pattern) = tuple_pattern {
-            if mutable {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E1031",
-                        "tuple destructuring does not support `let mut`; mark individual bindings mutable later",
-                        self.file,
-                        span,
-                    )
-                    .with_help("remove `mut` here and use separate mutable bindings if needed"),
-                );
-            }
-            return Some(self.expand_tuple_let(pattern, ty, expr, span));
-        }
-
         Some(vec![Stmt::Let {
-            name: name.expect("name present"),
+            name,
             mutable,
             ty,
             expr,
             span,
         }])
+    }
+
+    /// `let PATTERN [: T] = expr [else { .. }];` for tuple, struct and
+    /// refutable patterns, after `let [mut]`.
+    fn parse_pattern_let(&mut self, start: usize, mutable: bool) -> Option<Vec<Stmt>> {
+        let pattern = self.parse_pattern()?;
+        let ty = if self.at_kind(|k| matches!(k, TokenKind::Colon)) {
+            self.bump();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.expect(
+            |k| matches!(k, TokenKind::Eq),
+            "E1032",
+            "expected '=' in let binding",
+        )?;
+        let expr = self.parse_expr()?;
+        let else_block = if self.at_kind(|k| matches!(k, TokenKind::KwElse)) {
+            self.bump();
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+        let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
+            let span = self.current_span();
+            self.bump();
+            span.end
+        } else {
+            let span = self.current_span();
+            let at = else_block
+                .as_ref()
+                .map(|block| block.span.end)
+                .unwrap_or(expr.span.end);
+            self.diagnostics.push(
+                Diagnostic::error("E1033", "expected ';' after let binding", self.file, span)
+                    .with_fix(crate::diagnostics::SuggestedFix {
+                        message: "insert ';' after let binding".to_string(),
+                        replacement: Some(";".to_string()),
+                        start: Some(at),
+                        end: Some(at),
+                    }),
+            );
+            at
+        };
+        let span = Span::new(start, end);
+
+        if let Some(else_block) = else_block {
+            if let Some(ty) = &ty {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1031",
+                        "`let ... else` does not take a type annotation",
+                        self.file,
+                        ty.span,
+                    )
+                    .with_help(
+                        "annotate the expression instead, for example with a typed helper binding",
+                    ),
+                );
+                // The statement is consumed; keep parsing the block.
+                return Some(Vec::new());
+            }
+            return Some(self.expand_let_else(pattern, mutable, expr, else_block, span));
+        }
+
+        if let Some(refutable) = first_refutable_pattern(&pattern) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1110",
+                    "refutable pattern in `let`: it does not match every value",
+                    self.file,
+                    refutable.span,
+                )
+                .with_help(
+                    "use `let PATTERN = expr else { return ...; };` or `if let PATTERN = expr { ... }`",
+                ),
+            );
+            // The statement is consumed; keep parsing the block.
+            return Some(Vec::new());
+        }
+        let converted = self.convert_let_pattern(&pattern)?;
+        if mutable {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1031",
+                    "destructuring `let` does not support `let mut`; mark individual bindings mutable later",
+                    self.file,
+                    span,
+                )
+                .with_help("remove `mut` here and use separate mutable bindings if needed"),
+            );
+        }
+        Some(self.expand_tuple_let(converted, ty, expr, span))
+    }
+
+    /// `let P = e else { B };` desugars to a match whose catch-all arm
+    /// (bound to `_$let_else`) runs `B`, which must diverge:
+    /// - no bindings: `match e { P => (), _$let_else => B };`
+    /// - one binding `x`: `let x = match e { P => x, _$let_else => B };`
+    /// - more: `let tmp = match e { P => (x, y), .. }; let x = tmp.0; ..`
+    fn expand_let_else(
+        &mut self,
+        pattern: Pattern,
+        mutable: bool,
+        expr: Expr,
+        else_block: Block,
+        span: Span,
+    ) -> Vec<Stmt> {
+        let mut names = Vec::new();
+        collect_pattern_binding_names(&pattern, &mut names);
+        let value_span = pattern.span;
+        let matched_value = match names.as_slice() {
+            [] => Expr {
+                kind: ExprKind::Unit,
+                span: value_span,
+            },
+            [name] => Expr::var(name.clone(), value_span),
+            _ => Expr {
+                kind: ExprKind::StructInit {
+                    name: TUPLE_INTERNAL_NAME.to_string(),
+                    fields: names
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, name)| {
+                            (
+                                idx.to_string(),
+                                Expr::var(name.clone(), value_span),
+                                value_span,
+                            )
+                        })
+                        .collect(),
+                },
+                span: value_span,
+            },
+        };
+        let else_span = else_block.span;
+        let matched = Expr {
+            kind: ExprKind::Match {
+                expr: Box::new(expr),
+                arms: vec![
+                    MatchArm {
+                        span: pattern.span,
+                        pattern,
+                        guard: None,
+                        body: matched_value,
+                    },
+                    MatchArm {
+                        pattern: Pattern {
+                            kind: PatternKind::Var(LET_ELSE_BINDING.to_string()),
+                            span: else_span,
+                        },
+                        guard: None,
+                        body: Expr {
+                            kind: ExprKind::Block { block: else_block },
+                            span: else_span,
+                        },
+                        span: else_span,
+                    },
+                ],
+            },
+            span,
+        };
+        match names.len() {
+            0 => vec![Stmt::Expr {
+                expr: matched,
+                span,
+            }],
+            1 => vec![Stmt::Let {
+                name: names.remove(0),
+                mutable,
+                ty: None,
+                expr: matched,
+                span,
+            }],
+            _ => {
+                let temp = format!("{LET_ELSE_TMP_PREFIX}{}", self.tuple_binding_counter);
+                self.tuple_binding_counter += 1;
+                let mut out = vec![Stmt::Let {
+                    name: temp.clone(),
+                    mutable: false,
+                    ty: None,
+                    expr: matched,
+                    span,
+                }];
+                for (idx, name) in names.into_iter().enumerate() {
+                    out.push(Stmt::Let {
+                        name,
+                        mutable,
+                        ty: None,
+                        expr: Expr {
+                            kind: ExprKind::FieldAccess {
+                                base: Box::new(Expr::var(temp.clone(), span)),
+                                field: idx.to_string(),
+                            },
+                            span,
+                        },
+                        span,
+                    });
+                }
+                out
+            }
+        }
     }
 
     fn convert_let_pattern(&mut self, pattern: &Pattern) -> Option<TupleLetPattern> {
@@ -2216,6 +2454,19 @@ impl<'a> Parser<'a> {
                     items.push(self.convert_let_pattern(arg)?);
                 }
                 Some(TupleLetPattern::Tuple { items })
+            }
+            PatternKind::Struct { name, fields, .. } => {
+                let mut converted = Vec::new();
+                for field in fields {
+                    converted.push((
+                        field.name.clone(),
+                        self.convert_let_pattern(&field.pattern)?,
+                    ));
+                }
+                Some(TupleLetPattern::Struct {
+                    name: name.clone(),
+                    fields: converted,
+                })
             }
             _ => {
                 self.diagnostics.push(
@@ -2239,6 +2490,12 @@ impl<'a> Parser<'a> {
         expr: Expr,
         span: Span,
     ) -> Vec<Stmt> {
+        if matches!(pattern, TupleLetPattern::Struct { .. }) && ty.is_none() {
+            // A struct pattern binds the value to its own temporary.
+            let mut out = Vec::new();
+            self.expand_tuple_let_pattern(pattern, expr, span, &mut out);
+            return out;
+        }
         let temp_name = self.next_tuple_let_name();
         let mut out = vec![Stmt::Let {
             name: temp_name.clone(),
@@ -2279,6 +2536,31 @@ impl<'a> Parser<'a> {
                         kind: ExprKind::FieldAccess {
                             base: Box::new(source.clone()),
                             field: idx.to_string(),
+                        },
+                        span: source.span,
+                    };
+                    self.expand_tuple_let_pattern(item, field_expr, span, out);
+                }
+            }
+            TupleLetPattern::Struct { name, fields } => {
+                // The value is bound to a temporary whose name records the
+                // struct, so the checker can match it against the type.
+                let id = self.tuple_binding_counter;
+                self.tuple_binding_counter += 1;
+                let temp = format!("{STRUCT_LET_TMP_PREFIX}{id}__{name}");
+                out.push(Stmt::Let {
+                    name: temp.clone(),
+                    mutable: false,
+                    ty: None,
+                    expr: source.clone(),
+                    span,
+                });
+                let base = Expr::var(temp, source.span);
+                for (field, item) in fields {
+                    let field_expr = Expr {
+                        kind: ExprKind::FieldAccess {
+                            base: Box::new(base.clone()),
+                            field,
                         },
                         span: source.span,
                     };
@@ -3185,6 +3467,9 @@ impl<'a> Parser<'a> {
     fn parse_if_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // if
+        if self.at_kind(|k| matches!(k, TokenKind::KwLet)) {
+            return self.parse_if_let_expr(start);
+        }
         let cond = self.parse_expr_before_block()?;
         let then_block = self.parse_block()?;
         if !self.at_kind(|k| matches!(k, TokenKind::KwElse)) {
@@ -3251,9 +3536,78 @@ impl<'a> Parser<'a> {
         Some(self.desugar_for_iter(binding, iterable, body, start))
     }
 
+    /// `if let P = e { .. } [else ..]` after `if`: desugars to
+    /// `match e { P => { .. }, _$if_let_else => { .. } }`.
+    fn parse_if_let_expr(&mut self, start: usize) -> Option<Expr> {
+        self.bump(); // let
+        let pattern = self.parse_pattern()?;
+        self.expect(
+            |k| matches!(k, TokenKind::Eq),
+            "E1032",
+            "expected '=' after the pattern in `if let`",
+        )?;
+        let scrutinee = self.parse_expr_without_struct_literals()?;
+        let then_block = self.parse_block()?;
+        let else_block = if self.at_kind(|k| matches!(k, TokenKind::KwElse)) {
+            self.bump();
+            if self.at_kind(|k| matches!(k, TokenKind::KwIf)) {
+                let nested = self.parse_if_expr()?;
+                Block {
+                    span: nested.span,
+                    stmts: Vec::new(),
+                    tail: Some(Box::new(nested)),
+                }
+            } else {
+                self.parse_block()?
+            }
+        } else {
+            let end = then_block.span.end;
+            Block {
+                stmts: Vec::new(),
+                tail: None,
+                span: Span::new(end, end),
+            }
+        };
+        let end = else_block.span.end;
+        let then_span = then_block.span;
+        let else_span = else_block.span;
+        Some(Expr {
+            kind: ExprKind::Match {
+                expr: Box::new(scrutinee),
+                arms: vec![
+                    MatchArm {
+                        span: Span::new(pattern.span.start, then_span.end),
+                        pattern,
+                        guard: None,
+                        body: Expr {
+                            kind: ExprKind::Block { block: then_block },
+                            span: then_span,
+                        },
+                    },
+                    MatchArm {
+                        pattern: Pattern {
+                            kind: PatternKind::Var(IF_LET_ELSE_BINDING.to_string()),
+                            span: else_span,
+                        },
+                        guard: None,
+                        body: Expr {
+                            kind: ExprKind::Block { block: else_block },
+                            span: else_span,
+                        },
+                        span: else_span,
+                    },
+                ],
+            },
+            span: Span::new(start, end),
+        })
+    }
+
     fn parse_while_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // while
+        if self.at_kind(|k| matches!(k, TokenKind::KwLet)) {
+            return self.parse_while_let_expr(start);
+        }
         let cond = self.parse_expr_before_block()?;
         let body = self.parse_block()?;
         let end = body.span.end;
@@ -3263,6 +3617,62 @@ impl<'a> Parser<'a> {
                 body,
             },
             span: Span::new(start, end),
+        })
+    }
+
+    /// `while let P = e { .. }` after `while`: desugars to
+    /// `loop { match e { P => { .. }, _$while_let_end => break } }`.
+    fn parse_while_let_expr(&mut self, start: usize) -> Option<Expr> {
+        self.bump(); // let
+        let pattern = self.parse_pattern()?;
+        self.expect(
+            |k| matches!(k, TokenKind::Eq),
+            "E1032",
+            "expected '=' after the pattern in `while let`",
+        )?;
+        let scrutinee = self.parse_expr_without_struct_literals()?;
+        let body = self.parse_block()?;
+        let span = Span::new(start, body.span.end);
+        let body_span = body.span;
+        let end_marker = Span::new(body_span.end, body_span.end);
+        let matched = Expr {
+            kind: ExprKind::Match {
+                expr: Box::new(scrutinee),
+                arms: vec![
+                    MatchArm {
+                        span: Span::new(pattern.span.start, body_span.end),
+                        pattern,
+                        guard: None,
+                        body: Expr {
+                            kind: ExprKind::Block { block: body },
+                            span: body_span,
+                        },
+                    },
+                    MatchArm {
+                        pattern: Pattern {
+                            kind: PatternKind::Var(WHILE_LET_END_BINDING.to_string()),
+                            span: end_marker,
+                        },
+                        guard: None,
+                        body: Expr {
+                            kind: ExprKind::Break { expr: None },
+                            span: end_marker,
+                        },
+                        span: end_marker,
+                    },
+                ],
+            },
+            span,
+        };
+        Some(Expr {
+            kind: ExprKind::Loop {
+                body: Block {
+                    stmts: Vec::new(),
+                    tail: Some(Box::new(matched)),
+                    span,
+                },
+            },
+            span,
         })
     }
 
@@ -4907,6 +5317,67 @@ mod tests {
                 "binding other"
             ]
         );
+    }
+
+    #[test]
+    fn desugars_if_let_while_let_and_let_else() {
+        let stmts = body_stmts(
+            "fn f(o: Option[Int]) -> Int { if let Some(x) = o { g(x); } while let Some(y) = o { break; } let Some(z) = o else { return 0; }; let (a, Some(b)) = (1, o) else { return 1; }; z }",
+        );
+        // if let -> match with the hidden else arm.
+        let Stmt::Expr { expr, .. } = &stmts[0] else {
+            panic!("expected if let statement");
+        };
+        let ExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match, found {expr:?}");
+        };
+        assert!(
+            matches!(&arms[1].pattern.kind, PatternKind::Var(name) if name == crate::ast::IF_LET_ELSE_BINDING)
+        );
+        // while let -> loop { match .. { .., _$while_let_end => break } }.
+        let Stmt::Expr { expr, .. } = &stmts[1] else {
+            panic!("expected while let statement");
+        };
+        let ExprKind::Loop { body } = &expr.kind else {
+            panic!("expected loop");
+        };
+        let ExprKind::Match { arms, .. } = &body.tail.as_ref().expect("tail").kind else {
+            panic!("expected match in loop");
+        };
+        assert!(matches!(arms[1].body.kind, ExprKind::Break { expr: None }));
+        // let-else with one binding -> `let z = match ..`.
+        assert!(matches!(&stmts[2], Stmt::Let { name, .. } if name == "z"));
+        // let-else with two bindings -> temporary plus projections.
+        assert!(
+            matches!(&stmts[3], Stmt::Let { name, .. } if name.starts_with(crate::ast::LET_ELSE_TMP_PREFIX))
+        );
+        assert!(matches!(&stmts[4], Stmt::Let { name, .. } if name == "a"));
+        assert!(matches!(&stmts[5], Stmt::Let { name, .. } if name == "b"));
+    }
+
+    #[test]
+    fn destructures_structs_in_let_and_rejects_refutable_patterns() {
+        let stmts = body_stmts("fn f(p: P) -> Int { let P { x, y: (a, _), .. } = p; x }");
+        let names = stmts
+            .iter()
+            .map(|stmt| match stmt {
+                Stmt::Let { name, .. } => name.clone(),
+                other => panic!("expected let, found {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(names[0], "__struct_let_0__P");
+        assert_eq!(&names[1..], ["x", "a"]);
+        for src in [
+            "fn f(o: Option[Int]) -> Int { let Some(x) = o; x }",
+            "fn f(t: (Int, Int)) -> Int { let (1, y) = t; y }",
+        ] {
+            let (_, diagnostics) = parse(src, "test.aic");
+            assert!(
+                diagnostics.iter().any(|d| d.code == "E1110"),
+                "{src}: {diagnostics:#?}"
+            );
+            assert_eq!(diagnostics.len(), 1, "{src}: {diagnostics:#?}");
+        }
     }
 
     #[test]

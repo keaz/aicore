@@ -11,7 +11,10 @@ block          = "{" stmt* tail_expr? "}" ;
 tail_expr      = expr ;
 
 stmt           = let_stmt | assign_stmt | return_stmt | expr_stmt | assert_stmt ;
-let_stmt       = "let" "mut"? ident (":" type)? "=" expr ";" ;
+let_stmt       = "let" "mut"? ident (":" type)? "=" expr ";"
+               | "let" let_pattern (":" type)? "=" expr ";"
+               | "let" "mut"? pattern "=" expr "else" block ";" ;
+let_pattern    = tuple_pattern | struct_pattern ;   (* irrefutable: bindings, `_`, tuples, structs *)
 assign_stmt    = place assign_op expr ";" ;
 place          = ident place_step* ;
 place_step     = "." (ident | int_lit) | "[" expr "]" ;
@@ -32,6 +35,8 @@ assert_stmt    = "assert" "(" expr ")" ";" ;   (* IR/runtime form; not user surf
   - require `mut` for later reassignment
   - may include explicit type annotation; otherwise type is inferred from initializer
 - Let inference failures that remain unresolved are rejected and require explicit annotations.
+- Destructuring `let` takes an irrefutable pattern: bindings, `_`, tuples and struct patterns (`let Point { x, y: py, .. } = p;`). The struct name must match the value's type (`E1245`). A refutable pattern (a variant, literal or or-pattern) is rejected (`E1110`); use `let ... else` or `if let`.
+- `let PATTERN = expr else { ... };` binds the pattern's names when it matches; otherwise the `else` block runs and must diverge (`E1302`). With `let mut` every binding is mutable.
 - Assignment (`name = expr;`):
   - target must already exist in scope
   - target must be mutable

@@ -404,6 +404,9 @@ impl<'a> SourceContext<'a> {
 
     /// Text of the tuple pattern of the `let` statement starting at `start`,
     /// rendered with canonical spacing, plus the binding names it contains.
+    /// Source text of the pattern in `let PATTERN [: T] = ..` at `start`,
+    /// with canonical spacing, and the names it binds in order. Handles
+    /// tuple and struct patterns.
     fn tuple_let_pattern(&self, start: usize) -> Option<(String, Vec<String>)> {
         let idx = self.token_index_at_or_after(start);
         let tokens = self.tokens.get(idx..)?;
@@ -414,6 +417,7 @@ impl<'a> SourceContext<'a> {
         let mut names = Vec::new();
         let mut depth = 0usize;
         for (pos, token) in tokens.iter().enumerate().skip(1) {
+            let next = tokens.get(pos + 1).map(|token| &token.kind);
             match &token.kind {
                 TokenKind::LParen => {
                     depth += 1;
@@ -422,25 +426,41 @@ impl<'a> SourceContext<'a> {
                 TokenKind::RParen => {
                     depth = depth.checked_sub(1)?;
                     text.push(')');
-                    if depth == 0 {
-                        return Some((text, names));
-                    }
+                }
+                TokenKind::LBrace => {
+                    depth += 1;
+                    text.push_str(" { ");
+                }
+                TokenKind::RBrace => {
+                    depth = depth.checked_sub(1)?;
+                    text.push_str(" }");
                 }
                 TokenKind::Comma => {
                     text.push(',');
-                    if !matches!(tokens.get(pos + 1)?.kind, TokenKind::RParen) {
+                    if !matches!(next, Some(TokenKind::RParen | TokenKind::RBrace)) {
                         text.push(' ');
                     }
                 }
+                TokenKind::Colon if depth > 0 => text.push_str(": "),
+                TokenKind::DotDot => text.push_str(".."),
+                TokenKind::ColonColon => text.push_str("::"),
                 TokenKind::Underscore => text.push('_'),
                 TokenKind::Ident(name) => {
                     text.push_str(name);
-                    names.push(name.clone());
+                    // Struct names, path segments and `field:` labels bind
+                    // nothing; every other identifier is a binding.
+                    let binds = !matches!(
+                        next,
+                        Some(TokenKind::LBrace | TokenKind::ColonColon | TokenKind::LParen)
+                    ) && !(depth > 0 && matches!(next, Some(TokenKind::Colon)));
+                    if binds {
+                        names.push(name.clone());
+                    }
+                }
+                TokenKind::Eq | TokenKind::Colon if depth == 0 => {
+                    return (!text.is_empty()).then_some((text, names));
                 }
                 _ => return None,
-            }
-            if depth == 0 {
-                return None;
             }
         }
         None
@@ -497,13 +517,39 @@ fn is_synthesized_struct_default(f: &ir::Function, program: &ir::Program) -> boo
         })
 }
 
-/// Bindings of a desugared `let (a, b) = expr;` group: the temporary and the
-/// `name = tmp.i.j` lets that follow it.
+/// A desugared destructuring `let`: `let (a, b) = expr;` or
+/// `let Point { x, y: (p, q), .. } = expr;`. The parser binds `expr` to a
+/// temporary (`__tuple_let_N`, or `__struct_let_N__Point` for a struct
+/// pattern, which nested struct patterns repeat) and projects each binding
+/// from it.
 struct TupleLetGroup<'s> {
     ty: Option<ir::TypeId>,
     expr: &'s ir::Expr,
     span: Span,
-    bindings: Vec<(String, Vec<usize>)>,
+    /// The root of the pattern.
+    root: DestructureNode,
+    /// User bindings in order, with their path of field names from the root.
+    bindings: Vec<(String, Vec<String>)>,
+    /// Statements the group spans.
+    statements: usize,
+    /// Nested struct patterns: path from the root and struct name.
+    nested: Vec<(Vec<String>, DestructureNode)>,
+}
+
+/// One level of a destructuring pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DestructureNode {
+    Tuple,
+    Struct(String),
+}
+
+fn destructure_temp_kind(name: &str) -> Option<DestructureNode> {
+    if name.starts_with(TUPLE_LET_TMP_PREFIX) {
+        return Some(DestructureNode::Tuple);
+    }
+    let rest = name.strip_prefix(crate::parser::STRUCT_LET_TMP_PREFIX)?;
+    let (_, struct_name) = rest.split_once("__")?;
+    Some(DestructureNode::Struct(struct_name.to_string()))
 }
 
 fn tuple_let_group(stmts: &[ir::Stmt]) -> Option<TupleLetGroup<'_>> {
@@ -518,10 +564,12 @@ fn tuple_let_group(stmts: &[ir::Stmt]) -> Option<TupleLetGroup<'_>> {
     else {
         return None;
     };
-    if !name.starts_with(TUPLE_LET_TMP_PREFIX) {
-        return None;
-    }
+    let root = destructure_temp_kind(name)?;
+    // Temporaries of nested struct patterns, with their path from the root.
+    let mut temps: Vec<(String, Vec<String>, DestructureNode)> =
+        vec![(name.clone(), Vec::new(), root.clone())];
     let mut bindings = Vec::new();
+    let mut statements = 1;
     for stmt in &stmts[1..] {
         let ir::Stmt::Let {
             name: binding,
@@ -533,58 +581,142 @@ fn tuple_let_group(stmts: &[ir::Stmt]) -> Option<TupleLetGroup<'_>> {
         else {
             break;
         };
-        let Some(path) = tuple_field_path(field_expr, name) else {
+        let Some(path) = temps.iter().find_map(|(temp, prefix, _)| {
+            named_field_path(field_expr, temp).map(|rest| {
+                let mut full = prefix.clone();
+                full.extend(rest);
+                full
+            })
+        }) else {
             break;
         };
-        bindings.push((binding.clone(), path));
+        statements += 1;
+        match destructure_temp_kind(binding) {
+            Some(DestructureNode::Struct(struct_name)) => {
+                temps.push((binding.clone(), path, DestructureNode::Struct(struct_name)))
+            }
+            _ => bindings.push((binding.clone(), path)),
+        }
     }
     Some(TupleLetGroup {
         ty: *ty,
         expr,
         span: *span,
+        root,
         bindings,
+        statements,
+        nested: temps
+            .into_iter()
+            .skip(1)
+            .map(|(_, path, node)| (path, node))
+            .collect(),
     })
 }
 
-/// `tmp.0.1` → `[0, 1]` when the chain is rooted at `tmp`.
-fn tuple_field_path(expr: &ir::Expr, root: &str) -> Option<Vec<usize>> {
+/// `tmp.a.0` → `["a", "0"]` when the chain is rooted at `tmp`.
+fn named_field_path(expr: &ir::Expr, root: &str) -> Option<Vec<String>> {
     match &expr.kind {
         ir::ExprKind::Var(name) if name == root => Some(Vec::new()),
         ir::ExprKind::FieldAccess { base, field } => {
-            let mut path = tuple_field_path(base, root)?;
-            path.push(field.parse().ok()?);
+            let mut path = named_field_path(base, root)?;
+            path.push(field.clone());
             Some(path)
         }
         _ => None,
     }
 }
 
-/// Rebuilds a tuple pattern from binding paths when the source is not
-/// available. Missing positions become `_`.
-fn render_tuple_pattern(bindings: &[(String, Vec<usize>)], depth: usize) -> String {
-    let width = bindings
+/// `tmp.0.1` → `[0, 1]` when the chain is rooted at `tmp`.
+fn tuple_field_path(expr: &ir::Expr, root: &str) -> Option<Vec<usize>> {
+    named_field_path(expr, root)?
         .iter()
-        .filter_map(|(_, path)| path.get(depth).map(|idx| idx + 1))
-        .max()
-        .unwrap_or(1);
-    let mut parts = Vec::with_capacity(width);
-    for idx in 0..width {
-        let nested = bindings
-            .iter()
-            .filter(|(_, path)| path.get(depth) == Some(&idx))
-            .cloned()
-            .collect::<Vec<_>>();
-        let part = match nested.as_slice() {
-            [] => "_".to_string(),
-            [(name, path)] if path.len() == depth + 1 => name.clone(),
-            _ => render_tuple_pattern(&nested, depth + 1),
-        };
-        parts.push(part);
+        .map(|field| field.parse().ok())
+        .collect()
+}
+
+/// Rebuilds a destructuring pattern from binding paths when the source is
+/// not available. Missing tuple positions become `_`; struct patterns list
+/// the bound fields and end with `..`.
+fn render_destructure_pattern(group: &TupleLetGroup<'_>) -> String {
+    render_destructure_node(&group.root, &group.bindings, &group.nested, &[])
+}
+
+fn render_destructure_node(
+    node: &DestructureNode,
+    bindings: &[(String, Vec<String>)],
+    nested: &[(Vec<String>, DestructureNode)],
+    prefix: &[String],
+) -> String {
+    let depth = prefix.len();
+    // Child field names in first-use order.
+    let mut fields: Vec<String> = Vec::new();
+    let mut note = |field: &String| {
+        if !fields.contains(field) {
+            fields.push(field.clone());
+        }
+    };
+    for (_, path) in bindings {
+        if path.starts_with(prefix) && path.len() > depth {
+            note(&path[depth]);
+        }
     }
-    if parts.len() == 1 {
-        format!("({},)", parts[0])
-    } else {
-        format!("({})", parts.join(", "))
+    for (path, _) in nested {
+        if path.starts_with(prefix) && path.len() > depth {
+            note(&path[depth]);
+        }
+    }
+    let child = |field: &String| -> String {
+        let mut path = prefix.to_vec();
+        path.push(field.clone());
+        if let Some((name, _)) = bindings.iter().find(|(_, p)| *p == path) {
+            return name.clone();
+        }
+        let child_node = nested
+            .iter()
+            .find(|(p, _)| *p == path)
+            .map(|(_, node)| node.clone())
+            .unwrap_or(DestructureNode::Tuple);
+        render_destructure_node(&child_node, bindings, nested, &path)
+    };
+    match node {
+        DestructureNode::Tuple => {
+            let width = fields
+                .iter()
+                .filter_map(|field| field.parse::<usize>().ok())
+                .map(|idx| idx + 1)
+                .max()
+                .unwrap_or(1);
+            let parts = (0..width)
+                .map(|idx| {
+                    let field = idx.to_string();
+                    if fields.contains(&field) {
+                        child(&field)
+                    } else {
+                        "_".to_string()
+                    }
+                })
+                .collect::<Vec<_>>();
+            if parts.len() == 1 {
+                format!("({},)", parts[0])
+            } else {
+                format!("({})", parts.join(", "))
+            }
+        }
+        DestructureNode::Struct(name) => {
+            let mut parts = fields
+                .iter()
+                .map(|field| {
+                    let rendered = child(field);
+                    if rendered == *field {
+                        rendered
+                    } else {
+                        format!("{field}: {rendered}")
+                    }
+                })
+                .collect::<Vec<_>>();
+            parts.push("..".to_string());
+            format!("{name} {{ {} }}", parts.join(", "))
+        }
     }
 }
 
@@ -1445,14 +1577,19 @@ impl<'a> Printer<'a> {
             let regions = stmt_nested_regions(&block.stmts[idx]);
             self.leading_hoisted(span, &regions, inner, prev);
             self.push_indent(inner);
-            idx += match tuple_let_group(&block.stmts[idx..]) {
-                Some(group) => {
-                    self.tuple_let(&group, inner);
-                    1 + group.bindings.len()
-                }
-                None => {
-                    self.stmt(&block.stmts[idx], inner);
-                    1
+            idx += if let Some(group) = let_else_group(&block.stmts[idx..]) {
+                self.let_else(&group, inner);
+                group.statements
+            } else {
+                match tuple_let_group(&block.stmts[idx..]) {
+                    Some(group) => {
+                        self.tuple_let(&group, inner);
+                        group.statements
+                    }
+                    None => {
+                        self.stmt(&block.stmts[idx], inner);
+                        1
+                    }
                 }
             };
             self.trailing(span.end);
@@ -1553,6 +1690,19 @@ impl<'a> Printer<'a> {
         }
     }
 
+    fn let_else(&mut self, group: &LetElseGroup<'_>, indent: usize) {
+        self.out.push_str("let ");
+        if group.mutable {
+            self.out.push_str("mut ");
+        }
+        self.pattern(group.pattern);
+        self.out.push_str(" = ");
+        self.expr(group.scrutinee, 0, indent);
+        self.out.push_str(" else ");
+        self.block(group.else_block, indent);
+        self.out.push(';');
+    }
+
     fn tuple_let(&mut self, group: &TupleLetGroup<'_>, indent: usize) {
         let names = group
             .bindings
@@ -1565,7 +1715,7 @@ impl<'a> Printer<'a> {
             .and_then(|source| source.tuple_let_pattern(group.span.start))
             .filter(|(_, source_names)| *source_names == names)
             .map(|(pattern, _)| pattern)
-            .unwrap_or_else(|| render_tuple_pattern(&group.bindings, 0));
+            .unwrap_or_else(|| render_destructure_pattern(group));
         self.out.push_str("let ");
         self.out.push_str(&pattern);
         if let Some(ty) = &group.ty {
@@ -1598,6 +1748,36 @@ impl<'a> Printer<'a> {
             }
             self.out.push(' ');
             self.block(&rendered_for.body, indent);
+            return;
+        }
+        if let Some(parts) = if_let_parts(expr) {
+            self.out.push_str("if let ");
+            self.pattern(parts.pattern);
+            self.out.push_str(" = ");
+            self.expr(parts.scrutinee, 0, indent);
+            self.out.push(' ');
+            self.block(parts.then_block, indent);
+            let else_block = parts.else_block;
+            // A missing `else` is the parser's empty, zero-width block.
+            if !(else_block.stmts.is_empty()
+                && else_block.tail.is_none()
+                && else_block.span.start == else_block.span.end)
+            {
+                self.out.push_str(" else ");
+                match else_if_expr(else_block) {
+                    Some(nested) => self.expr(nested, 0, indent),
+                    None => self.block(else_block, indent),
+                }
+            }
+            return;
+        }
+        if let Some((pattern, scrutinee, body)) = while_let_parts(expr) {
+            self.out.push_str("while let ");
+            self.pattern(pattern);
+            self.out.push_str(" = ");
+            self.expr(scrutinee, 0, indent);
+            self.out.push(' ');
+            self.block(body, indent);
             return;
         }
 
@@ -2212,10 +2392,155 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
 fn else_if_expr(else_block: &ir::Block) -> Option<&ir::Expr> {
     let tail = else_block.tail.as_deref()?;
     let is_else_if = else_block.stmts.is_empty()
-        && matches!(tail.kind, ir::ExprKind::If { .. })
+        && (matches!(tail.kind, ir::ExprKind::If { .. }) || if_let_parts(tail).is_some())
         && tail.span == else_block.span
         && extract_for_syntax(tail).is_none();
     is_else_if.then_some(tail)
+}
+
+/// Parts of a desugared `if let P = e { .. } else { .. }`.
+struct IfLetParts<'e> {
+    pattern: &'e ir::Pattern,
+    scrutinee: &'e ir::Expr,
+    then_block: &'e ir::Block,
+    else_block: &'e ir::Block,
+}
+
+fn if_let_parts(expr: &ir::Expr) -> Option<IfLetParts<'_>> {
+    let ir::ExprKind::Match {
+        expr: scrutinee,
+        arms,
+    } = &expr.kind
+    else {
+        return None;
+    };
+    let [then_arm, else_arm] = arms.as_slice() else {
+        return None;
+    };
+    if !matches!(&else_arm.pattern.kind, ir::PatternKind::Var(name) if name == ast::IF_LET_ELSE_BINDING)
+        || then_arm.guard.is_some()
+    {
+        return None;
+    }
+    let (ir::ExprKind::Block { block: then_block }, ir::ExprKind::Block { block: else_block }) =
+        (&then_arm.body.kind, &else_arm.body.kind)
+    else {
+        return None;
+    };
+    Some(IfLetParts {
+        pattern: &then_arm.pattern,
+        scrutinee,
+        then_block,
+        else_block,
+    })
+}
+
+/// Pattern, scrutinee and body of a desugared `while let P = e { .. }`.
+fn while_let_parts(expr: &ir::Expr) -> Option<(&ir::Pattern, &ir::Expr, &ir::Block)> {
+    let ir::ExprKind::Loop { body } = &expr.kind else {
+        return None;
+    };
+    let tail = body.tail.as_deref().filter(|_| body.stmts.is_empty())?;
+    let ir::ExprKind::Match {
+        expr: scrutinee,
+        arms,
+    } = &tail.kind
+    else {
+        return None;
+    };
+    let [body_arm, end_arm] = arms.as_slice() else {
+        return None;
+    };
+    let is_marker = matches!(&end_arm.pattern.kind, ir::PatternKind::Var(name) if name == ast::WHILE_LET_END_BINDING);
+    let ir::ExprKind::Block { block } = &body_arm.body.kind else {
+        return None;
+    };
+    (is_marker && body_arm.guard.is_none()).then_some((&body_arm.pattern, &**scrutinee, block))
+}
+
+/// A desugared `let [mut] P = e else { .. };` and how many statements it
+/// spans (one, or the temporary plus one projection per binding).
+struct LetElseGroup<'s> {
+    mutable: bool,
+    pattern: &'s ir::Pattern,
+    scrutinee: &'s ir::Expr,
+    else_block: &'s ir::Block,
+    statements: usize,
+}
+
+fn let_else_match(expr: &ir::Expr) -> Option<(&ir::Pattern, &ir::Expr, &ir::Expr, &ir::Block)> {
+    let ir::ExprKind::Match {
+        expr: scrutinee,
+        arms,
+    } = &expr.kind
+    else {
+        return None;
+    };
+    let [value_arm, else_arm] = arms.as_slice() else {
+        return None;
+    };
+    if !matches!(&else_arm.pattern.kind, ir::PatternKind::Var(name) if name == ast::LET_ELSE_BINDING)
+    {
+        return None;
+    }
+    let ir::ExprKind::Block { block } = &else_arm.body.kind else {
+        return None;
+    };
+    Some((&value_arm.pattern, scrutinee, &value_arm.body, block))
+}
+
+fn let_else_group(stmts: &[ir::Stmt]) -> Option<LetElseGroup<'_>> {
+    match stmts.first()? {
+        ir::Stmt::Expr { expr, .. } => {
+            let (pattern, scrutinee, value, else_block) = let_else_match(expr)?;
+            matches!(value.kind, ir::ExprKind::Unit).then_some(LetElseGroup {
+                mutable: false,
+                pattern,
+                scrutinee,
+                else_block,
+                statements: 1,
+            })
+        }
+        ir::Stmt::Let {
+            name,
+            mutable,
+            ty: None,
+            expr,
+            ..
+        } => {
+            let (pattern, scrutinee, value, else_block) = let_else_match(expr)?;
+            if !name.starts_with(ast::LET_ELSE_TMP_PREFIX) {
+                let single = matches!(&value.kind, ir::ExprKind::Var(bound) if bound == name);
+                return single.then_some(LetElseGroup {
+                    mutable: *mutable,
+                    pattern,
+                    scrutinee,
+                    else_block,
+                    statements: 1,
+                });
+            }
+            let mut projections = 0;
+            let mut binding_mutable = false;
+            for stmt in &stmts[1..] {
+                let ir::Stmt::Let { mutable, expr, .. } = stmt else {
+                    break;
+                };
+                if tuple_field_path(expr, name).is_none_or(|path| path != [projections]) {
+                    break;
+                }
+                binding_mutable = *mutable;
+                projections += 1;
+            }
+            Some(LetElseGroup {
+                mutable: binding_mutable,
+                pattern,
+                scrutinee,
+                else_block,
+                statements: 1 + projections,
+            })
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2708,6 +3033,12 @@ mod tests {
         let twice = format_source(&once, "test.aic").unwrap_or_else(|err| panic!("{err}"));
         assert_eq!(once, twice, "formatting is not idempotent");
         once
+    }
+
+    #[test]
+    fn pattern_lets_keep_their_sugar() {
+        let src = "struct P {\n    x: Int,\n    y: (Int, Int),\n}\n\nfn f(o: Option[Int], p: P) -> Int {\n    // destructure\n    let P { x, y: (a, _) } = p;\n    let Some(v) = o else {\n        return a;\n    };\n    if let Some(w) = o {\n        return w;\n    } else if let None = o {\n        return 0;\n    };\n    while let Some(k) = o {\n        break;\n    };\n    v + x\n}\n";
+        assert_eq!(fmt(src), src);
     }
 
     #[test]

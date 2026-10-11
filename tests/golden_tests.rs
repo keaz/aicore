@@ -162,3 +162,8 @@ fn golden_case26_block_expressions() {
 fn golden_case27_unit_variants() {
     run_golden_case("case27_unit_variants.aic");
 }
+
+#[test]
+fn golden_case28_pattern_lets() {
+    run_golden_case("case28_pattern_lets.aic");
+}

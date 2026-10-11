@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (315 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (317 codes).
 
 Each code has one row: what the compiler reports, how to produce it, and how to fix it.
 `tests/diagnostic_catalog_tests.rs` runs every trigger and fix program in this table, so the
@@ -149,6 +149,7 @@ Programs are written on one line; `\|` in a program stands for `|`.
 | `E1107` | check | A trait declares two methods with the same name, or a trait impl does not implement every method the trait declares. | `trait Shape[T] { fn area(x: T) -> Int; } struct Sq { s: Int } impl Shape[Sq] { } fn main() -> Int { 0 }` | `trait Shape[T] { fn area(x: T) -> Int; } struct Sq { s: Int } impl Shape[Sq] { fn area(x: Sq) -> Int { x.s } } fn main() -> Int { 0 }` |
 | `E1108` | check | A trait impl method's signature (parameters, return type, receiver mode or modifiers) does not match the trait declaration, or the impl defines the same method twice. | `trait Shape[T] { fn area(x: T) -> Int; } struct Sq { s: Int } impl Shape[Sq] { fn area(x: Sq) -> Bool { true } } fn main() -> Int { 0 }` | `trait Shape[T] { fn area(x: T) -> Int; } struct Sq { s: Int } impl Shape[Sq] { fn area(x: Sq) -> Int { x.s } } fn main() -> Int { 0 }` |
 | `E1109` | check | A trait impl defines a method that the trait does not declare. | `trait Shape[T] { fn area(x: T) -> Int; } struct Sq { s: Int } impl Shape[Sq] { fn area(x: Sq) -> Int { x.s } fn perimeter(x: Sq) -> Int { 4 } } fn main() -> Int { 0 }` | `trait Shape[T] { fn area(x: T) -> Int; } struct Sq { s: Int } impl Shape[Sq] { fn area(x: Sq) -> Int { x.s } } fn main() -> Int { 0 }` |
+| `E1110` | check | Refutable pattern in a plain `let` (parser). | `fn f(o: Option[Int]) -> Int { let Some(x) = o; x }` | `fn f(o: Option[Int]) -> Int { let Some(x) = o else { return 0; }; x }` |
 | `E1200` | check | A function's `requires` contract expression does not have type `Bool`. | `fn f(x: Int) -> Int requires x { x } fn main() -> Int { f(1) }` | `fn f(x: Int) -> Int requires x >= 0 { x } fn main() -> Int { f(1) }` |
 | `E1201` | check | A function's `ensures` contract expression (where `result` is in scope) does not have type `Bool`. | `fn f(x: Int) -> Int ensures result { x } fn main() -> Int { f(1) }` | `fn f(x: Int) -> Int ensures result >= 0 { x } fn main() -> Int { f(1) }` |
 | `E1202` | check | A function body's final type is not compatible with the function's declared return type. | `fn main() -> Int { true }` | `fn main() -> Int { 0 }` |
@@ -251,6 +252,7 @@ Programs are written on one line; `\|` in a program stands for `|`.
 | `E1299` | check | An `async` method declares a `&mut self` receiver. | `struct C { n: Int } impl C { async fn f(&mut self) -> Int { 0 } }` | `struct C { n: Int } impl C { async fn f(self) -> Int { 0 } }` |
 | `E1300` | check | Call to the std IO function `print_int`, `print_str`, `print_float` or `panic` from a module that does not import `std.io`. | `fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` | `import std.io; fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` |
 | `E1301` | check | Call to the std `len` function from a module that does not import `std.string`. | `fn main() -> Int { len("abc") }` | `import std.string; fn main() -> Int { len("abc") }` |
+| `E1302` | check | `let ... else` block does not diverge. | `fn f(o: Option[Int]) -> Int { let Some(v) = o else { 0 }; v }` | `fn f(o: Option[Int]) -> Int { let Some(v) = o else { return 0; }; v }` |
 | `E1303` | check | A `&mut self` method is referenced as a function value (e.g. `C::bump`). | `struct C { n: Int } impl C { fn bump(&mut self) -> () { self.n = 1; } } fn main() -> Int { let f: Fn(C) -> () = C::bump; 0 }` | `struct C { n: Int } impl C { fn bump(&mut self) -> () { self.n = 1; } } fn main() -> Int { let mut c = C { n: 0 }; c.bump(); 0 }` |
 | `E1313` | check | A std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. The help line names the `import` to add. | `fn f(items: Vec[Int]) -> Vec[Int] { items } fn main() -> Int { 0 }` | `import std.vec; fn f(items: Vec[Int]) -> Vec[Int] { items } fn main() -> Int { 0 }` |
 | `E2001` | check | A function body (or a call inside it) uses an effect, directly or through a callee's signature, that is not listed in the enclosing function's `effects { ... }` clause. | `import std.io; fn main() -> Int { print_int(1); 0 }` | `import std.io; fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` |

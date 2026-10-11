@@ -488,6 +488,20 @@ pub struct Block {
     pub span: Span,
 }
 
+/// Hidden catch-all binding that marks the `else` arm of a desugared
+/// `if let P = e { .. } else { .. }` (`match e { P => .., _$if_let_else => .. }`).
+/// Names starting with `_$` cannot be written in source.
+pub const IF_LET_ELSE_BINDING: &str = "_$if_let_else";
+/// Hidden catch-all binding of the `break` arm in a desugared
+/// `while let P = e { .. }` (`loop { match e { P => .., _$while_let_end => break } }`).
+pub const WHILE_LET_END_BINDING: &str = "_$while_let_end";
+/// Hidden catch-all binding of the diverging arm in a desugared
+/// `let P = e else { .. };`.
+pub const LET_ELSE_BINDING: &str = "_$let_else";
+/// Prefix of the temporary that holds the bindings of a `let ... else`
+/// with more than one binding.
+pub const LET_ELSE_TMP_PREFIX: &str = "_$let_else_value_";
+
 /// The index expressions of an assignment place, in source order.
 pub fn place_index_exprs(path: &[PlaceProjection]) -> impl Iterator<Item = &Expr> {
     path.iter().filter_map(|projection| match projection {

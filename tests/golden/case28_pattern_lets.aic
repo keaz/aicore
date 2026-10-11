@@ -1,0 +1,34 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+fn sum(p: Point) -> Int {
+    let Point { x, y: py, .. } = p;
+    x + py
+}
+
+fn first(o: Option[Int]) -> Int {
+    let Some(v) = o else {
+        return 0;
+    };
+    v
+}
+
+fn main() -> Int {
+    let o = Some(4);
+    let mut total = 0;
+    if let Some(n) = o {
+        total = n;
+    } else {
+        total = 1;
+    };
+    let mut i = 0;
+    while let Some(k) = Some(i) {
+        if k > 2 {
+            break;
+        };
+        i = i + 1;
+    };
+    total + i + first(o) + sum(Point {x: 1, y: 2})
+}
