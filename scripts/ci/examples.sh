@@ -197,6 +197,8 @@ check_pass=(
   "examples/verify/net_proc_protocol_ok.aic"
   "examples/verify/range_proofs.aic"
   "examples/verify/qv_contract_proof_fixed.aic"
+  "examples/verify/method_contracts.aic"
+  "examples/verify/method_contract_violation.aic"
 )
 check_fail=(
   "examples/effects_reject.aic"
@@ -359,11 +361,13 @@ run_pass=(
   "examples/verify/generic_channel_protocol_ok.aic"
   "examples/verify/range_proofs.aic"
   "examples/verify/qv_contract_proof_fixed.aic"
+  "examples/verify/method_contracts.aic"
 )
 run_fail=(
   "examples/contracts_abs_fail.aic:ensures failed"
   "examples/e4/contracts_all_returns.aic:ensures failed"
   "examples/e5/panic_line_map.aic:AICore panic at"
+  "examples/verify/method_contract_violation.aic:contract_violation{kind:requires,owner:Account::withdraw}"
 )
 
 wave1_numeric_check_candidates=(
@@ -874,6 +878,7 @@ case "$MODE" in
     fi
     expect_run_value "examples/verify/range_proofs.aic" "9"
     expect_run_value "examples/verify/qv_contract_proof_fixed.aic" "7"
+    expect_run_value "examples/verify/method_contracts.aic" "44"
     if [[ "${#wave1_numeric_run_smoke[@]}" -gt 0 ]]; then
       for f in "${wave1_numeric_run_smoke[@]}"; do
         expect_run_success "$f"

@@ -89,65 +89,11 @@ pub fn verify_static_with_context(
         let item_file = file_for_module(module_files, &module_name, file);
         match item {
             ir::Item::Function(func) => {
-                let param_env = unconstrained_param_env(func);
-                if let Some(req) = &func.requires {
-                    match prove_expression(req, &param_env, None) {
-                        ProofState::False => diagnostics.push(
-                            Diagnostic::error(
-                                "E4001",
-                                format!("requires contract for '{}' is always false", func.name),
-                                item_file,
-                                req.span,
-                            )
-                            .with_help("fix the contract or function preconditions"),
-                        ),
-                        ProofState::True => diagnostics.push(discharge_note(
-                            item_file,
-                            req.span,
-                            format!(
-                                "requires contract for '{}' discharged at compile time",
-                                func.name
-                            ),
-                        )),
-                        ProofState::Unknown => diagnostics.push(residual_note(
-                            item_file,
-                            req.span,
-                            format!(
-                                "requires contract for '{}' kept as residual runtime obligation",
-                                func.name
-                            ),
-                        )),
-                    }
-                }
-
-                if let Some(ens) = &func.ensures {
-                    match prove_ensures(func, ens, &param_env) {
-                        ProofState::False => diagnostics.push(
-                            Diagnostic::error(
-                                "E4002",
-                                format!("ensures contract for '{}' is always false", func.name),
-                                item_file,
-                                ens.span,
-                            )
-                            .with_help("fix the postcondition expression"),
-                        ),
-                        ProofState::True => diagnostics.push(discharge_note(
-                            item_file,
-                            ens.span,
-                            format!(
-                                "ensures contract for '{}' discharged at compile time",
-                                func.name
-                            ),
-                        )),
-                        ProofState::Unknown => diagnostics.push(residual_note(
-                            item_file,
-                            ens.span,
-                            format!(
-                                "ensures contract for '{}' kept as residual runtime obligation",
-                                func.name
-                            ),
-                        )),
-                    }
+                verify_function_contracts(func, item_file, &mut diagnostics);
+            }
+            ir::Item::Impl(impl_def) => {
+                for method in &impl_def.methods {
+                    verify_function_contracts(method, item_file, &mut diagnostics);
                 }
             }
             ir::Item::Struct(strukt) => {
@@ -182,11 +128,80 @@ pub fn verify_static_with_context(
                     }
                 }
             }
-            ir::Item::Enum(_) | ir::Item::Trait(_) | ir::Item::Impl(_) => {}
+            ir::Item::Enum(_) | ir::Item::Trait(_) => {}
         }
     }
 
     diagnostics
+}
+
+/// Statically checks `requires`/`ensures` of a free function or impl method.
+/// Impl methods are named `Type::method`, which becomes the contract owner.
+fn verify_function_contracts(
+    func: &ir::Function,
+    item_file: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let param_env = unconstrained_param_env(func);
+    if let Some(req) = &func.requires {
+        match prove_expression(req, &param_env, None) {
+            ProofState::False => diagnostics.push(
+                Diagnostic::error(
+                    "E4001",
+                    format!("requires contract for '{}' is always false", func.name),
+                    item_file,
+                    req.span,
+                )
+                .with_help("fix the contract or function preconditions"),
+            ),
+            ProofState::True => diagnostics.push(discharge_note(
+                item_file,
+                req.span,
+                format!(
+                    "requires contract for '{}' discharged at compile time",
+                    func.name
+                ),
+            )),
+            ProofState::Unknown => diagnostics.push(residual_note(
+                item_file,
+                req.span,
+                format!(
+                    "requires contract for '{}' kept as residual runtime obligation",
+                    func.name
+                ),
+            )),
+        }
+    }
+
+    if let Some(ens) = &func.ensures {
+        match prove_ensures(func, ens, &param_env) {
+            ProofState::False => diagnostics.push(
+                Diagnostic::error(
+                    "E4002",
+                    format!("ensures contract for '{}' is always false", func.name),
+                    item_file,
+                    ens.span,
+                )
+                .with_help("fix the postcondition expression"),
+            ),
+            ProofState::True => diagnostics.push(discharge_note(
+                item_file,
+                ens.span,
+                format!(
+                    "ensures contract for '{}' discharged at compile time",
+                    func.name
+                ),
+            )),
+            ProofState::Unknown => diagnostics.push(residual_note(
+                item_file,
+                ens.span,
+                format!(
+                    "ensures contract for '{}' kept as residual runtime obligation",
+                    func.name
+                ),
+            )),
+        }
+    }
 }
 
 pub fn lower_runtime_asserts(program: &ir::Program) -> ir::Program {
@@ -212,53 +227,16 @@ pub fn lower_runtime_asserts(program: &ir::Program) -> ir::Program {
         .collect::<BTreeMap<_, _>>();
 
     for item in &mut lowered.items {
-        let ir::Item::Function(func) = item else {
-            continue;
-        };
-
-        if func.is_extern || func.is_intrinsic {
-            continue;
-        }
-
-        let param_env = unconstrained_param_env(func);
-        let requires_discharged = func
-            .requires
-            .as_ref()
-            .map(|req| prove_expression(req, &param_env, None) == ProofState::True)
-            .unwrap_or(false);
-        let ensures_discharged = func
-            .ensures
-            .as_ref()
-            .map(|ens| prove_ensures(func, ens, &param_env) == ProofState::True)
-            .unwrap_or(false);
-
-        rewrite_struct_inits_in_block(&mut func.body, &helper_names, &field_orders, &mut alloc);
-
-        if let Some(req) = &func.requires {
-            if !requires_discharged {
-                let req_clone = clone_expr(req, &mut alloc);
-                let stmt = ir::Stmt::Assert {
-                    expr: req_clone,
-                    message: contract_message("requires", &func.name),
-                    span: func.span,
-                };
-                let mut stmts = vec![stmt];
-                stmts.extend(std::mem::take(&mut func.body.stmts));
-                func.body.stmts = stmts;
+        match item {
+            ir::Item::Function(func) => {
+                lower_function_contracts(func, &helper_names, &field_orders, &mut alloc);
             }
-        }
-
-        if let Some(ens) = func.ensures.clone() {
-            if !ensures_discharged {
-                lower_ensures_in_block(
-                    &mut func.body,
-                    &ens,
-                    func.ret_type,
-                    &func.name,
-                    &mut alloc,
-                    true,
-                );
+            ir::Item::Impl(impl_def) => {
+                for method in &mut impl_def.methods {
+                    lower_function_contracts(method, &helper_names, &field_orders, &mut alloc);
+                }
             }
+            ir::Item::Struct(_) | ir::Item::Enum(_) | ir::Item::Trait(_) => {}
         }
     }
 
@@ -269,6 +247,53 @@ pub fn lower_runtime_asserts(program: &ir::Program) -> ir::Program {
     }
 
     lowered
+}
+
+/// Lowers residual `requires`/`ensures` of a free function or impl method to
+/// runtime asserts and routes struct literals through invariant constructors.
+fn lower_function_contracts(
+    func: &mut ir::Function,
+    helper_names: &BTreeMap<String, String>,
+    field_orders: &BTreeMap<String, Vec<String>>,
+    alloc: &mut IdAlloc,
+) {
+    if func.is_extern || func.is_intrinsic {
+        return;
+    }
+
+    let param_env = unconstrained_param_env(func);
+    let requires_discharged = func
+        .requires
+        .as_ref()
+        .map(|req| prove_expression(req, &param_env, None) == ProofState::True)
+        .unwrap_or(false);
+    let ensures_discharged = func
+        .ensures
+        .as_ref()
+        .map(|ens| prove_ensures(func, ens, &param_env) == ProofState::True)
+        .unwrap_or(false);
+
+    rewrite_struct_inits_in_block(&mut func.body, helper_names, field_orders, alloc);
+
+    if let Some(req) = &func.requires {
+        if !requires_discharged {
+            let req_clone = clone_expr(req, alloc);
+            let stmt = ir::Stmt::Assert {
+                expr: req_clone,
+                message: contract_message("requires", &func.name),
+                span: func.span,
+            };
+            let mut stmts = vec![stmt];
+            stmts.extend(std::mem::take(&mut func.body.stmts));
+            func.body.stmts = stmts;
+        }
+    }
+
+    if let Some(ens) = func.ensures.clone() {
+        if !ensures_discharged {
+            lower_ensures_in_block(&mut func.body, &ens, func.ret_type, &func.name, alloc, true);
+        }
+    }
 }
 
 fn discharge_note(file: &str, span: crate::span::Span, message: String) -> Diagnostic {
@@ -1330,7 +1355,12 @@ fn intern_type(program: &mut ir::Program, repr: &str, alloc: &mut IdAlloc) -> ir
 fn max_node(program: &ir::Program) -> u32 {
     let mut max = 0;
     for item in &program.items {
-        if let ir::Item::Function(func) = item {
+        let functions: Vec<&ir::Function> = match item {
+            ir::Item::Function(func) => vec![func],
+            ir::Item::Impl(impl_def) => impl_def.methods.iter().collect(),
+            _ => Vec::new(),
+        };
+        for func in functions {
             max = max.max(max_node_block(&func.body));
             if let Some(req) = &func.requires {
                 max = max.max(max_node_expr(req));
@@ -1784,6 +1814,165 @@ mod tests {
         let ir = build(&program.expect("program"));
         let diags = verify_static(&ir, "test.aic");
         assert!(diags.iter().any(|d| d.code == "E4002"));
+    }
+
+    fn impl_methods(program: &ir::Program) -> Vec<&ir::Function> {
+        program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ir::Item::Impl(impl_def) => Some(impl_def.methods.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn assert_messages(func: &ir::Function) -> Vec<String> {
+        func.body
+            .stmts
+            .iter()
+            .filter_map(|stmt| match stmt {
+                ir::Stmt::Assert { message, .. } => Some(message.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    const METHOD_CONTRACTS_SRC: &str = r#"
+trait Score[T] {
+    fn score(self: T, bonus: Int) -> Int;
+}
+struct Acct { bal: Int }
+impl Acct {
+    fn withdraw(self: Acct, amt: Int) -> Int requires amt <= self.bal ensures result >= 0 {
+        self.bal - amt
+    }
+    fn plain(self: Acct) -> Int { self.bal }
+    fn always_bad(self: Acct) -> Int requires false { 0 }
+}
+impl Score[Acct] {
+    fn score(self: Acct, bonus: Int) -> Int requires bonus >= 0 { self.bal + bonus }
+}
+fn main() -> Int { 0 }
+"#;
+
+    #[test]
+    fn static_verification_covers_inherent_and_trait_impl_methods() {
+        let (program, d) = parse(METHOD_CONTRACTS_SRC, "test.aic");
+        assert!(d.is_empty(), "{d:#?}");
+        let ir = build(&program.expect("program"));
+        let diags = verify_static(&ir, "test.aic");
+        let messages: Vec<(String, String)> = diags
+            .iter()
+            .map(|d| (d.code.clone(), d.message.clone()))
+            .collect();
+        for expected in [
+            (
+                "E4003",
+                "requires contract for 'Acct::withdraw' kept as residual runtime obligation",
+            ),
+            (
+                "E4003",
+                "ensures contract for 'Acct::withdraw' kept as residual runtime obligation",
+            ),
+            (
+                "E4001",
+                "requires contract for 'Acct::always_bad' is always false",
+            ),
+            (
+                "E4003",
+                "requires contract for 'Acct::score' kept as residual runtime obligation",
+            ),
+        ] {
+            assert!(
+                messages.contains(&(expected.0.to_string(), expected.1.to_string())),
+                "missing {expected:?} in {messages:#?}"
+            );
+        }
+        assert!(!messages.iter().any(|(_, m)| m.contains("'Acct::plain'")));
+    }
+
+    #[test]
+    fn lowering_inserts_asserts_into_impl_methods_with_method_owner() {
+        let (program, d) = parse(METHOD_CONTRACTS_SRC, "test.aic");
+        assert!(d.is_empty(), "{d:#?}");
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let methods = impl_methods(&lowered);
+        let by_name = |name: &str| {
+            methods
+                .iter()
+                .find(|m| m.name == name)
+                .copied()
+                .unwrap_or_else(|| panic!("missing method {name}"))
+        };
+
+        let withdraw = assert_messages(by_name("Acct::withdraw"));
+        assert_eq!(
+            withdraw.first().map(String::as_str),
+            Some("contract_violation{kind:requires,owner:Acct::withdraw}: requires failed in Acct::withdraw")
+        );
+        assert!(
+            withdraw
+                .iter()
+                .any(|m| m.starts_with("contract_violation{kind:ensures,owner:Acct::withdraw}")),
+            "withdraw asserts={withdraw:#?}"
+        );
+        assert_eq!(
+            assert_messages(by_name("Acct::score")),
+            vec!["contract_violation{kind:requires,owner:Acct::score}: requires failed in Acct::score"]
+        );
+        assert!(assert_messages(by_name("Acct::plain")).is_empty());
+    }
+
+    #[test]
+    fn lowering_routes_struct_literals_in_methods_through_invariant_helper() {
+        let src = r#"
+struct Positive { n: Int } invariant n > 0
+struct Factory { seed: Int }
+impl Factory {
+    fn make(self: Factory) -> Positive { Positive { n: self.seed } }
+}
+fn main() -> Int { 0 }
+"#;
+        let (program, d) = parse(src, "test.aic");
+        assert!(d.is_empty(), "{d:#?}");
+        let ir = build(&program.expect("program"));
+        let lowered = lower_runtime_asserts(&ir);
+        let make = impl_methods(&lowered)
+            .into_iter()
+            .find(|m| m.name == "Factory::make")
+            .expect("make");
+        let tail = make.body.tail.as_ref().expect("tail");
+        match &tail.kind {
+            ir::ExprKind::Call { callee, .. } => match &callee.kind {
+                ir::ExprKind::Var(name) => assert_eq!(name, "__aic_invariant_ctor_Positive"),
+                other => panic!("unexpected callee {other:?}"),
+            },
+            other => panic!("struct literal was not rewritten: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowered_method_nodes_do_not_collide_with_existing_ids() {
+        let (program, d) = parse(METHOD_CONTRACTS_SRC, "test.aic");
+        assert!(d.is_empty(), "{d:#?}");
+        let ir = build(&program.expect("program"));
+        let before = super::max_node(&ir);
+        let lowered = lower_runtime_asserts(&ir);
+        let withdraw = impl_methods(&lowered)
+            .into_iter()
+            .find(|m| m.name == "Acct::withdraw")
+            .expect("withdraw");
+        let ir::Stmt::Assert { expr, .. } = &withdraw.body.stmts[0] else {
+            panic!("expected requires assert first");
+        };
+        assert!(
+            expr.node.0 > before,
+            "cloned contract reused node id {}",
+            expr.node.0
+        );
     }
 
     #[test]

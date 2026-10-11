@@ -13571,6 +13571,152 @@ fn main() -> Int {
 }
 
 #[test]
+fn exec_inherent_method_requires_violation_panics_with_method_owner() {
+    let src = r#"
+import std.io;
+struct Acct { bal: Int }
+impl Acct {
+    fn withdraw(self: Acct, amt: Int) -> Int requires amt <= self.bal {
+        self.bal - amt
+    }
+}
+fn main() -> Int effects { io } capabilities { io } {
+    let a = Acct { bal: 5 };
+    print_int(a.withdraw(10));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0, "stdout={stdout}");
+    assert!(
+        stdout.is_empty(),
+        "method body must not run: stdout={stdout}"
+    );
+    assert!(
+        stderr.contains("contract_violation{kind:requires,owner:Acct::withdraw}"),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_inherent_method_contracts_pass_when_satisfied() {
+    let src = r#"
+import std.io;
+struct Acct { bal: Int }
+impl Acct {
+    fn withdraw(self: Acct, amt: Int) -> Int requires amt <= self.bal ensures result >= 0 {
+        if amt < 0 { self.bal } else { self.bal - amt }
+    }
+}
+fn main() -> Int effects { io } capabilities { io } {
+    let a = Acct { bal: 5 };
+    print_int(a.withdraw(3));
+    print_int(a.withdraw(-1));
+    print_int(a.withdraw(5));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "2\n5\n0\n");
+}
+
+#[test]
+fn exec_inherent_method_ensures_checks_tail_result() {
+    let src = r#"
+struct Acct { bal: Int }
+impl Acct {
+    fn delta(self: Acct, amt: Int) -> Int ensures result >= 0 {
+        self.bal - amt
+    }
+}
+fn main() -> Int {
+    let a = Acct { bal: 1 };
+    a.delta(4)
+}
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert!(
+        stderr.contains("contract_violation{kind:ensures,owner:Acct::delta}"),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_inherent_method_ensures_checks_early_return() {
+    let src = r#"
+struct Acct { bal: Int }
+impl Acct {
+    fn delta(self: Acct, amt: Int) -> Int ensures result >= 0 {
+        return self.bal - amt;
+        0
+    }
+}
+fn main() -> Int {
+    let a = Acct { bal: 1 };
+    a.delta(4)
+}
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert!(
+        stderr.contains("contract_violation{kind:ensures,owner:Acct::delta}"),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_trait_impl_method_contracts_are_enforced() {
+    let src = r#"
+import std.io;
+trait Score[T] {
+    fn score(self: T, bonus: Int) -> Int;
+}
+struct Meter { value: Int }
+impl Score[Meter] {
+    fn score(self: Meter, bonus: Int) -> Int requires bonus >= 0 ensures result >= self.value {
+        self.value + bonus
+    }
+}
+fn main() -> Int effects { io } capabilities { io } {
+    let m = Meter { value: 10 };
+    print_int(m.score(2));
+    print_int(m.score(-1));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "12\n", "stderr={stderr}");
+    assert!(
+        stderr.contains("contract_violation{kind:requires,owner:Meter::score}"),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_struct_invariant_is_enforced_for_literals_inside_methods() {
+    let src = r#"
+struct Positive { n: Int } invariant n > 0
+struct Factory { seed: Int }
+impl Factory {
+    fn make(self: Factory) -> Positive {
+        Positive { n: self.seed }
+    }
+}
+fn main() -> Int {
+    let f = Factory { seed: 0 };
+    let p = f.make();
+    p.n
+}
+"#;
+    let (code, _stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("invariant"), "stderr={stderr}");
+}
+
+#[test]
 fn exec_extern_c_string_view_parameter_round_trips_through_native_fixture() {
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("ffi_string_view.aic");

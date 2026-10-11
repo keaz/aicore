@@ -1,0 +1,33 @@
+module examples.verify.method_contracts;
+import std.io;
+
+// Contracts on methods in inherent and trait impl blocks are verified and
+// checked at runtime like contracts on free functions. A violation reports the
+// method as `Type::method`, for example
+// contract_violation{kind:requires,owner:Account::withdraw}.
+trait Fee[T] {
+    fn fee(self: T, amount: Int) -> Int;
+}
+
+struct Account {
+    balance: Int,
+}
+
+impl Account {
+    fn withdraw(self: Account, amount: Int) -> Account requires amount >= 0 && amount <= self.balance ensures result.balance >= 0 {
+        Account { balance: self.balance - amount }
+    }
+}
+
+impl Fee[Account] {
+    fn fee(self: Account, amount: Int) -> Int requires amount >= 0 ensures result >= 0 && result <= amount {
+        amount / 10
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let account = Account { balance: 50 };
+    let after = account.withdraw(8);
+    print_int(after.balance + after.fee(20));
+    0
+}

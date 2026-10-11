@@ -1,0 +1,21 @@
+module examples.verify.method_contract_violation;
+import std.io;
+
+// Withdrawing more than the balance violates the method's `requires`
+// contract. The run panics with
+// contract_violation{kind:requires,owner:Account::withdraw}.
+struct Account {
+    balance: Int,
+}
+
+impl Account {
+    fn withdraw(self: Account, amount: Int) -> Int requires amount <= self.balance {
+        self.balance - amount
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let account = Account { balance: 5 };
+    print_int(account.withdraw(10));
+    0
+}
