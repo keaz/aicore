@@ -497,6 +497,31 @@ fn stmt_span(stmt: &ir::Stmt) -> Span {
     }
 }
 
+/// Payload structs of struct-like enum variants (`Shape__Move`), by name.
+fn struct_variant_payloads(program: &ir::Program) -> BTreeMap<String, ir::StructDef> {
+    let structs = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            ir::Item::Struct(s) => Some((s.name.clone(), s)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut out = BTreeMap::new();
+    for item in &program.items {
+        let ir::Item::Enum(e) = item else {
+            continue;
+        };
+        for variant in &e.variants {
+            let name = ast::struct_variant_payload_name(&e.name, &variant.name);
+            if let Some(payload) = structs.get(&name) {
+                out.insert(name, (*payload).clone());
+            }
+        }
+    }
+    out
+}
+
 /// The IR builder adds `Name::default()` for structs whose fields all have
 /// defaults. It has no source syntax, so it is not printed.
 fn is_synthesized_struct_default(f: &ir::Function, program: &ir::Program) -> bool {
@@ -868,6 +893,9 @@ struct Printer<'a> {
     /// Index expressions of place assignments (`v[i] = x`), which the IR
     /// builder binds to hidden `let`s; printed back inside the brackets.
     place_indexes: BTreeMap<String, ir::Expr>,
+    /// Hidden payload structs of struct-like enum variants, by name; they
+    /// are printed inside their enum, not as items.
+    payload_structs: BTreeMap<String, ir::StructDef>,
 }
 
 impl<'a> Printer<'a> {
@@ -877,6 +905,7 @@ impl<'a> Printer<'a> {
             type_map: type_map(program),
             source,
             place_indexes: BTreeMap::new(),
+            payload_structs: struct_variant_payloads(program),
         }
     }
 
@@ -902,6 +931,11 @@ impl<'a> Printer<'a> {
         for item in &program.items {
             if let ir::Item::Function(f) = item {
                 if is_synthesized_struct_default(f, program) {
+                    continue;
+                }
+            }
+            if let ir::Item::Struct(s) = item {
+                if self.payload_structs.contains_key(&s.name) {
                     continue;
                 }
             }
@@ -1435,18 +1469,39 @@ impl<'a> Printer<'a> {
             );
             self.out.push_str("    ");
             self.out.push_str(&variant.name);
+            // Multi-field and struct-like payloads span their delimiters.
+            let mut delimited = false;
             if let Some(ty) = variant.payload {
-                self.out.push('(');
-                self.out.push_str(&self.display_type(&ty));
-                self.out.push(')');
+                let repr = self.type_map.get(&ty).cloned().unwrap_or_default();
+                let base = repr.split('[').next().unwrap_or("").to_string();
+                let multi_field = base == TUPLE_INTERNAL_NAME
+                    && extract_generic_args(&repr).is_some_and(|items| items.len() > 1);
+                if let Some(payload) = self.payload_structs.get(&base).cloned() {
+                    delimited = true;
+                    let fields = payload
+                        .fields
+                        .iter()
+                        .map(|field| format!("{}: {}", field.name, self.display_type(&field.ty)))
+                        .collect::<Vec<_>>();
+                    self.out.push_str(" { ");
+                    self.out.push_str(&fields.join(", "));
+                    self.out.push_str(" }");
+                } else if multi_field {
+                    delimited = true;
+                    self.out.push_str(&self.display_type(&ty));
+                } else {
+                    self.out.push('(');
+                    self.out.push_str(&self.display_type(&ty));
+                    self.out.push(')');
+                }
             }
             self.out.push(',');
-            // A variant's span stops at its payload type, before the `)`.
+            // A single payload's span stops at its type, before the `)`.
             let end = match variant.payload {
-                Some(_) => {
+                Some(_) if !delimited => {
                     self.end_of_token_at(variant.span.end, |kind| matches!(kind, TokenKind::RParen))
                 }
-                None => variant.span.end,
+                _ => variant.span.end,
             };
             self.trailing(end);
             self.out.push('\n');
@@ -2174,6 +2229,18 @@ impl<'a> Printer<'a> {
                     self.out.push(')');
                 } else {
                     self.out.push_str(name);
+                    // `V((a, b))` is written `V(a, b)`.
+                    let args = match args.as_slice() {
+                        [ir::Pattern {
+                            kind:
+                                ir::PatternKind::Variant {
+                                    name: tuple,
+                                    args: items,
+                                },
+                            ..
+                        }] if tuple == TUPLE_INTERNAL_NAME && items.len() > 1 => items,
+                        _ => args,
+                    };
                     if !args.is_empty() {
                         self.out.push('(');
                         for (idx, arg) in args.iter().enumerate() {

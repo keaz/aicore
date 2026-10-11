@@ -1,0 +1,39 @@
+module examples.core.variant_fields;
+
+import std.io;
+
+// Enum variants with several fields, positional or named.
+
+enum Command {
+    Move { dx: Int, dy: Int },
+    Resize(Int, Int),
+    Rename(String),
+    Quit,
+}
+
+struct Window {
+    x: Int,
+    y: Int,
+    w: Int,
+    h: Int,
+}
+
+fn apply(win: Window, cmd: Command) -> Window {
+    match cmd {
+        Move { dx, dy } => Window { x: win.x + dx, y: win.y + dy, w: win.w, h: win.h },
+        Command::Resize(w, h) => Window { x: win.x, y: win.y, w: w, h: h },
+        Rename(_) => win,
+        Quit => win,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut win = Window { x: 0, y: 0, w: 10, h: 10 };
+    win = apply(win, Command::Move { dx: 5, dy: 3 });
+    win = apply(win, Command::Resize(20, 4));
+    win = apply(win, Rename("editor"));
+    win = apply(win, Quit);
+    // x 5 + y 3 + w 20 + h 4 + 10 = 42
+    print_int(win.x + win.y + win.w + win.h + 10);
+    0
+}

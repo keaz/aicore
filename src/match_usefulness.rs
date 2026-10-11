@@ -150,6 +150,60 @@ pub fn missing_rows(
         .collect()
 }
 
+/// Renders `name(payload)` in source syntax: the tuple payload of a
+/// multi-field variant as `V(a, b)`, and the payload struct of a
+/// struct-like variant as `V { .. }`.
+fn render_variant(
+    name: &str,
+    payload: &Pat,
+    rendered: &[String],
+    payload_ty: Option<&String>,
+    enum_ty: &str,
+) -> String {
+    let payload_ty = payload_ty.map(String::as_str).unwrap_or("");
+    let enum_name = enum_ty.split('[').next().unwrap_or(enum_ty);
+    let enum_name = enum_name.rsplit('.').next().unwrap_or(enum_name);
+    let payload_struct = crate::ast::struct_variant_payload_name(enum_name, name);
+    if payload_ty.split('[').next() == Some(payload_struct.as_str()) {
+        return match rendered
+            .first()
+            .and_then(|text| text.strip_prefix(&payload_struct))
+        {
+            Some(fields) => format!("{name}{fields}"),
+            None => format!("{name} {{ .. }}"),
+        };
+    }
+    if let Some(arity) = tuple_arity(payload_ty).filter(|arity| *arity > 1) {
+        return match payload {
+            Pat::Wild => format!("{name}({})", vec!["_"; arity].join(", ")),
+            _ => {
+                let inner = rendered[0]
+                    .strip_prefix('(')
+                    .and_then(|text| text.strip_suffix(')'))
+                    .unwrap_or(&rendered[0]);
+                format!("{name}({inner})")
+            }
+        };
+    }
+    format!("{}({})", name, rendered.join(", "))
+}
+
+/// Number of elements of a `Tuple[..]` type.
+fn tuple_arity(ty: &str) -> Option<usize> {
+    let inner = ty.strip_prefix("Tuple[")?.strip_suffix(']')?;
+    let mut depth = 0usize;
+    let mut count = 1;
+    for ch in inner.chars() {
+        match ch {
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => count += 1,
+            _ => {}
+        }
+    }
+    Some(count)
+}
+
 /// Renders a witness pattern for diagnostics and fixes.
 pub fn render(pat: &Pat, ty: &str, types: &dyn PatternTypes) -> String {
     match pat {
@@ -168,7 +222,9 @@ pub fn render(pat: &Pat, ty: &str, types: &dyn PatternTypes) -> String {
                 .collect::<Vec<_>>();
             match ctor {
                 Ctor::Variant(name) if rendered_args.is_empty() => name.clone(),
-                Ctor::Variant(name) => format!("{}({})", name, rendered_args.join(", ")),
+                Ctor::Variant(name) => {
+                    render_variant(name, &args[0], &rendered_args, fields.first(), ty)
+                }
                 Ctor::Bool(value) => value.to_string(),
                 Ctor::Unit => "()".to_string(),
                 Ctor::Tuple(_) => format!("({})", rendered_args.join(", ")),

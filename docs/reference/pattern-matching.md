@@ -30,6 +30,8 @@ variant_path    = ident ("::" ident)? ;   (* `Red`, `Color::Red`, `Option::Some`
 
 ## Semantics and Rules
 
+- Multi-field variants (`Rect(Int, Int)`) are built and matched with one argument per field: `Shape::Rect(2, 3)`, `Rect(w, h) =>`. Their payload is the tuple `(Int, Int)`, so `Rect((w, h))` means the same.
+- Struct-like variants (`Move { x: Int, y: Int }`) are built and matched like structs: `Shape::Move { x: 1, y: 2 }`, `Move { x, .. } =>`, `Shape::Move { x: 0, y } =>`. The fields live in a payload struct named `Enum__Variant` that the compiler generates; diagnostics name the variant (`Shape::Move`). JSON serde (`std.json` `encode`/`decode_with`) encodes the payload as an object.
 - Arm bodies can be block expressions with statements: `Err(e) => { log(e); return 0; }`.
 - Scrutinee expression is typed first; each arm pattern must be compatible with that scrutinee type.
 - Exhaustiveness and reachability use the usefulness algorithm of Maranget ("Warnings for pattern matching") over the whole pattern, not only the top-level constructor. Nested payloads, tuples, struct fields, literals, wildcards, bindings, and or-patterns are all taken into account:

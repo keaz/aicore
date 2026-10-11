@@ -176,6 +176,9 @@ struct Parser<'a> {
     diagnostics: Vec<Diagnostic>,
     for_counter: usize,
     tuple_binding_counter: usize,
+    /// Items synthesized while parsing another item (the payload structs of
+    /// struct-like enum variants); emitted right after that item.
+    pending_items: Vec<Item>,
     disallow_struct_literal: bool,
     /// Set while parsing an expression that a block follows (`if` and
     /// `while` conditions, `match` scrutinees, contracts): a `{` there
@@ -235,6 +238,7 @@ impl<'a> Parser<'a> {
             diagnostics: Vec::new(),
             for_counter: 0,
             tuple_binding_counter: 0,
+            pending_items: Vec::new(),
             disallow_struct_literal: false,
             disallow_block_expr: false,
             steps: Cell::new(0),
@@ -291,7 +295,10 @@ impl<'a> Parser<'a> {
         while !self.at_kind(|k| matches!(k, TokenKind::Eof)) {
             let item_start = self.index;
             match self.parse_item() {
-                Some(item) => items.push(item),
+                Some(item) => {
+                    items.push(item);
+                    items.append(&mut self.pending_items);
+                }
                 None => {
                     if self.at_kind(|k| matches!(k, TokenKind::Eof)) {
                         break;
@@ -1192,14 +1199,36 @@ impl<'a> Parser<'a> {
             self.validate_attributes(&variant_attrs, AttributeTarget::Variant);
             let (var_name, _) = self.expect_ident("E1017", "expected enum variant name")?;
             let payload = if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
+                // `V(A)` carries one payload; `V(A, B, ..)` carries the tuple
+                // `(A, B, ..)`.
+                let open = self.current_span();
                 self.bump();
-                let ty = self.parse_type()?;
-                self.expect(
+                let mut items = vec![self.parse_type()?];
+                while self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                    self.bump();
+                    if self.at_kind(|k| matches!(k, TokenKind::RParen)) {
+                        break;
+                    }
+                    items.push(self.parse_type()?);
+                }
+                let close = self.expect(
                     |k| matches!(k, TokenKind::RParen),
                     "E1018",
-                    "expected ')' after variant payload type",
+                    "expected ')' after variant payload types",
                 )?;
-                Some(ty)
+                if items.len() == 1 {
+                    items.pop()
+                } else {
+                    Some(TypeExpr {
+                        kind: TypeKind::Named {
+                            name: TUPLE_INTERNAL_NAME.to_string(),
+                            args: items,
+                        },
+                        span: Span::new(open.start, close.end),
+                    })
+                }
+            } else if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                Some(self.parse_struct_variant_payload(&name, &var_name, &generics, visibility)?)
             } else {
                 None
             };
@@ -1231,6 +1260,77 @@ impl<'a> Parser<'a> {
             generics,
             variants,
             span: Span::new(start, close.end),
+        })
+    }
+
+    /// `Variant { a: A, b: B }` in an enum: the fields become the hidden
+    /// payload struct `Enum__Variant` (generic over the enum's parameters),
+    /// emitted after the enum, and the variant carries one value of it.
+    fn parse_struct_variant_payload(
+        &mut self,
+        enum_name: &str,
+        variant_name: &str,
+        generics: &[GenericParam],
+        visibility: Visibility,
+    ) -> Option<TypeExpr> {
+        let open = self.current_span();
+        self.bump(); // {
+        let mut fields = Vec::new();
+        while !self.at_kind(|k| matches!(k, TokenKind::RBrace)) {
+            let (field_name, field_span) =
+                self.expect_ident("E1012", "expected field name in struct-like variant")?;
+            self.expect(
+                |k| matches!(k, TokenKind::Colon),
+                "E1013",
+                "expected ':' after variant field name",
+            )?;
+            let ty = self.parse_type()?;
+            let span = Span::new(field_span.start, ty.span.end);
+            fields.push(Field {
+                name: field_name,
+                visibility: Visibility::Public,
+                attrs: Vec::new(),
+                ty,
+                default_value: None,
+                span,
+            });
+            if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        let close = self.expect(
+            |k| matches!(k, TokenKind::RBrace),
+            "E1019",
+            "expected '}' after variant fields",
+        )?;
+        let span = Span::new(open.start, close.end);
+        let struct_name = struct_variant_payload_name(enum_name, variant_name);
+        self.pending_items.push(Item::Struct(StructDef {
+            name: struct_name.clone(),
+            visibility,
+            attrs: Vec::new(),
+            generics: generics.to_vec(),
+            fields,
+            invariant: None,
+            span,
+        }));
+        Some(TypeExpr {
+            kind: TypeKind::Named {
+                name: struct_name,
+                args: generics
+                    .iter()
+                    .map(|generic| TypeExpr {
+                        kind: TypeKind::Named {
+                            name: generic.name.clone(),
+                            args: Vec::new(),
+                        },
+                        span,
+                    })
+                    .collect(),
+            },
+            span,
         })
     }
 
@@ -3114,7 +3214,7 @@ impl<'a> Parser<'a> {
                         {
                             self.bump();
                             self.bump();
-                            let value = self.parse_expr()?;
+                            let value = self.parse_nested_expr()?;
                             if arg_names.is_empty() && !args.is_empty() {
                                 arg_names.resize(args.len(), None);
                             }
@@ -3126,7 +3226,7 @@ impl<'a> Parser<'a> {
                     }
 
                     if !parsed_named {
-                        let arg = self.parse_expr()?;
+                        let arg = self.parse_nested_expr()?;
                         if saw_named {
                             self.diagnostics.push(
                                 Diagnostic::error(
@@ -3332,12 +3432,12 @@ impl<'a> Parser<'a> {
                         span: Span::new(token.span.start, end),
                     });
                 }
-                let first = self.parse_expr()?;
+                let first = self.parse_nested_expr()?;
                 if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
                     self.bump();
                     let mut items = vec![first];
                     while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
-                        let item = self.parse_expr()?;
+                        let item = self.parse_nested_expr()?;
                         items.push(item);
                         if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
                             self.bump();
@@ -3408,8 +3508,11 @@ impl<'a> Parser<'a> {
                     full_name.push_str(&segment);
                     end = seg_span.end;
                 }
+                // `Enum::Variant { .. }` builds a struct-like variant; right
+                // after an `if`/`while` condition or `match` scrutinee the
+                // `{` starts the following block instead.
                 if !self.disallow_struct_literal
-                    && !full_name.contains("::")
+                    && !(full_name.contains("::") && self.disallow_block_expr)
                     && self.at_kind(|k| matches!(k, TokenKind::LBrace))
                     && self.looks_like_struct_literal()
                 {
@@ -4076,6 +4179,17 @@ impl<'a> Parser<'a> {
         expr
     }
 
+    /// Parses an expression inside parentheses (call arguments, tuples):
+    /// struct literals and block expressions are allowed again there.
+    fn parse_nested_expr(&mut self) -> Option<Expr> {
+        let struct_literal = std::mem::replace(&mut self.disallow_struct_literal, false);
+        let block_expr = std::mem::replace(&mut self.disallow_block_expr, false);
+        let expr = self.parse_expr();
+        self.disallow_struct_literal = struct_literal;
+        self.disallow_block_expr = block_expr;
+        expr
+    }
+
     /// Parses an expression that a block follows; see `disallow_block_expr`.
     fn parse_expr_before_block(&mut self) -> Option<Expr> {
         let prev = self.disallow_block_expr;
@@ -4674,7 +4788,7 @@ impl<'a> Parser<'a> {
                 }
                 let qualified = name.contains("::");
                 let name_span = Span::new(token.span.start, name_end);
-                if !qualified && self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
                     let start = name_span.start;
                     self.bump();
                     let mut fields = Vec::new();
@@ -4739,9 +4853,23 @@ impl<'a> Parser<'a> {
                         "E1047",
                         "expected ')' after variant pattern",
                     )?;
+                    let span = Span::new(start, close.end);
+                    // `V(a, b)` matches the tuple payload of a multi-field
+                    // variant: `V((a, b))`.
+                    let args = if args.len() > 1 {
+                        vec![Pattern {
+                            kind: PatternKind::Variant {
+                                name: TUPLE_INTERNAL_NAME.to_string(),
+                                args,
+                            },
+                            span,
+                        }]
+                    } else {
+                        args
+                    };
                     Some(Pattern {
                         kind: PatternKind::Variant { name, args },
-                        span: Span::new(start, close.end),
+                        span,
                     })
                 } else if qualified
                     || name
@@ -5378,6 +5506,52 @@ mod tests {
             );
             assert_eq!(diagnostics.len(), 1, "{src}: {diagnostics:#?}");
         }
+    }
+
+    #[test]
+    fn parses_multi_field_and_struct_like_variants() {
+        let src = "enum Shape[T] { Rect(Int, T), Move { x: Int, y: T }, Empty } fn f(s: Shape[Int]) -> Int { match s { Rect(w, h) => w, Shape::Move { x, .. } => x, Empty => 0 } }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Enum(shape) = &program.items[0] else {
+            panic!("expected enum");
+        };
+        let payloads = shape
+            .variants
+            .iter()
+            .map(|variant| match &variant.payload {
+                Some(ty) => match &ty.kind {
+                    TypeKind::Named { name, args } => format!("{name}/{}", args.len()),
+                    other => format!("{other:?}"),
+                },
+                None => "none".to_string(),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(payloads, ["Tuple/2", "Shape__Move/1", "none"]);
+        // The payload struct follows the enum, generic over its parameters.
+        let Item::Struct(payload) = &program.items[1] else {
+            panic!("expected the payload struct");
+        };
+        assert_eq!(payload.name, "Shape__Move");
+        assert_eq!(payload.generics.len(), 1);
+        assert_eq!(payload.fields.len(), 2);
+        // `Rect(w, h)` matches the tuple payload.
+        let Item::Function(f) = &program.items[2] else {
+            panic!("expected function");
+        };
+        let ExprKind::Match { arms, .. } = &f.body.tail.as_ref().expect("tail").kind else {
+            panic!("expected match");
+        };
+        let PatternKind::Variant { args, .. } = &arms[0].pattern.kind else {
+            panic!("expected variant pattern");
+        };
+        assert!(
+            matches!(&args[..], [p] if matches!(&p.kind, PatternKind::Variant { name, args } if name == "Tuple" && args.len() == 2))
+        );
+        assert!(
+            matches!(&arms[1].pattern.kind, PatternKind::Struct { name, .. } if name == "Shape::Move")
+        );
     }
 
     #[test]

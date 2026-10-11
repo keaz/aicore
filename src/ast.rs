@@ -488,6 +488,12 @@ pub struct Block {
     pub span: Span,
 }
 
+/// Name of the hidden payload struct of the struct-like variant
+/// `Enum::Variant { .. }`.
+pub fn struct_variant_payload_name(enum_name: &str, variant_name: &str) -> String {
+    format!("{enum_name}__{variant_name}")
+}
+
 /// Hidden catch-all binding that marks the `else` arm of a desugared
 /// `if let P = e { .. } else { .. }` (`match e { P => .., _$if_let_else => .. }`).
 /// Names starting with `_$` cannot be written in source.

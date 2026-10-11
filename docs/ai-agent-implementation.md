@@ -965,6 +965,14 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Multi-field and Struct-like Enum Variants (SYNTAX-T4, #454)
+
+- Language surface: `Rect(Int, Int)` and `Move { x: Int, y: Int }` variants, constructed as `Shape::Rect(2, 3)` / `Shape::Move { x: 1, y: 2 }` and matched as `Rect(w, h)` / `Move { x, .. }`. Rules: `docs/reference/pattern-matching.md`.
+- Data model (no new IR): a multi-field variant's payload is the tuple of its fields; the parser rewrites `V(a, b)` patterns to `V((a, b))`, and the checker and codegen (`gen_variant_constructor`) accept one argument per tuple element. A struct-like variant's fields become the hidden struct `Enum__Variant` (`ast::struct_variant_payload_name`, generic over the enum's parameters) that the parser emits after the enum (`Parser::pending_items`).
+- Checker: `struct_variant_for` resolves `Variant { .. }` literals and `struct_variant_pattern` resolves `Variant { .. }` patterns against the payload struct; both are recorded (`TypecheckOutput::variant_struct_inits`, `pattern_rewrites`) and the driver (`apply_struct_variants`) rewrites them to `Variant(Enum__Variant { .. })` before codegen. `user_struct_name` shows `Shape::Move` in field diagnostics; `match_usefulness::render_variant` prints witnesses as `Rect(_, _)` and `Move { .. }`.
+- Formatter: prints the variants back in source form and skips the payload structs.
+- Verification: `exec_multi_field_and_struct_like_variants` (including nested patterns, generics and JSON round trip), `multi_field_and_struct_like_variants_are_checked`, `parses_multi_field_and_struct_like_variants`, golden `case29_variant_fields.aic`, `examples/core/variant_fields.aic`.
+
 ## `if let`, `while let`, `let ... else` and Destructuring `let` (SYNTAX-T5, #452)
 
 - Language surface and rules: `docs/reference/expressions.md`, `docs/reference/statements.md`.

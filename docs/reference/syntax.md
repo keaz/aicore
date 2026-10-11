@@ -53,7 +53,9 @@ struct_decl    = "struct" ident generics? "{" field ("," field)* ","? "}" ("inva
 field          = ident ":" type ;
 
 enum_decl      = "enum" ident generics? "{" variant ("," variant)* ","? "}" ;
-variant        = ident | ident "(" type ")" ;
+variant        = ident
+               | ident "(" type ("," type)* ","? ")"          (* `Rect(Int, Int)`: several fields form a tuple payload *)
+               | ident "{" ident ":" type ("," ident ":" type)* ","? "}" ;   (* `Move { x: Int, y: Int }` *)
 
 trait_decl     = "trait" ident generics? (";" | "{" trait_method_sig* "}") ;
 trait_method_sig = ("async" | "unsafe")* "fn" ident generics? "(" params? ")" "->" type where_clause? effects_clause? capabilities_clause? ";" ;

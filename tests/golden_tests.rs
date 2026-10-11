@@ -167,3 +167,8 @@ fn golden_case27_unit_variants() {
 fn golden_case28_pattern_lets() {
     run_golden_case("case28_pattern_lets.aic");
 }
+
+#[test]
+fn golden_case29_variant_fields() {
+    run_golden_case("case29_variant_fields.aic");
+}

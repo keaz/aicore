@@ -200,6 +200,11 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_typed_hole_types(&mut ir, &typecheck.hole_types);
     apply_variant_callees(&mut ir, &typecheck.variant_callees);
+    apply_struct_variants(
+        &mut ir,
+        &typecheck.variant_struct_inits,
+        &typecheck.pattern_rewrites,
+    );
     apply_let_binding_types(&mut ir, &typecheck.let_binding_types);
     ir.expr_type_hints = typecheck.expr_type_hints.clone();
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
@@ -768,6 +773,67 @@ fn apply_variant_callees(program: &mut ir::Program, callees: &BTreeMap<ir::NodeI
                 }
             }
             _ => {}
+        }
+    });
+}
+
+/// Rewrites struct-like variant constructions into constructor calls with a
+/// payload struct literal, and struct-like variant patterns into variant
+/// patterns with a payload struct pattern (see `TypecheckOutput`).
+fn apply_struct_variants(
+    program: &mut ir::Program,
+    inits: &BTreeMap<ir::NodeId, typecheck::VariantStructInit>,
+    patterns: &BTreeMap<ir::NodeId, ir::Pattern>,
+) {
+    if inits.is_empty() && patterns.is_empty() {
+        return;
+    }
+    fn rewrite_pattern(pattern: &mut ir::Pattern, patterns: &BTreeMap<ir::NodeId, ir::Pattern>) {
+        if let Some(rewritten) = patterns.get(&pattern.node) {
+            *pattern = rewritten.clone();
+        }
+        match &mut pattern.kind {
+            ir::PatternKind::Or { patterns: parts }
+            | ir::PatternKind::Variant { args: parts, .. } => {
+                for part in parts {
+                    rewrite_pattern(part, patterns);
+                }
+            }
+            ir::PatternKind::Struct { fields, .. } => {
+                for field in fields {
+                    rewrite_pattern(&mut field.pattern, patterns);
+                }
+            }
+            _ => {}
+        }
+    }
+    ir::visit_exprs_mut(program, &mut |expr| {
+        if let Some(init) = inits.get(&expr.node) {
+            if let ir::ExprKind::StructInit { fields, .. } = &mut expr.kind {
+                let fields = std::mem::take(fields);
+                expr.kind = ir::ExprKind::Call {
+                    callee: Box::new(ir::Expr {
+                        node: expr.node,
+                        kind: ir::ExprKind::Var(init.callee.clone()),
+                        span: expr.span,
+                    }),
+                    args: vec![ir::Expr {
+                        node: init.payload_node,
+                        kind: ir::ExprKind::StructInit {
+                            name: init.payload_struct.clone(),
+                            fields,
+                        },
+                        span: expr.span,
+                    }],
+                    arg_names: Vec::new(),
+                    symbol: None,
+                };
+            }
+        }
+        if let ir::ExprKind::Match { arms, .. } = &mut expr.kind {
+            for arm in arms {
+                rewrite_pattern(&mut arm.pattern, patterns);
+            }
         }
     });
 }

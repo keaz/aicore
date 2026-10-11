@@ -18850,3 +18850,64 @@ fn main() -> Int effects { io } capabilities { io } {
         "11\n11\n17\n104\n13\n3\n5\n42\n-1\n11\n7\n1\n404\n57\n8\n11\n42\n"
     );
 }
+
+#[test]
+fn exec_multi_field_and_struct_like_variants() {
+    let src = r#"
+import std.io;
+import std.json;
+
+enum Shape {
+    Circle(Int),
+    Rect(Int, Int),
+    Move { x: Int, y: Int },
+    Empty,
+}
+
+enum Tree[T] {
+    Leaf(T),
+    Node { left: T, right: T, weight: Int },
+}
+
+fn area(s: Shape) -> Int {
+    match s {
+        Circle(r) => r * r * 3,
+        Shape::Rect(w, 1) => w,
+        Shape::Rect(w, h) => w * h,
+        Move { x: 0, y } => y,
+        Shape::Move { x, .. } => x * 100,
+        Empty => 0,
+    }
+}
+
+fn weigh(t: Tree[Int]) -> Int {
+    match t {
+        Tree::Leaf(v) => v,
+        Tree::Node { left, right, weight } => (left + right) * weight,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(area(Shape::Rect(2, 3)) + area(Shape::Rect(9, 1)));
+    print_int(area(Move { x: 0, y: 7 }) + area(Shape::Move { y: 1, x: 2 }));
+    print_int(area(Circle(1)) + area(Empty));
+    print_int(weigh(Tree::Leaf(5)) + weigh(Tree::Node { left: 1, right: 2, weight: 10 }));
+    let nested = Some(Shape::Rect(4, 4));
+    print_int(match nested { Some(Shape::Rect(a, b)) => a + b, Some(_) => 0, None => -1 });
+    let encoded = match json.encode(Shape::Move { x: 3, y: 4 }) {
+        Ok(value) => value,
+        Err(_) => json.encode_null(),
+    };
+    let marker: Option[Shape] = None;
+    print_int(match json.decode_with(encoded, marker) {
+        Ok(Move { x, y }) => x * 10 + y,
+        Ok(_) => -2,
+        Err(_) => -1,
+    });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "15\n207\n3\n35\n8\n34\n");
+}

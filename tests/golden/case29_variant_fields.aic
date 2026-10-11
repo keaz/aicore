@@ -1,0 +1,17 @@
+enum Shape[T] {
+    Rect(Int, T),
+    Move { x: Int, y: T },
+    Empty,
+}
+
+fn width(s: Shape[Int]) -> Int {
+    match s {
+        Rect(w, _) => w,
+        Shape::Move { x, .. } => x,
+        Empty => 0,
+    }
+}
+
+fn main() -> Int {
+    width(Shape::Rect(2, 3)) + width(Shape::Move {x: 4, y: 5})
+}

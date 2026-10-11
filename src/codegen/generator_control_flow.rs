@@ -579,6 +579,23 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
+        if args.len() > 1 {
+            // `V(a, b)` builds the tuple payload `V((a, b))` of a
+            // multi-field variant.
+            let tuple = ir::Expr {
+                node: args[0].node,
+                kind: ir::ExprKind::StructInit {
+                    name: TUPLE_INTERNAL_NAME.to_string(),
+                    fields: args
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, arg)| (idx.to_string(), arg.clone(), arg.span))
+                        .collect(),
+                },
+                span,
+            };
+            return self.gen_variant_constructor(name, &[tuple], expected_ty, span, fctx);
+        }
         // `Enum::Variant` names one enum's variant.
         let (enum_filter, name) = match name.rsplit_once("::") {
             Some((enum_name, variant)) if !enum_name.is_empty() => (Some(enum_name), variant),

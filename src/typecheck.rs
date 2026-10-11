@@ -60,6 +60,23 @@ pub struct TypecheckOutput {
     /// a zero-argument constructor call with this callee name, and a
     /// qualified builtin constructor call (`Option::Some(x)`) is renamed.
     pub variant_callees: BTreeMap<ir::NodeId, String>,
+    /// Struct-like variant constructions (`Shape::Move { x: 1, y: 2 }`), by
+    /// node: they become `Shape::Move(Shape__Move { x: 1, y: 2 })`.
+    pub variant_struct_inits: BTreeMap<ir::NodeId, VariantStructInit>,
+    /// Struct-like variant patterns (`Move { x, .. }`), by pattern node,
+    /// with their rewritten form `Move(Shape__Move { x, .. })`.
+    pub pattern_rewrites: BTreeMap<ir::NodeId, ir::Pattern>,
+}
+
+/// How to rewrite a struct-like variant construction.
+#[derive(Debug, Clone)]
+pub struct VariantStructInit {
+    /// Constructor callee, `Enum::Variant`.
+    pub callee: String,
+    /// Hidden payload struct, `Enum__Variant`.
+    pub payload_struct: String,
+    /// Node of the payload struct literal.
+    pub payload_node: ir::NodeId,
 }
 
 /// Types the checker inferred for `_` holes in function signatures and
@@ -310,6 +327,13 @@ struct Checker<'a> {
     mutable_receiver_calls: BTreeMap<ir::NodeId, MutableReceiverCall>,
     /// See `TypecheckOutput::variant_callees`.
     variant_callees: BTreeMap<ir::NodeId, String>,
+    /// See `TypecheckOutput::variant_struct_inits`.
+    variant_struct_inits: BTreeMap<ir::NodeId, VariantStructInit>,
+    /// See `TypecheckOutput::pattern_rewrites`.
+    pattern_rewrites: BTreeMap<ir::NodeId, ir::Pattern>,
+    /// Node ids for expressions and patterns the checker synthesizes,
+    /// counting down from `u32::MAX` so they never meet parsed nodes.
+    next_synthetic_node: u32,
     // Type parameters each generic function compares with `==`/`!=`, and
     // the generic calls that bind them; `finish` checks that every concrete
     // binding supports equality (E1291).
@@ -830,6 +854,9 @@ impl<'a> Checker<'a> {
             hole_function_symbols: BTreeMap::new(),
             mutable_receiver_calls: BTreeMap::new(),
             variant_callees: BTreeMap::new(),
+            variant_struct_inits: BTreeMap::new(),
+            pattern_rewrites: BTreeMap::new(),
+            next_synthetic_node: u32::MAX,
             equality_type_params: BTreeMap::new(),
             generic_call_sites: Vec::new(),
             current_param_positions: BTreeMap::new(),
@@ -1507,6 +1534,8 @@ impl<'a> Checker<'a> {
             expr_type_hints: self.expr_type_hints,
             hole_types,
             variant_callees: self.variant_callees,
+            variant_struct_inits: self.variant_struct_inits,
+            pattern_rewrites: self.pattern_rewrites,
         }
     }
 
@@ -6727,14 +6756,16 @@ impl<'a> Checker<'a> {
                         let mut generic_bindings = BTreeMap::new();
 
                         if let Some(payload_ty) = &candidate.payload {
-                            if args.len() != 1 {
-                                self.diagnostics.push(Diagnostic::error(
-                                    "E1215",
-                                    format!("variant '{}' expects one payload argument", name),
-                                    self.file,
-                                    expr.span,
-                                ));
-                            } else {
+                            let payload_norm = self.normalize_type(payload_ty);
+                            // `V(a, b)` builds the tuple payload of a
+                            // multi-field variant.
+                            let tuple_arity = (base_type_name(&payload_norm)
+                                == TUPLE_INTERNAL_NAME)
+                                .then(|| {
+                                    extract_generic_args(&payload_norm).map(|items| items.len())
+                                })
+                                .flatten();
+                            let arg_ty = if args.len() == 1 {
                                 let arg_ty = self.check_expr(
                                     &args[0],
                                     locals,
@@ -6742,7 +6773,57 @@ impl<'a> Checker<'a> {
                                     ctx,
                                     contract_mode,
                                 );
-                                let payload_norm = self.normalize_type(payload_ty);
+                                let arg_is_tuple = base_type_name(&self.normalize_type(&arg_ty))
+                                    == TUPLE_INTERNAL_NAME;
+                                match tuple_arity {
+                                    Some(arity)
+                                        if arity > 1
+                                            && !arg_is_tuple
+                                            && !contains_unresolved_type(&arg_ty) =>
+                                    {
+                                        self.diagnostics.push(Diagnostic::error(
+                                            "E1215",
+                                            format!(
+                                                "variant '{}' expects {} payload argument(s), found 1",
+                                                name, arity
+                                            ),
+                                            self.file,
+                                            expr.span,
+                                        ));
+                                        None
+                                    }
+                                    _ => Some(arg_ty),
+                                }
+                            } else if args.len() > 1 && tuple_arity == Some(args.len()) {
+                                let items = args
+                                    .iter()
+                                    .map(|arg| {
+                                        self.check_expr(
+                                            arg,
+                                            locals,
+                                            allowed_effects,
+                                            ctx,
+                                            contract_mode,
+                                        )
+                                    })
+                                    .collect::<Vec<_>>();
+                                Some(format!("{}[{}]", TUPLE_INTERNAL_NAME, items.join(", ")))
+                            } else {
+                                let expected = tuple_arity.unwrap_or(1);
+                                self.diagnostics.push(Diagnostic::error(
+                                    "E1215",
+                                    format!(
+                                        "variant '{}' expects {} payload argument(s), found {}",
+                                        name,
+                                        expected,
+                                        args.len()
+                                    ),
+                                    self.file,
+                                    expr.span,
+                                ));
+                                None
+                            };
+                            if let Some(arg_ty) = arg_ty {
                                 let arg_norm = self.normalize_type(&arg_ty);
                                 let inferred = infer_generic_bindings(
                                     &payload_norm,
@@ -7607,6 +7688,52 @@ impl<'a> Checker<'a> {
                 contract_mode,
             ),
             ir::ExprKind::StructInit { name, fields } => {
+                if name != TUPLE_INTERNAL_NAME && self.find_struct(name).is_none() {
+                    if let Some((callee, payload_struct)) =
+                        self.struct_variant_for(name, expected_ty)
+                    {
+                        // `Enum::Variant { fields }` is
+                        // `Enum::Variant(Enum__Variant { fields })`.
+                        let payload_node = self.synthetic_node();
+                        let call = ir::Expr {
+                            node: expr.node,
+                            kind: ir::ExprKind::Call {
+                                callee: Box::new(ir::Expr {
+                                    node: expr.node,
+                                    kind: ir::ExprKind::Var(callee.clone()),
+                                    span: expr.span,
+                                }),
+                                args: vec![ir::Expr {
+                                    node: payload_node,
+                                    kind: ir::ExprKind::StructInit {
+                                        name: payload_struct.clone(),
+                                        fields: fields.clone(),
+                                    },
+                                    span: expr.span,
+                                }],
+                                arg_names: Vec::new(),
+                                symbol: None,
+                            },
+                            span: expr.span,
+                        };
+                        self.variant_struct_inits.insert(
+                            expr.node,
+                            VariantStructInit {
+                                callee,
+                                payload_struct,
+                                payload_node,
+                            },
+                        );
+                        return self.check_expr_with_expected(
+                            &call,
+                            locals,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                            expected_ty,
+                        );
+                    }
+                }
                 if name == TUPLE_INTERNAL_NAME {
                     let expected_tuple_items = expected_ty.and_then(|expected| {
                         let normalized = self.normalize_type(expected);
@@ -7734,7 +7861,8 @@ impl<'a> Checker<'a> {
                             "E1254",
                             format!(
                                 "duplicate field '{}.{}' in struct literal",
-                                name, field_name
+                                self.user_struct_name(name),
+                                field_name
                             ),
                             self.file,
                             *span,
@@ -7745,7 +7873,11 @@ impl<'a> Checker<'a> {
                     let Some(expected) = info.fields.get(field_name) else {
                         self.diagnostics.push(Diagnostic::error(
                             "E1225",
-                            format!("struct member '{}.{}' does not exist", name, field_name),
+                            format!(
+                                "struct member '{}.{}' does not exist",
+                                self.user_struct_name(name),
+                                field_name
+                            ),
                             self.file,
                             *span,
                         ));
@@ -7836,7 +7968,11 @@ impl<'a> Checker<'a> {
                         self.diagnostics.push(
                             Diagnostic::error(
                                 "E1227",
-                                format!("missing field '{}.{}' in struct literal", name, field),
+                                format!(
+                                    "missing field '{}.{}' in struct literal",
+                                    self.user_struct_name(name),
+                                    field
+                                ),
                                 self.file,
                                 expr.span,
                             )
@@ -8076,7 +8212,11 @@ impl<'a> Checker<'a> {
             }
             self.diagnostics.push(Diagnostic::error(
                 "E1228",
-                format!("struct '{}' has no field '{}'", base_ty, field),
+                format!(
+                    "struct '{}' has no field '{}'",
+                    self.user_struct_name(base_ty),
+                    field
+                ),
                 self.file,
                 span,
             ));
@@ -9449,6 +9589,15 @@ impl<'a> Checker<'a> {
         bound_names: &mut BTreeSet<String>,
     ) {
         let normalized_scrutinee_ty = self.normalize_type(scrutinee_ty);
+        let payload_node = ir::NodeId(self.next_synthetic_node.wrapping_sub(1));
+        if let Some(rewritten) =
+            self.struct_variant_pattern(pattern, &normalized_scrutinee_ty, payload_node)
+        {
+            self.next_synthetic_node -= 1;
+            self.pattern_rewrites
+                .insert(pattern.node, rewritten.clone());
+            return self.check_pattern(&rewritten, scrutinee_ty, locals, bound_names);
+        }
         match &pattern.kind {
             ir::PatternKind::Wildcard => {}
             ir::PatternKind::Var(name) => {
@@ -10057,6 +10206,9 @@ impl<'a> Checker<'a> {
     fn pattern_to_usefulness(&self, pattern: &ir::Pattern, ty: &str) -> match_usefulness::Pat {
         use match_usefulness::{Ctor, Pat};
         let ty = self.normalize_type(ty);
+        if let Some(rewritten) = self.struct_variant_pattern(pattern, &ty, pattern.node) {
+            return self.pattern_to_usefulness(&rewritten, &ty);
+        }
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Pat::Wild,
             ir::PatternKind::Int(value, ..) => {
@@ -10479,6 +10631,120 @@ impl<'a> Checker<'a> {
                 span,
             ));
         }
+    }
+
+    /// Name of a struct for diagnostics: the payload struct of a
+    /// struct-like variant (`Shape__Move`) is shown as `Shape::Move`.
+    fn user_struct_name(&self, name: &str) -> String {
+        let base = base_type_name(name);
+        if let Some((enum_name, variant)) = base.rsplit_once("__") {
+            let is_payload = self.find_enum(enum_name).is_some_and(|info| {
+                info.variants.get(variant).is_some_and(|payload| {
+                    payload
+                        .and_then(|id| self.types.get(&id))
+                        .is_some_and(|ty| base_type_name(ty) == base)
+                })
+            });
+            if is_payload {
+                return format!("{enum_name}::{variant}");
+            }
+        }
+        name.to_string()
+    }
+
+    fn synthetic_node(&mut self) -> ir::NodeId {
+        self.next_synthetic_node -= 1;
+        ir::NodeId(self.next_synthetic_node)
+    }
+
+    /// For a struct literal name that is not a struct: the struct-like
+    /// variant it builds, as `(Enum::Variant, Enum__Variant)`.
+    fn struct_variant_for(
+        &self,
+        name: &str,
+        expected_ty: Option<&str>,
+    ) -> Option<(String, String)> {
+        let (enum_filter, variant) = match split_variant_path(name) {
+            Some((enum_name, variant)) => (Some(enum_name), variant),
+            None => (None, name),
+        };
+        let expected_enum =
+            expected_ty.and_then(|expected| self.extract_expected_enum_name(expected));
+        let mut matches = self
+            .find_variants(variant)
+            .into_iter()
+            .filter(|candidate| {
+                let enum_name = Self::unqualified_name(&candidate.enum_name);
+                let qualifier_ok =
+                    enum_filter.is_none_or(|filter| Self::unqualified_name(filter) == enum_name);
+                let payload_ok = candidate.payload.as_deref().is_some_and(|payload| {
+                    base_type_name(&self.normalize_type(payload))
+                        == crate::ast::struct_variant_payload_name(enum_name, variant)
+                });
+                qualifier_ok && payload_ok
+            })
+            .collect::<Vec<_>>();
+        if matches.len() > 1 {
+            if let Some(expected) = &expected_enum {
+                matches
+                    .retain(|candidate| Self::unqualified_name(&candidate.enum_name) == expected);
+            }
+        }
+        let [candidate] = matches.as_slice() else {
+            return None;
+        };
+        let enum_name = Self::unqualified_name(&candidate.enum_name);
+        Some((
+            format!("{enum_name}::{variant}"),
+            crate::ast::struct_variant_payload_name(enum_name, variant),
+        ))
+    }
+
+    /// `Variant { fields }` as a pattern for a value of enum type: the
+    /// variant pattern `Variant(Enum__Variant { fields })`.
+    fn struct_variant_pattern(
+        &self,
+        pattern: &ir::Pattern,
+        scrutinee_norm: &str,
+        payload_node: ir::NodeId,
+    ) -> Option<ir::Pattern> {
+        let ir::PatternKind::Struct {
+            name,
+            fields,
+            has_rest,
+        } = &pattern.kind
+        else {
+            return None;
+        };
+        let enum_info = self.find_enum(scrutinee_norm)?;
+        let enum_name = Self::unqualified_name(base_type_name(scrutinee_norm)).to_string();
+        let variant = match split_variant_path(name) {
+            Some((qualifier, variant)) if Self::unqualified_name(qualifier) == enum_name => variant,
+            Some(_) => return None,
+            None => name.as_str(),
+        };
+        let payload_struct = crate::ast::struct_variant_payload_name(&enum_name, variant);
+        let payload = enum_info.variants.get(variant)?.as_ref()?;
+        let payload_ty = self.types.get(payload)?;
+        if base_type_name(payload_ty) != payload_struct {
+            return None;
+        }
+        Some(ir::Pattern {
+            node: pattern.node,
+            kind: ir::PatternKind::Variant {
+                name: name.clone(),
+                args: vec![ir::Pattern {
+                    node: payload_node,
+                    kind: ir::PatternKind::Struct {
+                        name: payload_struct,
+                        fields: fields.clone(),
+                        has_rest: *has_rest,
+                    },
+                    span: pattern.span,
+                }],
+            },
+            span: pattern.span,
+        })
     }
 
     /// The constructor name for `name` used as a value when it names a unit
@@ -14766,6 +15032,60 @@ fn main() -> Int {
                 "{src}: expected {code}, got {codes:?}"
             );
         }
+    }
+
+    #[test]
+    fn multi_field_and_struct_like_variants_are_checked() {
+        let ok = r#"
+enum Shape { Rect(Int, Int), Move { x: Int, y: Int }, Empty }
+fn f(s: Shape) -> Int {
+    match s {
+        Shape::Rect(w, h) => w * h,
+        Move { x, y } => x + y,
+        Empty => 0,
+    }
+}
+fn main() -> Int {
+    f(Shape::Rect(2, 3)) + f(Move { x: 1, y: 2 }) + f(Shape::Move { y: 4, x: 3 }) + f(Empty)
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let shape = "enum Shape { Rect(Int, Int), Move { x: Int, y: Int }, Empty }";
+        let cases = [
+            // Wrong argument count for a multi-field variant.
+            (format!("{shape} fn main() -> Int {{ let s = Shape::Rect(1); 0 }}"), "E1215"),
+            (format!("{shape} fn main() -> Int {{ let s = Shape::Rect(1, 2, 3); 0 }}"), "E1215"),
+            // Missing and unknown fields of a struct-like variant.
+            (format!("{shape} fn main() -> Int {{ let s = Shape::Move {{ x: 1 }}; 0 }}"), "E1227"),
+            (format!("{shape} fn main() -> Int {{ let s = Shape::Move {{ x: 1, y: 2, z: 3 }}; 0 }}"), "E1225"),
+            // Exhaustiveness covers the new shapes.
+            (format!("{shape} fn f(s: Shape) -> Int {{ match s {{ Move {{ x: 0, .. }} => 1, Shape::Rect(_, _) => 2, Empty => 3 }} }} fn main() -> Int {{ 0 }}"), "E1249"),
+            // A struct pattern for another enum's variant.
+            (format!("{shape} enum Other {{ Move {{ x: Int }} }} fn f(s: Shape) -> Int {{ match s {{ Other::Move {{ x }} => x, _ => 0 }} }} fn main() -> Int {{ 0 }}"), "E1245"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(&src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+        // Diagnostics name the variant, not its payload struct.
+        let (program, _) = parse(
+            &format!("{shape} fn main() -> Int {{ let s = Shape::Move {{ x: 1 }}; 0 }}"),
+            "test.aic",
+        );
+        let ir = build(&program.expect("program"));
+        let (res, _) = resolve(&ir, "test.aic");
+        let messages = check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .map(|d| d.message)
+            .collect::<Vec<_>>();
+        assert!(
+            messages.iter().any(|m| m.contains("'Shape::Move.y'")),
+            "{messages:?}"
+        );
     }
 
     #[test]
