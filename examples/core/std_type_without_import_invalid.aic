@@ -1,0 +1,17 @@
+module examples.core.std_type_without_import_invalid;
+
+// `Vec` is defined in `std.vec`, and this file does not import it.
+// `aic check` reports E1313 with the help line
+// "add `import std.vec;` at the top of the file", so the program
+// never reaches code generation (which needs the Vec layout from std.vec).
+struct Counter {
+    n: Int,
+}
+
+fn keep(items: Vec[Counter]) -> Vec[Counter] {
+    items
+}
+
+fn main() -> Int {
+    0
+}

@@ -122,6 +122,16 @@ Phases run in order. Items in the Continuous phase start at the position shown i
 | 69 | [#497](https://github.com/keaz/aicore/issues/497) | `VERIFY-T11` | Capabilities as values (object-capability model) | L | - |
 | 70 | [#498](https://github.com/keaz/aicore/issues/498) | `REL-T7` | Std essentials: CSPRNG, CLI argument parsing, test assertions | M | - |
 
+## Open follow-ups
+
+Items found while landing roadmap work that are not tracked by a child issue yet.
+
+- **Std types without their module (PARITY-T4 follow-up, [#445](https://github.com/keaz/aicore/issues/445)).** Fixed on `lang-prod-roadmap`: `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer` and `JsonValue` in a type position without their std module now fail `aic check` with `E1313` instead of `aic build` with `E5019`. Remaining:
+  - Push the commit and add the evidence (commit, `make ci`, targeted tests, the `examples/core/std_type_*.aic` examples) to [#445](https://github.com/keaz/aicore/issues/445) or a new child issue.
+  - Run `graphify update .` in the main checkout after the merge.
+- **Diagnostic code collisions between unmerged branches.** `lang-prod-roadmap` uses `E1303` (`&mut self` method value) and `E1313` (std type without its module). The unmerged branches `syntax-t5-pattern-lets`, `syntax-t8-indexing`, `syntax-t9-numeric-casts`, `syntax-t10-loop-labels`, `syntax-t11-ranges-patterns` and `syntax-t15-type-args` register `E1302`-`E1312` independently, and several reuse `E1303`. Renumber each branch onto the next free code when it merges, and check `src/diagnostic_codes.rs` on `lang-prod-roadmap` before you pick a new code.
+- **Execution tests outside `make`.** A plain `cargo test --test execution_tests` overflows the default 2 MiB test-thread stack in `exec_string_ops_full_surface_and_edge_cases`, and `exec_pool_discarded_connection_is_replaced` can fail under parallel load. `make test-exec` sets `RUST_MIN_STACK=33554432` and `--test-threads=1` and passes. Either make the test binary set its own stack size and thread count, or document that only `make test-exec` is supported.
+
 ## Exit criteria
 
 The language is considered production-ready when:

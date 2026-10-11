@@ -1073,6 +1073,9 @@ impl<'a> Checker<'a> {
     /// alias, or generic parameter in scope, with a "did you mean" hint.
     fn check_type_name_known(&mut self, base: &str, span: crate::span::Span) {
         let base = canonical_builtin_type_name(base.trim());
+        if self.check_std_module_type_loaded(base, span) {
+            return;
+        }
         if base.is_empty()
             || base == "_"
             || contains_unresolved_type(base)
@@ -1108,6 +1111,38 @@ impl<'a> Checker<'a> {
             }
         }
         self.diagnostics.push(diag);
+    }
+
+    /// `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer` and `JsonValue` are
+    /// known by name, but their layout comes from a std module that code
+    /// generation needs loaded. Reports E1313 when `base` names one of them,
+    /// the module is not loaded, and no struct, enum, alias, or generic
+    /// parameter of that name is visible. Returns true when `base` is such a
+    /// std type.
+    fn check_std_module_type_loaded(&mut self, base: &str, span: crate::span::Span) -> bool {
+        let Some(module) = std_module_for_type(base) else {
+            return false;
+        };
+        if self.type_params_in_scope.contains(base)
+            || self.type_aliases.contains_key(base)
+            || self.visible_struct_info(base).is_some()
+            || self.visible_enum_info(base).is_some()
+        {
+            return true;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1313",
+                format!(
+                    "type '{}' is defined in module '{}', which is not imported",
+                    base, module
+                ),
+                self.file,
+                span,
+            )
+            .with_help(format!("add `import {};` at the top of the file", module)),
+        );
+        true
     }
 
     /// A generic function that calls itself with a type built from its own
@@ -12049,6 +12084,20 @@ fn canonical_builtin_type_name(base: &str) -> &str {
     }
 }
 
+/// The std module that defines a type the checker knows by name.
+fn std_module_for_type(base: &str) -> Option<&'static str> {
+    match base {
+        "Vec" => Some("std.vec"),
+        "Map" => Some("std.map"),
+        "Set" => Some("std.set"),
+        "Deque" => Some("std.deque"),
+        "Bytes" => Some("std.bytes"),
+        "ByteBuffer" => Some("std.buffer"),
+        "JsonValue" => Some("std.json"),
+        _ => None,
+    }
+}
+
 fn preflight_builtin_type_known(base: &str) -> bool {
     matches!(
         base,
@@ -12577,6 +12626,100 @@ fn main() -> Int { 0 }
         let found = unknown_type_messages(src);
         assert_eq!(found.len(), 1, "{found:#?}");
         assert_eq!(found[0].0, "unknown type 'T'");
+    }
+
+    fn std_type_import_messages(src: &str) -> Vec<(String, Vec<String>)> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _d2) = resolve(&ir, "test.aic");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == "E1313")
+            .map(|d| (d.message, d.help))
+            .collect()
+    }
+
+    #[test]
+    fn std_types_without_their_module_are_reported() {
+        let cases = [
+            ("fn f(x: Vec[Int]) -> Int { 0 }", "Vec", "std.vec"),
+            ("fn f(x: Map[String, Int]) -> Int { 0 }", "Map", "std.map"),
+            ("fn f(x: Set[Int]) -> Int { 0 }", "Set", "std.set"),
+            ("fn f(x: Deque[Int]) -> Int { 0 }", "Deque", "std.deque"),
+            ("fn f(x: Bytes) -> Int { 0 }", "Bytes", "std.bytes"),
+            (
+                "fn f(x: ByteBuffer) -> Int { 0 }",
+                "ByteBuffer",
+                "std.buffer",
+            ),
+            ("fn f(x: JsonValue) -> Int { 0 }", "JsonValue", "std.json"),
+            ("fn f() -> Option[Vec[Int]] { None }", "Vec", "std.vec"),
+            ("struct S { items: Vec[String] }", "Vec", "std.vec"),
+            ("enum E { A(Bytes), B }", "Bytes", "std.bytes"),
+            ("type Names = Vec[String];", "Vec", "std.vec"),
+            (
+                "fn f() -> Int { let g = |v: Set[Int]| -> Int { 0 }; 0 }",
+                "Set",
+                "std.set",
+            ),
+            (
+                "fn f(g: Fn(Int) -> Deque[Int]) -> Int { 0 }",
+                "Deque",
+                "std.deque",
+            ),
+            (
+                "fn f(x: (Int, JsonValue)) -> Int { 0 }",
+                "JsonValue",
+                "std.json",
+            ),
+        ];
+        for (body, name, module) in cases {
+            let src = format!("{body}\nfn main() -> Int {{ 0 }}\n");
+            let found = std_type_import_messages(&src);
+            let expected =
+                format!("type '{name}' is defined in module '{module}', which is not imported");
+            let Some((_, help)) = found.iter().find(|(message, _)| *message == expected) else {
+                panic!("missing {expected} in {found:#?} for {body}");
+            };
+            assert_eq!(
+                help,
+                &vec![format!("add `import {module};` at the top of the file")],
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn std_type_names_bound_by_user_declarations_are_accepted() {
+        let src = r#"
+struct Vec[T] { first: T }
+enum Map[K, V] { Empty, One((K, V)) }
+type Bytes = String;
+fn uses(v: Vec[Int], m: Map[Int, Bool], b: Bytes) -> Int { 0 }
+fn generic[Set](x: Set) -> Set { x }
+fn main() -> Int { 0 }
+"#;
+        let found = std_type_import_messages(src);
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    #[test]
+    fn non_std_builtin_types_need_no_import() {
+        let src = r#"
+fn uses(
+    a: Option[Int],
+    b: Result[String, Bool],
+    c: (Int, Char),
+    d: Fn(Float64) -> UInt8,
+) -> Int {
+    0
+}
+fn main() -> Int { 0 }
+"#;
+        let found = std_type_import_messages(src);
+        assert!(found.is_empty(), "{found:#?}");
     }
 
     fn e1289_messages(src: &str) -> Vec<String> {

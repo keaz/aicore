@@ -61,6 +61,7 @@ Recent core-language additions:
 - `E1298`: assignment through a `Ref`/`RefMut` value (`r.x = 1` where `r: RefMut[P]`); writes through references are not supported.
 - `E1299`: an `async` method declares a `&mut self` receiver.
 - `E1303`: a `&mut self` method used as a function value (`let f = C::bump;`).
+- `E1313`: a std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. These types are not prelude types: code generation takes their layout from the std module. The help line names the `import` to add. A module loaded through another import (for example `std.vec` through `std.string`) is enough, and a user struct, enum, alias, or generic parameter with the same name is accepted.
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.
 - `E1259`: invalid or unknown trait bound declaration.

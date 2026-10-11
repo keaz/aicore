@@ -1170,6 +1170,14 @@ Verifier-focused examples:
 
 Examples are integrated into `scripts/ci/examples.sh`.
 
+## Std Types Need Their Module (E1313)
+
+- `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, and `JsonValue` are known to the checker by name, but they are not prelude types. Code generation takes their layout from the struct in `std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, or `std.json`.
+- `check_type_name_known` in `src/typecheck.rs` calls `check_std_module_type_loaded`, which reports `E1313` when one of these names is used in a type position and no struct, enum, alias, or generic parameter of that name is visible. The help line names the `import` to add (mapping in `std_module_for_type`).
+- A module loaded through another import (for example `std.vec` through `std.string`) satisfies the check, because code generation then has the layout. A user declaration with the same name shadows the std type.
+- Without this check, such programs passed `aic check` and failed `aic build` with `E5019`, which broke the check/build parity gate (`tests/check_build_parity_tests.rs`).
+- Examples: `examples/core/std_type_without_import_invalid.aic` (check-fail) and `examples/core/std_type_with_import.aic` (run, prints `2`).
+
 ## Safe Extension Checklist
 
 1. Keep lockfile schema deterministic; sort dependencies and outputs.

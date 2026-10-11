@@ -1,0 +1,24 @@
+module examples.core.std_type_with_import;
+
+import std.io;
+import std.vec;
+
+// With `import std.vec;` the Vec layout is available, so a program
+// that `aic check` accepts also builds and runs. Without the import,
+// `aic check` reports E1313 (see std_type_without_import_invalid.aic).
+struct Counter {
+    n: Int,
+}
+
+fn keep(items: Vec[Counter]) -> Vec[Counter] {
+    items
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let items: Vec[Counter] = vec.new_vec();
+    let items = vec.push(items, Counter {n: 40});
+    let items = vec.push(items, Counter {n: 2});
+    let kept = keep(items);
+    print_int(vec.vec_len(kept));
+    0
+}

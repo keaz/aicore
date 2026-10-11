@@ -21,8 +21,9 @@ type_list      = type ("," type)* ","? ;
 
 ## Semantics and Rules
 
-- Primitive built-in types include `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`, `ISize`, `USize`, `UInt`, `Float32`, `Float64`, `Float`, `Bool`, `Char`, `String`, `Bytes`, and `()`.
+- Primitive built-in types include `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `Int128`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`, `ISize`, `USize`, `UInt`, `Float32`, `Float64`, `Float`, `Bool`, `Char`, `String`, and `()`.
 - User-defined nominal types come from `struct` and `enum` declarations.
+- `Option` and `Result` are always available. The collection and data types `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, and `JsonValue` are defined in std modules (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) and are not prelude types: code generation takes their layout from the module. Using one in a type position while its module is not loaded fails `aic check` with `E1313`, and the help line names the `import` to add. A module loaded through another import (for example `std.vec` through `std.string`) is enough.
 - Every type name in a function signature, `let` or closure annotation, struct field, enum payload, type alias, impl header, or trait method signature must name a built-in type, a generic parameter of the enclosing declaration (`Self` inside traits and impls), or a visible struct, enum, trait, or type alias. Unknown names fail `aic check` with `E1228` and a "did you mean" hint, so typos never reach code generation. Spellings from other languages are mapped in the hint: `i32` -> `Int32`, `u8` -> `UInt8`, `f64` -> `Float64`, `bool` -> `Bool`, `str` -> `String`, `Unit` -> `()`, `HashMap` -> `Map`.
 - The checker is strict: there are no implicit casts or coercions between unrelated types.
 - Generic type arity is validated for all known generic families, including built-ins such as `Option`, `Result`, `Async`, `Ref`, `RefMut`, and tuple wrappers.
