@@ -20,6 +20,8 @@ The stronger approval gate must continue to fail until every blocker is cleared:
 python3 scripts/selfhost/retirement_audit.py --require-approved
 ```
 
+The self-host compiler is frozen as a bootstrap demonstrator (`#447`, `docs/selfhost/scope-decision.md`), so removal stays deferred until a new scope decision commits to full parity.
+
 The current blockers are intentional: approval required before Rust reference removal, release bake-in evidence, replacement or retained-role decisions, and rollback validation evidence.
 
 ## Bake-In Evidence Format

@@ -86,6 +86,9 @@ jobs:
       - name: E9 release and security tests
         run: make test-e9
 
+      - name: Frozen self-host sources check
+        run: make selfhost-frozen-check
+
       - name: Intrinsic placeholder guard
         run: make intrinsic-placeholder-guard
 

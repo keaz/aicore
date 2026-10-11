@@ -8,7 +8,7 @@ EXEC_TEST_THREADS ?= 1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan selfhost-retirement-bake-in-evidence selfhost-retirement-rollback-evidence intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
+.PHONY: help init hooks-install hooks-uninstall ci ci-fast check fmt-check lint build test test-unit test-golden test-exec test-e7 test-e8 test-e8-rest-runtime-soak test-e8-concurrency-stress test-e8-nightly-fuzz test-e9 test-selfhost selfhost-frozen-check selfhost-parity selfhost-parity-candidate selfhost-stage-matrix selfhost-bootstrap selfhost-bootstrap-report selfhost-release-provenance selfhost-mode-check selfhost-default-mode-check selfhost-default-build-check selfhost-retirement-audit selfhost-retirement-reference-scan selfhost-retirement-bake-in-evidence selfhost-retirement-rollback-evidence intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline integration-harness-live cli-smoke docs-check no-null-lint repro-check security-audit release-preflight
 
 help:
 	@echo "AICore developer commands"
@@ -29,6 +29,7 @@ help:
 	@echo "  make test-e8-nightly-fuzz Run long-running E8 fuzz stress tests"
 	@echo "  make test-e9       Run E9 release/security operations tests"
 	@echo "  make test-selfhost Run self-hosting parity harness tests"
+	@echo "  make selfhost-frozen-check Check the frozen self-host compiler packages with the Rust compiler"
 	@echo "  make selfhost-parity Run reference/candidate compiler parity comparisons"
 	@echo "  make selfhost-parity-candidate Build aic_selfhost and compare it against the Rust reference"
 	@echo "  make selfhost-stage-matrix Validate latest stage compiler on core packages/examples"
@@ -75,7 +76,7 @@ ci: fmt-check lint check
 
 ci-fast: fmt-check build test-unit test-golden
 
-check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 test-selfhost selfhost-retirement-audit intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
+check: build test-unit test-golden test-exec test-e7 test-e8 test-e9 test-selfhost selfhost-frozen-check selfhost-retirement-audit intrinsic-placeholder-guard test-command-style-guard verify-intrinsics std-doc-check examples-check examples-run integration-harness-offline no-null-lint cli-smoke docs-check security-audit repro-check
 
 fmt-check:
 	$(CARGO) fmt --all -- --check
@@ -132,6 +133,16 @@ test-e9:
 
 test-selfhost:
 	$(CARGO) test --locked --test selfhost_parity_tests
+
+selfhost-frozen-check:
+	@for pkg in compiler/aic/libs/*/ compiler/aic/tools/*/; do \
+		if ! $(AIC) check "$$pkg" >/dev/null 2>&1; then \
+			echo "selfhost-frozen-check: $$pkg no longer passes aic check (see docs/selfhost/scope-decision.md)"; \
+			$(AIC) check "$$pkg"; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "selfhost-frozen-check: ok"
 
 selfhost-parity:
 	@args=(--manifest "$${SELFHOST_PARITY_MANIFEST:-tests/selfhost/parity_manifest.json}" --reference "$${SELFHOST_REFERENCE:-cargo run --quiet --bin aic --}" --artifact-dir "$${SELFHOST_ARTIFACT_DIR:-target/selfhost-parity}" --report "$${SELFHOST_PARITY_REPORT:-target/selfhost-parity/report.json}"); \

@@ -12,6 +12,8 @@ The self-hosting path is compiler work only:
 - no new core-language semantics are introduced by the self-hosting work
 - runtime, protocol, service, and application helpers stay in separate libraries
 
+Scope decision (`#447`): the self-host compiler is frozen as a bootstrap demonstrator with a fixed feature subset, and language roadmap issues change the Rust compiler only. The rules, the frozen subset and the `make selfhost-frozen-check` gate are in `docs/selfhost/scope-decision.md`.
+
 Supported operation, failure triage, rollback, and GitHub evidence rules are maintained in `docs/selfhost/supported-operation-runbook.md`. Use that runbook before declaring a self-hosting issue complete.
 
 Suggested package boundaries:
