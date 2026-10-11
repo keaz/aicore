@@ -35,6 +35,13 @@ type_list      = type ("," type)* ","? ;
 - Postfix `?` requires `Result[T, E]` and preserves `T` while checking `E` compatibility with the enclosing function return type.
 - Type inference is local and deterministic. When inference cannot resolve a concrete type, the checker reports an error and uses unresolved internal marker `<?>` for continued analysis.
 - `null` is forbidden both as a symbol and as a type fragment; use `Option[T]` for absence.
+- Equality (`==`, `!=`) is defined for integers, floats, `Bool`, `Char`, and `String`. Comparing values of any other type (structs, enums, `Option`, `Vec`, tuples, ...) fails `aic check` with `E1291`. A generic function may compare values of a type parameter `T`; every call must then instantiate `T` with a type that supports equality, also through generic callers (`f[T]` calling `g[T]`). Compare fields individually or use `match` for other types.
+- `Map[K, V]` and `Set[K]` store keys of type `String`, `Bytes`, `Int`, `UInt64`, or `Bool`, and `Map` values of the same types. Other concrete element types fail with `E1292`; a type parameter is checked where it becomes concrete.
+- `Ref[T]` and `RefMut[T]` have the same runtime representation as `T`.
+- Recursive types are not supported yet: a struct or enum that contains itself, directly or through other types (including `Option`, `Vec`, and other generic arguments), fails with `E1294`, and the message names the containment path.
+- Generic functions are monomorphized. A generic function that calls itself with a growing type argument (polymorphic recursion, `f[T]` calling `f[Option[T]]`) fails with `E1293`. Mutual polymorphic recursion through several functions is caught in code generation (`E5037`).
+- The entry function `main` takes no parameters and returns an integer type, `Bool`, or `()` (`async fn main` returns the same inside `Async`). Other signatures fail with `E1295`. Read command-line arguments with `std.env`.
+- Integer and float literal suffixes (`65u8`, `1.5f32`) are kept on the literal itself, so they type the literal in every module of a program.
 - Tuple types use `(T, U, ...)`; a single parenthesized type remains grouping.
 - Extern C-ABI signatures currently accept only C-compatible scalar/value forms for parameters and returns (`Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()`, with no unresolved generics).
 - Extern C-ABI parameters additionally accept `String` as the current target's `ptr-len-cap` value view (`{ i8*, i64, i64 }` in LLVM); keep native consumers aligned with that layout.

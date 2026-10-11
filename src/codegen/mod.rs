@@ -3833,8 +3833,8 @@ fn collect_closure_captures_expr(
         ir::ExprKind::FieldAccess { base, .. } => {
             collect_closure_captures_expr(base, scopes, captures, known_functions);
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)

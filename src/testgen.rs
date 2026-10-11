@@ -1279,7 +1279,7 @@ fn path_name(expr: &Expr) -> Option<String> {
 
 fn int_literal(expr: &Expr) -> Option<i64> {
     match expr.kind {
-        ExprKind::Int(value) => Some(value),
+        ExprKind::Int(value, ..) => Some(value),
         _ => None,
     }
 }

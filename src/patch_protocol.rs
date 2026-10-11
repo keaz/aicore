@@ -1120,8 +1120,8 @@ fn collect_match_expr_candidates_from_expr(expr: &Expr, out: &mut Vec<MatchExprC
         }
         ExprKind::FieldAccess { base, .. } => collect_match_expr_candidates_from_expr(base, out),
         ExprKind::Continue
-        | ExprKind::Int(_)
-        | ExprKind::Float(_)
+        | ExprKind::Int(_, ..)
+        | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
         | ExprKind::Char(_)
         | ExprKind::String(_)
@@ -1134,7 +1134,7 @@ fn render_pattern(pattern: &Pattern) -> String {
     match &pattern.kind {
         PatternKind::Wildcard => "_".to_string(),
         PatternKind::Var(name) => name.clone(),
-        PatternKind::Int(value) => value.to_string(),
+        PatternKind::Int(value, ..) => value.to_string(),
         PatternKind::Bool(value) => value.to_string(),
         PatternKind::Char(value) => format!("{:?}", value),
         PatternKind::String(value) => format!("\"{}\"", value),

@@ -51,6 +51,12 @@ Recent core-language additions:
 - `E1290`: non-exhaustive match over a tuple, struct, integer, string, char, or other type outside the `Bool`/`Option`/`Result`/enum codes (`E1246`-`E1249`); the message lists witness patterns such as `(Red, false)` or `_`.
 - `E1289`: a closure assigns to, or mutably borrows, a variable captured from an enclosing scope. Closures capture by value, so the change would be lost.
 - `E1279`: `return` outside a function or closure body (contract expressions, constant initializers).
+- `E1291`: `==`/`!=` on a type without equality (only integers, floats, `Bool`, `Char`, `String` support it), or a generic call that instantiates a compared type parameter with such a type.
+- `E1292`: `Map`/`Set` key or `Map` value type the runtime cannot store (keys and values: `String`, `Bytes`, `Int`, `UInt64`, `Bool`).
+- `E1293`: polymorphic recursion: a generic function calls itself with a type argument that grows (`f[T]` -> `f[Option[T]]`).
+- `E1294`: recursive struct or enum (contains itself directly or through other types); not supported yet.
+- `E1295`: invalid entry `main` signature (type parameters, parameters, or a return type other than an integer type, `Bool`, or `()`).
+- `E1296`: a typed hole (`_`) whose type cannot be inferred, for example a parameter of a function that is never called.
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.
 - `E1259`: invalid or unknown trait bound declaration.
@@ -109,11 +115,22 @@ Recent core-language additions:
 - `E5034`: backend cannot lower the referenced function as a first-class function value.
 - `E5035`: closure helper return type mismatch during backend lowering.
 - `E5036`: JSON encode/decode for function values is unsupported.
+- `E5037`: generic instantiation exceeds the nesting depth limit (12) because of mutual polymorphic recursion that `E1293` does not catch.
 - `E6003`: typed hole (`_`) warning with inferred type/context.
 - `E6004`: unused import warning with safe remove-import autofix.
 - `E6005`: unreachable/unused function warning.
 - `E6006`: unused variable warning with safe underscore-prefix autofix.
 - `E6007`: historical Windows build target net/TLS strategy guard (retained for compatibility; not emitted after Windows parity landed).
+
+## Check/build parity
+
+A program that passes `aic check` must also build. `tests/check_build_parity_tests.rs` checks every `.aic` source under `examples/` and `tests/`: each one that passes the checker must lower through code generation without an `E5xxx` error. The only codegen errors that may follow a clean `aic check` are:
+
+| Code | Why the checker cannot catch it |
+|---|---|
+| `E5037` | Mutual polymorphic recursion (`f[T]` -> `g[Option[T]]` -> `f`) needs whole-program instantiation; the checker catches the direct form (`E1293`). |
+
+Any other `E5xxx` after a clean check is a compiler bug: add a checker rule (or fix code generation) and keep the gate green.
 
 ## IO + Runtime Quick Reference
 
@@ -148,6 +165,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E6001` | Deprecated std API usage warning (for example `std.time.now`). | Migrate to replacement API shown in diagnostic help (for example `std.time.now_ms`). |
 | `E6002` | `aic std-compat --check` detected baseline incompatibility. | Keep compatibility (or deprecate first), then regenerate baseline only for intentional additive API change. |
 | `E6003` | Typed hole (`_`) was accepted and inferred from context. | Replace `_` with the inferred concrete type when finalizing API/contracts. |
+| `E1296` | Typed hole (`_`) type could not be inferred, so the program cannot be built. | Write the concrete type, or call the function/use the field so the type can be inferred. |
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
 | `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |

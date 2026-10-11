@@ -723,8 +723,8 @@ fn collect_expr_call_names(
         ast::ExprKind::FieldAccess { base, .. } => {
             collect_expr_call_names(base, caller_name, call_graph);
         }
-        ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)

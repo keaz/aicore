@@ -108,6 +108,7 @@ test-e7:
 
 test-e8:
 	$(CARGO) test --locked --test e8_conformance_tests
+	$(CARGO) test --locked --test check_build_parity_tests
 	$(CARGO) test --locked --test e8_fuzz_tests
 	$(CARGO) test --locked --test e8_differential_tests
 	$(CARGO) test --locked --test e8_matrix_tests

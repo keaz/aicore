@@ -303,8 +303,8 @@ impl TemplateLowerer {
                 },
                 span: expr.span,
             },
-            ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
@@ -529,8 +529,8 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         ir::ExprKind::FieldAccess { base, .. } => {
             max = max.max(max_node_expr(base));
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -672,8 +672,8 @@ fn main(name: String) -> String {
             ir::ExprKind::StructInit { fields, .. } => fields
                 .iter()
                 .any(|(_, value, _)| contains_template_literal(value)),
-            ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)

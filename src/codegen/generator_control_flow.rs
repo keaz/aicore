@@ -2460,7 +2460,7 @@ impl<'a> Generator<'a> {
     ) -> Option<String> {
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Some("1".to_string()),
-            ir::PatternKind::Int(v) => {
+            ir::PatternKind::Int(v, ..) => {
                 if !is_integral_type(&value.ty) {
                     self.diagnostics.push(Diagnostic::error(
                         "E5017",
@@ -2630,7 +2630,7 @@ impl<'a> Generator<'a> {
     ) -> Option<()> {
         match &pattern.kind {
             ir::PatternKind::Wildcard
-            | ir::PatternKind::Int(_)
+            | ir::PatternKind::Int(_, ..)
             | ir::PatternKind::Char(_)
             | ir::PatternKind::String(_)
             | ir::PatternKind::Bool(_)
@@ -2893,8 +2893,8 @@ impl<'a> Generator<'a> {
         stack: &mut Vec<String>,
     ) -> Option<ConstValue> {
         match &expr.kind {
-            ir::ExprKind::Int(v) => Some(ConstValue::Int(*v)),
-            ir::ExprKind::Float(v) => Some(ConstValue::Float(*v)),
+            ir::ExprKind::Int(v, ..) => Some(ConstValue::Int(*v)),
+            ir::ExprKind::Float(v, ..) => Some(ConstValue::Float(*v)),
             ir::ExprKind::Bool(v) => Some(ConstValue::Bool(*v)),
             ir::ExprKind::Char(v) => Some(ConstValue::Char(*v)),
             ir::ExprKind::String(v) => Some(ConstValue::String(v.clone())),
@@ -3440,6 +3440,13 @@ impl<'a> Generator<'a> {
         let mut normalized_args = Vec::new();
         for arg in raw_args {
             normalized_args.push(self.normalize_type_repr_with_stack(&arg, span, visiting)?);
+        }
+
+        // A borrow (`&x`, `&mut x`) evaluates to the borrowed value and the
+        // language has no write-through-reference syntax, so `Ref[T]` and
+        // `RefMut[T]` share `T`'s representation.
+        if matches!(base, "Ref" | "RefMut") && normalized_args.len() == 1 {
+            return normalized_args.pop();
         }
 
         if let Some(alias) = self.type_aliases.get(base).cloned() {

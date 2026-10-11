@@ -46,8 +46,16 @@ fn backend_diagnostics(source: &str) -> Vec<Diagnostic> {
     fs::write(&src, source).expect("write source");
 
     let front = run_frontend(&src).expect("frontend");
+    // `aic check` rejects these shapes first (E1292); code generation keeps
+    // its own diagnostic as a second line of defense.
+    let frontend_errors = front
+        .diagnostics
+        .iter()
+        .filter(|d| matches!(d.severity, aicore::diagnostics::Severity::Error))
+        .map(|d| d.code.as_str())
+        .collect::<Vec<_>>();
     assert!(
-        !has_errors(&front.diagnostics),
+        !frontend_errors.is_empty() && frontend_errors.iter().all(|code| *code == "E1292"),
         "diagnostics: {:#?}",
         front.diagnostics
     );

@@ -1962,8 +1962,8 @@ fn access_path(expr: &Expr) -> Option<Vec<String>> {
 
 fn literal_value(expr: &Expr) -> Option<LiteralValue> {
     match &expr.kind {
-        ExprKind::Int(value) => Some(LiteralValue::Int(*value)),
-        ExprKind::Float(value) => Some(LiteralValue::Float(*value)),
+        ExprKind::Int(value, ..) => Some(LiteralValue::Int(*value)),
+        ExprKind::Float(value, ..) => Some(LiteralValue::Float(*value)),
         ExprKind::Bool(value) => Some(LiteralValue::Bool(*value)),
         ExprKind::Char(value) => Some(LiteralValue::Char(*value)),
         ExprKind::String(value) => Some(LiteralValue::String(value.clone())),
@@ -2107,8 +2107,8 @@ fn visit_expr(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
             }
         }
         ExprKind::FieldAccess { base, .. } => visit_expr(base, visit),
-        ExprKind::Int(_)
-        | ExprKind::Float(_)
+        ExprKind::Int(_, ..)
+        | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
         | ExprKind::Char(_)
         | ExprKind::String(_)
@@ -2141,8 +2141,8 @@ fn visit_block(block: &ast::Block, visit: &mut dyn FnMut(&Expr)) {
 
 fn render_expr(expr: &Expr) -> anyhow::Result<String> {
     match &expr.kind {
-        ExprKind::Int(value) => Ok(value.to_string()),
-        ExprKind::Float(value) => Ok(trim_float(*value)),
+        ExprKind::Int(value, ..) => Ok(value.to_string()),
+        ExprKind::Float(value, ..) => Ok(trim_float(*value)),
         ExprKind::Bool(value) => Ok(value.to_string()),
         ExprKind::Char(value) => Ok(render_char(*value)),
         ExprKind::String(value) => Ok(render_string_literal(value)),

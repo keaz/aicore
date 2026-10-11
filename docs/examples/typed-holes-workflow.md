@@ -27,3 +27,5 @@ Output shape:
 ```
 
 Typed holes produce warning `E6003` and do not fail `aic check` unless other errors are present.
+`aic build` and `aic run` use the inferred types, so a program with resolved holes builds and runs.
+A hole whose type cannot be inferred (for example a parameter of a function that is never called) is error `E1296`, because code generation needs a concrete type.

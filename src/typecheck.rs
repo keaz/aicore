@@ -53,6 +53,18 @@ pub struct TypecheckOutput {
     /// Final types of call arguments whose generic instantiation was only
     /// fixed by the enclosing call (see `ir::Program::expr_type_hints`).
     pub expr_type_hints: BTreeMap<ir::NodeId, String>,
+    /// Inferred types of `_` holes in signatures and struct fields.
+    pub hole_types: TypedHoleTypes,
+}
+
+/// Types the checker inferred for `_` holes in function signatures and
+/// struct fields. The driver writes them into the IR so code generation
+/// sees concrete types. Holes that stay uninferable are E1296 errors.
+#[derive(Debug, Clone, Default)]
+pub struct TypedHoleTypes {
+    pub fn_params: BTreeMap<(ir::SymbolId, usize), String>,
+    pub fn_returns: BTreeMap<ir::SymbolId, String>,
+    pub struct_fields: BTreeMap<(String, String), String>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +73,16 @@ pub struct TypedHole {
     pub span: crate::span::Span,
     pub inferred: String,
     pub context: String,
+}
+
+#[derive(Debug, Clone)]
+struct GenericCallSite {
+    caller: Option<String>,
+    caller_type_params: BTreeSet<String>,
+    callee: String,
+    bindings: BTreeMap<String, String>,
+    file: String,
+    span: crate::span::Span,
 }
 
 #[derive(Debug, Clone)]
@@ -196,6 +218,9 @@ struct Checker<'a> {
     // Generic parameters of the declaration being checked (function, struct,
     // enum, trait, alias). Names in this set are valid type references.
     type_params_in_scope: BTreeSet<String>,
+    // Struct/enum declarations (module, name) that contain themselves, with
+    // the containment path for the E1294 message.
+    recursive_types: BTreeMap<(String, String), String>,
     const_types: BTreeMap<String, String>,
     typed_holes: Vec<TypedHole>,
     let_binding_types: BTreeMap<ir::SymbolId, String>,
@@ -205,6 +230,12 @@ struct Checker<'a> {
     fn_return_inferred: BTreeMap<String, String>,
     struct_field_holes: BTreeMap<(String, String), DeferredHole>,
     struct_field_inferred: BTreeMap<(String, String), String>,
+    hole_function_symbols: BTreeMap<String, ir::SymbolId>,
+    // Type parameters each generic function compares with `==`/`!=`, and
+    // the generic calls that bind them; `finish` checks that every concrete
+    // binding supports equality (E1291).
+    equality_type_params: BTreeMap<String, BTreeSet<String>>,
+    generic_call_sites: Vec<GenericCallSite>,
     current_param_positions: BTreeMap<String, usize>,
     call_arg_orders: BTreeMap<ir::NodeId, Vec<usize>>,
     call_symbols: BTreeMap<ir::NodeId, ir::SymbolId>,
@@ -701,6 +732,7 @@ impl<'a> Checker<'a> {
             enforce_import_visibility: false,
             type_aliases,
             type_params_in_scope: BTreeSet::new(),
+            recursive_types: BTreeMap::new(),
             const_types,
             typed_holes: Vec::new(),
             fn_param_holes: BTreeMap::new(),
@@ -709,6 +741,9 @@ impl<'a> Checker<'a> {
             fn_return_inferred: BTreeMap::new(),
             struct_field_holes: BTreeMap::new(),
             struct_field_inferred: BTreeMap::new(),
+            hole_function_symbols: BTreeMap::new(),
+            equality_type_params: BTreeMap::new(),
+            generic_call_sites: Vec::new(),
             current_param_positions: BTreeMap::new(),
             call_arg_orders: BTreeMap::new(),
             call_symbols: BTreeMap::new(),
@@ -719,6 +754,7 @@ impl<'a> Checker<'a> {
 
     fn run(&mut self) {
         self.check_no_null_boundary();
+        self.recursive_types = self.find_recursive_types();
         for (index, item) in self.program.items.iter().enumerate() {
             self.activate_item_file(index);
             // Type names in struct, enum, trait and impl declarations resolve
@@ -732,15 +768,21 @@ impl<'a> Checker<'a> {
                     } else if decode_internal_const(&func.name).is_some() {
                         self.check_const_item(func);
                     } else {
+                        if func.name == "main" && self.should_enforce_import_visibility(func.symbol)
+                        {
+                            self.check_entry_main_signature(func);
+                        }
                         self.check_function(func);
                     }
                 }
                 ir::Item::Struct(strukt) => {
                     self.type_params_in_scope = generic_names(&strukt.generics);
+                    self.report_recursive_type(&strukt.name, strukt.span);
                     self.check_struct_invariant(strukt);
                 }
                 ir::Item::Enum(enm) => {
                     self.type_params_in_scope = generic_names(&enm.generics);
+                    self.report_recursive_type(&enm.name, enm.span);
                     self.check_enum_definition(enm);
                 }
                 ir::Item::Trait(trait_def) => self.check_trait_signatures(trait_def),
@@ -781,6 +823,158 @@ impl<'a> Checker<'a> {
         self.type_params_in_scope = BTreeSet::new();
         self.check_transitive_effects();
         self.check_capability_authority();
+    }
+
+    /// Struct and enum declarations that contain themselves, directly or
+    /// through other declarations, generic arguments (`Option[Node]`) or
+    /// collections (`Vec[Tree]`). Code generation lays out values eagerly, so
+    /// these need indirection support that the language does not have yet.
+    fn find_recursive_types(&self) -> BTreeMap<(String, String), String> {
+        type Key = (String, String);
+        let mut edges: BTreeMap<Key, Vec<(Key, String)>> = BTreeMap::new();
+        let resolve = |module: &str, name: &str| -> Option<Key> {
+            let base = base_type_name(name);
+            if let Some((qualifier, short)) = base.rsplit_once('.') {
+                let key = (qualifier.to_string(), short.to_string());
+                if self.resolution.module_struct_infos.contains_key(&key)
+                    || self.resolution.module_enum_infos.contains_key(&key)
+                {
+                    return Some(key);
+                }
+                return None;
+            }
+            let local = (module.to_string(), base.to_string());
+            if self.resolution.module_struct_infos.contains_key(&local)
+                || self.resolution.module_enum_infos.contains_key(&local)
+            {
+                return Some(local);
+            }
+            self.resolution
+                .module_struct_infos
+                .keys()
+                .chain(self.resolution.module_enum_infos.keys())
+                .find(|(_, short)| short == base)
+                .cloned()
+        };
+        let referenced = |module: &str, field: &str, ty: &str, out: &mut Vec<(Key, String)>| {
+            let mut stack = vec![ty.to_string()];
+            while let Some(current) = stack.pop() {
+                if let Some(key) = resolve(module, &current) {
+                    out.push((key, field.to_string()));
+                }
+                stack.extend(extract_generic_args(&current).unwrap_or_default());
+            }
+        };
+        for ((module, name), info) in &self.resolution.module_struct_infos {
+            let mut out = Vec::new();
+            for (field, ty_id) in &info.fields {
+                let ty = self.types.get(ty_id).cloned().unwrap_or_default();
+                referenced(module, &format!("{field}: {ty}"), &ty, &mut out);
+            }
+            edges.insert((module.clone(), name.clone()), out);
+        }
+        for ((module, name), info) in &self.resolution.module_enum_infos {
+            let mut out = Vec::new();
+            for (variant, payload) in &info.variants {
+                if let Some(ty_id) = payload {
+                    let ty = self.types.get(ty_id).cloned().unwrap_or_default();
+                    referenced(module, &format!("{variant}({ty})"), &ty, &mut out);
+                }
+            }
+            edges.insert((module.clone(), name.clone()), out);
+        }
+
+        let mut recursive = BTreeMap::new();
+        for start in edges.keys() {
+            // Depth-first search for a path from `start` back to itself.
+            let mut stack: Vec<(Key, Vec<String>)> = vec![(start.clone(), Vec::new())];
+            let mut visited = BTreeSet::new();
+            while let Some((node, path)) = stack.pop() {
+                for (next, via) in edges.get(&node).into_iter().flatten() {
+                    let mut next_path = path.clone();
+                    next_path.push(format!("{}.{}", node.1, via));
+                    if next == start {
+                        recursive
+                            .entry(start.clone())
+                            .or_insert_with(|| next_path.join(" -> "));
+                        continue;
+                    }
+                    if visited.insert(next.clone()) {
+                        stack.push((next.clone(), next_path));
+                    }
+                }
+            }
+        }
+        recursive
+    }
+
+    /// The program entry `main` takes no parameters and returns an integer
+    /// type, `Bool`, or `()` (wrapped in `Async[...]` for `async fn main`),
+    /// which the native entry point turns into the process exit code.
+    fn check_entry_main_signature(&mut self, func: &ir::Function) {
+        let mut problems = Vec::new();
+        if !func.generics.is_empty() {
+            problems.push("it must not have type parameters".to_string());
+        }
+        if !func.params.is_empty() {
+            problems.push(format!(
+                "it must take no parameters, found {}",
+                func.params.len()
+            ));
+        }
+        let ret = self
+            .types
+            .get(&func.ret_type)
+            .cloned()
+            .unwrap_or_else(|| "<?>".to_string());
+        let ret = self.normalize_type(&ret);
+        if !contains_unresolved_type(&ret)
+            && !(parse_integer_kind(&ret).is_some() || matches!(ret.as_str(), "Bool" | "()"))
+        {
+            problems.push(format!(
+                "it must return an integer type, Bool, or (), found '{ret}'"
+            ));
+        }
+        if problems.is_empty() {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1295",
+                format!(
+                    "invalid signature for entry function 'main': {}",
+                    problems.join("; ")
+                ),
+                self.file,
+                func.span,
+            )
+            .with_help("declare `fn main() -> Int` and read arguments with std.env"),
+        );
+    }
+
+    fn report_recursive_type(&mut self, name: &str, span: crate::span::Span) {
+        let module = self
+            .current_module
+            .clone()
+            .unwrap_or_else(|| "<root>".to_string());
+        let key = (module, Self::unqualified_name(name).to_string());
+        let Some(path) = self.recursive_types.get(&key).cloned() else {
+            return;
+        };
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1294",
+                format!(
+                    "recursive type '{}' is not supported yet: it contains itself via {}",
+                    key.1, path
+                ),
+                self.file,
+                span,
+            )
+            .with_help(
+                "store related values in a Vec and refer to them by index, or flatten the recursion",
+            ),
+        );
     }
 
     /// Trait method signatures are never type-checked as functions, so their
@@ -847,6 +1041,188 @@ impl<'a> Checker<'a> {
             }
         }
         self.diagnostics.push(diag);
+    }
+
+    /// A generic function that calls itself with a type built from its own
+    /// type parameters (`grow[T]` calling `grow(Some(x))`, so `T = Option[T]`)
+    /// needs infinitely many instantiations (E1293).
+    fn check_polymorphic_recursion(
+        &mut self,
+        callee: &str,
+        callee_module: Option<&str>,
+        bindings: &BTreeMap<String, String>,
+        span: crate::span::Span,
+    ) {
+        if self.type_params_in_scope.is_empty() || bindings.is_empty() {
+            return;
+        }
+        let Some(current) = self.current_function.as_deref() else {
+            return;
+        };
+        let callee_key = self.resolved_function_key(callee, callee_module);
+        let current_key = self.current_function_key_for(current);
+        if callee_key != current_key && callee_key != current {
+            return;
+        }
+        for (param, bound) in bindings {
+            let bound_norm = self.normalize_type(bound);
+            if self.type_params_in_scope.contains(&bound_norm) {
+                continue;
+            }
+            let mentions_own_param = self
+                .type_params_in_scope
+                .iter()
+                .any(|own| type_uses_generic_param(&bound_norm, own));
+            if mentions_own_param {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1293",
+                        format!(
+                            "polymorphic recursion: '{}' calls itself with {} = '{}', which would need infinitely many instantiations",
+                            current, param, bound_norm
+                        ),
+                        self.file,
+                        span,
+                    )
+                    .with_help(
+                        "call the function with the same type parameters, or move the changing type into a value (for example a Vec)",
+                    ),
+                );
+                return;
+            }
+        }
+    }
+
+    /// A generic function may compare values of a type parameter with
+    /// `==`/`!=`; code generation then needs equality for every type that
+    /// parameter is instantiated with. Propagates the requirement through
+    /// generic callers (`f[T]` calling `g[T]`) and reports concrete bindings
+    /// that do not support equality (E1291) at the call site.
+    fn check_generic_equality_bindings(&mut self) {
+        if self.equality_type_params.is_empty() {
+            return;
+        }
+        let mut required = std::mem::take(&mut self.equality_type_params);
+        loop {
+            let mut changed = false;
+            for site in &self.generic_call_sites {
+                let Some(caller) = site.caller.as_ref() else {
+                    continue;
+                };
+                let Some(callee_params) = required.get(&site.callee).cloned() else {
+                    continue;
+                };
+                for param in callee_params {
+                    let Some(bound) = site.bindings.get(&param) else {
+                        continue;
+                    };
+                    if site.caller_type_params.contains(bound)
+                        && required
+                            .entry(caller.clone())
+                            .or_default()
+                            .insert(bound.clone())
+                    {
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let sites = std::mem::take(&mut self.generic_call_sites);
+        for site in &sites {
+            let Some(callee_params) = required.get(&site.callee) else {
+                continue;
+            };
+            for param in callee_params {
+                let Some(bound) = site.bindings.get(param) else {
+                    continue;
+                };
+                if site.caller_type_params.contains(bound) || equality_is_supported(bound) {
+                    continue;
+                }
+                let callee = site.callee.rsplit("::").next().unwrap_or(&site.callee);
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1291",
+                        format!(
+                            "`==`/`!=` is not supported for values of type '{}', which '{}' needs for type parameter '{}'",
+                            bound, callee, param
+                        ),
+                        &site.file,
+                        site.span,
+                    )
+                    .with_help(
+                        "equality works on integers, floats, Bool, Char and String; pass a supported type or compare fields individually",
+                    ),
+                );
+            }
+        }
+        self.generic_call_sites = sites;
+        self.equality_type_params = required;
+    }
+
+    /// Rejects `Map`/`Set` instantiations the runtime cannot store (E1292).
+    /// Type parameters and unresolved types are checked where they become
+    /// concrete. Nested type arguments are checked recursively.
+    fn validate_collection_element_types(&mut self, ty: &str, span: crate::span::Span) {
+        let ty = self.normalize_type(ty);
+        let base = base_type_name(&ty).to_string();
+        let args = extract_generic_args(&ty).unwrap_or_default();
+        let concrete = |checker: &Self, arg: &str| {
+            !contains_unresolved_type(arg) && !checker.type_params_in_scope.contains(arg)
+        };
+        let unqualified = Self::unqualified_name(&base).to_string();
+        if unqualified == "Map" || unqualified == "Set" {
+            if let Some(key) = args.first() {
+                let key = self.normalize_type(key);
+                if concrete(self, &key) && !MAP_KEY_TYPES.contains(&key.as_str()) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1292",
+                            format!(
+                                "'{}' cannot be used as a {} key; supported key types are {}",
+                                key,
+                                unqualified,
+                                MAP_KEY_TYPES.join(", ")
+                            ),
+                            self.file,
+                            span,
+                        )
+                        .with_help("key the map by a String or Int field of the value instead"),
+                    );
+                }
+            }
+            if unqualified == "Map" {
+                if let Some(value) = args.get(1) {
+                    let value = self.normalize_type(value);
+                    if concrete(self, &value) && !MAP_VALUE_TYPES.contains(&value.as_str()) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E1292",
+                                format!(
+                                    "'{}' cannot be used as a Map value; supported value types are {}",
+                                    value,
+                                    MAP_VALUE_TYPES.join(", ")
+                                ),
+                                self.file,
+                                span,
+                            )
+                            .with_help(
+                                "store an Int index or String key into a Vec of the values instead",
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        for arg in &args {
+            if base == "Fn" {
+                break;
+            }
+            self.validate_collection_element_types(arg, span);
+        }
     }
 
     fn closest_type_name(&self, name: &str) -> Option<String> {
@@ -940,6 +1316,7 @@ impl<'a> Checker<'a> {
 
     fn finish(mut self) -> TypecheckOutput {
         self.flush_deferred_holes();
+        self.check_generic_equality_bindings();
         let generic_instantiations = self
             .instantiation_seen
             .into_values()
@@ -966,6 +1343,33 @@ impl<'a> Checker<'a> {
                 (caller, callees)
             })
             .collect::<BTreeMap<_, _>>();
+        let resolved = |ty: &String| !contains_unresolved_type(ty);
+        let hole_types = TypedHoleTypes {
+            fn_params: self
+                .fn_param_inferred
+                .iter()
+                .filter(|(_, ty)| resolved(ty))
+                .filter_map(|((name, idx), ty)| {
+                    let symbol = self.hole_function_symbols.get(name)?;
+                    Some(((*symbol, *idx), ty.clone()))
+                })
+                .collect(),
+            fn_returns: self
+                .fn_return_inferred
+                .iter()
+                .filter(|(_, ty)| resolved(ty))
+                .filter_map(|(name, ty)| {
+                    let symbol = self.hole_function_symbols.get(name)?;
+                    Some((*symbol, ty.clone()))
+                })
+                .collect(),
+            struct_fields: self
+                .struct_field_inferred
+                .iter()
+                .filter(|(_, ty)| resolved(ty))
+                .map(|(key, ty)| (key.clone(), ty.clone()))
+                .collect(),
+        };
         TypecheckOutput {
             diagnostics: self.diagnostics,
             function_effect_usage: self.effect_usage,
@@ -978,6 +1382,7 @@ impl<'a> Checker<'a> {
             call_symbols: self.call_symbols,
             call_target_modules: self.call_target_modules,
             expr_type_hints: self.expr_type_hints,
+            hole_types,
         }
     }
 
@@ -1397,8 +1802,8 @@ impl<'a> Checker<'a> {
 
     fn validate_compile_time_expr(&mut self, context: &str, expr: &ir::Expr) {
         match &expr.kind {
-            ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
@@ -1503,6 +1908,8 @@ impl<'a> Checker<'a> {
                 .unwrap_or_else(|| "<?>".to_string());
             self.check_generic_arity(&param_ty, param.span);
             if contains_unresolved_type(&param_ty) {
+                self.hole_function_symbols
+                    .insert(func.name.clone(), func.symbol);
                 let key = (func.name.clone(), idx);
                 self.fn_param_holes
                     .entry(key.clone())
@@ -1525,6 +1932,8 @@ impl<'a> Checker<'a> {
             .cloned()
             .unwrap_or_else(|| "<?>".to_string());
         if contains_unresolved_type(&ret_type) {
+            self.hole_function_symbols
+                .insert(func.name.clone(), func.symbol);
             self.fn_return_holes
                 .entry(func.name.clone())
                 .or_insert(DeferredHole {
@@ -3130,8 +3539,8 @@ impl<'a> Checker<'a> {
             ir::ExprKind::FieldAccess { base, .. } => {
                 self.check_resource_protocol_expr_mode(base, state, binding_types, false);
             }
-            ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
@@ -3637,8 +4046,8 @@ impl<'a> Checker<'a> {
             ir::ExprKind::FieldAccess { base, .. } => {
                 self.check_borrow_expr(base, mutability, state, binding_types)
             }
-            ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
@@ -3889,8 +4298,8 @@ impl<'a> Checker<'a> {
         match &expr.kind {
             ir::ExprKind::Var(name) => binding_types.get(name).cloned(),
             ir::ExprKind::StructInit { name, .. } => Some(name.clone()),
-            ir::ExprKind::Int(_) => Some("Int".to_string()),
-            ir::ExprKind::Float(_) => Some("Float64".to_string()),
+            ir::ExprKind::Int(_, ..) => Some("Int".to_string()),
+            ir::ExprKind::Float(_, ..) => Some("Float64".to_string()),
             ir::ExprKind::Bool(_) => Some("Bool".to_string()),
             ir::ExprKind::Char(_) => Some("Char".to_string()),
             ir::ExprKind::String(_) => Some("String".to_string()),
@@ -4092,6 +4501,21 @@ impl<'a> Checker<'a> {
             inferred: inferred.clone(),
             context: context.to_string(),
         });
+        if contains_unresolved_type(&inferred) {
+            // Code generation needs a concrete type for every hole.
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1296",
+                    format!("cannot infer the type of the typed hole in {context}"),
+                    file,
+                    span,
+                )
+                .with_help(
+                    "replace `_` with a concrete type, or use the item so its type can be inferred",
+                ),
+            );
+            return;
+        }
         self.diagnostics.push(
             Diagnostic::warning(
                 "E6003",
@@ -4565,7 +4989,7 @@ impl<'a> Checker<'a> {
 
     fn expr_int_literal_value(&self, expr: &ir::Expr) -> Option<IntegerLiteralValue> {
         match &expr.kind {
-            ir::ExprKind::Int(value) => {
+            ir::ExprKind::Int(value, ..) => {
                 let metadata = expr.int_literal_metadata();
                 self.non_negative_integer_literal_value(*value, metadata.as_ref())
             }
@@ -4573,7 +4997,7 @@ impl<'a> Checker<'a> {
                 op: crate::ast::UnaryOp::Neg,
                 expr: inner,
             } => match inner.kind {
-                ir::ExprKind::Int(value) => {
+                ir::ExprKind::Int(value, ..) => {
                     let metadata = inner.int_literal_metadata();
                     self.negative_integer_literal_value(value, metadata.as_ref())
                 }
@@ -4726,8 +5150,8 @@ impl<'a> Checker<'a> {
         expected_ty: Option<&str>,
     ) -> String {
         match &expr.kind {
-            ir::ExprKind::Int(value) => self.check_int_literal_expr(expr, *value, expected_ty),
-            ir::ExprKind::Float(_) => self.check_float_literal_expr(expected_ty),
+            ir::ExprKind::Int(value, ..) => self.check_int_literal_expr(expr, *value, expected_ty),
+            ir::ExprKind::Float(_, ..) => self.check_float_literal_expr(expected_ty),
             ir::ExprKind::Bool(_) => "Bool".to_string(),
             ir::ExprKind::Char(_) => "Char".to_string(),
             ir::ExprKind::String(_) => "String".to_string(),
@@ -5780,8 +6204,31 @@ impl<'a> Checker<'a> {
                         self.record_call_edge(&callee_key, expr.span);
                     }
 
+                    self.check_polymorphic_recursion(
+                        &resolved_name,
+                        resolved_module.as_deref(),
+                        &generic_bindings,
+                        expr.span,
+                    );
+                    if !generic_bindings.is_empty() {
+                        let callee =
+                            self.resolved_function_key(&resolved_name, resolved_module.as_deref());
+                        let bindings = generic_bindings
+                            .iter()
+                            .map(|(param, bound)| (param.clone(), self.normalize_type(bound)))
+                            .collect();
+                        self.generic_call_sites.push(GenericCallSite {
+                            caller: self.current_function.clone(),
+                            caller_type_params: self.type_params_in_scope.clone(),
+                            callee,
+                            bindings,
+                            file: self.file.to_string(),
+                            span: expr.span,
+                        });
+                    }
                     let mut ret_ty =
                         substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
+                    self.validate_collection_element_types(&ret_ty, expr.span);
                     if sig.is_async {
                         ret_ty = format!("Async[{ret_ty}]");
                     }
@@ -6482,7 +6929,7 @@ impl<'a> Checker<'a> {
             }
             ir::ExprKind::Unary { op, expr: inner } => {
                 if matches!(op, crate::ast::UnaryOp::Neg) {
-                    if let ir::ExprKind::Int(value) = inner.kind {
+                    if let ir::ExprKind::Int(value, ..) = inner.kind {
                         return self.check_negated_int_literal_expr(inner, value, expected_ty);
                     }
                 }
@@ -8109,6 +8556,7 @@ impl<'a> Checker<'a> {
             return;
         }
         self.check_type_name_known(&base, span);
+        self.validate_collection_element_types(ty, span);
         let expected = self
             .visible_struct_info(&base)
             .map(|info| info.generics.len())
@@ -8314,6 +8762,31 @@ impl<'a> Checker<'a> {
                         self.file,
                         span,
                     ));
+                } else if self.type_params_in_scope.contains(&lhs_norm) && lhs_norm == rhs_norm {
+                    // Checked per instantiation in `check_generic_equality_bindings`.
+                    if let Some(function) = self.current_function.clone() {
+                        self.equality_type_params
+                            .entry(function)
+                            .or_default()
+                            .insert(lhs_norm.clone());
+                    }
+                } else if !equality_is_supported(&lhs_norm) || !equality_is_supported(&rhs_norm) {
+                    let shown = if equality_is_supported(&lhs_norm) {
+                        rhs
+                    } else {
+                        lhs
+                    };
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E1291",
+                            format!("`==`/`!=` is not supported for values of type '{}'", shown),
+                            self.file,
+                            span,
+                        )
+                        .with_help(
+                            "equality works on integers, floats, Bool, Char and String; compare fields individually or use `match`",
+                        ),
+                    );
                 }
                 "Bool".to_string()
             }
@@ -8390,7 +8863,7 @@ impl<'a> Checker<'a> {
                 }
                 locals.insert(name.clone(), scrutinee_ty.to_string());
             }
-            ir::PatternKind::Int(v) => {
+            ir::PatternKind::Int(v, ..) => {
                 if parse_integer_kind(&normalized_scrutinee_ty).is_none() {
                     self.diagnostics.push(Diagnostic::error(
                         "E1234",
@@ -8956,7 +9429,7 @@ impl<'a> Checker<'a> {
         let ty = self.normalize_type(ty);
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Pat::Wild,
-            ir::PatternKind::Int(value) => {
+            ir::PatternKind::Int(value, ..) => {
                 let text = pattern
                     .int_literal_metadata()
                     .map(|meta| format!("{}{}", meta.raw_literal_text, meta.suffix_text))
@@ -10950,8 +11423,8 @@ fn collect_captured_mutations_in_expr(
                 collect_captured_mutations_in_expr(value, outer, scopes, out);
             }
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -10977,7 +11450,7 @@ fn collect_pattern_bindings(pattern: &ir::Pattern, out: &mut BTreeSet<String>) {
             }
         }
         ir::PatternKind::Wildcard
-        | ir::PatternKind::Int(_)
+        | ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Bool(_)
         | ir::PatternKind::Char(_)
         | ir::PatternKind::String(_)
@@ -10988,6 +11461,20 @@ fn collect_pattern_bindings(pattern: &ir::Pattern, out: &mut BTreeSet<String>) {
 fn is_std_module_name(module: &str) -> bool {
     module == "std" || module.starts_with("std.")
 }
+
+/// Types whose `==`/`!=` the code generator lowers. Structural equality for
+/// structs, enums, tuples and collections arrives with the core `Eq` trait.
+fn equality_is_supported(ty: &str) -> bool {
+    contains_unresolved_type(ty)
+        || ty == NEVER_TYPE
+        || parse_integer_kind(ty).is_some()
+        || parse_float_kind(ty).is_some()
+        || matches!(ty, "Bool" | "Char" | "String")
+}
+
+/// Key types `Map`/`Set` support, and value types `Map` supports.
+const MAP_KEY_TYPES: &[&str] = &["String", "Bytes", "Int", "UInt64", "Bool"];
+const MAP_VALUE_TYPES: &[&str] = &["String", "Bytes", "Int", "Bool", "UInt64"];
 
 fn generic_names(generics: &[ir::GenericParam]) -> BTreeSet<String> {
     generics.iter().map(|param| param.name.clone()).collect()
@@ -12819,7 +13306,7 @@ fn main() -> Int {
     #[test]
     fn bitwise_bool_operands_report_helpful_diagnostic() {
         let src = r#"
-fn main(x: Bool, y: Bool) -> Int {
+fn sample(x: Bool, y: Bool) -> Int {
     let v = x & y;
     if v { 1 } else { 0 }
 }
@@ -12938,7 +13425,7 @@ fn main() -> Int {
     #[test]
     fn fixed_width_integer_ops_require_matching_signedness_and_width() {
         let src = r#"
-fn main(a: Int8, b: UInt16) -> Int {
+fn sample(a: Int8, b: UInt16) -> Int {
     let _bad_add = a + b;
     let _bad_cmp = a < b;
     0
@@ -12975,7 +13462,7 @@ fn main(a: Int8, b: UInt16) -> Int {
     #[test]
     fn fixed_width_assignments_allow_only_lossless_conversions() {
         let src = r#"
-fn main(a: Int16, b: UInt16) -> Int {
+fn sample(a: Int16, b: UInt16) -> Int {
     let _widen_ok: Int32 = a;
     let _bad_narrow: Int8 = a;
     let _bad_sign: UInt16 = a;
@@ -13029,7 +13516,7 @@ fn main() -> Int {
     #[test]
     fn fixed_width_integer_patterns_report_out_of_range_literals() {
         let src = r#"
-fn main(x: UInt8, y: Int8) -> Int {
+fn sample(x: UInt8, y: Int8) -> Int {
     let a = match x {
         255u8 => 1,
         256 => 2,
@@ -13101,7 +13588,7 @@ fn main() -> Int {
     #[test]
     fn fixed_width_128_assignments_enforce_signedness_and_lossless_rules() {
         let src = r#"
-fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
+fn sample(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
     let _ok_signed_widen: Int128 = a;
     let _ok_unsigned_widen: UInt128 = b;
     let _bad_signed_to_unsigned: UInt128 = c;
@@ -13122,7 +13609,7 @@ fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
     #[test]
     fn size_integer_assignments_enforce_lossless_policy_with_uint_alias() {
         let src = r#"
-fn main(a: Int, b: ISize, c: USize, d: UInt32, e: UInt) -> Int {
+fn sample(a: Int, b: ISize, c: USize, d: UInt32, e: UInt) -> Int {
     let _ok_int_to_isize: ISize = a;
     let _ok_isize_to_int: Int = b;
     let _ok_u32_to_usize: USize = d;
@@ -13147,7 +13634,7 @@ fn main(a: Int, b: ISize, c: USize, d: UInt32, e: UInt) -> Int {
     #[test]
     fn size_integer_ops_require_exact_kind_except_uint_usize_alias_match() {
         let src = r#"
-fn main(a: ISize, b: Int, c: USize, d: UInt) -> Int {
+fn sample(a: ISize, b: Int, c: USize, d: UInt) -> Int {
     let _ok_alias_add = c + d;
     let _bad_arith = a + b;
     let _bad_cmp = c < b;
@@ -13197,6 +13684,136 @@ fn main() -> Int {
                 && (d.message.contains("USize") || d.message.contains("UInt"))),
             "diags={:#?}",
             out.diagnostics
+        );
+    }
+
+    #[test]
+    fn equality_is_rejected_for_types_without_runtime_equality() {
+        let ok = r#"
+fn main() -> Int {
+    let a = 1 == 2;
+    let b = "x" != "y";
+    let c = 'a' == 'b';
+    let d = 1.5 == 2.5;
+    if a || b || c || d { 1 } else { 0 }
+}
+"#;
+        assert!(error_codes(ok).is_empty());
+        let bad = r#"
+struct Point { x: Int }
+
+fn same(a: Point, b: Point) -> Bool {
+    a == b
+}
+
+fn main() -> Int { 0 }
+"#;
+        assert_eq!(error_codes(bad), vec!["E1291".to_string()]);
+        let option = r#"
+fn main() -> Int {
+    let a: Option[Int] = Some(1);
+    if a == None { 1 } else { 0 }
+}
+"#;
+        assert!(error_codes(option).contains(&"E1291".to_string()));
+    }
+
+    #[test]
+    fn generic_equality_is_checked_per_instantiation() {
+        let src = r#"
+struct Point { x: Int }
+
+fn same[T](a: T, b: T) -> Bool {
+    a == b
+}
+
+fn wrap[U](a: U, b: U) -> Bool {
+    same(a, b)
+}
+
+fn main() -> Int {
+    let ints = same(1, 1);
+    let strings = wrap("a", "a");
+    let points = wrap(Point { x: 1 }, Point { x: 1 });
+    if ints || strings || points { 1 } else { 0 }
+}
+"#;
+        // Only the `wrap(Point, Point)` call is rejected: `wrap` compares `U`
+        // through `same`.
+        assert_eq!(error_codes(src), vec!["E1291".to_string()]);
+        let ok = src
+            .replace(
+                "    let points = wrap(Point { x: 1 }, Point { x: 1 });\n",
+                "",
+            )
+            .replace(" || points", "");
+        assert!(error_codes(&ok).is_empty(), "{:?}", error_codes(&ok));
+    }
+
+    #[test]
+    fn entry_main_signature_is_validated() {
+        for ok in [
+            "fn main() -> Int { 0 }",
+            "fn main() -> Bool { true }",
+            "fn main() -> () { () }",
+            "fn main() -> UInt8 { 0u8 }",
+            "async fn main() -> Int { 0 }",
+        ] {
+            assert!(error_codes(ok).is_empty(), "{ok}: {:?}", error_codes(ok));
+        }
+        for bad in [
+            "fn main(name: String) -> Int { 0 }",
+            "fn main() -> String { \"x\" }",
+            "fn main[T]() -> Int { 0 }",
+        ] {
+            assert_eq!(error_codes(bad), vec!["E1295".to_string()], "{bad}");
+        }
+        // Other functions named `main` in non-entry positions are not entry
+        // points, but a single-file program's `main` always is.
+        assert!(
+            error_codes("fn helper(x: Int) -> String { \"x\" } fn main() -> Int { 0 }").is_empty()
+        );
+    }
+
+    #[test]
+    fn uninferable_typed_holes_are_errors_and_resolved_holes_are_exported() {
+        let unresolved = r#"
+fn unused(x: _) -> Int { 0 }
+
+fn main() -> Int { 0 }
+"#;
+        assert_eq!(error_codes(unresolved), vec!["E1296".to_string()]);
+
+        let resolved = r#"
+struct Counter { value: _ }
+
+fn plus_one(x: _) -> _ { x + 1 }
+
+fn main() -> Int {
+    let c = Counter { value: 41 };
+    plus_one(c.value)
+}
+"#;
+        let (program, d1) = parse(resolved, "test.aic");
+        assert!(d1.is_empty(), "{d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _) = resolve(&ir, "test.aic");
+        let out = check(&ir, &res, "test.aic");
+        assert!(
+            out.diagnostics
+                .iter()
+                .all(|d| !matches!(d.severity, Severity::Error)),
+            "{:#?}",
+            out.diagnostics
+        );
+        let holes = &out.hole_types;
+        assert_eq!(holes.fn_params.values().collect::<Vec<_>>(), vec!["Int"]);
+        assert_eq!(holes.fn_returns.values().collect::<Vec<_>>(), vec!["Int"]);
+        assert_eq!(
+            holes
+                .struct_fields
+                .get(&("Counter".to_string(), "value".to_string())),
+            Some(&"Int".to_string())
         );
     }
 }

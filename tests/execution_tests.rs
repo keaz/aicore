@@ -226,21 +226,21 @@ fn assert_program_prints_42(source: &str) {
 }
 
 fn assert_unsupported_map_key_diagnostic(source: &str) {
-    match compile_and_run_or_backend_diags(source) {
-        Ok((code, stdout, stderr)) => panic!(
-            "expected backend key-type diagnostic, got success: code={code} stdout={stdout:?} stderr={stderr:?}"
-        ),
-        Err(diags) => {
-            assert!(
-                diags.iter().any(|d| {
-                    d.code == "E5011"
-                        && d.message
-                            .contains("supports only map keys String, Bytes, Int, UInt64, and Bool")
-                }),
-                "diags={diags:#?}"
-            );
-        }
-    }
+    // `aic check` rejects key types the runtime cannot store (E1292), so the
+    // program never reaches code generation.
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("main.aic");
+    fs::write(&src, source).expect("write source");
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        front.diagnostics.iter().any(|d| {
+            d.code == "E1292"
+                && d.message
+                    .contains("supported key types are String, Bytes, Int, UInt64, Bool")
+        }),
+        "diags={:#?}",
+        front.diagnostics
+    );
 }
 
 fn compile_and_run_with_args(source: &str, args: &[&str]) -> (i32, String, String) {
@@ -17930,7 +17930,7 @@ fn exec_frontend_rejects_size_integer_sign_change_and_kind_mismatch() {
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("size_integer_frontend_fail.aic");
     let source = r#"
-fn main(a: USize, b: Int) -> Int {
+fn sample(a: USize, b: Int) -> Int {
     let _bad_to_int: Int = a;
     let _bad_to_usize: USize = b;
     let _bad_op = a + b;

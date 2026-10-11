@@ -510,8 +510,8 @@ impl Builder {
 
     fn lower_expr(&mut self, expr: &ast::Expr) -> ir::Expr {
         let kind = match &expr.kind {
-            ast::ExprKind::Int(v) => ir::ExprKind::Int(*v),
-            ast::ExprKind::Float(v) => ir::ExprKind::Float(*v),
+            ast::ExprKind::Int(v, meta) => ir::ExprKind::Int(*v, meta.clone()),
+            ast::ExprKind::Float(v, meta) => ir::ExprKind::Float(*v, meta.clone()),
             ast::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
             ast::ExprKind::Char(v) => ir::ExprKind::Char(*v),
             ast::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
@@ -628,7 +628,7 @@ impl Builder {
         let kind = match &pattern.kind {
             ast::PatternKind::Wildcard => ir::PatternKind::Wildcard,
             ast::PatternKind::Var(v) => ir::PatternKind::Var(v.clone()),
-            ast::PatternKind::Int(v) => ir::PatternKind::Int(*v),
+            ast::PatternKind::Int(v, meta) => ir::PatternKind::Int(*v, meta.clone()),
             ast::PatternKind::Bool(v) => ir::PatternKind::Bool(*v),
             ast::PatternKind::Char(v) => ir::PatternKind::Char(*v),
             ast::PatternKind::String(v) => ir::PatternKind::String(v.clone()),

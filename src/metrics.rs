@@ -354,8 +354,8 @@ impl ComplexityAnalyzer {
 
     fn visit_expr(&mut self, expr: &Expr, depth: u32) {
         match &expr.kind {
-            ExprKind::Int(_)
-            | ExprKind::Float(_)
+            ExprKind::Int(_, ..)
+            | ExprKind::Float(_, ..)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::String(_)

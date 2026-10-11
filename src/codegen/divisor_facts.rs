@@ -93,7 +93,9 @@ pub(super) fn divisor_fact(expr: &ir::Expr, params: &BTreeMap<String, DivisorFac
 /// wide-literal metadata are not folded, so their guards stay in place.
 fn plain_int_literal(expr: &ir::Expr) -> Option<i128> {
     match &expr.kind {
-        ir::ExprKind::Int(value) if expr.int_literal_metadata().is_none() => Some(*value as i128),
+        ir::ExprKind::Int(value, ..) if expr.int_literal_metadata().is_none() => {
+            Some(*value as i128)
+        }
         ir::ExprKind::Unary {
             op: UnaryOp::Neg,
             expr: inner,
@@ -255,8 +257,8 @@ fn collect_bound_names_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
                 collect_bound_names_in_expr(value, out);
             }
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -282,7 +284,7 @@ fn collect_bound_names_in_pattern(pattern: &ir::Pattern, out: &mut BTreeSet<Stri
             }
         }
         ir::PatternKind::Wildcard
-        | ir::PatternKind::Int(_)
+        | ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Bool(_)
         | ir::PatternKind::Char(_)
         | ir::PatternKind::String(_)

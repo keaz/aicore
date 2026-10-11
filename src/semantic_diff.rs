@@ -406,8 +406,8 @@ fn render_type(ty: &TypeExpr) -> String {
 
 fn render_expr(expr: &Expr) -> String {
     match &expr.kind {
-        ExprKind::Int(value) => value.to_string(),
-        ExprKind::Float(value) => render_float_literal(*value),
+        ExprKind::Int(value, ..) => value.to_string(),
+        ExprKind::Float(value, ..) => render_float_literal(*value),
         ExprKind::Bool(value) => value.to_string(),
         ExprKind::Char(value) => format!("{:?}", value),
         ExprKind::String(value) => format!("{value:?}"),
@@ -609,7 +609,7 @@ fn render_pattern(pattern: &Pattern) -> String {
     match &pattern.kind {
         PatternKind::Wildcard => "_".to_string(),
         PatternKind::Var(name) => name.clone(),
-        PatternKind::Int(value) => value.to_string(),
+        PatternKind::Int(value, ..) => value.to_string(),
         PatternKind::Char(value) => format!("{value:?}"),
         PatternKind::String(value) => {
             format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))

@@ -2,7 +2,6 @@ use std::cell::Cell;
 
 use crate::ast::*;
 use crate::diagnostics::Diagnostic;
-use crate::ir;
 use crate::lexer::{lex, FloatLiteralSuffixToken, IntLiteralSuffixToken, Token, TokenKind};
 use crate::span::Span;
 
@@ -51,10 +50,6 @@ fn parse_with_step_budget(
     file: &str,
     step_budget: Option<usize>,
 ) -> (Option<Program>, Vec<Diagnostic>, ParseStats) {
-    clear_int_literal_metadata();
-    clear_float_literal_metadata();
-    ir::clear_int_literal_metadata();
-    ir::clear_float_literal_metadata();
     let (tokens, mut diagnostics) = lex(source, file);
     let mut parser = Parser::new(file, tokens);
     if let Some(step_budget) = step_budget {
@@ -2822,29 +2817,26 @@ impl<'a> Parser<'a> {
         match token.kind {
             TokenKind::Int(literal) => {
                 self.bump();
-                self.record_typed_int_literal(
-                    token.span,
-                    literal.value,
+                let meta = Self::typed_int_literal_metadata(
                     literal.suffix,
                     literal.raw_value_span,
                     literal.raw_text,
                 );
                 Some(Expr {
-                    kind: ExprKind::Int(literal.value),
+                    kind: ExprKind::Int(literal.value, meta),
                     span: token.span,
                 })
             }
             TokenKind::Float(literal) => {
                 self.bump();
                 let float_value = literal.value;
-                self.record_typed_float_literal(
-                    token.span,
+                let meta = Self::typed_float_literal_metadata(
                     literal.suffix,
                     literal.raw_value_span,
                     literal.raw_text,
                 );
                 Some(Expr {
-                    kind: ExprKind::Float(float_value),
+                    kind: ExprKind::Float(float_value, meta),
                     span: token.span,
                 })
             }
@@ -3521,7 +3513,7 @@ impl<'a> Parser<'a> {
 
     fn make_int_expr(&self, value: i64, span: Span) -> Expr {
         Expr {
-            kind: ExprKind::Int(value),
+            kind: ExprKind::Int(value, None),
             span,
         }
     }
@@ -3586,17 +3578,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn record_typed_int_literal(
-        &mut self,
-        span: Span,
-        value: i64,
+    fn typed_int_literal_metadata(
         suffix: Option<IntLiteralSuffixToken>,
         raw_value_span: Span,
         raw_literal_text: String,
-    ) {
-        let Some(suffix) = suffix else {
-            return;
-        };
+    ) -> Option<Box<IntLiteralMetadata>> {
+        let suffix = suffix?;
         let (ast_suffix, ast_kind, suffix_text) = Self::int_literal_suffix_to_ast(suffix);
         let ast_meta = IntLiteralMetadata::with_kind_and_suffix_text(
             ast_suffix,
@@ -3605,20 +3592,15 @@ impl<'a> Parser<'a> {
             raw_value_span,
             raw_literal_text,
         );
-        record_int_literal_metadata(span, value, ast_meta.clone());
-        ir::record_int_literal_metadata(span, value, ast_meta);
+        Some(Box::new(ast_meta))
     }
 
-    fn record_typed_float_literal(
-        &mut self,
-        span: Span,
+    fn typed_float_literal_metadata(
         suffix: Option<FloatLiteralSuffixToken>,
         raw_value_span: Span,
         raw_literal_text: String,
-    ) {
-        let Some(suffix) = suffix else {
-            return;
-        };
+    ) -> Option<Box<FloatLiteralMetadata>> {
+        let suffix = suffix?;
         let (ast_suffix, ast_kind, suffix_text) = Self::float_literal_suffix_to_ast(suffix);
         let ast_meta = FloatLiteralMetadata::with_kind_and_suffix_text(
             ast_suffix,
@@ -3627,8 +3609,7 @@ impl<'a> Parser<'a> {
             raw_value_span,
             raw_literal_text,
         );
-        record_float_literal_metadata(span, ast_meta.clone());
-        ir::record_float_literal_metadata(span, ast_meta);
+        Some(Box::new(ast_meta))
     }
 
     fn make_unit_expr(&self, span: Span) -> Expr {
@@ -3997,15 +3978,13 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Int(literal) => {
                 self.bump();
-                self.record_typed_int_literal(
-                    token.span,
-                    literal.value,
+                let meta = Self::typed_int_literal_metadata(
                     literal.suffix,
                     literal.raw_value_span,
                     literal.raw_text,
                 );
                 Some(Pattern {
-                    kind: PatternKind::Int(literal.value),
+                    kind: PatternKind::Int(literal.value, meta),
                     span: token.span,
                 })
             }
@@ -5186,8 +5165,8 @@ fn main() -> Float {
         let ExprKind::Binary { lhs, rhs, .. } = &tail.kind else {
             panic!("expected binary expression");
         };
-        assert!(matches!(lhs.kind, ExprKind::Float(v) if (v - 3.125).abs() < 1e-12));
-        assert!(matches!(rhs.kind, ExprKind::Float(v) if (v - 2.5e-3).abs() < 1e-12));
+        assert!(matches!(lhs.kind, ExprKind::Float(v, ..) if (v - 3.125).abs() < 1e-12));
+        assert!(matches!(rhs.kind, ExprKind::Float(v, ..) if (v - 2.5e-3).abs() < 1e-12));
 
         let lhs_meta = lhs
             .float_literal_metadata()
@@ -5980,7 +5959,7 @@ fn g() -> () {
         };
         assert!(matches!(
             &arms[1].body.kind,
-            ExprKind::Return { expr: Some(value) } if matches!(value.kind, ExprKind::Int(0))
+            ExprKind::Return { expr: Some(value) } if matches!(value.kind, ExprKind::Int(0, ..))
         ));
         let ExprKind::If { else_block, .. } = &f.body.tail.as_ref().expect("tail").kind else {
             panic!("expected if tail");

@@ -487,8 +487,8 @@ fn extract_var_const_cmp(
     op: BinOp,
 ) -> Option<(String, BinOp, i64)> {
     match (&lhs.kind, &rhs.kind) {
-        (ir::ExprKind::Var(name), ir::ExprKind::Int(value)) => Some((name.clone(), op, *value)),
-        (ir::ExprKind::Int(value), ir::ExprKind::Var(name)) => {
+        (ir::ExprKind::Var(name), ir::ExprKind::Int(value, ..)) => Some((name.clone(), op, *value)),
+        (ir::ExprKind::Int(value, ..), ir::ExprKind::Var(name)) => {
             Some((name.clone(), flip_cmp(op)?, *value))
         }
         _ => None,
@@ -669,7 +669,7 @@ fn eval_int_range(
     result_expr: Option<&ir::Expr>,
 ) -> Option<IntRange> {
     match &expr.kind {
-        ir::ExprKind::Int(value) => Some(IntRange::singleton(*value)),
+        ir::ExprKind::Int(value, ..) => Some(IntRange::singleton(*value)),
         ir::ExprKind::Var(name) if name == "result" => {
             let value = result_expr?;
             eval_int_range(value, env, None)
@@ -702,7 +702,7 @@ fn eval_int_range(
 
 fn same_int_expr(lhs: &ir::Expr, rhs: &ir::Expr) -> bool {
     match (&lhs.kind, &rhs.kind) {
-        (ir::ExprKind::Int(a), ir::ExprKind::Int(b)) => a == b,
+        (ir::ExprKind::Int(a, ..), ir::ExprKind::Int(b, ..)) => a == b,
         (ir::ExprKind::Var(a), ir::ExprKind::Var(b)) => a == b,
         (
             ir::ExprKind::Unary {
@@ -1047,8 +1047,8 @@ fn rewrite_struct_inits_in_expr(
         ir::ExprKind::FieldAccess { base, .. } => {
             rewrite_struct_inits_in_expr(base, helper_names, field_orders, alloc);
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -1247,8 +1247,8 @@ fn lower_ensures_in_expr(
         ir::ExprKind::FieldAccess { base, .. } => {
             lower_ensures_in_expr(base, ensures, ret_type, function_name, alloc);
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -1306,7 +1306,7 @@ enum Value {
 
 fn eval_const(expr: &ir::Expr) -> Option<Value> {
     match &expr.kind {
-        ir::ExprKind::Int(v) => Some(Value::Int(*v)),
+        ir::ExprKind::Int(v, ..) => Some(Value::Int(*v)),
         ir::ExprKind::Bool(v) => Some(Value::Bool(*v)),
         ir::ExprKind::Unary { op, expr } => {
             let v = eval_const(expr)?;
@@ -1511,8 +1511,8 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
                 max = max.max(max_node_expr(expr));
             }
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -1543,7 +1543,7 @@ fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
         }
         ir::PatternKind::Wildcard
         | ir::PatternKind::Var(_)
-        | ir::PatternKind::Int(_)
+        | ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Bool(_)
         | ir::PatternKind::Char(_)
         | ir::PatternKind::String(_)
@@ -1554,8 +1554,8 @@ fn max_node_pattern(pattern: &ir::Pattern) -> u32 {
 
 fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
     let kind = match &expr.kind {
-        ir::ExprKind::Int(v) => ir::ExprKind::Int(*v),
-        ir::ExprKind::Float(v) => ir::ExprKind::Float(*v),
+        ir::ExprKind::Int(v, meta) => ir::ExprKind::Int(*v, meta.clone()),
+        ir::ExprKind::Float(v, meta) => ir::ExprKind::Float(*v, meta.clone()),
         ir::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
         ir::ExprKind::Char(v) => ir::ExprKind::Char(*v),
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
@@ -1717,7 +1717,7 @@ fn clone_pattern(pattern: &ir::Pattern, alloc: &mut IdAlloc) -> ir::Pattern {
     let kind = match &pattern.kind {
         ir::PatternKind::Wildcard => ir::PatternKind::Wildcard,
         ir::PatternKind::Var(v) => ir::PatternKind::Var(v.clone()),
-        ir::PatternKind::Int(v) => ir::PatternKind::Int(*v),
+        ir::PatternKind::Int(v, meta) => ir::PatternKind::Int(*v, meta.clone()),
         ir::PatternKind::Bool(v) => ir::PatternKind::Bool(*v),
         ir::PatternKind::Char(v) => ir::PatternKind::Char(*v),
         ir::PatternKind::String(v) => ir::PatternKind::String(v.clone()),
@@ -1755,8 +1755,8 @@ fn clone_pattern(pattern: &ir::Pattern, alloc: &mut IdAlloc) -> ir::Pattern {
 fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc) -> ir::Expr {
     let kind = match &expr.kind {
         ir::ExprKind::Var(name) if name == "result" => ir::ExprKind::Var(result_name.to_string()),
-        ir::ExprKind::Int(v) => ir::ExprKind::Int(*v),
-        ir::ExprKind::Float(v) => ir::ExprKind::Float(*v),
+        ir::ExprKind::Int(v, meta) => ir::ExprKind::Int(*v, meta.clone()),
+        ir::ExprKind::Float(v, meta) => ir::ExprKind::Float(*v, meta.clone()),
         ir::ExprKind::Bool(v) => ir::ExprKind::Bool(*v),
         ir::ExprKind::Char(v) => ir::ExprKind::Char(*v),
         ir::ExprKind::String(v) => ir::ExprKind::String(v.clone()),
@@ -2300,8 +2300,8 @@ fn make(x: Int) -> NonEmpty {
                 .map(|(_, value, _)| count_asserts_in_expr(value))
                 .sum(),
             ir::ExprKind::FieldAccess { base, .. } => count_asserts_in_expr(base),
-            ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)

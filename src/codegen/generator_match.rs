@@ -196,7 +196,7 @@ impl<'a> Generator<'a> {
                 self.branch_on(&cond, fail_label, fctx);
                 Some(())
             }
-            ir::PatternKind::Int(literal) => {
+            ir::PatternKind::Int(literal, ..) => {
                 if !is_integral_type(&value.ty) {
                     return self.pattern_type_error(pattern, "integer", &value.ty);
                 }
@@ -467,7 +467,7 @@ fn pattern_is_flat(pattern: &ir::Pattern, in_tuple: bool) -> bool {
                     )
                 })
         }
-        ir::PatternKind::Int(_)
+        ir::PatternKind::Int(_, ..)
         | ir::PatternKind::Char(_)
         | ir::PatternKind::String(_)
         | ir::PatternKind::Unit

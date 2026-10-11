@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `diagnostic registry` (296 codes).
+This catalog covers all registered diagnostics from `diagnostic registry` (311 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -119,6 +119,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1079` | Const declaration requires `:` after the const name. | `const BASE Int = 1;` | `const BASE: Int = 1;` |
 | `E1080` | Const declaration requires `=` before the initializer. | `const BASE: Int 1;` | `const BASE: Int = 1;` |
 | `E1081` | Const declaration must end with `;`. | `const BASE: Int = 1` | `const BASE: Int = 1;` |
+| `E1084` | Associated type (`type X;`) in a trait or impl block is not supported yet. | `trait Shape { type Unit; }` | `trait Shape { fn area(self: Self) -> Int; }` |
+| `E1085` | Associated constant (`const X: T;`) in a trait or impl block is not supported yet. | `trait Shape { const SIDES: Int; }` | `const SIDES: Int = 4;` |
 | `E1090` | Malformed visibility modifier (expected `pub` or `pub(crate)`). | `pub(package) fn main() -> Int { 0 }` | `pub(crate) fn main() -> Int { 0 }` |
 | `E1091` | Visibility modifiers are not supported on `type` aliases or `const` items. | `pub type Count = Int;` | `type Count = Int;` |
 | `E1093` | Invalid intrinsic declaration form (missing `fn`/`;`, body present, or unsupported contracts/generics). | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool { false }` | `intrinsic fn aic_fs_exists_intrinsic(path: String) -> Bool;` |
@@ -126,6 +128,8 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1095` | Malformed source attribute argument list or argument value. | `#[validate(min =)] struct User { age: Int }` | `#[validate(min = 0)] struct User { age: Int }` |
 | `E1096` | Framework source attribute target, duplicate, route/filter, or validation shape error. | `#[route(GET)] fn handler() -> Int { 0 }` | `#[route(method = "GET", path = "/")] fn handler() -> Int { 0 }` |
 | `E1097` | Framework source attribute argument or generated validation rule error. | `#[validate(min = "zero")] struct User { age: Int }` | `#[validate(min = 0)] struct User { age: Int }` |
+| `E1098` | Default method body in a trait block is not supported yet; the signature is kept. | `trait Shape { fn area(self: Self) -> Int { 0 } }` | `trait Shape { fn area(self: Self) -> Int; }` |
+| `E1099` | Parser stopped making progress and hit its step budget (compiler bug). | `fn main() -> Int { 0 }` (report the input that triggers it) | Report the source that triggered it; parsing ends instead of hanging. |
 | `E1100` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1101` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1102` | Name-resolution diagnostic for scopes, imports, or symbol ownership. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
@@ -211,6 +215,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1276` | Continue used outside loop context. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1277` | Use of moved value. | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let y = x; x.value }` | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let y = x; y.value }` |
 | `E1278` | Move attempted while the value is actively borrowed. | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let keep = &x; let y = x; y.value }` | `struct Boxed { value: Int } fn main() -> Int { let x = Boxed { value: 1 }; let y = x; y.value }` |
+| `E1279` | `return` outside a function or closure body. | `const BAD: Int = return 1;` | `const GOOD: Int = 1;` |
 | `E1280` | Closure parameter type must be explicit. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1281` | Closure body type does not match declared closure return type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1282` | Generic function value requires explicit specialization. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
@@ -220,6 +225,14 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1286` | Closure return type mismatches expected Fn type. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1287` | Const initializer used an expression that is not compile-time evaluable. | `const BAD: Int = value();` | `const GOOD: Int = 1 + 2;` |
 | `E1288` | Const declaration type/initializer mismatch or missing initializer. | `const BAD: Int = true;` | `const GOOD: Int = 3;` |
+| `E1289` | Closure assigns to or mutably borrows a captured variable. | `fn main() -> Int { let mut n = 0; let f = \|\| -> () { n = 1; }; f(); n }` | `fn main() -> Int { let mut n = 0; n = 1; n }` |
+| `E1290` | Non-exhaustive match over a tuple, struct, integer, string, char, or other type; lists witness patterns. | `fn f(x: Int) -> Int { match x { 0 => 1 } }` | `fn f(x: Int) -> Int { match x { 0 => 1, _ => 0 } }` |
+| `E1291` | `==`/`!=` on a type without equality, or a generic call that instantiates a compared type parameter with one. | `struct P { x: Int } fn f(a: P, b: P) -> Bool { a == b }` | `struct P { x: Int } fn f(a: P, b: P) -> Bool { a.x == b.x }` |
+| `E1292` | `Map`/`Set` key or `Map` value type the runtime cannot store. | `fn f(m: Map[Float64, Int]) -> Int { 0 }` | `fn f(m: Map[Int, Int]) -> Int { 0 }` |
+| `E1293` | Polymorphic recursion: a generic function calls itself with a growing type argument. | `fn f[T](x: T, n: Int) -> Int { if n == 0 { 0 } else { f(Some(x), n - 1) } }` | `fn f[T](x: T, n: Int) -> Int { if n == 0 { 0 } else { f(x, n - 1) } }` |
+| `E1294` | Recursive struct or enum (contains itself directly or through other types); not supported yet. | `struct Node { next: Option[Node] }` | `struct Node { next_index: Int }` |
+| `E1295` | Invalid entry `main` signature. | `fn main(name: String) -> String { name }` | `fn main() -> Int { 0 }` |
+| `E1296` | Typed hole (`_`) whose type cannot be inferred. | `fn unused(x: _) -> Int { 0 } fn main() -> Int { 0 }` | `fn unused(x: Int) -> Int { 0 } fn main() -> Int { 0 }` |
 | `E1300` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1301` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E2001` | Effectful call used without required effects declaration. | `fn read_cfg() -> Result[String, FsError] { std.fs.read_file("cfg.txt") }` | `fn read_cfg() -> Result[String, FsError] effects { fs } { std.fs.read_file("cfg.txt") }` |
@@ -295,6 +308,7 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E5034` | Backend cannot lower referenced function as a first-class function value. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5035` | Closure helper return type mismatch during backend lowering. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
 | `E5036` | JSON encode/decode for function values is unsupported. | `fn main() -> Int { print_int("x") }` | `fn main() -> Int { print_int(1); 0 }` |
+| `E5037` | Generic instantiation exceeds the nesting depth limit (mutual polymorphic recursion). | `fn f[T](x: T, n: Int) -> Int { g(Some(x), n) }` with `g` calling `f` | Call generic functions with the type parameters they were given. |
 | `E5101` | Self-host LLVM backend has no executable lowering hook for the IR statement or expression shape. | `fn main() -> Int { for value in "abc" { print_int(value); } 0 }` | `fn main() -> Int { for value in 0..3 { print_int(value); } 0 }` |
 | `E5102` | Self-host LLVM backend received an ABI or type form without a deterministic LLVM layout. | `struct Pair { left: Int, right: Int } fn main() -> Pair { Pair { left: 1, right: 2 } }` | `fn main() -> Int { 1 }` |
 | `E5103` | Self-host LLVM backend received invalid native-link metadata. | `native link ""` | `native link "aic_runtime"` |

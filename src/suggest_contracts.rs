@@ -332,8 +332,8 @@ fn collect_requires_from_expr(
         }
         ExprKind::Closure { .. }
         | ExprKind::Continue
-        | ExprKind::Int(_)
-        | ExprKind::Float(_)
+        | ExprKind::Int(_, ..)
+        | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
         | ExprKind::Char(_)
         | ExprKind::String(_)
@@ -508,8 +508,8 @@ fn collect_explicit_returns_from_expr<'a>(
         },
         ExprKind::Closure { .. }
         | ExprKind::Continue
-        | ExprKind::Int(_)
-        | ExprKind::Float(_)
+        | ExprKind::Int(_, ..)
+        | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
         | ExprKind::Char(_)
         | ExprKind::String(_)
@@ -534,8 +534,8 @@ fn return_observation_evidence(
             }
             let rendered = expr_to_string(expr)?;
             let (confidence, reason) = match &expr.kind {
-                ExprKind::Int(_)
-                | ExprKind::Float(_)
+                ExprKind::Int(_, ..)
+                | ExprKind::Float(_, ..)
                 | ExprKind::Bool(_)
                 | ExprKind::Char(_)
                 | ExprKind::String(_)
@@ -646,8 +646,8 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
         }
         ExprKind::Closure { .. }
         | ExprKind::Continue
-        | ExprKind::Int(_)
-        | ExprKind::Float(_)
+        | ExprKind::Int(_, ..)
+        | ExprKind::Float(_, ..)
         | ExprKind::Bool(_)
         | ExprKind::Char(_)
         | ExprKind::String(_)
@@ -715,8 +715,8 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
     const PREC_POSTFIX: u8 = 11;
 
     match &expr.kind {
-        ExprKind::Int(value) => Some(value.to_string()),
-        ExprKind::Float(value) => Some(format_float_literal(*value)),
+        ExprKind::Int(value, ..) => Some(value.to_string()),
+        ExprKind::Float(value, ..) => Some(format_float_literal(*value)),
         ExprKind::Bool(value) => Some(value.to_string()),
         ExprKind::Char(value) => Some(format!("{:?}", value)),
         ExprKind::String(value) => serde_json::to_string(value).ok(),

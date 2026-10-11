@@ -359,8 +359,8 @@ impl<'a> Analyzer<'a> {
                 }
             }
             ast::ExprKind::FieldAccess { base, .. } => self.visit_expr(base, module_name, caller),
-            ast::ExprKind::Int(_)
-            | ast::ExprKind::Float(_)
+            ast::ExprKind::Int(_, ..)
+            | ast::ExprKind::Float(_, ..)
             | ast::ExprKind::Bool(_)
             | ast::ExprKind::Char(_)
             | ast::ExprKind::String(_)
@@ -393,7 +393,7 @@ impl<'a> Analyzer<'a> {
             }
             ast::PatternKind::Wildcard
             | ast::PatternKind::Var(_)
-            | ast::PatternKind::Int(_)
+            | ast::PatternKind::Int(_, ..)
             | ast::PatternKind::Char(_)
             | ast::PatternKind::String(_)
             | ast::PatternKind::Bool(_)
@@ -822,8 +822,8 @@ impl<'a> VariableAnalyzer<'a> {
                 }
             }
             ast::ExprKind::FieldAccess { base, .. } => self.visit_expr(base),
-            ast::ExprKind::Int(_)
-            | ast::ExprKind::Float(_)
+            ast::ExprKind::Int(_, ..)
+            | ast::ExprKind::Float(_, ..)
             | ast::ExprKind::Bool(_)
             | ast::ExprKind::Char(_)
             | ast::ExprKind::String(_)
@@ -868,7 +868,7 @@ fn collect_pattern_vars(pattern: &ast::Pattern, out: &mut Vec<(String, Span)>) {
             }
         }
         ast::PatternKind::Wildcard
-        | ast::PatternKind::Int(_)
+        | ast::PatternKind::Int(_, ..)
         | ast::PatternKind::Char(_)
         | ast::PatternKind::String(_)
         | ast::PatternKind::Bool(_)

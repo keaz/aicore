@@ -233,7 +233,7 @@ fn fixed_width_operator_mismatch_reports_deterministic_diagnostics() {
         dir.path(),
         r#"module app.main;
 
-fn main(a: Int8, b: UInt16) -> Int {
+fn sample(a: Int8, b: UInt16) -> Int {
     let _bad_add = a + b;
     let _bad_cmp = a < b;
     0
@@ -342,7 +342,7 @@ fn fixed_width_integer_pattern_range_diagnostics() {
         dir.path(),
         r#"module app.main;
 
-fn main(x: UInt8, y: Int8) -> Int {
+fn sample(x: UInt8, y: Int8) -> Int {
     let a = match x {
         255u8 => 1,
         256 => 2,
@@ -383,7 +383,7 @@ fn fixed_width_assignments_reject_lossy_or_sign_changing_conversions() {
         dir.path(),
         r#"module app.main;
 
-fn main(a: Int16, b: UInt16) -> Int {
+fn sample(a: Int16, b: UInt16) -> Int {
     let _widen_ok: Int32 = a;
     let _bad_narrow: Int8 = a;
     let _bad_sign: UInt16 = a;
@@ -410,7 +410,7 @@ fn fixed_width_int128_uint128_assignments_enforce_lossless_rules() {
         dir.path(),
         r#"module app.main;
 
-fn main(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
+fn sample(a: Int64, b: UInt64, c: Int128, d: UInt128) -> Int {
     let _ok_signed_widen: Int128 = a;
     let _ok_unsigned_widen: UInt128 = b;
     let _bad_signed_to_unsigned: UInt128 = c;

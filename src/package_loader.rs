@@ -772,8 +772,8 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
             .iter()
             .any(|(_, value, _)| expr_uses_compiler_iterator_helpers(value)),
         ast::ExprKind::FieldAccess { base, .. } => expr_uses_compiler_iterator_helpers(base),
-        ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)

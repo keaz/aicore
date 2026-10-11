@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -199,6 +199,7 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     );
     timings.typecheck_ms = elapsed_ms(typecheck_started);
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
+    apply_typed_hole_types(&mut ir, &typecheck.hole_types);
     apply_let_binding_types(&mut ir, &typecheck.let_binding_types);
     ir.expr_type_hints = typecheck.expr_type_hints.clone();
     apply_call_arg_orders(&mut ir, &typecheck.call_arg_orders);
@@ -434,8 +435,8 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
             }
         }
         ir::ExprKind::FieldAccess { base, .. } => reorder_call_args_in_expr(base, orders),
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -463,52 +464,123 @@ fn intern_type_id(program: &mut ir::Program, repr: &str) -> ir::TypeId {
     id
 }
 
+/// Writes the types the checker inferred for `_` holes in function
+/// signatures and struct fields into the IR, so code generation and later
+/// passes see concrete types.
+fn apply_typed_hole_types(program: &mut ir::Program, holes: &typecheck::TypedHoleTypes) {
+    if holes.fn_params.is_empty() && holes.fn_returns.is_empty() && holes.struct_fields.is_empty() {
+        return;
+    }
+    let param_ids = holes
+        .fn_params
+        .iter()
+        .map(|(key, repr)| (*key, intern_type_id(program, repr)))
+        .collect::<BTreeMap<_, _>>();
+    let return_ids = holes
+        .fn_returns
+        .iter()
+        .map(|(symbol, repr)| (*symbol, intern_type_id(program, repr)))
+        .collect::<BTreeMap<_, _>>();
+    let field_ids = holes
+        .struct_fields
+        .iter()
+        .map(|(key, repr)| (key.clone(), intern_type_id(program, repr)))
+        .collect::<BTreeMap<_, _>>();
+    let apply_fn = |func: &mut ir::Function| {
+        for (idx, param) in func.params.iter_mut().enumerate() {
+            if let Some(type_id) = param_ids.get(&(func.symbol, idx)) {
+                param.ty = *type_id;
+            }
+        }
+        if let Some(type_id) = return_ids.get(&func.symbol) {
+            func.ret_type = *type_id;
+        }
+    };
+    for item in &mut program.items {
+        match item {
+            ir::Item::Function(func) => apply_fn(func),
+            ir::Item::Struct(strukt) => {
+                for field in &mut strukt.fields {
+                    if let Some(type_id) = field_ids.get(&(strukt.name.clone(), field.name.clone()))
+                    {
+                        field.ty = *type_id;
+                    }
+                }
+            }
+            ir::Item::Enum(_) => {}
+            ir::Item::Trait(trait_def) => trait_def.methods.iter_mut().for_each(apply_fn),
+            ir::Item::Impl(impl_def) => impl_def.methods.iter_mut().for_each(apply_fn),
+        }
+    }
+}
+
+/// Let binding types to write into the IR: untyped lets in async functions
+/// (whose frames need concrete local types) and lets annotated with a `_`
+/// hole in any function.
+struct LetTypeFill {
+    types: BTreeMap<ir::SymbolId, ir::TypeId>,
+    hole_type_ids: BTreeSet<ir::TypeId>,
+    fill_untyped: bool,
+}
+
 fn apply_let_binding_types(
     program: &mut ir::Program,
     let_binding_types: &BTreeMap<ir::SymbolId, String>,
 ) {
-    let type_ids = let_binding_types
+    let types = let_binding_types
         .iter()
         .map(|(symbol, repr)| (*symbol, intern_type_id(program, repr)))
         .collect::<BTreeMap<_, _>>();
+    let hole_type_ids = program
+        .types
+        .iter()
+        .filter(|ty| ty.repr.contains("<?>"))
+        .map(|ty| ty.id)
+        .collect::<BTreeSet<_>>();
+    let async_fill = LetTypeFill {
+        types: types.clone(),
+        hole_type_ids: hole_type_ids.clone(),
+        fill_untyped: true,
+    };
+    let sync_fill = LetTypeFill {
+        types,
+        hole_type_ids,
+        fill_untyped: false,
+    };
+    let pick = |is_async: bool| if is_async { &async_fill } else { &sync_fill };
     for item in &mut program.items {
         match item {
             ir::Item::Function(func) => {
-                if func.is_async {
-                    apply_let_binding_types_in_block(&mut func.body, &type_ids);
-                }
+                apply_let_binding_types_in_block(&mut func.body, pick(func.is_async));
             }
             ir::Item::Struct(_) => {}
             ir::Item::Enum(_) => {}
             ir::Item::Trait(trait_def) => {
                 for method in &mut trait_def.methods {
-                    if method.is_async {
-                        apply_let_binding_types_in_block(&mut method.body, &type_ids);
-                    }
+                    apply_let_binding_types_in_block(&mut method.body, pick(method.is_async));
                 }
             }
             ir::Item::Impl(impl_def) => {
                 for method in &mut impl_def.methods {
-                    if method.is_async {
-                        apply_let_binding_types_in_block(&mut method.body, &type_ids);
-                    }
+                    apply_let_binding_types_in_block(&mut method.body, pick(method.is_async));
                 }
             }
         }
     }
 }
 
-fn apply_let_binding_types_in_block(
-    block: &mut ir::Block,
-    let_binding_types: &BTreeMap<ir::SymbolId, ir::TypeId>,
-) {
+fn apply_let_binding_types_in_block(block: &mut ir::Block, let_binding_types: &LetTypeFill) {
     for stmt in &mut block.stmts {
         match stmt {
             ir::Stmt::Let {
                 symbol, ty, expr, ..
             } => {
-                if ty.is_none() {
-                    if let Some(type_id) = let_binding_types.get(symbol) {
+                let replace = match ty {
+                    None => let_binding_types.fill_untyped,
+                    Some(declared) => let_binding_types.hole_type_ids.contains(declared),
+                };
+                if replace {
+                    if let Some(type_id) = let_binding_types.types.get(symbol) {
                         *ty = Some(*type_id);
                     }
                 }
@@ -530,10 +602,7 @@ fn apply_let_binding_types_in_block(
     }
 }
 
-fn apply_let_binding_types_in_expr(
-    expr: &mut ir::Expr,
-    let_binding_types: &BTreeMap<ir::SymbolId, ir::TypeId>,
-) {
+fn apply_let_binding_types_in_expr(expr: &mut ir::Expr, let_binding_types: &LetTypeFill) {
     match &mut expr.kind {
         ir::ExprKind::Call { callee, args, .. } => {
             apply_let_binding_types_in_expr(callee, let_binding_types);
@@ -601,8 +670,8 @@ fn apply_let_binding_types_in_expr(
         ir::ExprKind::FieldAccess { base, .. } => {
             apply_let_binding_types_in_expr(base, let_binding_types);
         }
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -819,8 +888,8 @@ fn attach_call_symbols_in_expr(expr: &mut ir::Expr, symbols: &BTreeMap<ir::NodeI
             }
         }
         ir::ExprKind::Closure { body, .. } => attach_call_symbols_in_block(body, symbols),
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)
@@ -903,8 +972,8 @@ fn qualify_call_targets_in_expr(expr: &mut ir::Expr, modules: &BTreeMap<ir::Node
             }
         }
         ir::ExprKind::FieldAccess { base, .. } => qualify_call_targets_in_expr(base, modules),
-        ir::ExprKind::Int(_)
-        | ir::ExprKind::Float(_)
+        ir::ExprKind::Int(_, ..)
+        | ir::ExprKind::Float(_, ..)
         | ir::ExprKind::Bool(_)
         | ir::ExprKind::Char(_)
         | ir::ExprKind::String(_)

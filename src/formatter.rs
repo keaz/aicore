@@ -631,7 +631,7 @@ fn format_expr(
     }
 
     match &expr.kind {
-        ir::ExprKind::Int(v) => {
+        ir::ExprKind::Int(v, ..) => {
             if let Some(meta) = expr.int_literal_metadata() {
                 out.push_str(&meta.raw_literal_text);
                 out.push_str(&meta.suffix_text);
@@ -639,7 +639,7 @@ fn format_expr(
                 out.push_str(&v.to_string());
             }
         }
-        ir::ExprKind::Float(v) => {
+        ir::ExprKind::Float(v, ..) => {
             if let Some(meta) = expr.float_literal_metadata() {
                 out.push_str(&meta.raw_literal_text);
                 out.push_str(&meta.suffix_text);
@@ -914,7 +914,7 @@ fn extract_vec_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Rendered
             mutable,
             expr,
             ..
-        } if *mutable && matches!(expr.kind, ir::ExprKind::Int(0)) => name.as_str(),
+        } if *mutable && matches!(expr.kind, ir::ExprKind::Int(0, ..)) => name.as_str(),
         _ => return None,
     };
 
@@ -1130,7 +1130,7 @@ fn is_increment_expr(expr: &ir::Expr, target: &str) -> bool {
     };
     *op == BinOp::Add
         && matches!(&lhs.kind, ir::ExprKind::Var(name) if name == target)
-        && matches!(&rhs.kind, ir::ExprKind::Int(1))
+        && matches!(&rhs.kind, ir::ExprKind::Int(1, ..))
 }
 
 fn render_float_literal(value: f64) -> String {
@@ -1217,7 +1217,7 @@ fn format_pattern(out: &mut String, pattern: &ir::Pattern) {
     match &pattern.kind {
         ir::PatternKind::Wildcard => out.push('_'),
         ir::PatternKind::Var(v) => out.push_str(v),
-        ir::PatternKind::Int(v) => {
+        ir::PatternKind::Int(v, ..) => {
             if let Some(meta) = pattern.int_literal_metadata() {
                 out.push_str(&meta.raw_literal_text);
                 out.push_str(&meta.suffix_text);

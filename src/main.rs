@@ -4187,8 +4187,8 @@ fn eval_repl_expr(
     use aicore::ast::{BinOp, ExprKind, UnaryOp};
 
     match &expr.kind {
-        ExprKind::Int(v) => Ok(ReplValue::Int(*v)),
-        ExprKind::Float(v) => Ok(ReplValue::Float(*v)),
+        ExprKind::Int(v, ..) => Ok(ReplValue::Int(*v)),
+        ExprKind::Float(v, ..) => Ok(ReplValue::Float(*v)),
         ExprKind::Bool(v) => Ok(ReplValue::Bool(*v)),
         ExprKind::Char(v) => Ok(ReplValue::Int(*v as i64)),
         ExprKind::String(v) => Ok(ReplValue::String(v.clone())),
@@ -4481,8 +4481,8 @@ fn repl_apply_order<T: PartialOrd>(op: aicore::ast::BinOp, left: T, right: T) ->
 
 fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
     match kind {
-        aicore::ast::ExprKind::Int(_) => "integer literal",
-        aicore::ast::ExprKind::Float(_) => "float literal",
+        aicore::ast::ExprKind::Int(_, ..) => "integer literal",
+        aicore::ast::ExprKind::Float(_, ..) => "float literal",
         aicore::ast::ExprKind::Bool(_) => "bool literal",
         aicore::ast::ExprKind::Char(_) => "char literal",
         aicore::ast::ExprKind::String(_) => "string literal",

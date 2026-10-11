@@ -1866,8 +1866,8 @@ fn collect_expr_semantic_tokens(
         ast::ExprKind::Var(name) => {
             push_named_semantic_token(tokens, source, name, expr.span, TOKEN_VARIABLE, 0);
         }
-        ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
@@ -1910,7 +1910,7 @@ fn collect_pattern_semantic_tokens(
             );
         }
         ast::PatternKind::Wildcard
-        | ast::PatternKind::Int(_)
+        | ast::PatternKind::Int(_, ..)
         | ast::PatternKind::Char(_)
         | ast::PatternKind::String(_)
         | ast::PatternKind::Bool(_)
@@ -2672,8 +2672,8 @@ fn collect_expr_call_sites(
         ast::ExprKind::FieldAccess { base, .. } => {
             collect_expr_call_sites(base, file, caller_module, caller_name, call_sites_by_caller);
         }
-        ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
@@ -3014,8 +3014,8 @@ fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<
         ast::ExprKind::FieldAccess { base, .. } => {
             collect_expr_folding_ranges(base, source, ranges)
         }
-        ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
@@ -3472,8 +3472,8 @@ fn collect_expr_selection_spans(
         ast::ExprKind::FieldAccess { base, .. } => {
             collect_expr_selection_spans(base, offset, stmt_spans, block_spans, expr_spans);
         }
-        ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
@@ -4087,8 +4087,8 @@ fn collect_expr_inlay_hints(
         ast::ExprKind::Break { expr: None }
         | ast::ExprKind::Return { expr: None }
         | ast::ExprKind::Continue
-        | ast::ExprKind::Int(_)
-        | ast::ExprKind::Float(_)
+        | ast::ExprKind::Int(_, ..)
+        | ast::ExprKind::Float(_, ..)
         | ast::ExprKind::Bool(_)
         | ast::ExprKind::Char(_)
         | ast::ExprKind::String(_)
@@ -4102,8 +4102,8 @@ fn infer_expr_type(
     signature_lookup: &BTreeMap<String, String>,
 ) -> Option<String> {
     match &expr.kind {
-        ast::ExprKind::Int(_) => Some("Int".to_string()),
-        ast::ExprKind::Float(_) => Some("Float".to_string()),
+        ast::ExprKind::Int(_, ..) => Some("Int".to_string()),
+        ast::ExprKind::Float(_, ..) => Some("Float".to_string()),
         ast::ExprKind::Bool(_) => Some("Bool".to_string()),
         ast::ExprKind::Char(_) => Some("Char".to_string()),
         ast::ExprKind::String(_) => Some("String".to_string()),

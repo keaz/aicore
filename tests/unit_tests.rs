@@ -192,8 +192,8 @@ fn collect_ir_call_paths(expr: &aicore::ir::Expr, out: &mut Vec<String>) {
         aicore::ir::ExprKind::Break { expr: None }
         | aicore::ir::ExprKind::Return { expr: None }
         | aicore::ir::ExprKind::Continue
-        | aicore::ir::ExprKind::Int(_)
-        | aicore::ir::ExprKind::Float(_)
+        | aicore::ir::ExprKind::Int(_, ..)
+        | aicore::ir::ExprKind::Float(_, ..)
         | aicore::ir::ExprKind::Bool(_)
         | aicore::ir::ExprKind::Char(_)
         | aicore::ir::ExprKind::String(_)
@@ -292,8 +292,8 @@ fn collect_ir_call_paths_and_symbols(
         aicore::ir::ExprKind::Break { expr: None }
         | aicore::ir::ExprKind::Return { expr: None }
         | aicore::ir::ExprKind::Continue
-        | aicore::ir::ExprKind::Int(_)
-        | aicore::ir::ExprKind::Float(_)
+        | aicore::ir::ExprKind::Int(_, ..)
+        | aicore::ir::ExprKind::Float(_, ..)
         | aicore::ir::ExprKind::Bool(_)
         | aicore::ir::ExprKind::Char(_)
         | aicore::ir::ExprKind::String(_)
@@ -713,7 +713,7 @@ fn main() -> Int {
 #[test]
 fn unit_typecheck_rejects_mixed_float_width_ops_with_stable_diagnostics() {
     let src = r#"
-fn main(a: Float32, b: Float64) -> Int {
+fn sample(a: Float32, b: Float64) -> Int {
     let _arith = a + b;
     let _cmp = a < b;
     let _eq = a == b;
@@ -1709,7 +1709,7 @@ fn unit_template_literal_requires_string_interpolation_values() {
         r#"
 import std.string;
 
-fn main(age: Int) -> String {
+fn sample(age: Int) -> String {
     f"age={age}"
 }
 "#,
@@ -2663,7 +2663,7 @@ fn unit_typecheck_accepts_isize_usize_and_uint_alias_lossless_assignments() {
     let src = r#"
 fn passthrough_uint(x: UInt) -> USize { x }
 
-fn main(signed: ISize, narrow: UInt32) -> Int {
+fn sample(signed: ISize, narrow: UInt32) -> Int {
     let _signed_copy: ISize = signed;
     let wide_unsigned: USize = narrow;
     let alias_unsigned: UInt = wide_unsigned;
@@ -2681,7 +2681,7 @@ fn main(signed: ISize, narrow: UInt32) -> Int {
 #[test]
 fn unit_typecheck_rejects_usize_int_sign_changes_and_operator_kind_mismatch() {
     let src = r#"
-fn main(a: USize, b: Int) -> Int {
+fn sample(a: USize, b: Int) -> Int {
     let _bad_to_int: Int = a;
     let _bad_to_usize: USize = b;
     let _bad_op = a + b;

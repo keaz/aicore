@@ -2343,8 +2343,8 @@ impl<'a> Generator<'a> {
             }
             ir::ExprKind::Closure { .. }
             | ir::ExprKind::Var(_)
-            | ir::ExprKind::Int(_)
-            | ir::ExprKind::Float(_)
+            | ir::ExprKind::Int(_, ..)
+            | ir::ExprKind::Float(_, ..)
             | ir::ExprKind::Bool(_)
             | ir::ExprKind::Char(_)
             | ir::ExprKind::String(_)
@@ -4569,7 +4569,7 @@ impl<'a> Generator<'a> {
         };
         let expected_ty = expected_ty.or(hinted_ty.as_ref());
         match &expr.kind {
-            ir::ExprKind::Int(v) => {
+            ir::ExprKind::Int(v, ..) => {
                 let literal_ty = self
                     .int_literal_type_hint(expr, expected_ty)
                     .unwrap_or(LType::Int);
@@ -4578,7 +4578,7 @@ impl<'a> Generator<'a> {
                     repr: Some(self.int_literal_llvm_repr(expr, *v)),
                 })
             }
-            ir::ExprKind::Float(v) => {
+            ir::ExprKind::Float(v, ..) => {
                 let literal_ty = self.float_literal_type_hint(expr, expected_ty);
                 if literal_ty == LType::Float32 {
                     let narrowed = self.new_temp();
@@ -5439,12 +5439,24 @@ impl<'a> Generator<'a> {
                 .and_then(|symbol| self.function_modules_by_symbol.get(&symbol))
                 .map(|module| module != "std" && !module.starts_with("std."))
                 .unwrap_or(false);
+        let exact_sig = call_symbol.and_then(|symbol| self.fn_sigs_by_symbol.get(&symbol).cloned());
         let builtin_name = if resolves_to_user_function {
             ""
         } else {
-            qualified_builtin_intrinsic(call_path).unwrap_or(name)
+            match qualified_builtin_intrinsic(call_path) {
+                // A qualified call such as `proc.wait(h)` may lower straight to
+                // its intrinsic only when the std wrapper has the intrinsic's
+                // signature. Wrappers that convert arguments or results
+                // (`ProcHandle` -> `Int`, `Int` -> `ProcExitStatus`) must run.
+                Some(intrinsic)
+                    if !self.wrapper_matches_intrinsic(exact_sig.as_ref(), intrinsic) =>
+                {
+                    ""
+                }
+                Some(intrinsic) => intrinsic,
+                None => name,
+            }
         };
-        let exact_sig = call_symbol.and_then(|symbol| self.fn_sigs_by_symbol.get(&symbol).cloned());
         let _sig_guard = if let Some(sig) = exact_sig.clone() {
             self.call_sig_overrides.push(CallSigOverride {
                 name: name.to_string(),
@@ -7091,6 +7103,30 @@ impl<'a> Generator<'a> {
         }
 
         let (func, instance) = matches.remove(0);
+        // Polymorphic recursion (`f[T]` calling `f[Option[T]]`) would need
+        // infinitely many instances; stop with a diagnostic instead of
+        // generating forever. The checker rejects the direct form (E1293).
+        let depth = instance
+            .bindings
+            .values()
+            .map(|ty| type_nesting_depth(ty))
+            .max()
+            .unwrap_or(0);
+        if depth > MAX_GENERIC_INSTANCE_DEPTH {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E5037",
+                    format!(
+                        "generic instantiation of '{}' exceeds nesting depth {}; the program uses polymorphic recursion",
+                        name, MAX_GENERIC_INSTANCE_DEPTH
+                    ),
+                    self.file,
+                    span,
+                )
+                .with_help("call the generic function with the same type parameters it was given"),
+            );
+            return None;
+        }
         let inserted = self.register_generic_instance(name, &instance);
         if inserted {
             self.defer_monomorphized_function(&func, &instance);
@@ -7946,6 +7982,13 @@ impl<'a> Generator<'a> {
         captures.into_iter().collect()
     }
 
+    fn wrapper_matches_intrinsic(&self, wrapper: Option<&FnSig>, intrinsic: &str) -> bool {
+        let (Some(wrapper), Some(intrinsic)) = (wrapper, self.fn_sigs.get(intrinsic)) else {
+            return true;
+        };
+        wrapper.params == intrinsic.params && wrapper.ret == intrinsic.ret
+    }
+
     pub(super) fn fn_sig(&self, name: &str) -> Option<&FnSig> {
         self.call_sig_overrides
             .iter()
@@ -8104,6 +8147,25 @@ fn type_uses_generic(ty: &str, generic: &str) -> bool {
     extract_generic_args(ty)
         .map(|args| args.iter().any(|arg| type_uses_generic(arg, generic)))
         .unwrap_or(false)
+}
+
+/// Type arguments deeper than this indicate unbounded monomorphization.
+const MAX_GENERIC_INSTANCE_DEPTH: usize = 12;
+
+fn type_nesting_depth(ty: &str) -> usize {
+    let mut depth = 0usize;
+    let mut max = 0usize;
+    for ch in ty.chars() {
+        match ch {
+            '[' => {
+                depth += 1;
+                max = max.max(depth);
+            }
+            ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    max
 }
 
 pub(super) fn parse_raw_int_literal_magnitude(text: &str) -> Option<u128> {

@@ -870,8 +870,8 @@ fn render_generic_params(generics: &[ir::GenericParam]) -> String {
 
 fn render_expr(expr: &ir::Expr) -> String {
     match &expr.kind {
-        ir::ExprKind::Int(v) => v.to_string(),
-        ir::ExprKind::Float(v) => render_float_literal(*v),
+        ir::ExprKind::Int(v, ..) => v.to_string(),
+        ir::ExprKind::Float(v, ..) => render_float_literal(*v),
         ir::ExprKind::Bool(v) => v.to_string(),
         ir::ExprKind::Char(v) => format!("{:?}", v),
         ir::ExprKind::String(s) => format!("\"{}\"", s),

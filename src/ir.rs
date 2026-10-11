@@ -2,7 +2,6 @@ use crate::ast::{Attribute, BinOp, UnaryOp, Visibility};
 use crate::span::Span;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 pub const CURRENT_IR_SCHEMA_VERSION: u32 = 1;
@@ -11,55 +10,8 @@ pub use crate::ast::{
     IntLiteralMetadata, IntLiteralSignedness, IntLiteralSuffix, IntLiteralWidth,
 };
 
-type IntLiteralKey = (usize, usize, i64);
-type FloatLiteralKey = (usize, usize);
-
-thread_local! {
-    static INT_LITERAL_METADATA_STORE: RefCell<BTreeMap<IntLiteralKey, IntLiteralMetadata>> =
-        RefCell::new(BTreeMap::new());
-    static FLOAT_LITERAL_METADATA_STORE: RefCell<BTreeMap<FloatLiteralKey, FloatLiteralMetadata>> =
-        RefCell::new(BTreeMap::new());
-}
-
 pub fn canonical_primitive_type_name(name: &str) -> &str {
     crate::ast::canonical_primitive_type_name(name)
-}
-
-pub fn clear_int_literal_metadata() {
-    INT_LITERAL_METADATA_STORE.with(|store| {
-        let mut guard = store.borrow_mut();
-        guard.clear();
-    });
-}
-
-pub fn clear_float_literal_metadata() {
-    FLOAT_LITERAL_METADATA_STORE.with(|store| {
-        let mut guard = store.borrow_mut();
-        guard.clear();
-    });
-}
-
-pub fn record_int_literal_metadata(span: Span, value: i64, metadata: IntLiteralMetadata) {
-    INT_LITERAL_METADATA_STORE.with(|store| {
-        let mut guard = store.borrow_mut();
-        guard.insert((span.start, span.end, value), metadata);
-    });
-}
-
-pub fn record_float_literal_metadata(span: Span, metadata: FloatLiteralMetadata) {
-    FLOAT_LITERAL_METADATA_STORE.with(|store| {
-        let mut guard = store.borrow_mut();
-        guard.insert((span.start, span.end), metadata);
-    });
-}
-
-pub fn lookup_int_literal_metadata(span: Span, value: i64) -> Option<IntLiteralMetadata> {
-    INT_LITERAL_METADATA_STORE
-        .with(|store| store.borrow().get(&(span.start, span.end, value)).cloned())
-}
-
-pub fn lookup_float_literal_metadata(span: Span) -> Option<FloatLiteralMetadata> {
-    FLOAT_LITERAL_METADATA_STORE.with(|store| store.borrow().get(&(span.start, span.end)).cloned())
 }
 
 fn default_schema_version() -> u32 {
@@ -389,15 +341,15 @@ pub struct Expr {
 
 impl Expr {
     pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
-        match self.kind {
-            ExprKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+        match &self.kind {
+            ExprKind::Int(_, meta) => meta.as_deref().cloned(),
             _ => None,
         }
     }
 
     pub fn float_literal_metadata(&self) -> Option<FloatLiteralMetadata> {
-        match self.kind {
-            ExprKind::Float(_) => lookup_float_literal_metadata(self.span),
+        match &self.kind {
+            ExprKind::Float(_, meta) => meta.as_deref().cloned(),
             _ => None,
         }
     }
@@ -405,8 +357,11 @@ impl Expr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ExprKind {
-    Int(i64),
-    Float(f64),
+    /// Integer literal; the metadata is present when the literal has a
+    /// type suffix such as `65u8`.
+    Int(i64, Option<Box<IntLiteralMetadata>>),
+    /// Float literal; the metadata is present for `f32`/`f64` suffixes.
+    Float(f64, Option<Box<FloatLiteralMetadata>>),
     Bool(bool),
     Char(char),
     String(String),
@@ -503,8 +458,8 @@ pub struct Pattern {
 
 impl Pattern {
     pub fn int_literal_metadata(&self) -> Option<IntLiteralMetadata> {
-        match self.kind {
-            PatternKind::Int(value) => lookup_int_literal_metadata(self.span, value),
+        match &self.kind {
+            PatternKind::Int(_, meta) => meta.as_deref().cloned(),
             _ => None,
         }
     }
@@ -520,7 +475,7 @@ pub struct StructPatternField {
 pub enum PatternKind {
     Wildcard,
     Var(String),
-    Int(i64),
+    Int(i64, Option<Box<IntLiteralMetadata>>),
     Bool(bool),
     Char(char),
     String(String),

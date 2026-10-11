@@ -1,0 +1,33 @@
+module examples.core.check_build_parity;
+
+import std.io;
+import std.vec;
+
+// Programs that pass `aic check` also build. Each function below used to
+// pass the checker and then fail in code generation.
+
+// Suffixed literals keep their type in every module of a program, so
+// `65u8` is a UInt8 even though this file imports std modules.
+fn byte_count() -> Int {
+    let mut raw: Vec[UInt8] = vec.new_vec();
+    raw = vec.push(raw, 65u8);
+    raw = vec.push(raw, 255u8);
+    vec.vec_len(raw)
+}
+
+// A generic function may compare its type parameter with `==`; every call
+// instantiates it with a type that supports equality (Int, String, ...).
+fn same[T](a: T, b: T) -> Bool {
+    a == b
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let bytes = byte_count();
+    let equal = if same(7, 7) && same("a", "a") && !same(1, 2) {
+        1
+    } else {
+        0
+    };
+    print_int(40 + bytes * equal);
+    0
+}
