@@ -632,9 +632,11 @@ pub enum ExprKind {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         arg_names: Vec<Option<String>>,
     },
+    /// `|x: Int| -> Int { .. }`, `|x| { .. }` or `|x| x + 1`; without
+    /// `-> T` the checker infers the return type from the body.
     Closure {
         params: Vec<ClosureParam>,
-        ret_type: TypeExpr,
+        ret_type: Option<TypeExpr>,
         body: Block,
     },
     If {

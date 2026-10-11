@@ -3396,13 +3396,36 @@ impl<'a> Parser<'a> {
                 "expected '|' to end closure parameters",
             )?;
         }
-        self.expect(
-            |k| matches!(k, TokenKind::Arrow),
-            "E1074",
-            "expected '->' after closure parameters",
-        )?;
-        let ret_type = self.parse_type()?;
-        let body = self.parse_block()?;
+        // `-> T { .. }` annotates the return type; otherwise the body is a
+        // block or a single expression and the return type is inferred.
+        let (ret_type, body) = if self.at_kind(|k| matches!(k, TokenKind::Arrow)) {
+            self.bump();
+            let ret_type = self.parse_type()?;
+            if !self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                let span = self.current_span();
+                self.diagnostics.push(Diagnostic::error(
+                    "E1074",
+                    "a closure with a return type needs a block body: `|x| -> T { .. }`",
+                    self.file,
+                    span,
+                ));
+                return None;
+            }
+            (Some(ret_type), self.parse_block()?)
+        } else if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+            (None, self.parse_block()?)
+        } else {
+            let value = self.parse_nested_expr()?;
+            let span = value.span;
+            (
+                None,
+                Block {
+                    stmts: Vec::new(),
+                    tail: Some(Box::new(value)),
+                    span,
+                },
+            )
+        };
         let end = body.span.end;
         Some(Expr {
             kind: ExprKind::Closure {
@@ -6336,6 +6359,43 @@ fn f(method: String, c: Char, u: User) -> Int {
         RangeBound, RANGE_BUILTIN, RANGE_FROM_BUILTIN, RANGE_FULL_BUILTIN, RANGE_TO_BUILTIN,
         RANGE_TO_INCLUSIVE_BUILTIN,
     };
+
+    #[test]
+    fn parses_closures_with_and_without_return_annotations() {
+        let src = "fn f() -> Int { let a = |x: Int| -> Int { x }; let b = |x| { x }; let c = |x, y| x + y; let d = || 1; 0 }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let closure = |idx: usize| match &f.body.stmts[idx] {
+            Stmt::Let { expr, .. } => match &expr.kind {
+                ExprKind::Closure {
+                    params,
+                    ret_type,
+                    body,
+                } => (
+                    params.len(),
+                    ret_type.is_some(),
+                    body.stmts.len(),
+                    body.tail.is_some(),
+                ),
+                other => panic!("expected closure, found {other:?}"),
+            },
+            other => panic!("expected let, found {other:?}"),
+        };
+        assert_eq!(closure(0), (1, true, 0, true));
+        assert_eq!(closure(1), (1, false, 0, true));
+        assert_eq!(closure(2), (2, false, 0, true));
+        assert_eq!(closure(3), (0, false, 0, true));
+
+        let (_, diagnostics) = parse("fn f() -> Int { let a = |x: Int| -> Int x; 0 }", "test.aic");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "E1074"),
+            "{diagnostics:#?}"
+        );
+    }
 
     #[test]
     fn parses_range_float_negative_and_binding_patterns() {

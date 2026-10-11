@@ -192,3 +192,8 @@ fn golden_case32_loop_labels() {
 fn golden_case33_ranges_and_patterns() {
     run_golden_case("case33_ranges_and_patterns.aic");
 }
+
+#[test]
+fn golden_case34_closures() {
+    run_golden_case("case34_closures.aic");
+}

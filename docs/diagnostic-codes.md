@@ -76,6 +76,7 @@ Recent core-language additions:
 - `E1107`: duplicate method in a trait, or a trait impl that is missing trait methods.
 - `E1108`: trait impl method whose signature or receiver differs from the trait, or a method defined twice in one impl.
 - `E1109`: trait impl method that the trait does not declare.
+- `E1069-E1074`: `Fn(...) -> ...` type and closure literal parsing errors (`E1074`: a closure with `-> T` needs a block body).
 - `E1103`: unknown trait referenced in `impl`.
 - `E1104`: trait impl arity mismatch.
 - `E1105`: conflicting duplicate trait impl.

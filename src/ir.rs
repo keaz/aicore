@@ -586,6 +586,66 @@ pub enum PatternKind {
 /// bodies, contracts, struct defaults and invariants), parents before
 /// children. `f` may replace an expression; the walk then descends into the
 /// replacement.
+/// Whether `block` returns from its function or closure: a `return`
+/// statement or expression anywhere in it, except inside nested closures
+/// (their `return` leaves the nested closure).
+pub fn block_contains_return(block: &Block) -> bool {
+    fn in_block(block: &Block) -> bool {
+        block.stmts.iter().any(|stmt| match stmt {
+            Stmt::Return { .. } => true,
+            Stmt::Let { expr: value, .. }
+            | Stmt::Assign { expr: value, .. }
+            | Stmt::Expr { expr: value, .. }
+            | Stmt::Assert { expr: value, .. } => in_expr(value),
+        }) || block.tail.as_deref().is_some_and(in_expr)
+    }
+    fn in_expr(e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Return { .. } => true,
+            ExprKind::Closure { .. } => false,
+            ExprKind::Call { callee, args, .. } => in_expr(callee) || args.iter().any(in_expr),
+            ExprKind::TemplateLiteral { args, .. } => args.iter().any(in_expr),
+            ExprKind::Loop { body, .. }
+            | ExprKind::UnsafeBlock { block: body }
+            | ExprKind::Block { block: body } => in_block(body),
+            ExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => in_expr(cond) || in_block(then_block) || in_block(else_block),
+            ExprKind::While { cond, body, .. } => in_expr(cond) || in_block(body),
+            ExprKind::Break { expr: value, .. } => value.as_deref().is_some_and(in_expr),
+            ExprKind::Match {
+                expr: scrutinee,
+                arms,
+            } => {
+                in_expr(scrutinee)
+                    || arms
+                        .iter()
+                        .any(|arm| arm.guard.as_ref().is_some_and(in_expr) || in_expr(&arm.body))
+            }
+            ExprKind::Binary { lhs, rhs, .. } => in_expr(lhs) || in_expr(rhs),
+            ExprKind::Unary { expr: inner, .. }
+            | ExprKind::Borrow { expr: inner, .. }
+            | ExprKind::Await { expr: inner }
+            | ExprKind::Try { expr: inner }
+            | ExprKind::FieldAccess { base: inner, .. } => in_expr(inner),
+            ExprKind::StructInit { fields, .. } => {
+                fields.iter().any(|(_, value, _)| in_expr(value))
+            }
+            ExprKind::Int(..)
+            | ExprKind::Float(..)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::String(_)
+            | ExprKind::Unit
+            | ExprKind::Var(_)
+            | ExprKind::Continue { .. } => false,
+        }
+    }
+    in_block(block)
+}
+
 pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
     fn function(func: &mut Function, f: &mut dyn FnMut(&mut Expr)) {
         if let Some(req) = func.requires.as_mut() {

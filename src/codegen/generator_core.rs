@@ -7803,8 +7803,14 @@ impl<'a> Generator<'a> {
     ) -> Option<Value> {
         let capture_names = self.collect_closure_capture_names(params, body);
         let mut captures = Vec::new();
-        for name in capture_names {
+        for (name, is_callee) in capture_names {
             let Some(local) = find_local(&fctx.vars, &name) else {
+                // A callee that is no local names a function (a generic or
+                // std function is not in `fn_sigs` yet); the call resolves
+                // it as usual.
+                if is_callee {
+                    continue;
+                }
                 self.diagnostics.push(Diagnostic::error(
                     "E5031",
                     format!("closure capture '{}' is not available in this scope", name),
@@ -8115,8 +8121,10 @@ impl<'a> Generator<'a> {
         &self,
         params: &[ir::ClosureParam],
         body: &ir::Block,
-    ) -> Vec<String> {
+    ) -> Vec<(String, bool)> {
         let mut known_functions = self.fn_sigs.keys().cloned().collect::<BTreeSet<_>>();
+        known_functions.extend(self.variant_ctors.keys().cloned());
+        known_functions.extend(self.generic_fn_instances.keys().cloned());
         known_functions.insert("Some".to_string());
         known_functions.insert("None".to_string());
         known_functions.insert("Ok".to_string());
@@ -8128,7 +8136,24 @@ impl<'a> Generator<'a> {
             .collect::<BTreeSet<_>>()];
         let mut captures = BTreeSet::new();
         collect_closure_captures_block(body, &mut scopes, &mut captures, &known_functions);
-        captures.into_iter().collect()
+        // Names used only as callees are marked: they may be functions.
+        captures
+            .into_iter()
+            .filter_map(|name| match name.strip_prefix(CALLEE_CAPTURE_MARK) {
+                Some(callee) => Some((callee.to_string(), true)),
+                None => Some((name, false)),
+            })
+            .fold(
+                Vec::<(String, bool)>::new(),
+                |mut out, (name, is_callee)| {
+                    match out.iter_mut().find(|(existing, _)| *existing == name) {
+                        // Also used as a value: a real capture.
+                        Some(entry) => entry.1 &= is_callee,
+                        None => out.push((name, is_callee)),
+                    }
+                    out
+                },
+            )
     }
 
     fn wrapper_matches_intrinsic(&self, wrapper: Option<&FnSig>, intrinsic: &str) -> bool {

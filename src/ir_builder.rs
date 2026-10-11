@@ -611,7 +611,14 @@ impl Builder {
                         span: param.span,
                     })
                     .collect(),
-                ret_type: self.lower_type(ret_type),
+                // An omitted return type is a hole the checker fills in.
+                ret_type: match ret_type {
+                    Some(ty) => self.lower_type(ty),
+                    None => self.lower_type(&ast::TypeExpr {
+                        kind: ast::TypeKind::Hole,
+                        span: expr.span,
+                    }),
+                },
                 body: self.lower_block(body),
             },
             ast::ExprKind::If {

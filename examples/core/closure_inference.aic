@@ -1,0 +1,26 @@
+module examples.core.closure_inference;
+
+import std.io;
+
+// Closures without type annotations: parameter types come from the
+// expected `Fn` type, return types from the body.
+
+struct Pipeline {
+    stage: Fn(Int) -> Int,
+}
+
+fn compose[A, B, C](f: Fn(A) -> B, g: Fn(B) -> C) -> Fn(A) -> C {
+    |x| g(f(x))
+}
+
+fn adder(n: Int) -> Fn(Int) -> Int {
+    |x| x + n
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let double = |x: Int| x * 2;
+    let p = Pipeline {stage: compose(adder(1), double)};
+    // (20 + 1) * 2 = 42
+    print_int(p.stage(20));
+    0
+}

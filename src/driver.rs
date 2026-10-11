@@ -200,6 +200,7 @@ fn run_frontend_passes(path: &Path, options: FrontendOptions) -> anyhow::Result<
     ir.generic_instantiations = typecheck.generic_instantiations.clone();
     apply_typed_hole_types(&mut ir, &typecheck.hole_types);
     apply_expr_rewrites(&mut ir, &typecheck.expr_rewrites);
+    apply_closure_signatures(&mut ir, &typecheck.closure_signatures);
     apply_variant_callees(&mut ir, &typecheck.variant_callees);
     apply_struct_variants(
         &mut ir,
@@ -471,6 +472,56 @@ fn intern_type_id(program: &mut ir::Program, repr: &str) -> ir::TypeId {
         repr: repr.to_string(),
     });
     id
+}
+
+/// Writes the parameter and return types the checker found for closures
+/// that omit them (`|x| x + 1`), so code generation sees every closure
+/// fully typed.
+fn apply_closure_signatures(
+    program: &mut ir::Program,
+    signatures: &BTreeMap<ir::NodeId, typecheck::ClosureSignature>,
+) {
+    if signatures.is_empty() {
+        return;
+    }
+    let concrete = |repr: &str| !repr.contains("<?>");
+    let mut ids: BTreeMap<ir::NodeId, (Vec<Option<ir::TypeId>>, Option<ir::TypeId>)> =
+        BTreeMap::new();
+    for (node, signature) in signatures {
+        let params = signature
+            .params
+            .iter()
+            .map(|repr| concrete(repr).then(|| intern_type_id(program, repr)))
+            .collect();
+        let ret = concrete(&signature.ret).then(|| intern_type_id(program, &signature.ret));
+        ids.insert(*node, (params, ret));
+    }
+    let holes = program
+        .types
+        .iter()
+        .filter(|ty| ty.repr == "<?>")
+        .map(|ty| ty.id)
+        .collect::<BTreeSet<_>>();
+    ir::visit_exprs_mut(program, &mut |expr| {
+        let Some((param_ids, ret_id)) = ids.get(&expr.node) else {
+            return;
+        };
+        if let ir::ExprKind::Closure {
+            params, ret_type, ..
+        } = &mut expr.kind
+        {
+            for (param, id) in params.iter_mut().zip(param_ids) {
+                if param.ty.is_none() {
+                    param.ty = *id;
+                }
+            }
+            if holes.contains(ret_type) {
+                if let Some(id) = ret_id {
+                    *ret_type = *id;
+                }
+            }
+        }
+    });
 }
 
 /// Writes the types the checker inferred for `_` holes in function

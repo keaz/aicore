@@ -71,6 +71,17 @@ pub struct TypecheckOutput {
     /// std method calls (`v.len()`). The driver substitutes them before
     /// codegen; their nodes are the ones the checker recorded.
     pub expr_rewrites: BTreeMap<ir::NodeId, ir::Expr>,
+    /// Parameter and return types of every closure, by closure node,
+    /// including the ones inferred from context or from the body. The
+    /// driver writes them into closures that omit them.
+    pub closure_signatures: BTreeMap<ir::NodeId, ClosureSignature>,
+}
+
+/// The checked types of a closure.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClosureSignature {
+    pub params: Vec<String>,
+    pub ret: String,
 }
 
 /// How to rewrite a struct-like variant construction.
@@ -305,6 +316,9 @@ struct Checker<'a> {
     current_module: Option<String>,
     current_function_is_async: bool,
     current_function_is_unsafe: bool,
+    /// Generic parameters of the function being checked: inside its body
+    /// they are fixed types, so a closure may take them from context.
+    current_function_generics: BTreeSet<String>,
     current_function_ret_type: Option<String>,
     unsafe_depth: usize,
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
@@ -338,6 +352,8 @@ struct Checker<'a> {
     pattern_rewrites: BTreeMap<ir::NodeId, ir::Pattern>,
     /// See `TypecheckOutput::expr_rewrites`.
     expr_rewrites: BTreeMap<ir::NodeId, ir::Expr>,
+    /// See `TypecheckOutput::closure_signatures`.
+    closure_signatures: BTreeMap<ir::NodeId, ClosureSignature>,
     /// Node ids for expressions and patterns the checker synthesizes,
     /// counting down from `u32::MAX` so they never meet parsed nodes.
     next_synthetic_node: u32,
@@ -900,6 +916,7 @@ impl<'a> Checker<'a> {
             current_module: None,
             current_function_is_async: false,
             current_function_is_unsafe: false,
+            current_function_generics: BTreeSet::new(),
             current_function_ret_type: None,
             unsafe_depth: 0,
             instantiation_seen: BTreeMap::new(),
@@ -922,6 +939,7 @@ impl<'a> Checker<'a> {
             variant_struct_inits: BTreeMap::new(),
             pattern_rewrites: BTreeMap::new(),
             expr_rewrites: BTreeMap::new(),
+            closure_signatures: BTreeMap::new(),
             next_synthetic_node: u32::MAX,
             equality_type_params: BTreeMap::new(),
             generic_call_sites: Vec::new(),
@@ -1603,6 +1621,7 @@ impl<'a> Checker<'a> {
             variant_struct_inits: self.variant_struct_inits,
             pattern_rewrites: self.pattern_rewrites,
             expr_rewrites: self.expr_rewrites,
+            closure_signatures: self.closure_signatures,
         }
     }
 
@@ -2107,6 +2126,10 @@ impl<'a> Checker<'a> {
         let previous_module = self.current_module.clone();
         let previous_async = self.current_function_is_async;
         let previous_unsafe = self.current_function_is_unsafe;
+        let previous_generics = std::mem::replace(
+            &mut self.current_function_generics,
+            func.generics.iter().map(|g| g.name.clone()).collect(),
+        );
         let previous_ret = self.current_function_ret_type.clone();
         let previous_unsafe_depth = self.unsafe_depth;
         self.enforce_import_visibility = self.should_enforce_import_visibility(func.symbol);
@@ -2196,6 +2219,7 @@ impl<'a> Checker<'a> {
             self.current_module = previous_module;
             self.current_function_is_async = previous_async;
             self.current_function_is_unsafe = previous_unsafe;
+            self.current_function_generics = previous_generics.clone();
             self.current_function_ret_type = previous_ret;
             self.unsafe_depth = previous_unsafe_depth;
             return;
@@ -2211,6 +2235,7 @@ impl<'a> Checker<'a> {
             self.current_module = previous_module;
             self.current_function_is_async = previous_async;
             self.current_function_is_unsafe = previous_unsafe;
+            self.current_function_generics = previous_generics.clone();
             self.current_function_ret_type = previous_ret;
             self.unsafe_depth = previous_unsafe_depth;
             return;
@@ -2397,6 +2422,7 @@ impl<'a> Checker<'a> {
         self.current_module = previous_module;
         self.current_function_is_async = previous_async;
         self.current_function_is_unsafe = previous_unsafe;
+        self.current_function_generics = previous_generics;
         self.current_function_ret_type = previous_ret;
         self.unsafe_depth = previous_unsafe_depth;
     }
@@ -7051,14 +7077,23 @@ impl<'a> Checker<'a> {
                 ret_type,
                 body,
             } => {
-                let declared_ret = self
+                let annotated_ret = self
                     .types
                     .get(ret_type)
                     .cloned()
                     .unwrap_or_else(|| "<?>".to_string());
-                self.check_generic_arity(&declared_ret, expr.span);
+                self.check_generic_arity(&annotated_ret, expr.span);
+                // Without `-> T` the return type comes from the expected
+                // `Fn` type when it is known, else from the body.
+                let infer_ret = annotated_ret == "<?>";
 
                 let expected_fn = expected_ty.and_then(parse_fn_type);
+                let declared_ret = match &expected_fn {
+                    Some((_, expected_ret)) if infer_ret && self.is_fixed_type(expected_ret) => {
+                        self.normalize_type(expected_ret)
+                    }
+                    _ => annotated_ret.clone(),
+                };
                 if let Some((expected_params, _)) = &expected_fn {
                     if expected_params.len() != params.len() {
                         self.diagnostics.push(Diagnostic::error(
@@ -7081,10 +7116,7 @@ impl<'a> Checker<'a> {
                         .as_ref()
                         .and_then(|(params, _)| params.get(_idx))
                         .map(|expected| self.normalize_type(expected))
-                        .filter(|expected| {
-                            !contains_unresolved_type(expected)
-                                && !contains_symbolic_generic_type(expected)
-                        });
+                        .filter(|expected| self.is_fixed_type(expected));
                     let param_ty = if let Some(ty) = param.ty {
                         self.types
                             .get(&ty)
@@ -7115,14 +7147,50 @@ impl<'a> Checker<'a> {
                 // cannot target loops outside it.
                 let outer_fn_ret = ctx.fn_ret.replace(declared_ret.clone());
                 let outer_loops = std::mem::take(&mut ctx.loop_stack);
-                let body_ty = self.check_block(
+                let body_diags = self.diagnostics.len();
+                let mut body_ty = self.check_block(
                     body,
-                    &mut closure_locals,
+                    &mut closure_locals.clone(),
                     &declared_ret,
                     allowed_effects,
                     ctx,
                     contract_mode,
                 );
+                let mut declared_ret = declared_ret;
+                if declared_ret == "<?>" {
+                    let inferred = if body_ty == NEVER_TYPE {
+                        "()".to_string()
+                    } else {
+                        body_ty.clone()
+                    };
+                    if contains_unresolved_type(&inferred) {
+                        if self.diagnostics.len() == body_diags {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E1280",
+                                    "cannot infer the return type of this closure",
+                                    self.file,
+                                    expr.span,
+                                )
+                                .with_help("annotate it: `|x: Int| -> Int { ... }`"),
+                            );
+                        }
+                    } else if ir::block_contains_return(body)
+                        && self.diagnostics.len() == body_diags
+                    {
+                        // Check `return` values against the inferred type.
+                        ctx.fn_ret = Some(inferred.clone());
+                        body_ty = self.check_block(
+                            body,
+                            &mut closure_locals.clone(),
+                            &inferred,
+                            allowed_effects,
+                            ctx,
+                            contract_mode,
+                        );
+                    }
+                    declared_ret = inferred;
+                }
                 ctx.fn_ret = outer_fn_ret;
                 ctx.loop_stack = outer_loops;
                 // Runs after the body is checked so `&mut self` method calls
@@ -7181,6 +7249,13 @@ impl<'a> Checker<'a> {
                     }
                 }
 
+                self.closure_signatures.insert(
+                    expr.node,
+                    ClosureSignature {
+                        params: closure_param_tys.clone(),
+                        ret: declared_ret.clone(),
+                    },
+                );
                 render_fn_type(&closure_param_tys, &declared_ret)
             }
             ir::ExprKind::If {
@@ -8782,6 +8857,19 @@ impl<'a> Checker<'a> {
         ) {
             return ty;
         }
+        if let Some(ty) = self.check_field_closure_call(
+            base,
+            field,
+            args,
+            &receiver_ty,
+            call_expr,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+        ) {
+            return ty;
+        }
         self.diagnostics.push(
             Diagnostic::error(
                 "E1228",
@@ -8797,6 +8885,77 @@ impl<'a> Checker<'a> {
             .with_help("define an inherent method or add a trait bound that declares this method"),
         );
         "<?>".to_string()
+    }
+
+    /// `s.f(x)` or `(s.f)(x)` where the struct has no method `f` but a
+    /// field `f` holding a function: the field value is called. Recorded
+    /// as a call of `{ s.f }` so code generation calls the value.
+    #[allow(clippy::too_many_arguments)]
+    fn check_field_closure_call(
+        &mut self,
+        base: &ir::Expr,
+        field: &str,
+        args: &[ir::Expr],
+        receiver_ty: &str,
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+    ) -> Option<String> {
+        let info = self.find_struct(receiver_ty)?.clone();
+        let raw_field_ty = self.types.get(info.fields.get(field)?)?.clone();
+        let bindings = bindings_from_applied_type(receiver_ty, &info.generics).unwrap_or_default();
+        let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+        let field_ty = self.normalize_type(&substitute_type_vars(
+            &raw_field_ty,
+            &bindings,
+            &generic_set,
+        ));
+        parse_fn_type(&field_ty)?;
+        let span = call_expr.span;
+        let access = self.synthetic_expr(
+            ir::ExprKind::FieldAccess {
+                base: Box::new(base.clone()),
+                field: field.to_string(),
+            },
+            span,
+        );
+        let block_node = self.synthetic_node();
+        let callee = self.synthetic_expr(
+            ir::ExprKind::Block {
+                block: ir::Block {
+                    node: block_node,
+                    stmts: Vec::new(),
+                    tail: Some(Box::new(access)),
+                    span,
+                },
+            },
+            span,
+        );
+        let rewritten = ir::Expr {
+            node: call_expr.node,
+            kind: ir::ExprKind::Call {
+                callee: Box::new(callee),
+                args: args.to_vec(),
+                arg_names: Vec::new(),
+                symbol: None,
+            },
+            span,
+        };
+        let ty = self.check_fn_value_call(
+            &field_ty,
+            field,
+            args,
+            &[],
+            span,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+        );
+        self.expr_rewrites.insert(call_expr.node, rewritten);
+        Some(ty)
     }
 
     fn lookup_trait_info(&self, trait_name: &str) -> Option<(String, TraitInfo)> {
@@ -11645,6 +11804,20 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// A type with no holes whose type variables, if any, are generic
+    /// parameters of the function being checked (fixed inside its body).
+    fn is_fixed_type(&self, ty: &str) -> bool {
+        fn symbolic_names_fixed(ty: &str, fixed: &BTreeSet<String>) -> bool {
+            if is_symbolic_generic_name(ty) {
+                return fixed.contains(ty);
+            }
+            extract_generic_args(ty)
+                .map(|args| args.iter().all(|arg| symbolic_names_fixed(arg, fixed)))
+                .unwrap_or(true)
+        }
+        !contains_unresolved_type(ty) && symbolic_names_fixed(ty, &self.current_function_generics)
+    }
+
     /// The loop a `break`/`continue` leaves: the innermost one, or the
     /// enclosing loop with `label` (E1307 when there is none).
     fn loop_target(
@@ -14062,6 +14235,61 @@ fn f(x: Int) -> Int {
 }
 "#;
         assert!(!error_codes(missing).is_empty());
+    }
+
+    #[test]
+    fn closure_return_and_parameter_types_are_inferred() {
+        let ok = r#"
+struct Holder { f: Fn(Int) -> Int }
+fn apply[T, U](x: T, f: Fn(T) -> U) -> U { f(x) }
+fn pipe[T, U, V](g: Fn(U) -> V, f: Fn(T) -> U, x: T) -> V { g(f(x)) }
+fn compose[A, B, C](f: Fn(A) -> B, g: Fn(B) -> C) -> Fn(A) -> C { |x| g(f(x)) }
+fn adder(n: Int) -> Fn(Int) -> Int { |x| x + n }
+fn main() -> Int {
+    let a: Int = apply(1, |x| x + 1);
+    let b: Bool = apply(1, |x| x > 0);
+    let c: Int = pipe(|v| v * 2, |u| u + 1, 20);
+    let d = |x: Int, y: Int| x * y;
+    let e: Int = d(6, 7);
+    let early = |n: Int| {
+        if n > 10 {
+            return n - 10;
+        }
+        n
+    };
+    let h = Holder { f: |v| v + 1 };
+    let g: Int = h.f(1) + (h.f)(2) + compose(adder(1), |x| x * 2)(3) + adder(1)(2);
+    a + c + e + early(12) + g
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_messages(ok));
+        let cases = [
+            // No context gives the parameter a type.
+            ("fn main() -> Int { let f = |x| x; 0 }", "E1280"),
+            // The inferred return type is checked against `return` values.
+            (
+                "fn main() -> Int { let f = |n: Int| { if n > 0 { return true; } n }; 0 }",
+                "E1205",
+            ),
+            // An expected `Fn` type fixes the return type.
+            (
+                "fn main() -> Int { let f: Fn(Int) -> Int = |x| x > 0; 0 }",
+                "E1281",
+            ),
+            // A field without a function type is not callable.
+            (
+                "struct S { n: Int } fn main() -> Int { let s = S { n: 1 }; s.n(1) }",
+                "E1228",
+            ),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {:?}",
+                error_messages(src)
+            );
+        }
     }
 
     #[test]

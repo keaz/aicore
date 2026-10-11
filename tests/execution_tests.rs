@@ -19738,3 +19738,58 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "1066193\n255\n1\n4001\n11\n");
 }
+
+#[test]
+fn exec_closures_infer_types_and_call_any_callee() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct Handler {
+    name: String,
+    run: Fn(Int) -> Int,
+}
+
+fn apply[T, U](x: T, f: Fn(T) -> U) -> U { f(x) }
+fn pipe[T, U, V](g: Fn(U) -> V, f: Fn(T) -> U, x: T) -> V { g(f(x)) }
+fn compose[A, B, C](f: Fn(A) -> B, g: Fn(B) -> C) -> Fn(A) -> C { |x| g(f(x)) }
+fn adder(n: Int) -> Fn(Int) -> Int { |x| x + n }
+fn twice[T](f: Fn(T) -> T) -> Fn(T) -> T { |x| f(f(x)) }
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(apply(20, |x| x * 2) + 2);
+    print_int(if apply(3, |x| x > 2) { 1 } else { 0 });
+    print_int(pipe(|v| v * 2, |u| u + 1, 20));
+    let mul = |a: Int, b: Int| a * b;
+    print_int(mul(6, 7));
+    let clamp = |n: Int| {
+        if n > 100 {
+            return 100;
+        }
+        if n < 0 {
+            return 0;
+        }
+        n
+    };
+    print_int(clamp(500) + clamp(-3) * 10 + clamp(42) * 1000);
+    print_int(compose(adder(1), |x| x * 2)(20));
+    print_int(twice(adder(21))(0));
+    print_int((|x: Int| x + 1)(41));
+    print_int(adder(40)(2));
+    let fs = [adder(1), |x| x * 3];
+    print_int(fs[1](14));
+    let h = Handler { name: "double", run: |v| v * 2 };
+    print_int(h.run(21) + (h.run)(0));
+    let label = apply(h.name, |s| s);
+    print_str(label);
+    print_str("\n");
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(
+        stdout,
+        "42\n1\n42\n42\n42100\n42\n42\n42\n42\n42\n42\ndouble\n"
+    );
+}

@@ -1,0 +1,11 @@
+fn main() -> Int {
+    let double = |x: Int| x * 2;
+    let shift = |n: Int| -> Int {
+        n + 1
+    };
+    let total = |a: Int, b: Int| {
+        let sum = a + b;
+        sum
+    };
+    double(20) + shift(1) + total(1, 2) + (|x: Int| x)(0)
+}

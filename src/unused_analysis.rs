@@ -313,7 +313,9 @@ impl<'a> Analyzer<'a> {
                         self.visit_type_expr(ty);
                     }
                 }
-                self.visit_type_expr(ret_type);
+                if let Some(ret_type) = ret_type {
+                    self.visit_type_expr(ret_type);
+                }
                 self.visit_block(body, module_name, caller);
             }
             ast::ExprKind::If {

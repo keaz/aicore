@@ -3755,6 +3755,10 @@ fn collect_closure_captures_block(
     scopes.pop();
 }
 
+/// Prefix for capture candidates seen only as a callee (`f(x)`): such a
+/// name is a captured `Fn` value when it is a local, else a function.
+const CALLEE_CAPTURE_MARK: &str = "\u{0}callee:";
+
 fn collect_closure_captures_expr(
     expr: &ir::Expr,
     scopes: &mut Vec<BTreeSet<String>>,
@@ -3770,9 +3774,11 @@ fn collect_closure_captures_expr(
         ir::ExprKind::Call { callee, args, .. } => {
             if let Some(path) = extract_callee_path(callee) {
                 if path.len() == 1 {
+                    // A callee name from outside the closure that is not a
+                    // function is a captured `Fn` value (`|x| f(x)`).
                     let name = &path[0];
-                    if is_declared_in_scopes(scopes, name) && !known_functions.contains(name) {
-                        captures.insert(name.clone());
+                    if !is_declared_in_scopes(scopes, name) && !known_functions.contains(name) {
+                        captures.insert(format!("{CALLEE_CAPTURE_MARK}{name}"));
                     }
                 } else {
                     collect_closure_captures_expr(callee, scopes, captures, known_functions);

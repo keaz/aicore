@@ -32,7 +32,7 @@ unary_expr     = closure_expr
                | "~" unary_expr
                | postfix_expr ;
 
-closure_expr   = "|" closure_params? "|" "->" type block ;
+closure_expr   = "|" closure_params? "|" ("->" type block | block | expr) ;
 closure_params = closure_param ("," closure_param)* ","? ;
 closure_param  = ident (":" type)? ;
 
@@ -133,6 +133,8 @@ octal_int      = ("0o" | "0O") ("0".."7" | "_")+ ;
   - `if c { break v } else { continue }` is valid inside a loop
 - `return expr` can appear anywhere an expression can, including match arms and block tails (`else { return -1 }`). It always exits the innermost enclosing function or closure and is checked against that return type.
 - Inside a closure, `return` leaves the closure, and `break`/`continue` cannot target loops outside the closure (`E1275`/`E1276`).
+- Closure types: `|x: Int| -> Int { .. }` states the return type; without `-> T` the body is a block (`|x| { .. }`) or a single expression (`|x| x + 1`) and the return type is the expected `Fn` type's return when the context gives one, otherwise the body's type (`return` values are checked against it, `E1205`). A parameter without a type takes it from the expected `Fn` type: a `let` annotation, a function parameter (also of a generic function, once the other arguments fix its type variables: `apply(20, |x| x * 2)`, also when the closure comes first), a struct field, or the enclosing function's return type, whose own type variables count as fixed inside its body (`fn compose[A, B, C](..) -> Fn(A) -> C { |x| g(f(x)) }`). Without any context the parameter needs a type (`E1280`).
+- Any expression of type `Fn(..) -> R` can be called: `adder(1)(41)`, `fs[0](x)`, `(|x: Int| x + 1)(41)`. `s.f(x)` and `(s.f)(x)` call the function stored in field `f` when the struct has no method `f`.
 - Closures capture the outer variables they use **by value, when the closure is created**. Later assignments to the outer variable are not seen by the closure (`let mut n = 1; let f = |d: Int| -> Int { n + d }; n = 5; f(0)` is `1`).
 - A closure cannot assign to a captured variable or borrow it with `&mut` (`E1289`): the change would only reach the closure's copy. Pass the value as a parameter and assign the result instead: `let inc = |v: Int| -> Int { v + 1 }; n = inc(n);`. Variables the closure declares itself (parameters and its own `let mut` bindings) can be assigned normally. This applies equally to closures stored in struct fields, returned from functions, and nested inside other closures.
 - `return` is not allowed in contract expressions or constant initializers (`E1279`).

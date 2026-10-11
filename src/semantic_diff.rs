@@ -446,11 +446,14 @@ fn render_expr(expr: &Expr) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(
-                "|{rendered_params}| -> {} {}",
-                render_type(ret_type),
-                render_block(body)
-            )
+            match ret_type {
+                Some(ret_type) => format!(
+                    "|{rendered_params}| -> {} {}",
+                    render_type(ret_type),
+                    render_block(body)
+                ),
+                None => format!("|{rendered_params}| {}", render_block(body)),
+            }
         }
         ExprKind::If {
             cond,

@@ -758,6 +758,12 @@ fn format_type_repr(repr: &str) -> String {
         .map(|arg| format_type_repr(arg))
         .collect::<Vec<_>>();
     let base = ir::canonical_primitive_type_name(base_type_name(repr));
+    // `Fn[A, B, R]` is written `Fn(A, B) -> R`.
+    if base == "Fn" {
+        if let Some((ret, params)) = rendered.split_last() {
+            return format!("Fn({}) -> {ret}", params.join(", "));
+        }
+    }
     if base == TUPLE_INTERNAL_NAME {
         if rendered.len() == 1 {
             format!("({},)", rendered[0])
@@ -2021,6 +2027,12 @@ impl<'a> Printer<'a> {
                     None => self.template_literal(template, args, indent),
                 }
             }
+            ir::ExprKind::Closure { .. } if parent_prec > 0 => {
+                // A closure as an operand (`(|x| x + 1)(2)`) keeps its parens.
+                self.out.push('(');
+                self.expr(expr, 0, indent);
+                self.out.push(')');
+            }
             ir::ExprKind::Closure {
                 params,
                 ret_type,
@@ -2038,10 +2050,23 @@ impl<'a> Printer<'a> {
                     }
                 }
                 self.out.push('|');
-                self.out.push_str(" -> ");
-                self.out.push_str(&self.display_type(ret_type));
-                self.out.push(' ');
-                self.block(body, indent);
+                let inferred_ret = self
+                    .type_map
+                    .get(ret_type)
+                    .is_some_and(|repr| repr == "<?>");
+                if !inferred_ret {
+                    self.out.push_str(" -> ");
+                    self.out.push_str(&self.display_type(ret_type));
+                    self.out.push(' ');
+                    self.block(body, indent);
+                } else if let (true, Some(value)) = (body.stmts.is_empty(), body.tail.as_deref()) {
+                    // `|x| x + 1`; parenthesized where an operand is expected.
+                    self.out.push(' ');
+                    self.expr(value, 0, indent);
+                } else {
+                    self.out.push(' ');
+                    self.block(body, indent);
+                }
             }
             ir::ExprKind::If {
                 cond,
@@ -3374,6 +3399,13 @@ mod tests {
     #[test]
     fn prefix_operators_before_postfix_operators_keep_parens() {
         let src = "fn f(x: Int, o: Option[Int]) -> Option[Int] {\n    let a = (-1).checked_to_u32();\n    let b = (-x).saturating_to_u8();\n    let c = (-2.5).saturating_to_int();\n    let d = -x.wrapping_to_u8();\n    let e = (x as Int64).wrapping_to_int();\n    o\n}\n";
+        assert_eq!(fmt(src), src);
+    }
+
+    #[test]
+    fn closures_without_return_annotations_round_trip() {
+        // `(h.f)(4)` and `h.f(4)` are the same call; the parens are not kept.
+        let src = "fn f(h: Holder, g: Fn(Int, Bool) -> Fn(Int) -> Int) -> Int {\n    let a = |x: Int| -> Int {\n        x + 1\n    };\n    let b = |x| x * 2;\n    let c = |n: Int| {\n        let m = n + 1;\n        m * 2\n    };\n    let d = (|x: Int| x + 1)(41);\n    a(1) + b(2) + c(3) + d + h.f(4)\n}\n";
         assert_eq!(fmt(src), src);
     }
 
