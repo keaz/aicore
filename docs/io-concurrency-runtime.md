@@ -491,7 +491,8 @@ Codegen lowers to these runtime symbols:
     does not free its slot, so the 129th `channel`/`buffered_channel` call fails
     even when every earlier channel is closed. Code that opens a reply channel per
     request (for example `std.pool` `acquire` and `pool_stats`) hits this limit
-    after about 125 requests. Slot reclamation is open follow-up work.
+    after about 125 requests. Slot reclamation is open follow-up work; see
+    `docs/io-runtime/channel-slot-reclamation.md`.
 - Linux/macOS:
   - Full channel/task/mutex runtime behavior is implemented.
 - Windows:

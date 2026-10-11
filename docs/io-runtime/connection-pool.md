@@ -143,8 +143,7 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
   makes more than about 125 of these calls in total gets channel-creation failures,
   which `acquire(...)` reports as `Closed`. Keep long-running pool workloads and
   stats polling loops well under this budget until slot reclamation lands in the
-  runtime (follow-up: free channel slots once both ends are closed, with
-  stale-handle protection).
+  runtime. The follow-up brief is `docs/io-runtime/channel-slot-reclamation.md`.
 
 ## Validation
 
