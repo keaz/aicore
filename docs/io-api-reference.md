@@ -997,7 +997,9 @@ Notes:
 
 - Use typed callback bindings (`Fn() -> Result[Conn, PoolError]`, etc.) and a typed `pool_result: Result[Pool[Conn], PoolError]` binding for stable inference.
 - `discard(...)` is for broken resources; it destroys and rotates capacity.
-- `pool_stats(...)` is safe for runtime observability and CI assertions.
+- `pool_stats(...)` is safe for runtime observability and CI assertions. It returns all-zero stats when the manager does not answer within 20 ms; retry when that matters.
+- A timed-out `acquire(...)` never leaks a lease: a connection granted after the caller gave up returns to the idle list.
+- Idle, lifetime and health-check intervals count manager loop iterations (at least 1 ms each), so expiry can happen later than the configured time under load, never earlier.
 - Runnable reference: `examples/io/connection_pool.aic`.
 
 ## `std.buffer`

@@ -113,6 +113,26 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
 - Periodic idle health-check pruning is supported.
 - `discard(...)` destroys broken resources instead of returning them to idle.
 - `pool_stats(...)` returns current totals for observability.
+- `acquire(...)` keeps one request in flight. It waits for that request's reply in
+  1 ms steps until `acquire_timeout_ms` steps are used, and sends a new request only
+  after the pool answers `MaxSizeReached`. A slow manager therefore never hands out
+  extra leases that no caller holds.
+- When `acquire(...)` gives up with `Timeout` while its request is still pending, the
+  connection the manager later grants for that request goes back to the idle list. A
+  timed-out acquire never leaves a connection counted as `in_use`.
+
+## Timing Model
+
+- The manager ages connections once per loop iteration. An iteration waits up to
+  1 ms for a request, so `idle_timeout_ms`, `max_lifetime_ms` and `health_check_ms`
+  are lower bounds in wall-clock time. On a loaded machine, iterations take longer
+  and expiry happens later than the configured value, never earlier.
+- `pool_stats(...)` waits up to 20 ms for the manager. If the manager does not
+  answer in that time, it returns all-zero stats. Treat `created == 0` on a pool that
+  has created connections as "no answer" and ask again.
+- Tests and examples that depend on expiry must wait for the observable effect (for
+  example, `pool_stats(...).destroyed` increasing), not for a fixed sleep.
+  `examples/io/connection_pool.aic` shows this pattern.
 
 ## Validation
 
@@ -121,4 +141,6 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
   - `exec_pool_ten_workers_share_five_connections_without_leaks`
   - `exec_pool_idle_connections_are_recycled_after_timeout`
   - `exec_pool_discarded_connection_is_replaced`
+  - `exec_pool_slow_acquire_reply_does_not_leak_lease`
+  - `exec_pool_abandoned_acquire_returns_lease_to_pool`
   - `exec_runtime_pool_churn_sustained_cycles_are_leak_free`

@@ -974,6 +974,39 @@ fn pool_state_release[T](
     }
 }
 
+/// `pool_state_reclaim` in `std.pool`.
+///
+/// Returns the in-use entry for `lease` to the idle list using the value the
+/// pool already holds. The manager calls this when an acquire reply cannot be
+/// delivered because the caller stopped waiting, so the lease never reaches a
+/// caller that could release it.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.pool` and call `pool_state_reclaim` with module-specific arguments.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn pool_state_reclaim[T](
+    state: PoolState[T],
+    lease: Int,
+    destroy: Fn(T) -> (),
+) -> PoolState[T] {
+    let idx = find_entry_index(state.in_use, lease);
+    if idx < 0 {
+        state
+    } else {
+        match aic_vec_get_intrinsic(state.in_use, idx) {
+            Some(existing) => pool_state_release(state, lease, existing.value, destroy),
+            None => state,
+        }
+    }
+}
+
 /// `pool_state_discard` in `std.pool`.
 ///
 /// ## Example
@@ -1088,10 +1121,24 @@ fn pool_handle_request[T](
     match req {
         Acquire(payload) => if true {
             let acquired = pool_state_acquire(request_handle, state, config, create);
-            let _sent = send(payload.reply, acquired.1);
+            let lease = match acquired.1 {
+                Ok(conn) => conn_lease(conn.handle),
+                Err(_) => 0,
+            };
+            let sent = send(payload.reply, acquired.1);
             let _closed_reply = close_sender(payload.reply);
+            // A failed send means the caller closed its reply channel after giving
+            // up, so nobody holds this lease. Put the connection back in the pool.
+            let next_state = match sent {
+                Ok(_) => acquired.0,
+                Err(_) => if lease > 0 {
+                    pool_state_reclaim(acquired.0, lease, destroy)
+                } else {
+                    acquired.0
+                },
+            };
             RequestOut {
-                state: acquired.0,
+                state: next_state,
                 close_loop: false,
             }
         } else {
@@ -1330,6 +1377,11 @@ fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concu
         let tx: Sender[PoolRequest[T]] = Sender {
             handle: request_handle,
         };
+        // `remaining` counts 1 ms waits. Each round sends exactly one Acquire
+        // request and waits for its reply on that request's own channel; a new
+        // request is sent only after the previous one has been answered with
+        // MaxSizeReached. Sending a fresh request on every short timeout would let
+        // a slow manager grant leases to replies nobody is waiting for.
         let mut remaining = pool_acquire_timeout_ms(pool.handle);
         let mut done = false;
         let mut out: Result[PooledConn[T], PoolError] = acquire_result_timeout();
@@ -1348,62 +1400,80 @@ fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concu
             );
             match sent {
                 Ok(_) => if true {
-                    let step = if remaining > 0 { 1 } else { 0 };
-                    let recv_out: Result[Result[PooledConn[T], PoolError], ChannelError] =
-                        recv_timeout(reply_rx, step);
-                    let next = match recv_out {
-                        Ok(reply) => match reply {
-                            Ok(conn) => (
-                                true,
-                                acquire_result_ok(conn),
-                                remaining,
-                            ),
-                            Err(err) => match err {
-                                MaxSizeReached => if remaining <= 0 {
-                                    (true, acquire_result_timeout(), remaining)
-                                } else {
-                                    wait_backoff_tick();
-                                    (false, acquire_result_timeout(), remaining - 1)
+                    let mut waiting = true;
+                    let mut answered = false;
+                    let mut retry = false;
+                    while waiting {
+                        let step = if remaining > 0 { 1 } else { 0 };
+                        let recv_out: Result[Result[PooledConn[T], PoolError], ChannelError] =
+                            recv_timeout(reply_rx, step);
+                        let next = match recv_out {
+                            Ok(reply) => match reply {
+                                Ok(conn) => (false, true, false, acquire_result_ok(conn), remaining),
+                                Err(err) => match err {
+                                    MaxSizeReached => if remaining <= 0 {
+                                        (false, true, false, acquire_result_timeout(), remaining)
+                                    } else {
+                                        (false, true, true, acquire_result_timeout(), remaining - 1)
+                                    },
+                                    _ => (false, true, false, acquire_result_err(err), remaining),
                                 },
-                                _ => (
+                            },
+                            Err(err) => match err {
+                                Closed => (
+                                    false,
                                     true,
-                                    acquire_result_err(err),
+                                    false,
+                                    acquire_result_err(pool_closed_error()),
                                     remaining,
                                 ),
+                                _ => if remaining <= 0 {
+                                    (false, false, false, acquire_result_timeout(), remaining)
+                                } else {
+                                    (true, false, false, acquire_result_timeout(), remaining - 1)
+                                },
                             },
-                        },
-                        Err(err) => match err {
-                            Timeout => if remaining <= 0 {
-                                (true, acquire_result_timeout(), remaining)
-                            } else {
-                                wait_backoff_tick();
-                                (false, acquire_result_timeout(), remaining - 1)
-                            },
-                            Closed => (
-                                true,
-                                acquire_result_err(pool_closed_error()),
-                                remaining,
-                            ),
-                            Empty => (
-                                false,
-                                acquire_result_timeout(),
-                                remaining,
-                            ),
-                            Full => (
-                                false,
-                                acquire_result_timeout(),
-                                remaining,
-                            ),
-                        },
+                        };
+                        waiting = next.0;
+                        answered = next.1;
+                        retry = next.2;
+                        out = next.3;
+                        remaining = next.4;
                     };
-                    done = next.0;
-                    out = next.1;
-                    remaining = next.2;
+                    if answered {
+                        let _closed_reply_rx = close_receiver(reply_rx);
+                        ()
+                    } else {
+                        // Timed out with the request still pending. Closing the reply
+                        // channel makes a later manager send fail, and the manager then
+                        // reclaims the lease. A reply sent before the close is still
+                        // buffered: take it and release it so the lease is not lost.
+                        let _closed_reply_tx = close_sender(reply_tx);
+                        let late: Result[Result[PooledConn[T], PoolError], ChannelError] =
+                            try_recv(reply_rx);
+                        match late {
+                            Ok(reply) => match reply {
+                                Ok(conn) => release(conn),
+                                Err(_) => (),
+                            },
+                            Err(_) => (),
+                        };
+                        let _closed_reply_rx = close_receiver(reply_rx);
+                        ()
+                    };
+                    if retry {
+                        wait_backoff_tick();
+                        ()
+                    } else {
+                        done = true;
+                        ()
+                    };
                     ()
                 } else {
                     ()
                 },
                 Err(_) => if true {
+                    let _closed_reply_rx = close_receiver(reply_rx);
                     out = acquire_result_err(pool_closed_error());
                     done = true;
                     ()
@@ -1411,8 +1481,6 @@ fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concu
                     ()
                 },
             };
-            let _closed_reply_rx = close_receiver(reply_rx);
-            let _closed_reply_tx = close_sender(reply_tx);
         };
         out
     }

@@ -7350,6 +7350,223 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
 
 #[cfg(not(target_os = "windows"))]
 #[test]
+fn exec_pool_slow_acquire_reply_does_not_leak_lease() {
+    // `create` takes much longer than one acquire wait step. The caller must
+    // keep waiting for its own request instead of sending extra requests whose
+    // leases nobody would ever release.
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        wait_ms(30);
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 0,
+            max_size: 2,
+            acquire_timeout_ms: 2000,
+            idle_timeout_ms: 0,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let first_id = match acquire(pool) {
+        Ok(conn) => if true {
+            let id = conn.value.id;
+            release(conn);
+            id
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+
+    let mut stats = pool_stats(pool);
+    let mut tries = 0;
+    while stats.created < 1 && tries < 20 {
+        stats = pool_stats(pool);
+        tries = tries + 1;
+    };
+    close_pool(pool);
+
+    if first_id == 1
+        && stats.created == 1
+        && stats.total == 1
+        && stats.idle == 1
+        && stats.in_use == 0
+    {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_pool_abandoned_acquire_returns_lease_to_pool() {
+    // `create` blocks until the caller has already timed out. The manager then
+    // finishes the request with no one waiting and must put the connection back
+    // in the idle list instead of leaving it leased forever.
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+    healthy: Bool,
+}
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created = atomic_int(0);
+    let gate = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        while atomic_load(gate) == 0 {
+            wait_ms(1);
+        };
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn {
+            id: prior + 1,
+            healthy: true,
+        })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.healthy };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+
+    let pool_result: Result[Pool[FakeConn], PoolError] = new_pool(
+        PoolConfig {
+            min_size: 0,
+            max_size: 1,
+            acquire_timeout_ms: 5,
+            idle_timeout_ms: 0,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    );
+    let pool: Pool[FakeConn] = match pool_result {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let timed_out = match acquire(pool) {
+        Ok(conn) => if true {
+            release(conn);
+            false
+        } else {
+            false
+        },
+        Err(err) => match err {
+            Timeout => true,
+            _ => false,
+        },
+    };
+    atomic_store(gate, 1);
+
+    let mut stats = pool_stats(pool);
+    let mut polls = 0;
+    while stats.created < 1 && polls < 50 {
+        wait_ms(2);
+        stats = pool_stats(pool);
+        polls = polls + 1;
+    };
+
+    // A loaded machine can delay the manager past the 5 ms timeout. Retry:
+    // a timed-out attempt must not leak the lease either.
+    let mut reused_id = 0;
+    let mut attempts = 0;
+    while reused_id == 0 && attempts < 20 {
+        reused_id = match acquire(pool) {
+            Ok(conn) => if true {
+                let id = conn.value.id;
+                release(conn);
+                id
+            } else {
+                0
+            },
+            Err(_) => 0,
+        };
+        attempts = attempts + 1;
+    };
+    close_pool(pool);
+
+    if timed_out
+        && stats.created == 1
+        && stats.idle == 1
+        && stats.in_use == 0
+        && reused_id == 1
+    {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
 fn exec_concurrency_structured_group_timeout_and_select_first_are_stable() {
     let src = r#"
 import std.io;

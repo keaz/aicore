@@ -19,6 +19,36 @@ fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
     }
 }
 
+// `pool_stats` returns all zeros when the manager does not answer in time.
+// Every real answer here has `created >= 1`, so retry until one arrives.
+fn read_stats(pool: Pool[FakeConn]) -> PoolStats effects { concurrency } capabilities { concurrency } {
+    let mut stats = pool_stats(pool);
+    let mut tries = 0;
+    while stats.created < 1 && tries < 4 {
+        wait_ms(1);
+        stats = pool_stats(pool);
+        tries = tries + 1;
+    };
+    stats
+}
+
+// The manager ages idle connections once per loop iteration, so wall-clock
+// sleep alone does not guarantee expiry on a loaded machine. Wait until the
+// pool reports that it destroyed a connection after `baseline`. Each stats
+// request also advances the manager, so this ends even if `wait_ms` cannot
+// spawn its timer task. The bounds keep the run under the runtime's channel
+// limit, since every `pool_stats` call opens a reply channel.
+fn wait_for_idle_reap(pool: Pool[FakeConn], baseline: Int) -> Bool effects { concurrency } capabilities { concurrency } {
+    let mut reaped = false;
+    let mut polls = 0;
+    while !reaped && polls < 20 {
+        wait_ms(5);
+        reaped = read_stats(pool).destroyed > baseline;
+        polls = polls + 1;
+    };
+    reaped
+}
+
 fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
     let created = atomic_int(0);
 
@@ -36,7 +66,7 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         PoolConfig {
             min_size: 1,
             max_size: 2,
-            acquire_timeout_ms: 200,
+            acquire_timeout_ms: 1000,
             idle_timeout_ms: 4,
             max_lifetime_ms: 0,
             health_check_ms: 0,
@@ -61,7 +91,8 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         Err(_) => 0,
     };
 
-    wait_ms(20);
+    let baseline = read_stats(pool).destroyed;
+    let reaped = wait_for_idle_reap(pool, baseline);
 
     let recycled_id = match acquire(pool) {
         Ok(conn) => if true {
@@ -96,10 +127,11 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         Err(_) => 0,
     };
 
-    let stats = pool_stats(pool);
+    let stats = read_stats(pool);
     close_pool(pool);
 
-    if first_id > 0
+    if reaped
+        && first_id > 0
         && recycled_id > first_id
         && discarded_id > 0
         && replaced_id > discarded_id
