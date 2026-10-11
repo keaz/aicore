@@ -50,9 +50,11 @@ primary_expr   = literal
                | continue_expr
                | return_expr
                | match_expr
-               | unsafe_block ;
+               | unsafe_block
+               | block_expr ;
 
-if_expr        = "if" expr block "else" (block | if_expr) ;
+if_expr        = "if" expr block ("else" (block | if_expr))? ;
+block_expr     = block ;
 while_expr     = "while" expr block ;
 loop_expr      = "loop" block ;
 break_expr     = "break" expr? ;
@@ -93,6 +95,9 @@ hex_int        = "0x" hexdigit+ ;
 - `while` requires a `Bool` condition. Its expression type is unit unless broken with typed flow.
 - `loop` and `break` are typed together: all breaks in one loop must agree on one break type.
 - `continue` and `break` are valid only inside loop contexts.
+- Block expressions (`{ stmts; tail }`) open a new scope; bindings declared inside end with the block. The block's value is its tail expression, or `()` without one: `let x = { let a = 1; a + 1 };`.
+- `if cond { ... }` without `else` has type `()`: the branch's value must be `()` (end it with `;` to discard a value). Otherwise `E1220` reports "`if` without `else` has type '()'".
+- Expressions that end in a block (`if`, `match`, `while`, `loop`, `for`, `{ ... }`, `unsafe { ... }`) can be statements without a trailing `;`; `aic fmt` keeps the `;` form.
 - Diverging expressions: `return`, `break`, `continue`, `panic(...)`, a `loop` without `break`, and a block whose statements end with one of them never produce a value. Their type is the bottom type (written `!` in diagnostics), which is compatible with every type:
   - an `if` branch or `match` arm that diverges does not constrain the type of the other branches (`if x > 0 { x } else { return 0 }` has type `Int`)
   - `let v = match opt { Some(n) => n, None => return 0 };` binds `v: Int`

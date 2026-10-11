@@ -1695,6 +1695,13 @@ impl<'a> Printer<'a> {
                 self.expr(cond, 0, indent);
                 self.out.push(' ');
                 self.block(then_block, indent);
+                // `if` without `else`: the parser's empty, zero-width block.
+                if else_block.stmts.is_empty()
+                    && else_block.tail.is_none()
+                    && else_block.span.start == else_block.span.end
+                {
+                    return;
+                }
                 self.out.push_str(" else ");
                 match else_if_expr(else_block) {
                     Some(nested) => self.expr(nested, 0, indent),
@@ -1830,6 +1837,7 @@ impl<'a> Printer<'a> {
                 self.out.push_str("unsafe ");
                 self.block(block, indent);
             }
+            ir::ExprKind::Block { block } => self.block(block, indent),
             ir::ExprKind::StructInit { name, fields } => {
                 if name == TUPLE_INTERNAL_NAME {
                     let mut indexed = fields
@@ -2067,7 +2075,9 @@ fn nested_regions(expr: &ir::Expr, out: &mut Vec<(usize, usize)>) {
         ir::ExprKind::Loop { body } | ir::ExprKind::Closure { body, .. } => {
             out.push(block_region(body));
         }
-        ir::ExprKind::UnsafeBlock { block } => out.push(block_region(block)),
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+            out.push(block_region(block))
+        }
         ir::ExprKind::Match {
             expr: scrutinee, ..
         } => {
@@ -2139,7 +2149,9 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
         }
         ir::ExprKind::Loop { body } => return Some(body.span.start),
         ir::ExprKind::Closure { body, .. } => return Some(body.span.start),
-        ir::ExprKind::UnsafeBlock { block } => return Some(block.span.start),
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+            return Some(block.span.start)
+        }
         ir::ExprKind::Match { .. } => return Some(expr.span.start),
         ir::ExprKind::Call { callee, args, .. } => {
             std::iter::once(&**callee).chain(args.iter()).collect()

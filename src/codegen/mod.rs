@@ -3433,7 +3433,9 @@ fn collect_direct_calls_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
             collect_direct_calls_in_expr(cond, out);
             collect_direct_calls_in_block(body, out);
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             collect_direct_calls_in_block(body, out);
         }
         ir::ExprKind::Break { expr } => {
@@ -3821,7 +3823,7 @@ fn collect_closure_captures_expr(
         | ir::ExprKind::Try { expr } => {
             collect_closure_captures_expr(expr, scopes, captures, known_functions);
         }
-        ir::ExprKind::UnsafeBlock { block } => {
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
             collect_closure_captures_block(block, scopes, captures, known_functions);
         }
         ir::ExprKind::StructInit { fields, .. } => {

@@ -3085,6 +3085,18 @@ impl<'a> Generator<'a> {
                 ));
                 None
             }
+            ir::ExprKind::Block { .. } => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E5023",
+                    format!(
+                        "const '{}' initializer uses unsupported block expression in LLVM backend",
+                        const_name
+                    ),
+                    self.file,
+                    expr.span,
+                ));
+                None
+            }
             ir::ExprKind::StructInit { .. } => {
                 self.diagnostics.push(Diagnostic::error(
                     "E5023",

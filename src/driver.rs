@@ -427,7 +427,9 @@ fn reorder_call_args_in_expr(expr: &mut ir::Expr, orders: &BTreeMap<ir::NodeId, 
         | ir::ExprKind::Borrow { expr: inner, .. }
         | ir::ExprKind::Await { expr: inner }
         | ir::ExprKind::Try { expr: inner } => reorder_call_args_in_expr(inner, orders),
-        ir::ExprKind::UnsafeBlock { block } => reorder_call_args_in_block(block, orders),
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+            reorder_call_args_in_block(block, orders)
+        }
         ir::ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields {
                 reorder_call_args_in_expr(value, orders);
@@ -630,7 +632,9 @@ fn apply_let_binding_types_in_expr(expr: &mut ir::Expr, let_binding_types: &LetT
             apply_let_binding_types_in_expr(cond, let_binding_types);
             apply_let_binding_types_in_block(body, let_binding_types);
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             apply_let_binding_types_in_block(body, let_binding_types);
         }
         ir::ExprKind::Break { expr: Some(inner) } | ir::ExprKind::Return { expr: Some(inner) } => {
@@ -854,7 +858,9 @@ fn attach_call_symbols_in_expr(expr: &mut ir::Expr, symbols: &BTreeMap<ir::NodeI
             attach_call_symbols_in_expr(cond, symbols);
             attach_call_symbols_in_block(body, symbols);
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             attach_call_symbols_in_block(body, symbols);
         }
         ir::ExprKind::Break { expr: Some(inner) } | ir::ExprKind::Return { expr: Some(inner) } => {
@@ -964,7 +970,9 @@ fn qualify_call_targets_in_expr(expr: &mut ir::Expr, modules: &BTreeMap<ir::Node
         | ir::ExprKind::Borrow { expr: inner, .. }
         | ir::ExprKind::Await { expr: inner }
         | ir::ExprKind::Try { expr: inner } => qualify_call_targets_in_expr(inner, modules),
-        ir::ExprKind::UnsafeBlock { block } => qualify_call_targets_in_block(block, modules),
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+            qualify_call_targets_in_block(block, modules)
+        }
         ir::ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields {
                 qualify_call_targets_in_expr(value, modules);

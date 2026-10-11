@@ -18335,3 +18335,64 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n2\n");
 }
+
+#[test]
+fn exec_block_expressions_and_if_without_else() {
+    let src = r#"
+import std.io;
+
+fn classify(n: Int) -> Int {
+    let label = match n {
+        0 => {
+            let base = 100;
+            base + 1
+        }
+        1 => {
+            if n > 0 {
+                return 7;
+            }
+            0
+        }
+        _ => {
+            let doubled = n * 2;
+            doubled
+        },
+    };
+    label
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let x = {
+        let a = 20;
+        let b = { let c = 1; c + a };
+        a + b
+    };
+    print_int(x);
+    let mut hits = 0;
+    if x > 40 {
+        hits = hits + 1;
+    }
+    if x > 100 {
+        hits = hits + 10;
+    }
+    print_int(hits);
+    {
+        let shadow = 5;
+        hits = hits + shadow;
+    }
+    print_int(hits);
+    print_int(classify(0));
+    print_int(classify(1));
+    print_int(classify(4));
+    let mut i = 0;
+    while i < 3 {
+        i = i + 1;
+    }
+    print_int(i);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "41\n1\n6\n101\n7\n8\n3\n");
+}

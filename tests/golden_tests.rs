@@ -152,3 +152,8 @@ fn golden_case24_borrow_checker_completeness() {
 fn golden_case25_place_assignment() {
     run_golden_case("case25_place_assignment.aic");
 }
+
+#[test]
+fn golden_case26_block_expressions() {
+    run_golden_case("case26_block_expressions.aic");
+}

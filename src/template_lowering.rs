@@ -292,6 +292,13 @@ impl TemplateLowerer {
                 },
                 span: expr.span,
             },
+            ir::ExprKind::Block { block } => ir::Expr {
+                node: expr.node,
+                kind: ir::ExprKind::Block {
+                    block: self.lower_block(block),
+                },
+                span: expr.span,
+            },
             ir::ExprKind::StructInit { name, fields } => ir::Expr {
                 node: expr.node,
                 kind: ir::ExprKind::StructInit {
@@ -502,7 +509,9 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
             max = max.max(max_node_expr(cond));
             max = max.max(max_node_block(body));
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             max = max.max(max_node_block(body));
         }
         ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
@@ -692,7 +701,8 @@ fn main(name: String) -> String {
             | ir::ExprKind::Break { .. }
             | ir::ExprKind::Return { .. }
             | ir::ExprKind::Continue
-            | ir::ExprKind::UnsafeBlock { .. } => false,
+            | ir::ExprKind::UnsafeBlock { .. }
+            | ir::ExprKind::Block { .. } => false,
         }
     }
 }

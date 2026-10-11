@@ -224,7 +224,9 @@ fn collect_bound_names_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
             collect_bound_names_in_expr(cond, out);
             collect_bound_names_in_block(body, out);
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             collect_bound_names_in_block(body, out);
         }
         ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {

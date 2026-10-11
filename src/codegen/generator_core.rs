@@ -2337,7 +2337,9 @@ impl<'a> Generator<'a> {
                 self.collect_async_locals_in_expr(cond, locals)?;
                 self.collect_async_locals_in_block(body, locals)?;
             }
-            ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            ir::ExprKind::Loop { body }
+            | ir::ExprKind::UnsafeBlock { block: body }
+            | ir::ExprKind::Block { block: body } => {
                 self.collect_async_locals_in_block(body, locals)?;
             }
             ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
@@ -2966,7 +2968,9 @@ impl<'a> Generator<'a> {
                 self.mark_moved_resource_locals_in_expr(cond, fctx);
                 self.mark_moved_resource_locals_in_block(body, fctx);
             }
-            ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            ir::ExprKind::Loop { body }
+            | ir::ExprKind::UnsafeBlock { block: body }
+            | ir::ExprKind::Block { block: body } => {
                 self.mark_moved_resource_locals_in_block(body, fctx);
             }
             ir::ExprKind::Break { expr } => {
@@ -4757,7 +4761,9 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Borrow { expr: inner, .. } => self.gen_expr(inner, fctx),
             ir::ExprKind::Await { expr: inner } => self.gen_await(inner, expr.span, fctx),
             ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
-            ir::ExprKind::UnsafeBlock { block } => self.gen_block(block, fctx),
+            ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+                self.gen_block(block, fctx)
+            }
             ir::ExprKind::Binary { op, lhs, rhs } => {
                 let numeric_expected =
                     expected_ty.filter(|ty| is_integral_type(ty) || is_float_type(ty));

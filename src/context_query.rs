@@ -717,7 +717,7 @@ fn collect_expr_call_names(
         | ast::ExprKind::Try { expr } => {
             collect_expr_call_names(expr, caller_name, call_graph);
         }
-        ast::ExprKind::UnsafeBlock { block } => {
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
             collect_block_call_names(block, caller_name, call_graph);
         }
         ast::ExprKind::StructInit { fields, .. } => {

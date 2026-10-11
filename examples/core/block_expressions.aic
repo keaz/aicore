@@ -1,0 +1,36 @@
+module examples.core.block_expressions;
+
+import std.io;
+
+// Block expressions, block match arms and `if` without `else`.
+
+fn score(word_len: Int) -> Int {
+    match word_len {
+        0 => {
+            // An empty word scores nothing.
+            return 0;
+        }
+        1 | 2 => 1,
+        _ => {
+            let bonus = if word_len > 6 { 5 } else { 0 };
+            word_len + bonus
+        }
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let total = {
+        let short = score(2);
+        let long = score(8);
+        short + long
+    };
+    let mut answer = total;
+    if answer < 42 {
+        answer = answer + (42 - total);
+    }
+    if score(0) > 0 {
+        answer = 0;
+    }
+    print_int(answer);
+    0
+}

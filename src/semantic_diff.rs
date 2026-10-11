@@ -514,6 +514,7 @@ fn render_expr(expr: &Expr) -> String {
         ExprKind::Await { expr } => format!("await {}", render_expr(expr)),
         ExprKind::Try { expr } => format!("{}?", render_expr(expr)),
         ExprKind::UnsafeBlock { block } => format!("unsafe {}", render_block(block)),
+        ExprKind::Block { block } => render_block(block),
         ExprKind::StructInit { name, fields } => {
             let rendered_fields = fields
                 .iter()

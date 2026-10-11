@@ -1838,7 +1838,7 @@ fn collect_expr_semantic_tokens(
         ast::ExprKind::Try { expr } => {
             collect_expr_semantic_tokens(tokens, source, expr, effectful_functions);
         }
-        ast::ExprKind::UnsafeBlock { block } => {
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
             collect_block_semantic_tokens(tokens, source, block, effectful_functions);
         }
         ast::ExprKind::StructInit { name, fields } => {
@@ -2656,7 +2656,7 @@ fn collect_expr_call_sites(
                 call_sites_by_caller,
             );
         }
-        ast::ExprKind::UnsafeBlock { block } => {
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
             collect_block_call_sites(
                 block,
                 file,
@@ -3017,7 +3017,9 @@ fn collect_expr_folding_ranges(expr: &ast::Expr, source: &str, ranges: &mut Vec<
         | ast::ExprKind::Borrow { expr, .. }
         | ast::ExprKind::Await { expr }
         | ast::ExprKind::Try { expr } => collect_expr_folding_ranges(expr, source, ranges),
-        ast::ExprKind::UnsafeBlock { block } => collect_block_folding_ranges(block, source, ranges),
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
+            collect_block_folding_ranges(block, source, ranges)
+        }
         ast::ExprKind::StructInit { fields, .. } => {
             for (_, field_expr, _) in fields {
                 collect_expr_folding_ranges(field_expr, source, ranges);
@@ -3478,7 +3480,7 @@ fn collect_expr_selection_spans(
         | ast::ExprKind::Try { expr } => {
             collect_expr_selection_spans(expr, offset, stmt_spans, block_spans, expr_spans);
         }
-        ast::ExprKind::UnsafeBlock { block } => {
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
             collect_block_selection_spans(block, offset, stmt_spans, block_spans, expr_spans);
         }
         ast::ExprKind::StructInit { fields, .. } => {
@@ -4099,7 +4101,7 @@ fn collect_expr_inlay_hints(
             collect_expr_inlay_hints(lhs, source, show_effect_hints, signature_lookup, hints);
             collect_expr_inlay_hints(rhs, source, show_effect_hints, signature_lookup, hints);
         }
-        ast::ExprKind::UnsafeBlock { block } => {
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
             collect_block_inlay_hints(
                 block,
                 source,

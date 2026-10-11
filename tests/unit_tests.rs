@@ -166,7 +166,8 @@ fn collect_ir_call_paths(expr: &aicore::ir::Expr, out: &mut Vec<String>) {
             }
         }
         aicore::ir::ExprKind::Closure { body, .. }
-        | aicore::ir::ExprKind::UnsafeBlock { block: body } => {
+        | aicore::ir::ExprKind::UnsafeBlock { block: body }
+        | aicore::ir::ExprKind::Block { block: body } => {
             collect_ir_call_paths_in_block(body, out);
         }
         aicore::ir::ExprKind::If {
@@ -262,7 +263,8 @@ fn collect_ir_call_paths_and_symbols(
             }
         }
         aicore::ir::ExprKind::Closure { body, .. }
-        | aicore::ir::ExprKind::UnsafeBlock { block: body } => {
+        | aicore::ir::ExprKind::UnsafeBlock { block: body }
+        | aicore::ir::ExprKind::Block { block: body } => {
             collect_ir_call_paths_and_symbols_in_block(body, out);
         }
         aicore::ir::ExprKind::If {

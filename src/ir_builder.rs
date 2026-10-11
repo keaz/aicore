@@ -671,6 +671,9 @@ impl Builder {
             ast::ExprKind::UnsafeBlock { block } => ir::ExprKind::UnsafeBlock {
                 block: self.lower_block(block),
             },
+            ast::ExprKind::Block { block } => ir::ExprKind::Block {
+                block: self.lower_block(block),
+            },
             ast::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
                 name: name.clone(),
                 fields: fields

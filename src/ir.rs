@@ -471,6 +471,11 @@ pub enum ExprKind {
     UnsafeBlock {
         block: Block,
     },
+    /// `{ stmts; tail }` used as an expression: a new scope whose value is
+    /// the tail (or `()` without one).
+    Block {
+        block: Block,
+    },
     StructInit {
         name: String,
         fields: Vec<(String, Expr, Span)>,

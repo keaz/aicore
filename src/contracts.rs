@@ -1013,7 +1013,7 @@ fn rewrite_struct_inits_in_expr(
         ir::ExprKind::Try { expr } => {
             rewrite_struct_inits_in_expr(expr, helper_names, field_orders, alloc);
         }
-        ir::ExprKind::UnsafeBlock { block } => {
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
             rewrite_struct_inits_in_block(block, helper_names, field_orders, alloc);
         }
         ir::ExprKind::StructInit { name, fields } => {
@@ -1245,7 +1245,7 @@ fn lower_ensures_in_expr(
         ir::ExprKind::Try { expr } => {
             lower_ensures_in_expr(expr, ensures, ret_type, function_name, alloc);
         }
-        ir::ExprKind::UnsafeBlock { block } => {
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
             lower_ensures_in_block(block, ensures, ret_type, function_name, alloc, false);
         }
         ir::ExprKind::StructInit { fields, .. } => {
@@ -1492,7 +1492,7 @@ fn max_node_expr(expr: &ir::Expr) -> u32 {
         ir::ExprKind::Await { expr } | ir::ExprKind::Try { expr } => {
             max = max.max(max_node_expr(expr));
         }
-        ir::ExprKind::UnsafeBlock { block } => {
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
             max = max.max(max_node_block(block));
         }
         ir::ExprKind::StructInit { fields, .. } => {
@@ -1649,6 +1649,9 @@ fn clone_expr(expr: &ir::Expr, alloc: &mut IdAlloc) -> ir::Expr {
             expr: Box::new(clone_expr(expr, alloc)),
         },
         ir::ExprKind::UnsafeBlock { block } => ir::ExprKind::UnsafeBlock {
+            block: clone_block(block, alloc),
+        },
+        ir::ExprKind::Block { block } => ir::ExprKind::Block {
             block: clone_block(block, alloc),
         },
         ir::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
@@ -1871,6 +1874,9 @@ fn substitute_result_var(expr: &ir::Expr, result_name: &str, alloc: &mut IdAlloc
             expr: Box::new(substitute_result_var(expr, result_name, alloc)),
         },
         ir::ExprKind::UnsafeBlock { block } => ir::ExprKind::UnsafeBlock {
+            block: clone_block(block, alloc),
+        },
+        ir::ExprKind::Block { block } => ir::ExprKind::Block {
             block: clone_block(block, alloc),
         },
         ir::ExprKind::StructInit { name, fields } => ir::ExprKind::StructInit {
@@ -2311,7 +2317,9 @@ fn make(x: Int) -> NonEmpty {
             ir::ExprKind::Borrow { expr, .. } => count_asserts_in_expr(expr),
             ir::ExprKind::Await { expr } => count_asserts_in_expr(expr),
             ir::ExprKind::Try { expr } => count_asserts_in_expr(expr),
-            ir::ExprKind::UnsafeBlock { block } => count_asserts_in_block(block),
+            ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+                count_asserts_in_block(block)
+            }
             ir::ExprKind::StructInit { fields, .. } => fields
                 .iter()
                 .map(|(_, value, _)| count_asserts_in_expr(value))

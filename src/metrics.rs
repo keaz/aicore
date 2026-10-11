@@ -428,7 +428,9 @@ impl ComplexityAnalyzer {
             ExprKind::Borrow { expr, .. } => self.visit_expr(expr, depth),
             ExprKind::Await { expr } => self.visit_expr(expr, depth),
             ExprKind::Try { expr } => self.visit_expr(expr, depth),
-            ExprKind::UnsafeBlock { block } => self.visit_block(block, depth),
+            ExprKind::UnsafeBlock { block } | ExprKind::Block { block } => {
+                self.visit_block(block, depth)
+            }
             ExprKind::StructInit { fields, .. } => {
                 for (_, value, _) in fields {
                     self.visit_expr(value, depth);

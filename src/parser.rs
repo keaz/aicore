@@ -29,6 +29,20 @@ fn assignment_operator(kind: &TokenKind) -> Option<Option<BinOp>> {
     Some(Some(op))
 }
 
+/// Expressions that end in a block: they can be statements without `;`,
+/// and a match arm with such a body needs no trailing comma.
+fn is_block_like(expr: &Expr) -> bool {
+    matches!(
+        expr.kind,
+        ExprKind::If { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::While { .. }
+            | ExprKind::Loop { .. }
+            | ExprKind::Block { .. }
+            | ExprKind::UnsafeBlock { .. }
+    )
+}
+
 /// Splits the float token of a nested tuple index (`t.0.1` lexes `0.1` as
 /// one float) into its two element indexes.
 fn split_nested_tuple_index(literal: &crate::lexer::FloatLiteralToken) -> Option<(String, String)> {
@@ -121,6 +135,10 @@ struct Parser<'a> {
     for_counter: usize,
     tuple_binding_counter: usize,
     disallow_struct_literal: bool,
+    /// Set while parsing an expression that a block follows (`if` and
+    /// `while` conditions, `match` scrutinees, contracts): a `{` there
+    /// starts that block, not a block expression operand.
+    disallow_block_expr: bool,
     // Termination guard: every token inspection counts as one step. Once the
     // token-proportional budget is spent the parser only sees EOF, so every
     // parsing loop unwinds and `E1099` is reported instead of hanging.
@@ -166,6 +184,7 @@ impl<'a> Parser<'a> {
             for_counter: 0,
             tuple_binding_counter: 0,
             disallow_struct_literal: false,
+            disallow_block_expr: false,
             steps: Cell::new(0),
             step_budget,
             stuck_at: Cell::new(0),
@@ -778,12 +797,12 @@ impl<'a> Parser<'a> {
         loop {
             if self.at_kind(|k| matches!(k, TokenKind::KwRequires)) {
                 self.bump();
-                requires = Some(self.parse_expr()?);
+                requires = Some(self.parse_expr_before_block()?);
                 continue;
             }
             if self.at_kind(|k| matches!(k, TokenKind::KwEnsures)) {
                 self.bump();
-                ensures = Some(self.parse_expr()?);
+                ensures = Some(self.parse_expr_before_block()?);
                 continue;
             }
             break;
@@ -1088,7 +1107,7 @@ impl<'a> Parser<'a> {
 
         let invariant = if self.at_kind(|k| matches!(k, TokenKind::KwInvariant)) {
             self.bump();
-            Some(self.parse_expr()?)
+            Some(self.parse_expr_before_block()?)
         } else {
             None
         };
@@ -2022,6 +2041,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self) -> Option<Block> {
+        // Inside a block, `{` starts block expressions again.
+        let prev = std::mem::replace(&mut self.disallow_block_expr, false);
+        let block = self.parse_block_contents();
+        self.disallow_block_expr = prev;
+        block
+    }
+
+    fn parse_block_contents(&mut self) -> Option<Block> {
         let start = self
             .expect(
                 |k| matches!(k, TokenKind::LBrace),
@@ -2065,6 +2092,13 @@ impl<'a> Parser<'a> {
                     if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
                         let span = expr.span.join(self.current_span());
                         self.bump();
+                        stmts.push(Stmt::Expr { expr, span });
+                    } else if is_block_like(&expr)
+                        && !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof))
+                    {
+                        // `if`/`match`/`while`/`loop`/`for`/block expressions
+                        // that end in `}` are statements without a `;`.
+                        let span = expr.span;
                         stmts.push(Stmt::Expr { expr, span });
                     } else {
                         tail = Some(Box::new(expr));
@@ -3073,6 +3107,13 @@ impl<'a> Parser<'a> {
                     kind: ExprKind::UnsafeBlock { block },
                 })
             }
+            TokenKind::LBrace if !self.disallow_block_expr => {
+                let block = self.parse_block()?;
+                Some(Expr {
+                    span: block.span,
+                    kind: ExprKind::Block { block },
+                })
+            }
             TokenKind::Ident(name) => {
                 self.bump();
                 let mut full_name = name;
@@ -3144,13 +3185,26 @@ impl<'a> Parser<'a> {
     fn parse_if_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // if
-        let cond = self.parse_expr()?;
+        let cond = self.parse_expr_before_block()?;
         let then_block = self.parse_block()?;
-        self.expect(
-            |k| matches!(k, TokenKind::KwElse),
-            "E1042",
-            "expected else branch for if expression",
-        )?;
+        if !self.at_kind(|k| matches!(k, TokenKind::KwElse)) {
+            // `if cond { ... }` without `else`: the missing branch is an
+            // empty block, so the `if` has type `()`.
+            let end = then_block.span.end;
+            return Some(Expr {
+                kind: ExprKind::If {
+                    cond: Box::new(cond),
+                    then_block,
+                    else_block: Block {
+                        stmts: Vec::new(),
+                        tail: None,
+                        span: Span::new(end, end),
+                    },
+                },
+                span: Span::new(start, end),
+            });
+        }
+        self.bump(); // else
 
         let else_block = if self.at_kind(|k| matches!(k, TokenKind::KwIf)) {
             let nested = self.parse_if_expr()?;
@@ -3200,7 +3254,7 @@ impl<'a> Parser<'a> {
     fn parse_while_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // while
-        let cond = self.parse_expr()?;
+        let cond = self.parse_expr_before_block()?;
         let body = self.parse_block()?;
         let end = body.span.end;
         Some(Expr {
@@ -3607,8 +3661,17 @@ impl<'a> Parser<'a> {
     fn parse_expr_without_struct_literals(&mut self) -> Option<Expr> {
         let prev = self.disallow_struct_literal;
         self.disallow_struct_literal = true;
-        let expr = self.parse_expr();
+        let expr = self.parse_expr_before_block();
         self.disallow_struct_literal = prev;
+        expr
+    }
+
+    /// Parses an expression that a block follows; see `disallow_block_expr`.
+    fn parse_expr_before_block(&mut self) -> Option<Expr> {
+        let prev = self.disallow_block_expr;
+        self.disallow_block_expr = true;
+        let expr = self.parse_expr();
+        self.disallow_block_expr = prev;
         expr
     }
 
@@ -4020,7 +4083,7 @@ impl<'a> Parser<'a> {
     fn parse_match_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // match
-        let expr = self.parse_expr()?;
+        let expr = self.parse_expr_before_block()?;
         self.expect(
             |k| matches!(k, TokenKind::LBrace),
             "E1043",
@@ -4051,7 +4114,10 @@ impl<'a> Parser<'a> {
             });
             if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
                 self.bump();
-            } else {
+            } else if !(is_block_like(&arms.last().expect("arm").body)
+                && !self.at_kind(|k| matches!(k, TokenKind::RBrace)))
+            {
+                // The comma after an arm is optional when its body ends in `}`.
                 break;
             }
         }
@@ -4741,6 +4807,57 @@ mod tests {
             .map(|method| method.params[0].mutable_receiver)
             .collect::<Vec<_>>();
         assert_eq!(receivers, [true, false, false]);
+    }
+
+    #[test]
+    fn parses_block_expressions_and_if_without_else() {
+        let src = "fn f(x: Int) -> Int { let a = { let b = x; b + 1 }; if a > 1 { g(); } let c = match a { 1 => { let d = 2; d } _ => 0 }; while a > 9 { a; } { a; } c }";
+        let stmts = body_stmts(src);
+        // let a, if (no `;`), let c, while (no `;`), block (no `;`).
+        assert_eq!(stmts.len(), 5, "{stmts:#?}");
+        let Stmt::Let { expr, .. } = &stmts[0] else {
+            panic!("expected let");
+        };
+        let ExprKind::Block { block } = &expr.kind else {
+            panic!("expected block expression, found {expr:?}");
+        };
+        assert_eq!(block.stmts.len(), 1);
+        assert!(block.tail.is_some());
+        let Stmt::Expr { expr, .. } = &stmts[1] else {
+            panic!("expected if statement");
+        };
+        let ExprKind::If { else_block, .. } = &expr.kind else {
+            panic!("expected if");
+        };
+        assert!(else_block.stmts.is_empty() && else_block.tail.is_none());
+        assert_eq!(else_block.span.start, else_block.span.end);
+        let Stmt::Let { expr, .. } = &stmts[2] else {
+            panic!("expected let");
+        };
+        let ExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match");
+        };
+        // The comma after a block arm is optional.
+        assert_eq!(arms.len(), 2);
+        assert!(matches!(arms[0].body.kind, ExprKind::Block { .. }));
+        assert!(
+            matches!(&stmts[3], Stmt::Expr { expr, .. } if matches!(expr.kind, ExprKind::While { .. }))
+        );
+        assert!(
+            matches!(&stmts[4], Stmt::Expr { expr, .. } if matches!(expr.kind, ExprKind::Block { .. }))
+        );
+    }
+
+    #[test]
+    fn non_block_expressions_still_need_semicolons() {
+        let (_, diagnostics) = parse("fn f() -> Int { g() h() }", "test.aic");
+        assert!(!diagnostics.is_empty());
+        // A match arm whose body is not a block still needs its comma.
+        let (_, diagnostics) = parse(
+            "fn f(x: Int) -> Int { match x { 1 => 2 _ => 3 } }",
+            "test.aic",
+        );
+        assert!(!diagnostics.is_empty());
     }
 
     #[test]

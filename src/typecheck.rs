@@ -3583,7 +3583,7 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
-            ir::ExprKind::UnsafeBlock { block } => {
+            ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
                 let mut block_state = state.clone();
                 let mut block_binding_types = binding_types.clone();
                 self.check_resource_protocol_block(
@@ -4119,7 +4119,7 @@ impl<'a> Checker<'a> {
                 }
                 Vec::new()
             }
-            ir::ExprKind::UnsafeBlock { block } => {
+            ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
                 let mut block_mutability = mutability.clone();
                 let mut block_state = state.clone();
                 let mut block_types = binding_types.clone();
@@ -6860,16 +6860,37 @@ impl<'a> Checker<'a> {
                     ctx,
                     contract_mode,
                 );
+                // The parser gives `if` without `else` an empty, zero-width
+                // else block.
+                let else_missing = else_block.stmts.is_empty()
+                    && else_block.tail.is_none()
+                    && else_block.span.start == else_block.span.end;
                 if !self.is_never_type(&then_ty) && !self.types_compatible(&then_ty, &else_ty) {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E1220",
-                        format!(
-                            "if branches must have same type (then '{}', else '{}')",
-                            then_ty, else_ty
-                        ),
-                        self.file,
-                        expr.span,
-                    ));
+                    let diagnostic = if else_missing {
+                        Diagnostic::error(
+                            "E1220",
+                            format!(
+                                "`if` without `else` has type '()', but its branch has type '{}'",
+                                then_ty
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                        .with_help(
+                            "add an `else` branch, or end the branch with `;` to discard its value",
+                        )
+                    } else {
+                        Diagnostic::error(
+                            "E1220",
+                            format!(
+                                "if branches must have same type (then '{}', else '{}')",
+                                then_ty, else_ty
+                            ),
+                            self.file,
+                            expr.span,
+                        )
+                    };
+                    self.diagnostics.push(diagnostic);
                     "<?>".to_string()
                 } else {
                     self.merge_compatible_types(&then_ty, &else_ty)
@@ -7374,6 +7395,14 @@ impl<'a> Checker<'a> {
                 self.unsafe_depth = previous_depth;
                 ty
             }
+            ir::ExprKind::Block { block } => self.check_block(
+                block,
+                locals,
+                expected_ty.unwrap_or("()"),
+                allowed_effects,
+                ctx,
+                contract_mode,
+            ),
             ir::ExprKind::StructInit { name, fields } => {
                 if name == TUPLE_INTERNAL_NAME {
                     let expected_tuple_items = expected_ty.and_then(|expected| {
@@ -11773,7 +11802,9 @@ fn collect_captured_mutations_in_expr(
             collect_captured_mutations_in_expr(cond, outer, mutating_calls, scopes, out);
             collect_captured_mutations_in_block(body, outer, mutating_calls, scopes, out);
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             collect_captured_mutations_in_block(body, outer, mutating_calls, scopes, out);
         }
         ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
@@ -14236,6 +14267,39 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn block_expressions_and_if_without_else_are_typed() {
+        let ok = r#"
+fn main() -> Int {
+    let x = { let a = 1; a + 1 };
+    let mut y = 0;
+    if x > 1 { y = x; }
+    let z = match y { 2 => { let b = 20; b * 2 }, _ => 0 };
+    let unit: () = { y = 1; };
+    z + x
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // `if` without `else` has type `()`.
+            ("fn main() -> Int { let v = if true { 1 }; 0 }", "E1220"),
+            // A block's bindings end with the block.
+            (
+                "fn main() -> Int { let x = { let inner = 1; inner }; inner }",
+                "E1208",
+            ),
+            // The block's value is its tail.
+            ("fn main() -> Int { let s: String = { 1 }; 0 }", "E1204"),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);

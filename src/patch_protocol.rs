@@ -1117,7 +1117,9 @@ fn collect_match_expr_candidates_from_expr(expr: &Expr, out: &mut Vec<MatchExprC
         | ExprKind::Borrow { expr, .. }
         | ExprKind::Await { expr }
         | ExprKind::Try { expr } => collect_match_expr_candidates_from_expr(expr, out),
-        ExprKind::UnsafeBlock { block } => collect_match_expr_candidates_from_block(block, out),
+        ExprKind::UnsafeBlock { block } | ExprKind::Block { block } => {
+            collect_match_expr_candidates_from_block(block, out)
+        }
         ExprKind::StructInit { fields, .. } => {
             for (_, value, _) in fields {
                 collect_match_expr_candidates_from_expr(value, out);

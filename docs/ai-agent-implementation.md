@@ -931,6 +931,13 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Block Expressions and `if` Without `else` (SYNTAX-T3, #450)
+
+- Language surface: `{ stmts; tail }` as an expression, `if cond { ... }` without `else`, block bodies in match arms (the arm comma is then optional), and block-like statements without `;`. Rules: `docs/reference/expressions.md`, `docs/reference/statements.md`.
+- Data model: `ast::ExprKind::Block` / `ir::ExprKind::Block { block }`; every walker that visits `UnsafeBlock` visits `Block` the same way, without the unsafe context. `if` without `else` is an `If` whose else block is empty and zero-width (`else_block.span.start == else_block.span.end`); the checker uses that to explain `E1220`, and `aic fmt` omits the `else`.
+- Parser: `parse_primary` accepts `{`; `is_block_like` decides when a statement may omit `;` and a match arm its comma.
+- Verification: `tests/execution_tests.rs` (`exec_block_expressions_and_if_without_else`), `src/parser.rs` and `src/typecheck.rs` unit tests, golden `tests/golden/case26_block_expressions.aic`, `examples/core/block_expressions.aic`, and `examples/io/signal_shutdown.aic` in `make examples-check`.
+
 ## Compound Assignment (SYNTAX-T2, #449)
 
 - Language surface: `+=`, `-=`, `*=`, `/=`, `%=` alongside the bitwise `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`, on any assignment place (`x`, `p.a.b`, `t.0`, `v[i]`, `items[i].qty`).

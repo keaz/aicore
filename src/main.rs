@@ -4532,6 +4532,7 @@ fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
         aicore::ast::ExprKind::Await { .. } => "await expression",
         aicore::ast::ExprKind::Try { .. } => "try expression",
         aicore::ast::ExprKind::UnsafeBlock { .. } => "unsafe block",
+        aicore::ast::ExprKind::Block { .. } => "block",
         aicore::ast::ExprKind::StructInit { .. } => "struct initializer",
         aicore::ast::ExprKind::FieldAccess { .. } => "field access",
     }

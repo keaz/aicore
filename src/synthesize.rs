@@ -2078,7 +2078,9 @@ fn visit_expr(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
             visit_expr(cond, visit);
             visit_block(body, visit);
         }
-        ExprKind::Loop { body } | ExprKind::UnsafeBlock { block: body } => visit_block(body, visit),
+        ExprKind::Loop { body }
+        | ExprKind::UnsafeBlock { block: body }
+        | ExprKind::Block { block: body } => visit_block(body, visit),
         ExprKind::Break { expr } | ExprKind::Return { expr } => {
             if let Some(expr) = expr.as_deref() {
                 visit_expr(expr, visit);

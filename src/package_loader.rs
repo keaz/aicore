@@ -771,7 +771,9 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
         | ast::ExprKind::Borrow { expr, .. }
         | ast::ExprKind::Await { expr }
         | ast::ExprKind::Try { expr } => expr_uses_compiler_iterator_helpers(expr),
-        ast::ExprKind::UnsafeBlock { block } => block_uses_compiler_iterator_helpers(block),
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
+            block_uses_compiler_iterator_helpers(block)
+        }
         ast::ExprKind::StructInit { fields, .. } => fields
             .iter()
             .any(|(_, value, _)| expr_uses_compiler_iterator_helpers(value)),
