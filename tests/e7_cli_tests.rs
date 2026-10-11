@@ -5516,6 +5516,70 @@ fn check_reports_unsupported_trait_members_without_hanging() {
 }
 
 #[test]
+fn check_single_file_is_fast_regardless_of_path_form_and_cwd() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    // A large directory of unrelated, partly invalid files next to the entry.
+    // Single-file checks must not parse them (this used to take 40-140 s and
+    // failed on unrelated duplicate modules or unreadable directories).
+    fs::create_dir_all(root.join("probes/nested")).expect("mkdir probes");
+    for idx in 0..2000 {
+        fs::write(
+            root.join(format!("probes/nested/p{idx}.aic")),
+            format!(
+                "module probes.p{};\nfn f{idx}() -> Int {{ {idx} }}\n",
+                idx % 7
+            ),
+        )
+        .expect("write probe");
+    }
+    fs::write(root.join("probes/broken.aic"), "trait T { type X; fn f( ").expect("write broken");
+    fs::create_dir_all(root.join("work")).expect("mkdir work");
+    fs::write(root.join("work/one.aic"), "fn main() -> Int { 0 }\n").expect("write entry");
+    fs::write(root.join("one.aic"), "fn main() -> Int { 0 }\n").expect("write root entry");
+
+    let absolute = root.join("one.aic").to_string_lossy().to_string();
+    let dotted = root.join("work/../one.aic").to_string_lossy().to_string();
+    let cases: Vec<(std::path::PathBuf, String)> = vec![
+        (root.to_path_buf(), "one.aic".to_string()),
+        (root.join("work"), "../one.aic".to_string()),
+        (root.join("work"), "one.aic".to_string()),
+        (repo_root(), absolute.clone()),
+        (std::path::PathBuf::from("/"), absolute),
+        (repo_root(), dotted),
+    ];
+    for (cwd, file) in cases {
+        // Best of three runs: parallel test load can delay process startup, but
+        // the old directory walk was slow on every run.
+        let mut elapsed = std::time::Duration::MAX;
+        let mut output = None;
+        for _ in 0..3 {
+            let started = std::time::Instant::now();
+            let run = run_aic_in_dir(&cwd, &["check", &file]);
+            elapsed = elapsed.min(started.elapsed());
+            output = Some(run);
+            if elapsed < std::time::Duration::from_secs(1) {
+                break;
+            }
+        }
+        let output = output.expect("aic check output");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "cwd={} file={file}\nstdout={}\nstderr={}",
+            cwd.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "aic check took {elapsed:?} for cwd={} file={file}",
+            cwd.display()
+        );
+    }
+}
+
+#[test]
 fn test_harness_runs_categories_and_reports_json() {
     let all = run_aic(&["test", "examples/e7/harness", "--json"]);
     assert_eq!(all.status.code(), Some(0));

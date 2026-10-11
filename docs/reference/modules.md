@@ -20,17 +20,21 @@ unqualified_call = ident "(" arg_list? ")" ;
 - Entry loading starts from:
   - file input path, or
   - directory input resolved to `aic.toml` main entry, else `src/main.aic`
-- Package loader builds a module index by parsing reachable `.aic` files.
+- The project root is the nearest ancestor directory of the entry file that contains `aic.toml`. Without a manifest it is the entry file's own directory.
+- The loader parses only what the entry needs. It never walks the project directory up front, so checking a single file costs the same in a large or cluttered directory (for example `/tmp`) as in an empty one, regardless of path form or working directory.
 - Non-entry imported modules must declare `module ...;`.
-- Duplicate module declarations for the same module path are rejected.
-- Import resolution order:
-  - indexed module declarations
-  - fallback filesystem path lookup
-  - std-module fallback roots (first match wins):
+- Import resolution order (first match wins):
+  - modules already loaded, and modules declared by resolved package dependencies
+  - for `std.*` imports, the std roots (first match wins):
     - `AIC_STD_ROOT` when set
-    - global toolchain std (`~/.aic/toolchains/<aic-version>/std`) installed via `aic setup`
     - project-local `std/` (legacy override)
     - bundled std shipped with the CLI binary
+    - global toolchain std (`~/.aic/toolchains/<aic-version>/std`) installed via `aic setup`
+  - for other imports, the conventional file `<root>/a/b.aic` or `<root>/src/a/b.aic` for `import a.b;`, when that file declares `module a.b;`
+  - otherwise the loader indexes the project root once, parsing every `.aic` file below it, and resolves the import by its `module` declaration. The index skips hidden directories (`.git`, `.aic-cache`, ...), `target`, `node_modules`, unreadable directories and files, and visits symlinked directories at most once.
+  - finally, the conventional file path even if its `module` declaration differs.
+- Errors in files that are never imported (syntax errors, invalid UTF-8) do not affect the check.
+- Duplicate module declarations for the same module path are rejected with `E2105` when that module is imported. Duplicates of modules nobody imports are not reported. The entry file may declare the same module as another file (for example the copy `aic test` checks); the entry shadows the other declaration.
 - Import cycles are detected and reported deterministically.
 - Resolver keeps separate namespaces:
   - value namespace: functions
