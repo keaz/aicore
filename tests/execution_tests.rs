@@ -655,6 +655,57 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
 }
 
 #[test]
+fn exec_first_class_fn_value_from_impl_method() {
+    let src = r#"
+import std.io;
+
+struct C { n: Int }
+struct D { label: String, n: Int }
+
+trait Score[T] { fn score(self) -> Int; }
+
+impl C {
+    fn get(self) -> Int { self.n }
+    fn scaled(&self, k: Int) -> Int { self.n * k }
+    fn with(self, n: Int) -> C { C { n: self.n + n } }
+}
+
+impl D {
+    fn get(self) -> Int { self.n + 100 }
+    fn name(self) -> String { self.label }
+}
+
+impl Score[C] { fn score(self) -> Int { self.n * 10 } }
+
+struct Holder { f: Fn(C) -> Int }
+
+fn apply(f: Fn(C) -> Int, c: C) -> Int { f(c) }
+
+fn apply2(f: Fn(C, Int) -> Int, c: C, k: Int) -> Int { f(c, k) }
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(apply(C::get, C { n: 5 }));
+    print_int(apply2(C::scaled, C { n: 6 }, 7));
+    let g = D::get;
+    print_int(g(D { label: "d", n: 1 }));
+    let s: Fn(D) -> String = D::name;
+    print_str(s(D { label: "hello", n: 0 }));
+    print_str("\n");
+    print_int(apply(C::score, C { n: 3 }));
+    let w = C::with;
+    print_int(w(C { n: 4 }, 5).n);
+    let h = Holder { f: C::get };
+    let hf = h.f;
+    print_int(hf(C { n: 11 }));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "5\n42\n101\nhello\n30\n9\n11\n");
+}
+
+#[test]
 fn exec_closure_literal_invocation() {
     let src = r#"
 import std.io;

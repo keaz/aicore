@@ -1,0 +1,60 @@
+module examples.core.method_values;
+
+import std.io;
+
+// An impl method named as a value (`Type::method`) is a first-class
+// function. Its `self` receiver becomes the first parameter, so
+// `Account::balance` has type `Fn(Account) -> Int`.
+
+struct Account {
+    owner: String,
+    cents: Int,
+}
+
+trait Fee[T] {
+    fn fee(self) -> Int;
+}
+
+impl Account {
+    fn balance(self) -> Int {
+        self.cents
+    }
+
+    fn after_interest(self, percent: Int) -> Int {
+        self.cents + self.cents * percent / 100
+    }
+
+    fn deposit(self, amount: Int) -> Account {
+        Account { owner: self.owner, cents: self.cents + amount }
+    }
+}
+
+impl Fee[Account] {
+    fn fee(self) -> Int {
+        if self.cents < 1000 { 50 } else { 0 }
+    }
+}
+
+fn total(accounts: (Account, Account), measure: Fn(Account) -> Int) -> Int {
+    measure(accounts.0) + measure(accounts.1)
+}
+
+fn project(account: Account, rule: Fn(Account, Int) -> Int, percent: Int) -> Int {
+    rule(account, percent)
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let savings = Account { owner: "ana", cents: 500 }.deposit(1500);
+    let checking = Account { owner: "ben", cents: 800 };
+
+    let balances = total((savings, checking), Account::balance);
+    let fees = total((savings, checking), Account::fee);
+    let projected = project(savings, Account::after_interest, 10);
+
+    print_int(balances);
+    print_int(fees);
+    print_int(projected);
+    // 2800 + 50 + 2200 = 5050; report a small checksum.
+    print_int((balances + fees + projected) / 5050 * 42);
+    0
+}

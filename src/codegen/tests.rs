@@ -48,6 +48,30 @@ fn emits_basic_llvm() {
 }
 
 #[test]
+fn impl_methods_lower_as_function_values() {
+    let src = r#"
+struct C { n: Int }
+impl C { fn get(self) -> Int { self.n } }
+fn apply(f: Fn(C) -> Int, c: C) -> Int { f(c) }
+fn main() -> Int { apply(C::get, C { n: 5 }) }
+"#;
+    let (program, d) = parse(src, "test.aic");
+    assert!(d.is_empty(), "{d:#?}");
+    let ir = build(&program.expect("program"));
+    let lowered = lower_runtime_asserts(&ir);
+    let output = emit_llvm(&lowered, "test.aic").expect("llvm");
+    let adapter = find_define_block(&output.llvm_ir, "@__aic_fn_adapter_aic_C__get_");
+    assert!(
+        adapter.contains("(i8* %env, { i64 } %arg0)"),
+        "adapter takes the receiver by value:\n{adapter}"
+    );
+    assert!(
+        adapter.contains("call i64 @aic_C__get({ i64 } %arg0)"),
+        "adapter forwards to the method:\n{adapter}"
+    );
+}
+
+#[test]
 fn fixed_width_integer_functions_keep_exact_llvm_types() {
     let src = r#"
 fn add_i8(a: Int8, b: Int8) -> Int8 { a + b }

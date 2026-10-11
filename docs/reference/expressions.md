@@ -106,6 +106,7 @@ hex_int        = "0x" hexdigit+ ;
   - direct function names
   - qualified module calls (`module.symbol(...)`)
   - first-class `Fn(...) -> ...` values
+  - a non-generic, pure function or impl method named as a value (`apply(double, 2)`, `apply(C::get, c)`) becomes a `Fn(...) -> ...` value; a method's `self` receiver is its first parameter, so `C::get` with `fn get(self) -> Int` has type `Fn(C) -> Int`. Generic functions (`E1282`) and effectful functions (`E1283`) cannot be used as values
   - arguments may be positional (`f(1, 2)`) or named (`f(x: 1, y: 2)`)
   - when mixed, positional arguments must come first; otherwise `E1092` is reported
   - named arguments can be supplied in any order and are matched by parameter name

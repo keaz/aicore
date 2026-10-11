@@ -13776,6 +13776,31 @@ fn main() -> Int {
     }
 
     #[test]
+    fn method_values_take_the_receiver_as_first_parameter() {
+        let ok = r#"
+struct C { n: Int }
+trait Score[T] { fn score(self) -> Int; }
+impl C {
+    fn get(self) -> Int { self.n }
+    fn scaled(&self, k: Int) -> Int { self.n * k }
+}
+impl Score[C] { fn score(self) -> Int { self.n * 10 } }
+fn apply(f: Fn(C) -> Int, c: C) -> Int { f(c) }
+fn main() -> Int {
+    let g: Fn(C) -> Int = C::get;
+    let s: Fn(C, Int) -> Int = C::scaled;
+    apply(C::score, C { n: 1 }) + g(C { n: 2 }) + s(C { n: 3 }, 4)
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+
+        // The receiver is the first parameter, so the types must line up.
+        let wrong_arity =
+            "struct C { n: Int } impl C { fn get(self) -> Int { self.n } } fn main() -> Int { let f: Fn() -> Int = C::get; 0 }";
+        assert!(!error_codes(wrong_arity).is_empty());
+    }
+
+    #[test]
     fn uninferable_typed_holes_are_errors_and_resolved_holes_are_exported() {
         let unresolved = r#"
 fn unused(x: _) -> Int { 0 }

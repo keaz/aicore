@@ -913,6 +913,14 @@ Verifier-focused examples:
   - `CompatibilityPolicy` in `src/release_ops.rs`
   - `LtsPolicy` in `src/release_ops.rs`
 
+## Impl Methods as Function Values (#445 parity)
+
+- Language surface: `C::get` names an impl method (inherent or trait impl) as a value. The `self` receiver is the first parameter, so `fn get(self) -> Int` gives `Fn(C) -> Int`; `fn scaled(&self, k: Int) -> Int` gives `Fn(C, Int) -> Int`.
+- Checker (`src/typecheck.rs`, `ExprKind::Var` value path): the same rules as named functions apply (`E1282` generic, `E1283` effectful).
+- Codegen (`src/codegen/generator_core.rs`): `resolve_function_value_symbol` considers impl methods as well as top-level functions, skipping generic ones; `ensure_fn_value_adapter` builds the usual env-ignoring adapter that forwards to the method's LLVM symbol.
+- When `&mut self` receivers (SYNTAX-T1, #448) land on this line, such methods take the receiver by pointer and must be rejected as values (`E1302`) and skipped by `resolve_function_value_symbol`.
+- Verification: `src/typecheck.rs` test `method_values_take_the_receiver_as_first_parameter`, `src/codegen/tests.rs` test `impl_methods_lower_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+
 ## Connectivity Primitive: Bitwise Operators (CONN-T1)
 
 - Language surface:

@@ -7362,21 +7362,26 @@ impl<'a> Generator<'a> {
     /// Picks the function a bare name refers to when used as a value, with
     /// the checker's shadowing order: the current function's module first,
     /// then non-std modules, then std.
+    ///
+    /// Impl methods (`C::get`) are candidates too: the `self` receiver is
+    /// passed by value, so it is an ordinary first parameter.
     pub(super) fn resolve_function_value_symbol(
         &self,
         name: &str,
         fctx: &FnCtx,
     ) -> Option<ir::SymbolId> {
+        let lowerable = |func: &ir::Function| func.generics.is_empty() && func.name == name;
         let candidates = self
             .program
             .items
             .iter()
-            .filter_map(|item| match item {
-                ir::Item::Function(func) if func.generics.is_empty() && func.name == name => {
-                    Some(func.symbol)
-                }
-                _ => None,
+            .flat_map(|item| match item {
+                ir::Item::Function(func) => std::slice::from_ref(func),
+                ir::Item::Impl(impl_def) => impl_def.methods.as_slice(),
+                _ => &[],
             })
+            .filter(|func| lowerable(func))
+            .map(|func| func.symbol)
             .collect::<Vec<_>>();
         if candidates.len() <= 1 {
             return candidates.into_iter().next();
