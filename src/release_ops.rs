@@ -1267,11 +1267,17 @@ fn collect_files_from(
 }
 
 fn should_skip_path(path: &Path) -> bool {
+    // Build outputs, editor state, and local agent tooling (including other
+    // sessions' worktrees under `.claude/worktrees`), none of which are
+    // project sources.
     let skip_names = [
         ".aic",
         ".aic-cache",
         ".aic-replay",
         ".ci-local-bin",
+        ".claude",
+        ".codex",
+        "graphify-out",
         ".git",
         ".idea",
         ".vscode",
@@ -1692,6 +1698,28 @@ fn hmac_sha256_hex(key: &[u8], data: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn manifest_skips_build_outputs_and_local_agent_directories() {
+        use std::path::Path;
+        for skipped in [
+            ".claude/worktrees/session/src/main.rs",
+            ".codex/hooks.json",
+            "graphify-out/GRAPH_REPORT.md",
+            "target/debug/aic",
+            "examples/e6/pkg_app/.aic-cache/util/aic.toml",
+        ] {
+            assert!(super::should_skip_path(Path::new(skipped)), "{skipped}");
+        }
+        for kept in [
+            "src/main.rs",
+            "std/io.aic",
+            "docs/claude-notes.md",
+            "Cargo.toml",
+        ] {
+            assert!(!super::should_skip_path(Path::new(kept)), "{kept}");
+        }
+    }
+
     use std::fs;
 
     use tempfile::tempdir;

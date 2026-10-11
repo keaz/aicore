@@ -35,7 +35,7 @@ aic release selfhost-mode --mode default --check --approve-default
 aic build compiler/aic/tools/aic_selfhost -o target/selfhost-default/aic_selfhost
 ```
 
-Reproducibility manifests include source inputs and intentionally exclude local/generated paths such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, and `node_modules`.
+Reproducibility manifests include source inputs and intentionally exclude local/generated paths such as `target`, `target-linux`, `.aic`, `.aic-cache`, `.aic-replay`, `.ci-local-bin`, `.vscode-test`, `dist`, `node_modules`, and local agent tooling (`.claude`, `.codex`, `graphify-out`).
 
 ## Signing and Verification
 
