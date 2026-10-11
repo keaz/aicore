@@ -4,7 +4,9 @@ import std.io;
 
 // An impl method named as a value (`Type::method`) is a first-class
 // function. Its `self` receiver becomes the first parameter, so
-// `Account::balance` has type `Fn(Account) -> Int`.
+// `Account::balance` has type `Fn(Account) -> Int`. Methods with a
+// `&mut self` receiver update the caller's storage through a pointer and
+// cannot be used as values (E1303); call them directly instead.
 
 struct Account {
     owner: String,
@@ -24,8 +26,8 @@ impl Account {
         self.cents + self.cents * percent / 100
     }
 
-    fn deposit(self, amount: Int) -> Account {
-        Account { owner: self.owner, cents: self.cents + amount }
+    fn deposit(&mut self, amount: Int) -> () {
+        self.cents = self.cents + amount;
     }
 }
 
@@ -44,7 +46,8 @@ fn project(account: Account, rule: Fn(Account, Int) -> Int, percent: Int) -> Int
 }
 
 fn main() -> Int effects { io } capabilities { io } {
-    let savings = Account { owner: "ana", cents: 500 }.deposit(1500);
+    let mut savings = Account { owner: "ana", cents: 500 };
+    savings.deposit(1500);
     let checking = Account { owner: "ben", cents: 800 };
 
     let balances = total((savings, checking), Account::balance);

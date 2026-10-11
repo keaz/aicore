@@ -668,6 +668,7 @@ impl C {
     fn get(self) -> Int { self.n }
     fn scaled(&self, k: Int) -> Int { self.n * k }
     fn with(self, n: Int) -> C { C { n: self.n + n } }
+    fn bump(&mut self) -> Int { self.n = self.n + 1; self.n }
 }
 
 impl D {
@@ -697,12 +698,16 @@ fn main() -> Int effects { io } capabilities { io } {
     let h = Holder { f: C::get };
     let hf = h.f;
     print_int(hf(C { n: 11 }));
+    // `&mut self` methods are not values (E1303) but stay callable directly.
+    let mut c = C { n: 1 };
+    c.bump();
+    print_int(c.n);
     0
 }
 "#;
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
-    assert_eq!(stdout, "5\n42\n101\nhello\n30\n9\n11\n");
+    assert_eq!(stdout, "5\n42\n101\nhello\n30\n9\n11\n2\n");
 }
 
 #[test]

@@ -14360,6 +14360,33 @@ fn main() -> Int {
         let wrong_arity =
             "struct C { n: Int } impl C { fn get(self) -> Int { self.n } } fn main() -> Int { let f: Fn() -> Int = C::get; 0 }";
         assert!(!error_codes(wrong_arity).is_empty());
+
+        let mutable = "struct C { n: Int } impl C { fn bump(&mut self) -> Int { self.n = self.n + 1; self.n } }";
+        let cases = [
+            // Passed where an `Fn(C) -> Int` is expected.
+            format!("{mutable} fn apply(f: Fn(C) -> Int, c: C) -> Int {{ f(c) }} fn main() -> Int {{ apply(C::bump, C {{ n: 0 }}) }}"),
+            // Stored in a struct field.
+            format!("{mutable} struct H {{ f: Fn(C) -> Int }} fn main() -> Int {{ let h = H {{ f: C::bump }}; 0 }}"),
+            // A trait impl method with a `&mut self` receiver.
+            "struct C { n: Int } trait T2[X] { fn go(&mut self) -> Int; } impl T2[C] { fn go(&mut self) -> Int { self.n } } fn main() -> Int { let f = C::go; 0 }".to_string(),
+        ];
+        for src in cases {
+            let codes = error_codes(&src);
+            assert!(
+                codes.contains(&"E1303".to_string()),
+                "{src}: expected E1303, got {codes:?}"
+            );
+        }
+
+        // Direct calls of `&mut self` methods are unaffected.
+        let direct = format!(
+            "{mutable} fn main() -> Int {{ let mut c = C {{ n: 0 }}; c.bump(); C::bump(c) }}"
+        );
+        assert!(
+            !error_codes(&direct).contains(&"E1303".to_string()),
+            "{:?}",
+            error_codes(&direct)
+        );
     }
 
     #[test]

@@ -918,8 +918,9 @@ Verifier-focused examples:
 - Language surface: `C::get` names an impl method (inherent or trait impl) as a value. The `self` receiver is the first parameter, so `fn get(self) -> Int` gives `Fn(C) -> Int`; `fn scaled(&self, k: Int) -> Int` gives `Fn(C, Int) -> Int`.
 - Checker (`src/typecheck.rs`, `ExprKind::Var` value path): the same rules as named functions apply (`E1282` generic, `E1283` effectful).
 - Codegen (`src/codegen/generator_core.rs`): `resolve_function_value_symbol` considers impl methods as well as top-level functions, skipping generic ones; `ensure_fn_value_adapter` builds the usual env-ignoring adapter that forwards to the method's LLVM symbol.
-- `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`.
-- Verification: `src/typecheck.rs` test `method_values_take_the_receiver_as_first_parameter`, `src/codegen/tests.rs` test `impl_methods_lower_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+- `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`. A `&mut self` method value that reaches codegen without the checker reports `E5034` instead of getting a by-value adapter.
+- Verification: `src/typecheck.rs` tests `method_values_take_the_receiver_as_first_parameter` (types, and `E1303` for arguments, struct fields and trait impl methods) and `mutable_self_receivers_are_checked`, `src/codegen/tests.rs` tests `impl_methods_lower_as_function_values` and `mutable_receiver_methods_are_not_lowered_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+
 ## Place Assignment and `&mut self` (SYNTAX-T1, #448)
 
 - Language surface: `p.x = v`, `p.a.b = v`, `t.0 = v`, `t.1.0 = v`, `v[i] = x`, `items[i].qty = x`, and `self.n = v` / `self = v` in `&mut self` methods. Rules and diagnostics are in `docs/reference/statements.md`.
