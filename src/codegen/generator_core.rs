@@ -2693,11 +2693,12 @@ impl<'a> Generator<'a> {
                 ir::Stmt::Assign {
                     target,
                     path,
+                    op,
                     expr,
                     span,
                 } => {
-                    if !path.is_empty() {
-                        self.gen_place_assign(target, path, expr, *span, fctx);
+                    if !path.is_empty() || op.is_some() {
+                        self.gen_place_assign(target, path, *op, expr, *span, fctx);
                         continue;
                     }
                     let Some(local) = find_local(&fctx.vars, target) else {

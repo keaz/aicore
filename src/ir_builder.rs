@@ -481,6 +481,7 @@ impl Builder {
         &mut self,
         target: &str,
         path: &[ast::PlaceProjection],
+        op: Option<ast::BinOp>,
         expr: &ast::Expr,
         span: crate::span::Span,
         out: &mut Vec<ir::Stmt>,
@@ -516,6 +517,7 @@ impl Builder {
         out.push(ir::Stmt::Assign {
             target: target.to_string(),
             path: lowered_path,
+            op,
             expr: self.lower_expr(expr),
             span,
         });
@@ -545,10 +547,11 @@ impl Builder {
             ast::Stmt::Assign {
                 target,
                 path,
+                op,
                 expr,
                 span,
             } => {
-                self.lower_place_assign(target, path, expr, *span, out);
+                self.lower_place_assign(target, path, *op, expr, *span, out);
                 return;
             }
             ast::Stmt::Expr { expr, span } => ir::Stmt::Expr {

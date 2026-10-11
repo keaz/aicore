@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `diagnostic registry` (316 codes).
+This catalog covers all registered diagnostics from `diagnostic registry` (315 codes).
 
 Each row includes a concise description plus compile-intent trigger/fix snippets aligned with AIC syntax.
 
@@ -136,7 +136,6 @@ Runtime IO context chains are modeled by `std.error_context` and `std.io` helper
 | `E1103` | Unknown trait referenced in impl declaration. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1104` | Trait implementation arity mismatch. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
 | `E1105` | Conflicting duplicate trait implementation. | `fn main() -> Int { missing_name }` | `fn main() -> Int { let missing_name = 1; missing_name }` |
-| `E1110` | Compound assignment to an indexed place (parser). | `v[0] \|= 1;` | `v[0] = 1;` |
 | `E1200` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1201` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |
 | `E1202` | Type-checking or pattern/exhaustiveness diagnostic. | `fn main() -> Int { if true { 1 } else { "x" } }` | `fn main() -> Int { if true { 1 } else { 0 } }` |

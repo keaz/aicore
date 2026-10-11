@@ -3435,10 +3435,14 @@ impl<'a> Checker<'a> {
                     }
                 }
                 ir::Stmt::Assign {
-                    target, path, expr, ..
+                    target,
+                    path,
+                    op,
+                    expr,
+                    ..
                 } => {
                     self.check_resource_protocol_expr(expr, state, binding_types);
-                    if !path.is_empty() {
+                    if !path.is_empty() || op.is_some() {
                         // Updating part of a value keeps the binding's
                         // resource state.
                         continue;
@@ -3787,6 +3791,7 @@ impl<'a> Checker<'a> {
                 ir::Stmt::Assign {
                     target,
                     path,
+                    op,
                     expr,
                     span,
                 } => {
@@ -3831,9 +3836,9 @@ impl<'a> Checker<'a> {
                             Diagnostic::error("E1266", message, self.file, *span).with_help(help),
                         );
                     }
-                    if !path.is_empty() {
-                        // A place assignment reads the rest of the value, so
-                        // the root must still hold a value.
+                    if !path.is_empty() || op.is_some() {
+                        // A place or compound assignment reads the current
+                        // value, so the root must still hold one.
                         self.check_use_after_move(target, *span, state);
                     }
                     if let Some((conflict_target, conflict)) =
@@ -3865,7 +3870,7 @@ impl<'a> Checker<'a> {
                         );
                         self.diagnostics.push(diag);
                     }
-                    if path.is_empty() {
+                    if path.is_empty() && op.is_none() {
                         state.moved_by_binding.remove(target);
                         if let Some(inferred) = self.infer_binding_type(expr, binding_types) {
                             binding_types.insert(target.clone(), inferred);
@@ -4881,6 +4886,7 @@ impl<'a> Checker<'a> {
                 ir::Stmt::Assign {
                     target,
                     path,
+                    op,
                     expr,
                     span,
                 } => {
@@ -4903,7 +4909,7 @@ impl<'a> Checker<'a> {
                         self.check_expr(expr, &mut scope, allowed_effects, ctx, contract_mode);
                         continue;
                     };
-                    let expr_ty = self.check_expr_with_expected(
+                    let mut expr_ty = self.check_expr_with_expected(
                         expr,
                         &mut scope,
                         allowed_effects,
@@ -4911,6 +4917,13 @@ impl<'a> Checker<'a> {
                         contract_mode,
                         Some(&target_ty),
                     );
+                    if let Some(op) = op {
+                        // `place op= expr` stores `place op expr`.
+                        expr_ty = self.check_binary(*op, &target_ty, &expr_ty, *span);
+                        if contains_unresolved_type(&expr_ty) {
+                            continue;
+                        }
+                    }
                     if !self.types_compatible(&target_ty, &expr_ty) {
                         self.diagnostics.push(
                             Diagnostic::error(
@@ -14223,6 +14236,44 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn compound_assignment_is_type_checked() {
+        let ok = r#"
+struct P { x: Int, f: Float64, b: UInt8 }
+fn bump(items: Vec[P]) -> Vec[P] {
+    let mut v = items;
+    v[0].x += 1;
+    v[0].f *= 2.0;
+    v
+}
+fn main() -> Int {
+    let mut p = P { x: 1, f: 1.0, b: 1u8 };
+    p.x -= 1;
+    p.b += 2u8;
+    let mut n = 3;
+    n %= 2;
+    n
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // Operands the binary operator rejects.
+            ("fn main() -> Int { let mut s = \"a\"; s -= 1; 0 }", "E1230"),
+            ("fn main() -> Int { let mut b = true; b += 1; 0 }", "E1230"),
+            // The root must be mutable.
+            ("fn main() -> Int { let n = 1; n += 1; n }", "E1266"),
+            // ... and still hold a value.
+            ("struct P { x: Int, s: String } fn main() -> Int { let mut p = P { x: 1, s: \"a\" }; let q = p; p.x += 1; 0 }", "E1277"),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);

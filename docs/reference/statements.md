@@ -15,7 +15,8 @@ let_stmt       = "let" "mut"? ident (":" type)? "=" expr ";" ;
 assign_stmt    = place assign_op expr ";" ;
 place          = ident place_step* ;
 place_step     = "." (ident | int_lit) | "[" expr "]" ;
-assign_op      = "=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | ">>>=" ;
+assign_op      = "=" | "+=" | "-=" | "*=" | "/=" | "%="
+               | "&=" | "|=" | "^=" | "<<=" | ">>=" | ">>>=" ;
 return_stmt    = "return" expr? ";" ;
 expr_stmt      = expr ";" ;
 assert_stmt    = "assert" "(" expr ")" ";" ;   (* IR/runtime form; not user surface syntax *)
@@ -44,7 +45,12 @@ assert_stmt    = "assert" "(" expr ")" ";" ;   (* IR/runtime form; not user surf
   - order: index expressions left to right, then the right-hand side, then the store
   - a `Vec` element write copies the buffer first, so other values that share it are unchanged (value semantics); an index outside `0..len` panics with `index_out_of_bounds{op:assign,type:Vec}`
   - after the store, every struct on the path that declares an `invariant` is checked again; a violation panics with `contract_violation{kind:invariant,owner:<Struct>}`
-  - compound operators work on field and tuple places (`p.flags |= 4;`); on a place with an index they are rejected (`E1110`)
+- Compound assignment (`place op= expr` for `+ - * / % & | ^ << >> >>>`) works on every place above, including `Vec` elements (`v[i] += 1`, `items[i].qty -= n`):
+  - it stores `place op expr`, typed like the binary expression (`E1230` and related codes for unsupported operand types); the result must have the place's type (`E1269`)
+  - order: index expressions left to right, then the right-hand side, then the place is read, combined and stored; an index is evaluated once
+  - arithmetic follows the binary operators: division by zero panics, and fixed-width integer types keep their width (`b += 5u8`)
+  - the root must be mutable and hold a value (`E1266`, `E1277`), as for plain assignment
+  - `aic fmt` keeps the compound spelling
 - Methods with a `&mut self` receiver update the caller's value:
   - `value.method(...)` and `Type::method(value, ...)` pass the receiver's storage, so assignments to `self` or its fields inside the method are visible to the caller
   - the receiver must be a `let mut` binding (or a field of one, or `self` in another `&mut self` method) that is not borrowed (`E1266`, `E1263`); a temporary receiver (`make().bump()`) is allowed and its update is discarded

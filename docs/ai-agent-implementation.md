@@ -931,12 +931,20 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Compound Assignment (SYNTAX-T2, #449)
+
+- Language surface: `+=`, `-=`, `*=`, `/=`, `%=` alongside the bitwise `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`, on any assignment place (`x`, `p.a.b`, `t.0`, `v[i]`, `items[i].qty`).
+- Data model: the parser no longer desugars compound assignment. `ast::Stmt::Assign.op` / `ir::Stmt::Assign.op` hold the operator and `expr` is the right operand, so `aic fmt` prints the compound form and indexed places need no expression for the element read.
+- Checker: the stored value is typed with `check_binary(op, place, rhs)`; a compound assignment reads the root, so it is checked for use after move.
+- Codegen (`gen_place_assign` in `src/codegen/generator_place.rs`): evaluates the right-hand side, reads the place (`read_place`, which panics on an out-of-range `Vec` index), applies `gen_binary`, and rebuilds the place.
+- Verification: `tests/execution_tests.rs` (`exec_compound_assignment_*`), `src/typecheck.rs` (`compound_assignment_is_type_checked`), `src/parser.rs` (`parses_every_compound_assignment_operator`), golden `tests/golden/case25_place_assignment.aic`, REPL test in `tests/e7_cli_tests.rs`.
+
 ## Connectivity Primitive: Bitwise Operators (CONN-T1)
 
 - Language surface:
   - Binary: `&`, `|`, `^`, `<<`, `>>`, `>>>`
   - Unary: `~`
-  - Compound assignment: `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`
+  - Compound assignment: `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=` (arithmetic `+=` and friends: see SYNTAX-T2 below)
   - Hex literals: `0x...` (`Int`)
 - Type rules:
   - All bitwise/shift operators require `Int` operands and produce `Int`.

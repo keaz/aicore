@@ -8,27 +8,25 @@ use crate::span::Span;
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
 const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
 
-/// Reads the current value of an assignment place as an expression, for
-/// compound assignment. Returns `None` when the place has an index, which
-/// has no expression form.
-fn place_read_expr(target: &str, target_span: Span, path: &[PlaceProjection]) -> Option<Expr> {
-    let mut expr = Expr::var(target.to_string(), target_span);
-    for projection in path {
-        match projection {
-            PlaceProjection::Field { name, span } => {
-                let span = Span::new(expr.span.start, span.end);
-                expr = Expr {
-                    kind: ExprKind::FieldAccess {
-                        base: Box::new(expr),
-                        field: name.clone(),
-                    },
-                    span,
-                };
-            }
-            PlaceProjection::Index { .. } => return None,
-        }
-    }
-    Some(expr)
+/// The operator of an assignment token: `Some(None)` for `=`,
+/// `Some(Some(op))` for a compound operator, `None` for anything else.
+fn assignment_operator(kind: &TokenKind) -> Option<Option<BinOp>> {
+    let op = match kind {
+        TokenKind::Eq => return Some(None),
+        TokenKind::PlusEq => BinOp::Add,
+        TokenKind::MinusEq => BinOp::Sub,
+        TokenKind::StarEq => BinOp::Mul,
+        TokenKind::SlashEq => BinOp::Div,
+        TokenKind::PercentEq => BinOp::Mod,
+        TokenKind::AmpEq => BinOp::BitAnd,
+        TokenKind::PipeEq => BinOp::BitOr,
+        TokenKind::CaretEq => BinOp::BitXor,
+        TokenKind::LShiftEq => BinOp::Shl,
+        TokenKind::RShiftEq => BinOp::Shr,
+        TokenKind::URShiftEq => BinOp::Ushr,
+        _ => return None,
+    };
+    Some(Some(op))
 }
 
 /// Splits the float token of a nested tuple index (`t.0.1` lexes `0.1` as
@@ -2264,54 +2262,19 @@ impl<'a> Parser<'a> {
 
     fn parse_assign_stmt(&mut self) -> Option<Stmt> {
         let start = self.current_span().start;
-        let (target, target_span) = self.expect_ident("E1060", "expected assignment target")?;
+        let (target, _) = self.expect_ident("E1060", "expected assignment target")?;
         let path = self.parse_place_path()?;
-        let compound_op = match &self.current().kind {
-            TokenKind::Eq => None,
-            TokenKind::AmpEq => Some(BinOp::BitAnd),
-            TokenKind::PipeEq => Some(BinOp::BitOr),
-            TokenKind::CaretEq => Some(BinOp::BitXor),
-            TokenKind::LShiftEq => Some(BinOp::Shl),
-            TokenKind::RShiftEq => Some(BinOp::Shr),
-            TokenKind::URShiftEq => Some(BinOp::Ushr),
-            _ => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E1061",
-                    "expected assignment operator ('=', '&=', '|=', '^=', '<<=', '>>=', '>>>=')",
-                    self.file,
-                    self.current_span(),
-                ));
-                return None;
-            }
+        let Some(op) = assignment_operator(&self.current().kind) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1061",
+                "expected assignment operator ('=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>=')",
+                self.file,
+                self.current_span(),
+            ));
+            return None;
         };
-        let op_span = self.current_span();
         self.bump();
-        let rhs_expr = self.parse_expr()?;
-        let expr = if let Some(op) = compound_op {
-            let Some(lhs_expr) = place_read_expr(&target, target_span, &path) else {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E1110",
-                        "compound assignment to an indexed place is not supported",
-                        self.file,
-                        op_span,
-                    )
-                    .with_help("write the element back with plain `=`, for example `v[i] = value`"),
-                );
-                return None;
-            };
-            let span = lhs_expr.span.join(rhs_expr.span);
-            Expr {
-                kind: ExprKind::Binary {
-                    op,
-                    lhs: Box::new(lhs_expr),
-                    rhs: Box::new(rhs_expr),
-                },
-                span,
-            }
-        } else {
-            rhs_expr
-        };
+        let expr = self.parse_expr()?;
         let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
             let span = self.current_span();
             self.bump();
@@ -2332,6 +2295,7 @@ impl<'a> Parser<'a> {
         Some(Stmt::Assign {
             target,
             path,
+            op,
             expr,
             span: Span::new(start, end),
         })
@@ -3839,6 +3803,7 @@ impl<'a> Parser<'a> {
         let mut some_body_stmts = vec![Stmt::Assign {
             target: iter_name.clone(),
             path: Vec::new(),
+            op: None,
             expr: step_iter_expr,
             span,
         }];
@@ -3962,6 +3927,7 @@ impl<'a> Parser<'a> {
             Stmt::Assign {
                 target: cur_name.clone(),
                 path: Vec::new(),
+                op: None,
                 expr: Expr {
                     kind: ExprKind::Binary {
                         op: BinOp::Add,
@@ -4536,18 +4502,7 @@ impl<'a> Parser<'a> {
                     }
                     offset += 1;
                 }
-                Some(kind) => {
-                    return matches!(
-                        kind,
-                        TokenKind::Eq
-                            | TokenKind::AmpEq
-                            | TokenKind::PipeEq
-                            | TokenKind::CaretEq
-                            | TokenKind::LShiftEq
-                            | TokenKind::RShiftEq
-                            | TokenKind::URShiftEq
-                    )
-                }
+                Some(kind) => return assignment_operator(kind).is_some(),
                 None => return false,
             }
         }
@@ -4699,15 +4654,47 @@ mod tests {
                 "x"
             ]
         );
-        // `self.n |= 7` reads the place on the right-hand side.
-        let Stmt::Assign { expr, .. } = &stmts[6] else {
+        // `self.n |= 7` keeps its operator; the value is the right operand.
+        let Stmt::Assign { op, expr, .. } = &stmts[6] else {
             panic!("expected assignment");
         };
-        let ExprKind::Binary { op, lhs, .. } = &expr.kind else {
-            panic!("expected compound assignment desugaring");
-        };
-        assert_eq!(*op, BinOp::BitOr);
-        assert!(matches!(&lhs.kind, ExprKind::FieldAccess { field, .. } if field == "n"));
+        assert_eq!(*op, Some(BinOp::BitOr));
+        assert!(matches!(&expr.kind, ExprKind::Int(7, ..)));
+    }
+
+    #[test]
+    fn parses_every_compound_assignment_operator() {
+        let stmts = body_stmts(
+            "fn f() -> () { x += 1; x -= 1; x *= 1; x /= 1; x %= 1; x &= 1; x |= 1; x ^= 1; x <<= 1; x >>= 1; x >>>= 1; v[0] += 1; x = 1; }",
+        );
+        let ops = stmts
+            .iter()
+            .map(|stmt| match stmt {
+                Stmt::Assign { op, .. } => *op,
+                other => panic!("expected assignment, found {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ops,
+            [
+                Some(BinOp::Add),
+                Some(BinOp::Sub),
+                Some(BinOp::Mul),
+                Some(BinOp::Div),
+                Some(BinOp::Mod),
+                Some(BinOp::BitAnd),
+                Some(BinOp::BitOr),
+                Some(BinOp::BitXor),
+                Some(BinOp::Shl),
+                Some(BinOp::Shr),
+                Some(BinOp::Ushr),
+                Some(BinOp::Add),
+                None,
+            ]
+        );
+        // `x + = 1` is not an assignment operator.
+        let (_, diagnostics) = parse("fn f() -> () { x + = 1; }", "test.aic");
+        assert!(!diagnostics.is_empty());
     }
 
     #[test]
@@ -4735,15 +4722,6 @@ mod tests {
         };
         assert_eq!(field, "0");
         assert!(matches!(&base.kind, ExprKind::FieldAccess { field, .. } if field == "1"));
-    }
-
-    #[test]
-    fn compound_assignment_to_indexed_place_is_rejected() {
-        let (_, diagnostics) = parse("fn f() -> () { v[0] |= 1; }", "test.aic");
-        assert!(
-            diagnostics.iter().any(|d| d.code == "E1110"),
-            "{diagnostics:#?}"
-        );
     }
 
     #[test]
@@ -5911,13 +5889,10 @@ fn main() -> Int {
         .enumerate()
         {
             let stmt = &function.body.stmts[index + 1];
-            let Stmt::Assign { expr, .. } = stmt else {
+            let Stmt::Assign { op, .. } = stmt else {
                 panic!("expected assignment statement");
             };
-            let ExprKind::Binary { op, .. } = &expr.kind else {
-                panic!("compound assignment should parse as binary expression");
-            };
-            assert_eq!(op, expected);
+            assert_eq!(op.as_ref(), Some(expected));
         }
     }
 

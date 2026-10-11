@@ -147,3 +147,8 @@ fn golden_case23_trait_methods() {
 fn golden_case24_borrow_checker_completeness() {
     run_golden_case("case24_borrow_checker_completeness.aic");
 }
+
+#[test]
+fn golden_case25_place_assignment() {
+    run_golden_case("case25_place_assignment.aic");
+}

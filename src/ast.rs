@@ -516,12 +516,17 @@ pub enum Stmt {
         span: Span,
     },
     /// `target = expr`, or a place assignment such as `target.a.0 = expr`
-    /// or `target[i].b = expr` when `path` is not empty. `target` is the
+    /// or `target[i].b = expr` when `path` is not empty, or a compound
+    /// assignment (`target.n += expr`) when `op` is set. `target` is the
     /// root binding.
     Assign {
         target: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         path: Vec<PlaceProjection>,
+        /// The operator of a compound assignment (`place += expr`); `expr`
+        /// is then the right-hand operand.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        op: Option<BinOp>,
         expr: Expr,
         span: Span,
     },

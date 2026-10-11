@@ -594,7 +594,11 @@ fn render_stmt(stmt: &Stmt) -> String {
             )
         }
         Stmt::Assign {
-            target, path, expr, ..
+            target,
+            path,
+            op,
+            expr,
+            ..
         } => {
             let mut place = target.clone();
             for projection in path {
@@ -610,7 +614,12 @@ fn render_stmt(stmt: &Stmt) -> String {
                     }
                 }
             }
-            format!("{place} = {}", render_expr(expr))
+            let assign_op = op.map(|op| format!("{}=", render_binop(op)));
+            format!(
+                "{place} {} {}",
+                assign_op.as_deref().unwrap_or("="),
+                render_expr(expr)
+            )
         }
         Stmt::Expr { expr, .. } => render_expr(expr),
         Stmt::Return { expr, .. } => match expr {

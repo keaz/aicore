@@ -155,6 +155,11 @@ pub enum TokenKind {
     AmpEq,
     PipeEq,
     CaretEq,
+    PlusEq,
+    MinusEq,
+    StarEq,
+    SlashEq,
+    PercentEq,
     LShift,
     RShift,
     URShift,
@@ -276,9 +281,36 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::Dot, Span::new(start, self.offset));
                     }
                 }
-                '+' => self.single(TokenKind::Plus),
-                '*' => self.single(TokenKind::Star),
-                '%' => self.single(TokenKind::Percent),
+                '+' => {
+                    let start = self.offset;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::PlusEq, Span::new(start, self.offset));
+                    } else {
+                        self.push(TokenKind::Plus, Span::new(start, self.offset));
+                    }
+                }
+                '*' => {
+                    let start = self.offset;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::StarEq, Span::new(start, self.offset));
+                    } else {
+                        self.push(TokenKind::Star, Span::new(start, self.offset));
+                    }
+                }
+                '%' => {
+                    let start = self.offset;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::PercentEq, Span::new(start, self.offset));
+                    } else {
+                        self.push(TokenKind::Percent, Span::new(start, self.offset));
+                    }
+                }
                 '~' => self.single(TokenKind::Tilde),
                 ':' => {
                     let start = self.offset;
@@ -296,6 +328,9 @@ impl<'a> Lexer<'a> {
                     if self.peek() == Some('>') {
                         self.bump();
                         self.push(TokenKind::Arrow, Span::new(start, self.offset));
+                    } else if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::MinusEq, Span::new(start, self.offset));
                     } else {
                         self.push(TokenKind::Minus, Span::new(start, self.offset));
                     }
@@ -405,7 +440,16 @@ impl<'a> Lexer<'a> {
                         self.push(TokenKind::Caret, Span::new(start, self.offset));
                     }
                 }
-                '/' => self.single(TokenKind::Slash),
+                '/' => {
+                    let start = self.offset;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        self.push(TokenKind::SlashEq, Span::new(start, self.offset));
+                    } else {
+                        self.push(TokenKind::Slash, Span::new(start, self.offset));
+                    }
+                }
                 _ => {
                     let start = self.offset;
                     self.bump();

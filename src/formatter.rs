@@ -1477,7 +1477,11 @@ impl<'a> Printer<'a> {
                 self.out.push(';');
             }
             ir::Stmt::Assign {
-                target, path, expr, ..
+                target,
+                path,
+                op,
+                expr,
+                ..
             } => {
                 self.out.push_str(target);
                 for projection in path {
@@ -1496,7 +1500,14 @@ impl<'a> Printer<'a> {
                         }
                     }
                 }
-                self.out.push_str(" = ");
+                match op {
+                    Some(op) => {
+                        self.out.push(' ');
+                        self.out.push_str(binop_info(*op).1);
+                        self.out.push_str("= ");
+                    }
+                    None => self.out.push_str(" = "),
+                }
                 self.expr(expr, 0, indent);
                 self.out.push(';');
             }

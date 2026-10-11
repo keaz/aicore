@@ -18220,3 +18220,118 @@ fn main() -> Int effects { io } capabilities { io } {
         "stderr={stderr}"
     );
 }
+
+#[test]
+fn exec_compound_assignment_on_locals_places_and_vec_elements() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct Stats { total: Int, ratio: Float64, small: (Int, UInt8) }
+struct Item { qty: Int }
+
+fn at(v: Vec[Int], i: Int) -> Int {
+    match vec.get(v, i) { Some(x) => x, None => -1 }
+}
+
+fn qty(items: Vec[Item], i: Int) -> Int {
+    match vec.get(items, i) { Some(item) => item.qty, None => -1 }
+}
+
+fn next_index(n: Int) -> Int effects { io } capabilities { io } {
+    print_int(n);
+    n
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut a = 10;
+    a += 5;
+    a -= 3;
+    a *= 4;
+    a /= 6;
+    a %= 5;
+    a <<= 2;
+    a |= 1;
+    print_int(a);
+
+    let mut s = Stats { total: 7, ratio: 1.5, small: (2, 250u8) };
+    s.total += 3;
+    s.ratio *= 2.0;
+    s.small.0 -= 1;
+    s.small.1 += 5u8;
+    print_int(s.total + s.small.0);
+    print_int(if s.ratio == 3.0 { 1 } else { 0 });
+    print_int(if s.small.1 == 255u8 { 1 } else { 0 });
+
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 4);
+    v = vec.push(v, 9);
+    v[1] *= 3;
+    // The index is evaluated once.
+    v[next_index(0)] += 10;
+    print_int(at(v, 0) * 100 + at(v, 1));
+
+    let mut items: Vec[Item] = vec.new_vec();
+    items = vec.push(items, Item { qty: 5 });
+    items[0].qty -= 2;
+    print_int(qty(items, 0));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "13\n11\n1\n1\n0\n1427\n3\n");
+}
+
+#[test]
+fn exec_compound_division_by_zero_panics() {
+    let src = r#"
+import std.io;
+
+struct Acc { n: Int }
+
+fn zero() -> Int { 0 }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut acc = Acc { n: 10 };
+    acc.n /= 2;
+    print_int(acc.n);
+    acc.n /= zero();
+    print_int(acc.n);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "5\n", "stderr={stderr}");
+    assert!(stderr.contains("AICore panic"), "stderr={stderr}");
+}
+
+#[test]
+fn exec_compound_assignment_through_mutable_self() {
+    let src = r#"
+import std.io;
+
+struct Meter { reading: Int, peaks: (Int, Int) }
+
+impl Meter {
+    fn add(&mut self, amount: Int) -> () {
+        self.reading += amount;
+        self.peaks.0 += 1;
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut m = Meter { reading: 30, peaks: (0, 0) };
+    m.add(10);
+    m.add(1);
+    m.reading += 1;
+    print_int(m.reading);
+    print_int(m.peaks.0);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n2\n");
+}

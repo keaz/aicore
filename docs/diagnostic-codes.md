@@ -61,7 +61,6 @@ Recent core-language additions:
 - `E1298`: assignment through a `Ref`/`RefMut` value (`r.x = 1` where `r: RefMut[P]`); writes through references are not supported.
 - `E1299`: an `async` method declares a `&mut self` receiver.
 - `E1303`: a `&mut self` method used as a function value (`let f = C::bump;`).
-- `E1110` (parser): compound assignment (`&=`, `|=`, ...) to a place with an index (`v[i] |= 1`).
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound not satisfied by concrete type.
 - `E1259`: invalid or unknown trait bound declaration.
@@ -175,7 +174,6 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E1298` | Assignment through a `Ref`/`RefMut` value. | Assign to a `let mut` binding, or to `self` in a `&mut self` method. |
 | `E1299` | `async` method with a `&mut self` receiver. | Take `self` and return the updated value. |
 | `E1303` | `&mut self` method used as a function value. | Call the method directly or wrap the call in a closure. |
-| `E1110` | Compound assignment to an indexed place (`v[i] |= 1`). | Write the element back with plain `=`. |
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
 | `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |

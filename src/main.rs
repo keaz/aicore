@@ -4124,14 +4124,32 @@ fn eval_repl_statement(
             })
         }
         aicore::ast::Stmt::Assign {
-            target, path, expr, ..
+            target,
+            path,
+            op,
+            expr,
+            span,
         } => {
             if !path.is_empty() {
                 return Err(format!(
                     "cannot assign to a field or element of `{target}`: REPL values are Int, Float, Bool, String and Unit"
                 ));
             }
-            let value = eval_repl_expr(expr, &state.env)?;
+            let value = match op {
+                // `x op= e` evaluates as `x = x op e`.
+                Some(op) => {
+                    let combined = aicore::ast::Expr {
+                        kind: aicore::ast::ExprKind::Binary {
+                            op: *op,
+                            lhs: Box::new(aicore::ast::Expr::var(target.clone(), *span)),
+                            rhs: Box::new(expr.clone()),
+                        },
+                        span: *span,
+                    };
+                    eval_repl_expr(&combined, &state.env)?
+                }
+                None => eval_repl_expr(expr, &state.env)?,
+            };
             let Some(binding) = state.env.get_mut(target) else {
                 return Err(format!("unknown variable `{target}`"));
             };

@@ -1090,6 +1090,7 @@ fn lower_ensures_in_block(
             ir::Stmt::Assign {
                 target,
                 path,
+                op,
                 mut expr,
                 span,
             } => {
@@ -1097,6 +1098,7 @@ fn lower_ensures_in_block(
                 lowered_stmts.push(ir::Stmt::Assign {
                     target,
                     path,
+                    op,
                     expr,
                     span,
                 });
@@ -1694,11 +1696,13 @@ fn clone_block(block: &ir::Block, alloc: &mut IdAlloc) -> ir::Block {
                 ir::Stmt::Assign {
                     target,
                     path,
+                    op,
                     expr,
                     span,
                 } => ir::Stmt::Assign {
                     target: target.clone(),
                     path: path.clone(),
+                    op: *op,
                     expr: clone_expr(expr, alloc),
                     span: *span,
                 },

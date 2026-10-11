@@ -1,0 +1,28 @@
+import std.vec;
+
+struct Counter {
+    n: Int,
+    pair: (Int, Int),
+}
+
+impl Counter {
+    fn bump(&mut self, by: Int) -> () {
+        self.n += by;
+        self.pair.1 = self.n;
+    }
+}
+
+fn update(items: Vec[Counter], i: Int) -> Vec[Counter] {
+    let mut v = items;
+    v[i].n = 1;
+    v[i + 1].pair.0 *= 2;
+    v
+}
+
+fn main() -> Int {
+    let mut c = Counter {n: 0, pair: (0, 0)};
+    c.bump(5);
+    c.n -= 1;
+    c.pair.0 %= 3;
+    c.n
+}

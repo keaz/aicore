@@ -222,6 +222,7 @@ impl<'a> Generator<'a> {
         &mut self,
         target: &str,
         path: &[ir::PlaceProjection],
+        op: Option<BinOp>,
         expr: &ir::Expr,
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -241,6 +242,29 @@ impl<'a> Generator<'a> {
         let Some(value) = self.gen_expr_with_expected(expr, Some(&place_ty), fctx) else {
             return;
         };
+        if fctx.terminated {
+            return;
+        }
+        let value = match op {
+            None => value,
+            Some(op) => {
+                // `place op= expr`: the right-hand side is evaluated first,
+                // then the place is read and combined with it.
+                let Some(current) = self.read_place(&local, path, fctx) else {
+                    return;
+                };
+                let divisor = if matches!(op, BinOp::Div | BinOp::Mod) {
+                    divisor_facts::divisor_fact(expr, &fctx.divisor_facts)
+                } else {
+                    DivisorFact::Unknown
+                };
+                let Some(combined) = self.gen_binary(op, current, value, divisor, fctx, span)
+                else {
+                    return;
+                };
+                combined
+            }
+        };
         let Some(value) = self.coerce_value_to_expected(value, &place_ty, span, fctx) else {
             return;
         };
@@ -256,9 +280,6 @@ impl<'a> Generator<'a> {
                 self.file,
                 span,
             ));
-            return;
-        }
-        if fctx.terminated {
             return;
         }
 
@@ -287,6 +308,90 @@ impl<'a> Generator<'a> {
             llvm_type(&local.ty),
             local.ptr
         ));
+    }
+
+    /// Current value of the place `local.path`.
+    fn read_place(
+        &mut self,
+        local: &Local,
+        path: &[ir::PlaceProjection],
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let reg = self.new_temp();
+        fctx.lines.push(format!(
+            "  {} = load {}, {}* {}",
+            reg,
+            llvm_type(&local.ty),
+            llvm_type(&local.ty),
+            local.ptr
+        ));
+        let mut current = Value {
+            ty: local.ty.clone(),
+            repr: Some(reg),
+        };
+        for projection in path {
+            current = match projection {
+                ir::PlaceProjection::Field { name, span } => {
+                    let (index, field_ty) = self.place_field(&current.ty, name, "place", *span)?;
+                    let field = self.new_temp();
+                    fctx.lines.push(format!(
+                        "  {} = extractvalue {} {}, {}",
+                        field,
+                        llvm_type(&current.ty),
+                        current
+                            .repr
+                            .clone()
+                            .unwrap_or_else(|| default_value(&current.ty)),
+                        index
+                    ));
+                    Value {
+                        ty: field_ty,
+                        repr: Some(field),
+                    }
+                }
+                ir::PlaceProjection::Index { binding, span } => {
+                    let index = self.load_place_index(binding, *span, fctx)?;
+                    let (elem_ty, _, _) =
+                        self.vec_element_info(&current.ty, "index assignment", *span)?;
+                    self.vec_element_or_panic(&current, &index, &elem_ty, *span, fctx)?
+                }
+            };
+        }
+        Some(current)
+    }
+
+    /// Loads the hidden `Int` binding that holds a place index.
+    fn load_place_index(
+        &mut self,
+        binding: &str,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<String> {
+        let Some(index_local) = find_local(&fctx.vars, binding) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E5001",
+                "missing index binding during place assignment codegen",
+                self.file,
+                span,
+            ));
+            return None;
+        };
+        if index_local.ty != LType::Int {
+            self.diagnostics.push(Diagnostic::error(
+                "E5011",
+                format!(
+                    "Vec index must be Int, found '{}'",
+                    render_type(&index_local.ty)
+                ),
+                self.file,
+                span,
+            ));
+            return None;
+        }
+        let index = self.new_temp();
+        fctx.lines
+            .push(format!("  {} = load i64, i64* {}", index, index_local.ptr));
+        Some(index)
     }
 
     /// LLVM type of the place `target.path`, or `None` after reporting.
@@ -409,30 +514,7 @@ impl<'a> Generator<'a> {
                 binding,
                 span: index_span,
             } => {
-                let Some(index_local) = find_local(&fctx.vars, binding) else {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5001",
-                        "missing index binding during place assignment codegen",
-                        self.file,
-                        *index_span,
-                    ));
-                    return None;
-                };
-                if index_local.ty != LType::Int {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5011",
-                        format!(
-                            "Vec index must be Int, found '{}'",
-                            render_type(&index_local.ty)
-                        ),
-                        self.file,
-                        *index_span,
-                    ));
-                    return None;
-                }
-                let index = self.new_temp();
-                fctx.lines
-                    .push(format!("  {} = load i64, i64* {}", index, index_local.ptr));
+                let index = self.load_place_index(binding, *index_span, fctx)?;
                 let (elem_ty, _, _) =
                     self.vec_element_info(&current.ty, "index assignment", *index_span)?;
                 let new_elem = if rest.is_empty() {
