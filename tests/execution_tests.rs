@@ -7731,11 +7731,8 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
         0
     };
 
-    if run_with_ok + run_with_timeout + run_timeout_ok + invalid_timeout == 4 {
-        42
-    } else {
-        0
-    }
+    // Each check sets one bit so a failure reports which check broke.
+    100 + run_with_ok + 2 * run_with_timeout + 4 * run_timeout_ok + 8 * invalid_timeout
 }
 "#;
     let (code, stdout, stderr) = compile_and_run_with_setup(src, |root| {
@@ -7743,7 +7740,10 @@ fn main() -> Int effects { proc, env } capabilities { proc, env  } {
         fs::create_dir_all(&workdir).expect("mkdir workdir");
         fs::write(workdir.join("input.txt"), "cwd-data").expect("write workdir input");
     });
-    assert_eq!(code, 42, "stderr={stderr}");
+    assert_eq!(
+        code, 115,
+        "bits over 100: 1=run_with stdin/env/cwd, 2=run_with timeout, 4=run_timeout, 8=invalid timeout; stderr={stderr}"
+    );
     assert_eq!(stdout, "");
 }
 
