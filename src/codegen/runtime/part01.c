@@ -1941,42 +1941,189 @@ static int aic_rt_vec_load_slots(
     return 1;
 }
 
-static int aic_rt_vec_ensure_capacity(
-    unsigned char** io_ptr,
-    int64_t* io_cap,
-    size_t need,
-    size_t elem_size
-) {
-    if (io_ptr == NULL || io_cap == NULL || elem_size == 0) {
-        return 1;
+/*
+ * Vec value semantics.
+ *
+ * A Vec value is {ptr, len, cap}; copying the value shares the buffer. No
+ * operation may change bytes that another Vec value can read, so a buffer is
+ * never written below the length of a value that refers to it, never
+ * reallocated, and never freed here.
+ *
+ * Appending is still amortized O(1): the runtime records, per buffer it
+ * allocated, the largest length any value has claimed (the frontier). A value
+ * whose length equals the frontier may write the slots after it, which no
+ * other value can read, and claim them. Every other change (set, insert,
+ * remove, reverse, a push from an older value) copies into a new buffer.
+ */
+typedef struct {
+    uintptr_t key;
+    int64_t committed;
+} AicVecFrontierSlot;
+
+static AicVecFrontierSlot* aic_rt_vec_frontier_slots = NULL;
+static size_t aic_rt_vec_frontier_cap = 0;
+static size_t aic_rt_vec_frontier_used = 0;
+static pthread_mutex_t aic_rt_vec_frontier_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static size_t aic_rt_vec_frontier_hash(uintptr_t key) {
+    uint64_t x = (uint64_t)key;
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    return (size_t)x;
+}
+
+static AicVecFrontierSlot* aic_rt_vec_frontier_find_locked(uintptr_t key) {
+    if (aic_rt_vec_frontier_cap == 0) {
+        return NULL;
     }
-    size_t cap_n = 0;
-    if (!aic_rt_vec_checked_non_negative_long(*io_cap, &cap_n)) {
-        return 1;
+    size_t mask = aic_rt_vec_frontier_cap - 1;
+    size_t idx = aic_rt_vec_frontier_hash(key) & mask;
+    for (size_t probe = 0; probe < aic_rt_vec_frontier_cap; ++probe) {
+        AicVecFrontierSlot* slot = &aic_rt_vec_frontier_slots[idx];
+        if (slot->key == key) {
+            return slot;
+        }
+        if (slot->key == 0) {
+            return NULL;
+        }
+        idx = (idx + 1) & mask;
     }
-    if (need <= cap_n) {
+    return NULL;
+}
+
+static int aic_rt_vec_frontier_grow_locked(void) {
+    size_t next_cap = aic_rt_vec_frontier_cap == 0 ? 64 : aic_rt_vec_frontier_cap * 2;
+    if (next_cap > SIZE_MAX / sizeof(AicVecFrontierSlot)) {
         return 0;
     }
-    size_t next_cap = cap_n == 0 ? 4 : cap_n;
+    /* Runtime bookkeeping, not program data: keep it out of leak reports. */
+    AicVecFrontierSlot* next =
+        (AicVecFrontierSlot*)aic_rt_sys_calloc(next_cap, sizeof(AicVecFrontierSlot));
+    if (next == NULL) {
+        return 0;
+    }
+    size_t mask = next_cap - 1;
+    for (size_t i = 0; i < aic_rt_vec_frontier_cap; ++i) {
+        AicVecFrontierSlot old = aic_rt_vec_frontier_slots[i];
+        if (old.key == 0) {
+            continue;
+        }
+        size_t idx = aic_rt_vec_frontier_hash(old.key) & mask;
+        while (next[idx].key != 0) {
+            idx = (idx + 1) & mask;
+        }
+        next[idx] = old;
+    }
+    aic_rt_sys_free(aic_rt_vec_frontier_slots);
+    aic_rt_vec_frontier_slots = next;
+    aic_rt_vec_frontier_cap = next_cap;
+    return 1;
+}
+
+/* Records that `ptr` is a runtime-owned buffer whose frontier is `committed`.
+ * If the table cannot grow, the buffer is simply not tracked: later appends
+ * copy instead of writing in place, which is slower but still correct. */
+static void aic_rt_vec_register_buffer(const unsigned char* ptr, size_t committed) {
+    if (ptr == NULL || committed > (size_t)INT64_MAX) {
+        return;
+    }
+    uintptr_t key = (uintptr_t)ptr;
+    (void)pthread_mutex_lock(&aic_rt_vec_frontier_lock);
+    AicVecFrontierSlot* slot = aic_rt_vec_frontier_find_locked(key);
+    if (slot == NULL) {
+        if ((aic_rt_vec_frontier_used + 1) * 4 > aic_rt_vec_frontier_cap * 3 &&
+            !aic_rt_vec_frontier_grow_locked()) {
+            (void)pthread_mutex_unlock(&aic_rt_vec_frontier_lock);
+            return;
+        }
+        size_t mask = aic_rt_vec_frontier_cap - 1;
+        size_t idx = aic_rt_vec_frontier_hash(key) & mask;
+        while (aic_rt_vec_frontier_slots[idx].key != 0) {
+            idx = (idx + 1) & mask;
+        }
+        slot = &aic_rt_vec_frontier_slots[idx];
+        slot->key = key;
+        aic_rt_vec_frontier_used += 1;
+    }
+    slot->committed = (int64_t)committed;
+    (void)pthread_mutex_unlock(&aic_rt_vec_frontier_lock);
+}
+
+/* Claims slots [len, new_len) of `ptr` for the caller if `len` is the
+ * buffer's frontier. Returns 1 when the caller may write those slots. */
+static int aic_rt_vec_claim_frontier(const unsigned char* ptr, size_t len, size_t new_len) {
+    if (ptr == NULL || new_len > (size_t)INT64_MAX) {
+        return 0;
+    }
+    int claimed = 0;
+    (void)pthread_mutex_lock(&aic_rt_vec_frontier_lock);
+    AicVecFrontierSlot* slot = aic_rt_vec_frontier_find_locked((uintptr_t)ptr);
+    if (slot != NULL && slot->committed == (int64_t)len) {
+        slot->committed = (int64_t)new_len;
+        claimed = 1;
+    }
+    (void)pthread_mutex_unlock(&aic_rt_vec_frontier_lock);
+    return claimed;
+}
+
+static size_t aic_rt_vec_grown_capacity(size_t current, size_t need) {
+    size_t next_cap = current < 4 ? 4 : current;
     while (next_cap < need) {
         if (next_cap > SIZE_MAX / 2) {
-            next_cap = need;
-            break;
+            return need;
         }
         next_cap *= 2;
     }
-    if (next_cap < need ||
-        next_cap > (size_t)INT64_MAX ||
-        next_cap > SIZE_MAX / elem_size) {
-        return 1;
+    return next_cap;
+}
+
+/* Allocates a runtime-owned buffer of `cap` elements holding a copy of the
+ * first `keep` elements of `src`. Returns NULL on overflow or allocation
+ * failure. */
+static unsigned char* aic_rt_vec_copy_buffer(
+    const unsigned char* src,
+    size_t keep,
+    size_t cap,
+    size_t elem_size
+) {
+    if (cap == 0 || cap < keep || cap > (size_t)INT64_MAX || cap > SIZE_MAX / elem_size) {
+        return NULL;
     }
-    void* grown = realloc(*io_ptr, next_cap * elem_size);
-    if (grown == NULL) {
-        return 1;
+    unsigned char* out = (unsigned char*)malloc(cap * elem_size);
+    if (out == NULL) {
+        return NULL;
     }
-    *io_ptr = (unsigned char*)grown;
+    if (keep > 0 && src != NULL) {
+        memcpy(out, src, keep * elem_size);
+    }
+    return out;
+}
+
+/* Makes room for `need` elements after the first `len` elements and returns
+ * the buffer the caller may write slots [len, need) into: the existing buffer
+ * if the caller holds its frontier and capacity suffices, otherwise a new
+ * copy. Updates the io slots to the returned buffer. */
+static unsigned char* aic_rt_vec_reserve_tail(
+    unsigned char** io_ptr,
+    int64_t* io_cap,
+    size_t len,
+    size_t cap,
+    size_t need,
+    size_t elem_size
+) {
+    if (*io_ptr != NULL && need <= cap && aic_rt_vec_claim_frontier(*io_ptr, len, need)) {
+        return *io_ptr;
+    }
+    size_t next_cap = aic_rt_vec_grown_capacity(cap > len ? cap : len, need);
+    unsigned char* out = aic_rt_vec_copy_buffer(*io_ptr, len, next_cap, elem_size);
+    if (out == NULL) {
+        return NULL;
+    }
+    aic_rt_vec_register_buffer(out, need);
+    *io_ptr = out;
     *io_cap = (int64_t)next_cap;
-    return 0;
+    return out;
 }
 
 static int aic_rt_vec_string_equal(const unsigned char* lhs, const unsigned char* rhs, size_t elem_size) {
@@ -2072,6 +2219,7 @@ int64_t aic_rt_vec_with_capacity(
     if (out == NULL) {
         return 1;
     }
+    aic_rt_vec_register_buffer(out, 0);
     *out_ptr = out;
     *out_len = 0;
     *out_cap = (int64_t)cap_n;
@@ -2098,6 +2246,7 @@ int64_t aic_rt_vec_of(
     }
     memcpy(out, value_ptr, elem_n);
     if (out_ptr != NULL) {
+        aic_rt_vec_register_buffer(out, 1);
         *out_ptr = out;
     } else {
         free(out);
@@ -2148,7 +2297,6 @@ int64_t aic_rt_vec_push(
     size_t elem_n = 0;
     size_t len_n = 0;
     size_t cap_n = 0;
-    (void)cap_n;
     if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
         elem_n == 0 ||
         value_ptr == NULL ||
@@ -2158,16 +2306,15 @@ int64_t aic_rt_vec_push(
         return 1;
     }
     (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
-    if (len_n >= (size_t)INT64_MAX || len_n > SIZE_MAX / elem_n) {
+    if (len_n >= (size_t)INT64_MAX || len_n >= SIZE_MAX / elem_n) {
         return 1;
     }
     size_t need = len_n + 1;
-    if (aic_rt_vec_ensure_capacity(io_ptr, io_cap, need, elem_n) != 0 ||
-        *io_ptr == NULL ||
-        len_n > SIZE_MAX / elem_n) {
+    unsigned char* base = aic_rt_vec_reserve_tail(io_ptr, io_cap, len_n, cap_n, need, elem_n);
+    if (base == NULL) {
         return 1;
     }
-    memcpy(*io_ptr + (len_n * elem_n), value_ptr, elem_n);
+    memcpy(base + (len_n * elem_n), value_ptr, elem_n);
     *io_len = (int64_t)need;
     return 0;
 }
@@ -2193,18 +2340,16 @@ int64_t aic_rt_vec_pop(
     if (len_n == 0) {
         return 0;
     }
-    len_n -= 1;
-    if (*io_ptr != NULL && len_n <= SIZE_MAX / elem_n) {
-        memset(*io_ptr + (len_n * elem_n), 0, elem_n);
-    }
-    *io_len = (int64_t)len_n;
+    /* The shorter value shares the buffer; the dropped slot is left intact
+     * because the original value can still read it. */
+    *io_len = (int64_t)(len_n - 1);
     return 0;
 }
 
 int64_t aic_rt_vec_set(
-    unsigned char* ptr,
-    int64_t len,
-    int64_t cap,
+    unsigned char** io_ptr,
+    int64_t* io_len,
+    int64_t* io_cap,
     int64_t index,
     int64_t elem_size,
     const unsigned char* value_ptr
@@ -2212,19 +2357,29 @@ int64_t aic_rt_vec_set(
     size_t len_n = 0;
     size_t cap_n = 0;
     size_t elem_n = 0;
-    if (index < 0 ||
+    if (io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL ||
+        index < 0 ||
         value_ptr == NULL ||
-        !aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+        !aic_rt_vec_validate_parts(*io_ptr, *io_len, *io_cap, &len_n, &cap_n) ||
         !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
         elem_n == 0 ||
         len_n > SIZE_MAX / elem_n) {
         return 0;
     }
     size_t idx = (size_t)index;
-    if (idx >= len_n || idx > SIZE_MAX / elem_n) {
+    if (idx >= len_n) {
         return 0;
     }
-    memcpy(ptr + (idx * elem_n), value_ptr, elem_n);
+    /* Other values may share this buffer, so the update goes to a copy. */
+    unsigned char* out = aic_rt_vec_copy_buffer(*io_ptr, len_n, cap_n, elem_n);
+    if (out == NULL) {
+        return 0;
+    }
+    memcpy(out + (idx * elem_n), value_ptr, elem_n);
+    aic_rt_vec_register_buffer(out, len_n);
+    *io_ptr = out;
     return 1;
 }
 
@@ -2239,7 +2394,6 @@ int64_t aic_rt_vec_insert(
     size_t elem_n = 0;
     size_t len_n = 0;
     size_t cap_n = 0;
-    (void)cap_n;
     if (index < 0 ||
         value_ptr == NULL ||
         !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
@@ -2251,27 +2405,30 @@ int64_t aic_rt_vec_insert(
     }
     (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
     size_t idx = (size_t)index;
-    if (idx > len_n || len_n >= (size_t)INT64_MAX || len_n > SIZE_MAX / elem_n) {
+    if (idx > len_n || len_n >= (size_t)INT64_MAX || len_n >= SIZE_MAX / elem_n) {
         return 0;
     }
     size_t need = len_n + 1;
-    if (aic_rt_vec_ensure_capacity(io_ptr, io_cap, need, elem_n) != 0 ||
-        *io_ptr == NULL ||
-        len_n > SIZE_MAX / elem_n ||
-        idx > SIZE_MAX / elem_n) {
+    if (idx == len_n) {
+        unsigned char* base = aic_rt_vec_reserve_tail(io_ptr, io_cap, len_n, cap_n, need, elem_n);
+        if (base == NULL) {
+            return 1;
+        }
+        memcpy(base + (len_n * elem_n), value_ptr, elem_n);
+        *io_len = (int64_t)need;
         return 1;
     }
-    unsigned char* base = *io_ptr;
-    size_t tail = len_n - idx;
-    if (tail > 0) {
-        memmove(
-            base + ((idx + 1) * elem_n),
-            base + (idx * elem_n),
-            tail * elem_n
-        );
+    size_t next_cap = need <= cap_n ? cap_n : aic_rt_vec_grown_capacity(cap_n, need);
+    unsigned char* out = aic_rt_vec_copy_buffer(*io_ptr, idx, next_cap, elem_n);
+    if (out == NULL) {
+        return 1;
     }
-    memcpy(base + (idx * elem_n), value_ptr, elem_n);
+    memcpy(out + (idx * elem_n), value_ptr, elem_n);
+    memcpy(out + ((idx + 1) * elem_n), *io_ptr + (idx * elem_n), (len_n - idx) * elem_n);
+    aic_rt_vec_register_buffer(out, need);
+    *io_ptr = out;
     *io_len = (int64_t)need;
+    *io_cap = (int64_t)next_cap;
     return 1;
 }
 
@@ -2285,7 +2442,6 @@ int64_t aic_rt_vec_remove_at(
     size_t elem_n = 0;
     size_t len_n = 0;
     size_t cap_n = 0;
-    (void)cap_n;
     if (index < 0 ||
         !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
         elem_n == 0 ||
@@ -2296,23 +2452,36 @@ int64_t aic_rt_vec_remove_at(
     }
     (void)aic_rt_vec_load_slots(io_ptr, io_len, io_cap, &len_n, &cap_n);
     size_t idx = (size_t)index;
-    if (idx >= len_n || len_n > SIZE_MAX / elem_n || idx > SIZE_MAX / elem_n) {
+    if (idx >= len_n || len_n > SIZE_MAX / elem_n) {
         return 0;
     }
-    unsigned char* base = *io_ptr;
-    size_t tail = len_n - idx - 1;
-    if (tail > 0) {
-        memmove(
-            base + (idx * elem_n),
-            base + ((idx + 1) * elem_n),
-            tail * elem_n
-        );
+    size_t remaining = len_n - 1;
+    if (idx == remaining) {
+        /* Dropping the last element only shortens the value. */
+        *io_len = (int64_t)remaining;
+        return 1;
     }
-    len_n -= 1;
-    if (base != NULL && len_n <= SIZE_MAX / elem_n) {
-        memset(base + (len_n * elem_n), 0, elem_n);
+    if (idx == 0 && *io_ptr != NULL) {
+        /* Dropping the first element is a view of the same buffer starting
+         * one element later; nothing is written, so this is O(1) and other
+         * values are unaffected. Vec iteration relies on this. */
+        *io_ptr += elem_n;
+        *io_len = (int64_t)remaining;
+        *io_cap = (int64_t)(cap_n - 1);
+        return 1;
     }
-    *io_len = (int64_t)len_n;
+    unsigned char* out = aic_rt_vec_copy_buffer(*io_ptr, idx, cap_n, elem_n);
+    if (out == NULL) {
+        return 1;
+    }
+    memcpy(
+        out + (idx * elem_n),
+        *io_ptr + ((idx + 1) * elem_n),
+        (remaining - idx) * elem_n
+    );
+    aic_rt_vec_register_buffer(out, remaining);
+    *io_ptr = out;
+    *io_len = (int64_t)remaining;
     return 1;
 }
 
@@ -2327,7 +2496,6 @@ int64_t aic_rt_vec_reserve(
     size_t len_n = 0;
     size_t cap_n = 0;
     size_t add_n = 0;
-    (void)cap_n;
     if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
         elem_n == 0 ||
         io_ptr == NULL ||
@@ -2346,7 +2514,19 @@ int64_t aic_rt_vec_reserve(
         len_n + add_n > (size_t)INT64_MAX) {
         return 1;
     }
-    return aic_rt_vec_ensure_capacity(io_ptr, io_cap, len_n + add_n, elem_n);
+    size_t need = len_n + add_n;
+    if (need <= cap_n) {
+        return 0;
+    }
+    size_t next_cap = aic_rt_vec_grown_capacity(cap_n, need);
+    unsigned char* out = aic_rt_vec_copy_buffer(*io_ptr, len_n, next_cap, elem_n);
+    if (out == NULL) {
+        return 1;
+    }
+    aic_rt_vec_register_buffer(out, len_n);
+    *io_ptr = out;
+    *io_cap = (int64_t)next_cap;
+    return 0;
 }
 
 int64_t aic_rt_vec_shrink_to_fit(
@@ -2370,21 +2550,18 @@ int64_t aic_rt_vec_shrink_to_fit(
         return 0;
     }
     if (len_n == 0) {
-        free(*io_ptr);
+        /* Other values may still use the old buffer; never free it here. */
         *io_ptr = NULL;
         *io_len = 0;
         *io_cap = 0;
         return 0;
     }
-    if (len_n > (size_t)INT64_MAX ||
-        len_n > SIZE_MAX / elem_n) {
+    unsigned char* out = aic_rt_vec_copy_buffer(*io_ptr, len_n, len_n, elem_n);
+    if (out == NULL) {
         return 1;
     }
-    void* shrunk = realloc(*io_ptr, len_n * elem_n);
-    if (shrunk == NULL) {
-        return 1;
-    }
-    *io_ptr = (unsigned char*)shrunk;
+    aic_rt_vec_register_buffer(out, len_n);
+    *io_ptr = out;
     *io_len = (int64_t)len_n;
     *io_cap = (int64_t)len_n;
     return 0;
@@ -2456,37 +2633,35 @@ int64_t aic_rt_vec_index_of(
 }
 
 int64_t aic_rt_vec_reverse(
-    unsigned char* ptr,
-    int64_t len,
-    int64_t cap,
+    unsigned char** io_ptr,
+    int64_t* io_len,
+    int64_t* io_cap,
     int64_t elem_size
 ) {
     size_t len_n = 0;
     size_t cap_n = 0;
     size_t elem_n = 0;
-    if (!aic_rt_vec_validate_parts(ptr, len, cap, &len_n, &cap_n) ||
+    if (io_ptr == NULL ||
+        io_len == NULL ||
+        io_cap == NULL ||
+        !aic_rt_vec_validate_parts(*io_ptr, *io_len, *io_cap, &len_n, &cap_n) ||
         !aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
         elem_n == 0 ||
-        len_n <= 1 ||
         len_n > SIZE_MAX / elem_n) {
         return 0;
     }
-    unsigned char* tmp = (unsigned char*)malloc(elem_n);
-    if (tmp == NULL) {
+    if (len_n <= 1) {
+        return 0;
+    }
+    unsigned char* out = aic_rt_vec_copy_buffer(NULL, 0, cap_n, elem_n);
+    if (out == NULL) {
         return 1;
     }
-    size_t left = 0;
-    size_t right = len_n - 1;
-    while (left < right) {
-        unsigned char* a = ptr + (left * elem_n);
-        unsigned char* b = ptr + (right * elem_n);
-        memcpy(tmp, a, elem_n);
-        memcpy(a, b, elem_n);
-        memcpy(b, tmp, elem_n);
-        left += 1;
-        right -= 1;
+    for (size_t i = 0; i < len_n; ++i) {
+        memcpy(out + (i * elem_n), *io_ptr + ((len_n - 1 - i) * elem_n), elem_n);
     }
-    free(tmp);
+    aic_rt_vec_register_buffer(out, len_n);
+    *io_ptr = out;
     return 0;
 }
 
@@ -2572,7 +2747,6 @@ int64_t aic_rt_vec_append(
     size_t cap_n = 0;
     size_t other_len_n = 0;
     size_t other_cap_n = 0;
-    (void)cap_n;
     (void)other_cap_n;
     if (!aic_rt_vec_checked_non_negative_long(elem_size, &elem_n) ||
         elem_n == 0 ||
@@ -2594,25 +2768,22 @@ int64_t aic_rt_vec_append(
         other_len_n > SIZE_MAX / elem_n) {
         return 1;
     }
-    int self_alias = (other_ptr == *io_ptr);
     size_t need = len_n + other_len_n;
-    if (aic_rt_vec_ensure_capacity(io_ptr, io_cap, need, elem_n) != 0 ||
-        *io_ptr == NULL) {
+    /* `other` stays readable: an in-place append only writes slots past the
+     * frontier, and a copy leaves the old buffer untouched. */
+    unsigned char* base = aic_rt_vec_reserve_tail(io_ptr, io_cap, len_n, cap_n, need, elem_n);
+    if (base == NULL) {
         return 1;
     }
-    const unsigned char* src = self_alias ? *io_ptr : other_ptr;
-    memmove(
-        *io_ptr + (len_n * elem_n),
-        src,
-        other_len_n * elem_n
-    );
+    memmove(base + (len_n * elem_n), other_ptr, other_len_n * elem_n);
     *io_len = (int64_t)need;
     return 0;
 }
 
 void aic_rt_vec_clear(unsigned char** io_ptr, int64_t* io_len, int64_t* io_cap) {
+    /* The cleared value is empty; other values may still use the old buffer,
+     * so it is not freed. */
     if (io_ptr != NULL) {
-        free(*io_ptr);
         *io_ptr = NULL;
     }
     if (io_len != NULL) {

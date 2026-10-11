@@ -2126,21 +2126,24 @@ impl<'a> Generator<'a> {
             ));
             return None;
         }
-        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
         let elem_size = self.vec_elem_size(&elem_ty, fctx);
         let value_ptr = self.value_to_i8_ptr(&value, fctx);
+        // `set` returns a new Vec; the runtime copies the buffer so values
+        // sharing the old buffer keep their contents.
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
         let _updated = self.new_temp();
         fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_vec_set(i8* {}, i64 {}, i64 {}, i64 {}, i64 {}, i8* {})",
+            "  {} = call i64 @aic_rt_vec_set(i8** {}, i64* {}, i64* {}, i64 {}, i64 {}, i8* {})",
             _updated,
-            ptr,
-            len,
-            cap,
+            ptr_slot,
+            len_slot,
+            cap_slot,
             index.repr.clone().unwrap_or_else(|| "0".to_string()),
             elem_size,
             value_ptr
         ));
-        Some(vec_value)
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
     }
 
     pub(super) fn gen_vec_insert_call(
@@ -2384,13 +2387,14 @@ impl<'a> Generator<'a> {
         let (elem_ty, _elem_repr, _elem_kind) =
             self.vec_element_info(&vec_value.ty, "reverse", args[0].span)?;
         let elem_size = self.vec_elem_size(&elem_ty, fctx);
-        let (ptr, len, cap) = self.vec_ptr_len_cap_i8(&vec_value, args[0].span, fctx)?;
+        let (ptr_slot, len_slot, cap_slot) =
+            self.vec_slots_from_value(&vec_value, args[0].span, fctx)?;
         let _err = self.new_temp();
         fctx.lines.push(format!(
-            "  {} = call i64 @aic_rt_vec_reverse(i8* {}, i64 {}, i64 {}, i64 {})",
-            _err, ptr, len, cap, elem_size
+            "  {} = call i64 @aic_rt_vec_reverse(i8** {}, i64* {}, i64* {}, i64 {})",
+            _err, ptr_slot, len_slot, cap_slot, elem_size
         ));
-        Some(vec_value)
+        self.load_vec_from_slots(&vec_value.ty, &ptr_slot, &len_slot, &cap_slot, span, fctx)
     }
 
     pub(super) fn gen_vec_slice_call(

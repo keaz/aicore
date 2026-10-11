@@ -12,6 +12,29 @@ assign_stmt     = ident "=" expr ";" ;
 borrow_expr     = "&" "mut"? unary_expr ;
 ```
 
+## Value semantics of collections
+
+- `Vec[T]` is a value. Every `std.vec` operation that "changes" a vector (`push`, `pop`, `set`, `insert`, `remove_at`, `reverse`, `append`, `clear`, `reserve`, `shrink_to_fit`, `sort`, ...) returns a new `Vec` and leaves its argument, and every other `Vec` value derived from the same base, unchanged:
+
+```aic
+let empty: Vec[Int] = vec.new_vec_with_capacity(8);
+let base = vec.push(empty, 1);
+let a = vec.push(base, 100);
+let b = vec.push(base, 200);
+// a == [1, 100], b == [1, 200], base == [1]
+```
+
+- Copying a `Vec` (binding it to another name, passing it to a function, storing it in a struct) is O(1): copies share the underlying buffer, and the runtime never writes buffer slots another value can read.
+- Cost model:
+  - `push` and `append` on the most recent value of a buffer are amortized O(1) per element. The runtime tracks, per buffer, the largest length any value has claimed (its frontier); a value whose length equals the frontier writes the free slots after it in place. Appending to an older value copies the elements into a new buffer first.
+  - `pop`, removing the last element, and removing the first element (`remove_at(v, 0)`, which `for` loops over a `Vec` use) are O(1) views of the same buffer.
+  - `set`, `insert` (except at the end), `remove_at` in the middle, and `reverse` copy the vector: O(n). Build new vectors with `push`, `map_vec`, `filter_vec`, or `sort` rather than updating elements one at a time in a loop.
+  - `sort` is a stable O(n log n) merge sort that returns a new vector.
+- Buffers are never reallocated or freed while another value may refer to them. Deallocation (MEM epic) must remove a buffer from the frontier table before freeing it, and account for O(1) front-removal views that point inside a buffer.
+- `Deque[T]` is built from two `Vec[T]` values and has the same value semantics.
+- `String` and `Bytes` operations always produce new values.
+- Handle types have reference semantics: `Map[K, V]`, `Set[T]`, `ByteBuffer`, file handles, sockets, and channels refer to a runtime object, so every copy of the handle observes changes made through any copy. `Map`/`Set` functions that return a map return the same handle.
+
 ## Semantics and Rules
 
 - Bindings are immutable by default.

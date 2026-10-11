@@ -13893,6 +13893,209 @@ fn main() -> Int effects { io } capabilities { io } {
     assert_eq!(stdout, "1\n6\n");
 }
 
+/// Reference model for `std.vec` value semantics used by the property test.
+fn vec_model_digest(values: &[i64]) -> i64 {
+    let mut h = 0i64;
+    for value in values {
+        h = (h * 31 + value) % 1_000_003;
+    }
+    h * 1000 + values.len() as i64
+}
+
+struct VecPropertyRng(u64);
+
+impl VecPropertyRng {
+    fn next(&mut self, bound: u64) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (self.0 >> 33) % bound
+    }
+}
+
+/// Builds a random program over Vec values derived from shared bases and the
+/// digests the reference model expects for every value at the end.
+fn vec_property_program(seed: u64, ops: usize) -> (String, Vec<i64>) {
+    let mut rng = VecPropertyRng(seed);
+    let mut model: Vec<Vec<i64>> = vec![Vec::new()];
+    let mut body = String::from("    let v0: Vec[Int] = vec.new_vec_with_capacity(4);\n");
+    for _ in 0..ops {
+        let src = rng.next(model.len() as u64) as usize;
+        let cur = model[src].clone();
+        let len = cur.len() as i64;
+        let value = rng.next(1000) as i64;
+        let index = rng.next((len + 2) as u64) as i64 - 1;
+        let (expr, next): (String, Vec<i64>) = match rng.next(12) {
+            0..=3 => {
+                let mut next = cur.clone();
+                next.push(value);
+                (format!("vec.push(v{src}, {value})"), next)
+            }
+            4 => {
+                let mut next = cur.clone();
+                next.pop();
+                (format!("vec.pop(v{src})"), next)
+            }
+            5 => {
+                let mut next = cur.clone();
+                if index >= 0 && index < len {
+                    next[index as usize] = value;
+                }
+                (format!("vec.set(v{src}, {index}, {value})"), next)
+            }
+            6 => {
+                let mut next = cur.clone();
+                if index >= 0 && index <= len {
+                    next.insert(index as usize, value);
+                }
+                (format!("vec.insert(v{src}, {index}, {value})"), next)
+            }
+            7 => {
+                let mut next = cur.clone();
+                if index >= 0 && index < len {
+                    next.remove(index as usize);
+                }
+                (format!("vec.remove_at(v{src}, {index})"), next)
+            }
+            8 => {
+                let mut next = cur.clone();
+                next.reverse();
+                (format!("vec.reverse(v{src})"), next)
+            }
+            9 => {
+                let other = rng.next(model.len() as u64) as usize;
+                let mut next = cur.clone();
+                next.extend(model[other].iter().copied());
+                (format!("vec.append(v{src}, v{other})"), next)
+            }
+            10 => {
+                let start = rng.next((len + 1) as u64) as i64;
+                let end = start + rng.next((len - start + 1) as u64) as i64;
+                (
+                    format!("vec.slice(v{src}, {start}, {end})"),
+                    cur[start as usize..end as usize].to_vec(),
+                )
+            }
+            _ => match rng.next(3) {
+                0 => (format!("vec.clear(v{src})"), Vec::new()),
+                1 => (format!("vec.reserve(v{src}, {})", rng.next(8)), cur.clone()),
+                _ => (format!("vec.shrink_to_fit(v{src})"), cur.clone()),
+            },
+        };
+        let id = model.len();
+        body.push_str(&format!("    let v{id}: Vec[Int] = {expr};\n"));
+        model.push(next);
+    }
+    for id in 0..model.len() {
+        body.push_str(&format!("    print_int(digest(v{id}));\n"));
+    }
+    let program = format!(
+        r#"
+import std.io;
+import std.option;
+import std.vec;
+
+fn digest(v: Vec[Int]) -> Int {{
+    let mut i = 0;
+    let mut h = 0;
+    while i < vec.vec_len(v) {{
+        let x = match vec.get(v, i) {{
+            Some(n) => n,
+            None => 0,
+        }};
+        h = (h * 31 + x) % 1000003;
+        i = i + 1;
+    }};
+    h * 1000 + vec.vec_len(v)
+}}
+
+fn main() -> Int effects {{ io }} capabilities {{ io }} {{
+{body}    0
+}}
+"#
+    );
+    let digests = model
+        .iter()
+        .map(|values| vec_model_digest(values))
+        .collect();
+    (program, digests)
+}
+
+#[test]
+fn exec_vec_operations_never_change_other_values_property() {
+    for seed in [1u64, 7, 42, 1234, 99_991, 0xC0FFEE] {
+        let (program, expected) = vec_property_program(seed, 70);
+        let (code, stdout, stderr) = compile_and_run(&program);
+        assert_eq!(code, 0, "seed {seed}: stderr={stderr}\n{program}");
+        let actual: Vec<i64> = stdout
+            .lines()
+            .map(|line| line.trim().parse().expect("digest"))
+            .collect();
+        assert_eq!(actual, expected, "seed {seed}: program:\n{program}");
+    }
+}
+
+#[test]
+fn exec_issue_repro_vec_push_from_shared_base_prints_100() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.option;
+fn main() -> Int effects { io } capabilities { io } {
+    let mut base: Vec[Int] = vec.new_vec_with_capacity(8);
+    base = vec.push(base, 1);
+    let a = vec.push(base, 100);
+    let b = vec.push(base, 200);
+    print_int(match vec.get(a, 1) { Some(x) => x, None => -1 });
+    print_int(match vec.get(b, 1) { Some(x) => x, None => -1 });
+    print_int(vec.vec_len(base));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "100\n200\n1\n");
+}
+
+#[test]
+fn exec_vec_sort_returns_sorted_copy_and_keeps_input() {
+    let src = r#"
+import std.io;
+import std.vec;
+import std.option;
+fn main() -> Int effects { io } capabilities { io } {
+    let mut v: Vec[Int] = vec.new_vec();
+    let mut i = 0;
+    while i < 1500 {
+        v = vec.push(v, (i * 7919) % 1000);
+        i = i + 1;
+    };
+    let sorted = vec.sort(v, |a: Int, b: Int| -> Bool { a < b });
+    let mut ok = true;
+    let mut k = 1;
+    while k < vec.vec_len(sorted) {
+        let a = match vec.get(sorted, k - 1) { Some(x) => x, None => -1 };
+        let b = match vec.get(sorted, k) { Some(x) => x, None => -1 };
+        if a > b { ok = false; } else { () };
+        k = k + 1;
+    };
+    print_int(if ok { 1 } else { 0 });
+    print_int(vec.vec_len(sorted));
+    print_int(match vec.get(v, 1) { Some(x) => x, None => -1 });
+    let mut total = 0;
+    for x in v {
+        total = total + x;
+    };
+    print_int(total);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n1500\n919\n749750\n");
+}
+
 #[test]
 fn exec_contract_failure() {
     let src = r#"

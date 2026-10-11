@@ -2012,7 +2012,7 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_vec_pop(i8**, i64*, i64*, i64)"));
     assert!(output
         .llvm_ir
-        .contains("declare i64 @aic_rt_vec_set(i8*, i64, i64, i64, i64, i8*)"));
+        .contains("declare i64 @aic_rt_vec_set(i8**, i64*, i64*, i64, i64, i8*)"));
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_vec_insert(i8**, i64*, i64*, i64, i64, i8*)"));
@@ -2033,7 +2033,7 @@ fn panic_runtime_and_ir_abi_match() {
         .contains("declare i64 @aic_rt_vec_index_of(i8*, i64, i64, i64, i64, i8*, i64*)"));
     assert!(output
         .llvm_ir
-        .contains("declare i64 @aic_rt_vec_reverse(i8*, i64, i64, i64)"));
+        .contains("declare i64 @aic_rt_vec_reverse(i8**, i64*, i64*, i64)"));
     assert!(output
         .llvm_ir
         .contains("declare i64 @aic_rt_vec_slice(i8*, i64, i64, i64, i64, i64, i8**, i64*, i64*)"));

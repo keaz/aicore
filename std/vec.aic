@@ -822,32 +822,63 @@ fn fold_vec[T, S](v: Vec[T], init: S, reducer: Fn(S, T) -> S) -> S {
 
 /// Stable insertion sort with deterministic output for a deterministic comparator.
 fn sort[T](v: Vec[T], less: Fn(T, T) -> Bool) -> Vec[T] {
-    let mut out = v;
-    let mut i = 1;
-    while i < out.len {
-        let mut j = i;
-        while j > 0 {
-            let mut swapped = false;
-            out = match aic_vec_get_intrinsic(out, j - 1) {
-                Some(left_value) => match aic_vec_get_intrinsic(out, j) {
-                    Some(right_value) => if less(right_value, left_value) {
-                        swapped = true;
-                        let with_left = aic_vec_set_intrinsic(out, j - 1, right_value);
-                        aic_vec_set_intrinsic(with_left, j, left_value)
-                    } else {
-                        out
-                    },
-                    None => out,
+    // Stable merge sort. Vec values are immutable, so the result is built by
+    // appending to fresh vectors (amortized O(1) per element) instead of
+    // swapping elements in place; `v` itself is never changed.
+    let n = v.len;
+    if n <= 1 {
+        v
+    } else {
+        let mid = n / 2;
+        let left = sort(aic_vec_slice_intrinsic(v, 0, mid), less);
+        let right = sort(aic_vec_slice_intrinsic(v, mid, n), less);
+        merge_sorted(left, right, less)
+    }
+}
+
+/// `merge_sorted` in `std.vec`.
+///
+/// ## Example
+/// ```aic
+/// // Import `std.vec` and call `merge_sorted` with two vectors sorted by `less`.
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns module-defined error variants when the operation fails.
+fn merge_sorted[T](left: Vec[T], right: Vec[T], less: Fn(T, T) -> Bool) -> Vec[T] {
+    let mut out: Vec[T] = aic_vec_new_with_capacity_intrinsic(left.len + right.len);
+    let mut i = 0;
+    let mut j = 0;
+    while i < left.len || j < right.len {
+        let take_right = if i >= left.len {
+            true
+        } else if j >= right.len {
+            false
+        } else {
+            match aic_vec_get_intrinsic(left, i) {
+                Some(left_value) => match aic_vec_get_intrinsic(right, j) {
+                    Some(right_value) => less(right_value, left_value),
+                    None => false,
                 },
+                None => true,
+            }
+        };
+        if take_right {
+            out = match aic_vec_get_intrinsic(right, j) {
+                Some(value) => aic_vec_push_intrinsic(out, value),
                 None => out,
             };
-            if swapped {
-                j = j - 1;
-            } else {
-                j = 0;
+            j = j + 1;
+        } else {
+            out = match aic_vec_get_intrinsic(left, i) {
+                Some(value) => aic_vec_push_intrinsic(out, value),
+                None => out,
             };
+            i = i + 1;
         };
-        i = i + 1;
     };
     out
 }

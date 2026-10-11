@@ -233,14 +233,14 @@ impl<'a> Generator<'a> {
         text.push_str("declare i64 @aic_rt_vec_get(i8*, i64, i64, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_push(i8**, i64*, i64*, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_pop(i8**, i64*, i64*, i64)\n");
-        text.push_str("declare i64 @aic_rt_vec_set(i8*, i64, i64, i64, i64, i8*)\n");
+        text.push_str("declare i64 @aic_rt_vec_set(i8**, i64*, i64*, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_insert(i8**, i64*, i64*, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_remove_at(i8**, i64*, i64*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_reserve(i8**, i64*, i64*, i64, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_shrink_to_fit(i8**, i64*, i64*, i64)\n");
         text.push_str("declare i64 @aic_rt_vec_contains(i8*, i64, i64, i64, i64, i8*)\n");
         text.push_str("declare i64 @aic_rt_vec_index_of(i8*, i64, i64, i64, i64, i8*, i64*)\n");
-        text.push_str("declare i64 @aic_rt_vec_reverse(i8*, i64, i64, i64)\n");
+        text.push_str("declare i64 @aic_rt_vec_reverse(i8**, i64*, i64*, i64)\n");
         text.push_str(
             "declare i64 @aic_rt_vec_slice(i8*, i64, i64, i64, i64, i64, i8**, i64*, i64*)\n",
         );
