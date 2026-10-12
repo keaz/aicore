@@ -6616,15 +6616,20 @@ impl<'a> Checker<'a> {
                             })
                             .collect::<Vec<_>>();
                         if applied.iter().all(|arg| !contains_unresolved_type(arg)) {
-                            let symbol = resolved_module
-                                .as_ref()
-                                .and_then(|module| {
-                                    self.resolution
-                                        .module_function_infos
-                                        .get(&(module.clone(), resolved_name.clone()))
-                                })
-                                .or_else(|| self.resolution.functions.get(&resolved_name))
-                                .map(|f| f.symbol);
+                            // The resolved callee's own symbol: a bare-name
+                            // lookup would pick std `first[T]` over a user
+                            // `first[T]` that shadows it.
+                            let symbol = sig.symbol.or_else(|| {
+                                resolved_module
+                                    .as_ref()
+                                    .and_then(|module| {
+                                        self.resolution
+                                            .module_function_infos
+                                            .get(&(module.clone(), resolved_name.clone()))
+                                    })
+                                    .or_else(|| self.resolution.functions.get(&resolved_name))
+                                    .map(|f| f.symbol)
+                            });
                             self.record_instantiation(
                                 ir::GenericInstantiationKind::Function,
                                 &resolved_name,
@@ -10195,8 +10200,24 @@ impl<'a> Checker<'a> {
         }
 
         let kind_tag = instantiation_kind_tag(&kind);
-        let key = format!("{}::{}[{}]", kind_tag, name, type_args.join(", "));
-        let mangled = mangle_instantiation(kind_tag, name, type_args);
+        // Functions that share a bare name across modules (a user `first[T]`
+        // and std `first[T]`) are distinct instantiations; codegen applies
+        // the same rule (`generic_fn_instance_name`).
+        let mangle_name = match symbol {
+            Some(symbol)
+                if kind == ir::GenericInstantiationKind::Function
+                    && self
+                        .resolution
+                        .function_modules
+                        .get(name)
+                        .is_some_and(|modules| modules.len() > 1) =>
+            {
+                format!("{}__s{}", name, symbol.0)
+            }
+            _ => name.to_string(),
+        };
+        let key = format!("{}::{}[{}]", kind_tag, mangle_name, type_args.join(", "));
+        let mangled = mangle_instantiation(kind_tag, &mangle_name, type_args);
 
         if let Some(existing_key) = self.mangled_keys.get(&mangled) {
             if existing_key != &key {

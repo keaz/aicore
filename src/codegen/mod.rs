@@ -2058,6 +2058,8 @@ struct VariantCtor {
 
 #[derive(Debug, Clone)]
 struct GenericFnInstance {
+    /// The generic function this instance specializes.
+    symbol: ir::SymbolId,
     mangled: String,
     params: Vec<LType>,
     ret: LType,
@@ -3510,6 +3512,9 @@ struct Generator<'a> {
     drop_impl_methods: BTreeMap<String, String>,
     generic_fn_instances: BTreeMap<String, Vec<GenericFnInstance>>,
     generic_fn_instances_by_symbol: BTreeMap<ir::SymbolId, Vec<GenericFnInstance>>,
+    /// Bare function names that more than one function declares (a user
+    /// `first` next to std `first`).
+    shared_fn_names: BTreeSet<String>,
     active_type_bindings: Option<BTreeMap<String, String>>,
     closure_counter: usize,
     async_counter: usize,

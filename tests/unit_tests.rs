@@ -9501,6 +9501,53 @@ fn main() -> Int {
 }
 
 #[test]
+fn unit_generic_instantiations_keep_same_named_functions_apart() {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(
+        &source_path,
+        r#"
+import std.vec;
+
+fn first[T](v: Vec[T]) -> Int { 5 }
+
+fn main() -> Int {
+    let v: Vec[Int] = vec.new_vec();
+    match vec.first(v) {
+        Some(x) => x + first(v),
+        None => first(v),
+    }
+}
+"#,
+    )
+    .expect("write source");
+
+    let out = run_frontend(&source_path).expect("frontend");
+    assert!(
+        !has_errors(&out.diagnostics),
+        "diagnostics={:#?}",
+        out.diagnostics
+    );
+    let firsts = out
+        .ir
+        .generic_instantiations
+        .iter()
+        .filter(|inst| {
+            inst.kind == aicore::ir::GenericInstantiationKind::Function
+                && inst.name == "first"
+                && inst.type_args == vec!["Int".to_string()]
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(firsts.len(), 2, "instantiations={firsts:#?}");
+    assert_ne!(firsts[0].symbol, firsts[1].symbol);
+    assert_ne!(firsts[0].mangled, firsts[1].mangled);
+    for inst in &firsts {
+        let symbol = inst.symbol.expect("function instantiation symbol");
+        assert_eq!(inst.mangled, format!("fn_first__s{}_Int", symbol.0));
+    }
+}
+
+#[test]
 fn unit_struct_literal_duplicate_field_reports_e1254() {
     let src = r#"
 struct Pair {

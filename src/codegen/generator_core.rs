@@ -68,6 +68,7 @@ impl<'a> Generator<'a> {
             drop_impl_methods,
             generic_fn_instances: BTreeMap::new(),
             generic_fn_instances_by_symbol: BTreeMap::new(),
+            shared_fn_names: BTreeSet::new(),
             active_type_bindings: None,
             closure_counter: 0,
             async_counter: 0,
@@ -732,6 +733,12 @@ impl<'a> Generator<'a> {
             }
         }
 
+        self.shared_fn_names = name_counts
+            .into_iter()
+            .filter(|(_, count)| *count > 1)
+            .map(|(name, _)| name)
+            .collect();
+
         for inst in self
             .program
             .generic_instantiations
@@ -815,6 +822,7 @@ impl<'a> Generator<'a> {
             }
 
             let instance = GenericFnInstance {
+                symbol: func.symbol,
                 mangled: inst.mangled.clone(),
                 params,
                 ret,
@@ -5768,7 +5776,15 @@ impl<'a> Generator<'a> {
             };
             values.push(value);
         }
-        if let Some(instance) = self.resolve_generic_instance(name, &values, expected_ty, span) {
+        // A call the checker resolved to a non-generic function has an exact
+        // signature. It must not pick up a generic instance of another
+        // function with the same bare name (std `first[T]` vs a user `first`).
+        let generic_instance = if exact_sig.is_some() {
+            None
+        } else {
+            self.resolve_generic_instance(name, call_symbol, &values, expected_ty, span)
+        };
+        if let Some(instance) = generic_instance {
             let mut rendered_args = Vec::with_capacity(values.len());
             for (idx, (value, expected)) in values.iter().zip(instance.params.iter()).enumerate() {
                 let Some(coerced) =
@@ -6931,7 +6947,7 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let by_ref_receiver = self.mutable_receiver_fns.contains(name);
-        if let Some(instance) = self.resolve_generic_instance(name, &values, None, span) {
+        if let Some(instance) = self.resolve_generic_instance(name, None, &values, None, span) {
             let mut rendered_args = Vec::with_capacity(values.len());
             for (idx, (value, expected)) in values.iter().zip(instance.params.iter()).enumerate() {
                 let Some(coerced) =
@@ -7083,9 +7099,13 @@ impl<'a> Generator<'a> {
         }
     }
 
+    /// Finds or creates the instance of generic function `name` for
+    /// `values`. `symbol`, when the checker resolved the call, restricts the
+    /// search to that function so a same-named one elsewhere is never used.
     pub(super) fn resolve_generic_instance(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         values: &[Value],
         expected_ret: Option<&LType>,
         span: crate::span::Span,
@@ -7093,6 +7113,7 @@ impl<'a> Generator<'a> {
         if let Some(instances) = self.generic_fn_instances.get(name) {
             let mut matches = instances
                 .iter()
+                .filter(|inst| symbol.is_none_or(|symbol| inst.symbol == symbol))
                 .filter(|inst| {
                     inst.params.len() == values.len()
                         && inst
@@ -7119,12 +7140,13 @@ impl<'a> Generator<'a> {
                 }
             }
         }
-        self.instantiate_generic_instance_on_demand(name, values, expected_ret, span)
+        self.instantiate_generic_instance_on_demand(name, symbol, values, expected_ret, span)
     }
 
     pub(super) fn instantiate_generic_instance_on_demand(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         values: &[Value],
         expected_ret: Option<&LType>,
         span: crate::span::Span,
@@ -7132,7 +7154,7 @@ impl<'a> Generator<'a> {
         let mut matches: Vec<(ir::Function, GenericFnInstance)> = Vec::new();
         for item in &self.program.items {
             match item {
-                ir::Item::Function(func) => {
+                ir::Item::Function(func) if symbol.is_none_or(|symbol| func.symbol == symbol) => {
                     self.collect_on_demand_instance_candidate(
                         func,
                         name,
@@ -7143,7 +7165,11 @@ impl<'a> Generator<'a> {
                     );
                 }
                 ir::Item::Impl(impl_def) => {
-                    for method in &impl_def.methods {
+                    for method in impl_def
+                        .methods
+                        .iter()
+                        .filter(|method| symbol.is_none_or(|symbol| method.symbol == symbol))
+                    {
                         self.collect_on_demand_instance_candidate(
                             method,
                             name,
@@ -7339,12 +7365,25 @@ impl<'a> Generator<'a> {
             .map(|generic| bindings.get(generic).cloned().unwrap_or_default())
             .collect::<Vec<_>>();
         let instance = GenericFnInstance {
-            mangled: mangle_generic_instantiation("fn", &func.name, &type_args),
+            symbol: func.symbol,
+            mangled: self.generic_fn_instance_name(func, &type_args),
             params,
             ret,
             bindings,
         };
         out.push((func.clone(), instance));
+    }
+
+    /// Mangled name of `func` specialized with `type_args`. A bare name that
+    /// several functions declare carries the function's symbol, matching the
+    /// checker's `record_instantiation`.
+    fn generic_fn_instance_name(&self, func: &ir::Function, type_args: &[String]) -> String {
+        if self.shared_fn_names.contains(&func.name) {
+            let name = format!("{}__s{}", func.name, func.symbol.0);
+            mangle_generic_instantiation("fn", &name, type_args)
+        } else {
+            mangle_generic_instantiation("fn", &func.name, type_args)
+        }
     }
 
     pub(super) fn register_generic_instance(

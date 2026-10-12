@@ -5,7 +5,8 @@ import std.vec;
 
 // Functions defined in this module shadow std functions with the same name,
 // and methods never resolve to std free functions. `vec.get(...)` still
-// reaches std through its module qualifier.
+// reaches std through its module qualifier. `last` shadows the generic
+// `std.vec.last[T](v: Vec[T]) -> Option[T]` and keeps its own return type.
 struct Inventory {
     items: Int,
 }
@@ -28,6 +29,13 @@ fn count(x: Int) -> Int {
     x * 10
 }
 
+fn last(v: Vec[Int]) -> Int {
+    match vec.last(v) {
+        Some(x) => x * 100,
+        None => 0,
+    }
+}
+
 fn main() -> Int effects { io } capabilities { io } {
     let inv = Inventory { items: 3 };
     let empty: Vec[Int] = vec.new_vec();
@@ -36,6 +44,6 @@ fn main() -> Int effects { io } capabilities { io } {
         Some(v) => v,
         None => 0,
     };
-    print_int(size(1) + count(2) + inv.get() + inv.count() + first);
+    print_int(size(1) + count(2) + inv.get() + inv.count() + first + last(xs));
     0
 }

@@ -955,7 +955,7 @@ case "$MODE" in
     expect_run_value "examples/core/integer_division_semantics.aic" "-1"
     expect_run_value "examples/core/early_return_and_diverging.aic" "8"
     expect_run_value "examples/core/closure_capture_by_value.aic" "100"
-    expect_run_value "examples/core/std_name_shadowing.aic" "38"
+    expect_run_value "examples/core/std_name_shadowing.aic" "738"
     expect_run_value "examples/core/generic_argument_inference.aic" "42"
     expect_run_value "examples/core/check_build_parity.aic" "42"
     expect_run_value "examples/core/method_values.aic" "42"

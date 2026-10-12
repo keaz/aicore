@@ -14250,6 +14250,77 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn exec_user_functions_shadow_generic_std_functions_in_codegen() {
+    // std.vec declares generic `first`, `last`, `get` and `contains`, and
+    // std.string declares `len`. A call the checker resolved to the user
+    // function must lower with the user's own signature, not the std one.
+    let body = r#"import std.io;
+import std.vec;
+import std.string;
+
+fn first(v: Vec[Int]) -> Int { 10 }
+fn last(v: Vec[Int]) -> Int { 20 }
+fn len(v: Vec[Int]) -> Int { 30 }
+fn get(v: Vec[Int], index: Int) -> Int { 40 + index }
+fn contains(a: Int, b: Int) -> Bool { a == b }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let v: Vec[Int] = vec.push(vec.new_vec(), 7);
+    print_int(first(v));
+    print_int(last(v));
+    print_int(len(v));
+    print_int(get(v, 2));
+    if contains(3, 3) { print_int(1); } else { print_int(0); };
+    let f = first;
+    print_int(f(v));
+    match vec.first(v) { Some(x) => print_int(x), None => print_int(-1) };
+    match vec.last(v) { Some(x) => print_int(x), None => print_int(-1) };
+    match vec.get(v, 0) { Some(x) => print_int(x), None => print_int(-1) };
+    print_int(string.len("abc"));
+    0
+}
+"#;
+    let expected = "10\n20\n30\n42\n1\n10\n7\n7\n7\n3\n";
+    for src in [body.to_string(), format!("module app.main;\n{body}")] {
+        let (code, stdout, stderr) = compile_and_run(&src);
+        assert_eq!(code, 0, "stderr={stderr}\nsrc={src}");
+        assert_eq!(stdout, expected, "src={src}");
+    }
+}
+
+#[test]
+fn exec_user_generic_functions_shadow_same_named_std_generics() {
+    // Both `first[T]` functions are instantiated at `Int`; each call must
+    // reach its own instance.
+    let src = r#"import std.io;
+import std.vec;
+
+fn first[T](v: Vec[T], fallback: T) -> T {
+    match vec.first(v) {
+        Some(x) => x,
+        None => fallback,
+    }
+}
+
+fn last[T](v: Vec[T]) -> Int { 5 }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let empty: Vec[Int] = vec.new_vec();
+    let v: Vec[Int] = vec.push(empty, 4);
+    match vec.last(v) { Some(x) => print_int(x), None => print_int(-1) };
+    print_int(last(v));
+    print_int(first(v, 99));
+    print_int(first(empty, 99));
+    match vec.first(v) { Some(x) => print_int(x), None => print_int(-1) };
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "4\n5\n4\n99\n4\n");
+}
+
+#[test]
 fn exec_nested_generic_arguments_infer_without_annotations() {
     let src = r#"
 import std.io;

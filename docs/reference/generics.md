@@ -52,4 +52,5 @@ impl_decl        = "impl" type (";" | "{" impl_method* "}") ;
   - `Ok(v)` / `Err(e)` => `Result[T, E]` forms with partial inference until constrained
 - Generic function values cannot be used as first-class values without specialization.
 - Concrete generic instantiations are recorded in IR metadata (`generic_instantiations`) with deterministic mangled keys.
+- Generic functions that share a bare name across modules (a user `first[T]` and std `first[T]`) are recorded as separate instantiations; their mangled keys include the function symbol (`fn_first__s<symbol>_Int`).
 - Mangling collisions for distinct instantiations are rejected.
