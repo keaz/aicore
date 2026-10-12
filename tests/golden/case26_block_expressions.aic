@@ -1,0 +1,21 @@
+fn pick(n: Int) -> Int {
+    let base = {
+        let a = n + 1;
+        a * 2
+    };
+    let mut total = base;
+    if n > 3 {
+        total = total + 1;
+    };
+    match n {
+        0 => {
+            let z = 5;
+            z
+        },
+        _ => total,
+    }
+}
+
+fn main() -> Int {
+    pick(4)
+}

@@ -45,6 +45,8 @@ pub struct FunctionInfo {
     pub generic_bounds: BTreeMap<String, Vec<String>>,
     pub param_names: Vec<String>,
     pub param_types: Vec<ir::TypeId>,
+    /// The first parameter is a `&mut self` receiver.
+    pub mutable_receiver: bool,
     pub ret_type: ir::TypeId,
     pub effects: BTreeSet<String>,
     pub capabilities: BTreeSet<String>,
@@ -100,6 +102,7 @@ fn function_info_for(f: &ir::Function) -> FunctionInfo {
             .collect(),
         param_names: f.params.iter().map(|p| p.name.clone()).collect(),
         param_types: f.params.iter().map(|p| p.ty).collect(),
+        mutable_receiver: f.params.first().is_some_and(|p| p.mutable_receiver),
         ret_type: f.ret_type,
         effects: f.effects.iter().cloned().collect(),
         capabilities: f.capabilities.iter().cloned().collect(),
@@ -840,6 +843,14 @@ fn trait_method_signature_mismatch(
     }
     if expected.is_unsafe != found.is_unsafe {
         return Some("unsafe modifier does not match".to_string());
+    }
+    let found_mutable_receiver = found.params.first().is_some_and(|p| p.mutable_receiver);
+    if expected.mutable_receiver != found_mutable_receiver {
+        return Some(if expected.mutable_receiver {
+            "the trait declares a `&mut self` receiver".to_string()
+        } else {
+            "the trait does not declare a `&mut self` receiver".to_string()
+        });
     }
 
     if expected.generics.len() != found.generics.len() {

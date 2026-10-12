@@ -712,6 +712,9 @@ struct Printer<'a> {
     out: String,
     type_map: BTreeMap<ir::TypeId, String>,
     source: Option<SourceContext<'a>>,
+    /// Index expressions of place assignments (`v[i] = x`), which the IR
+    /// builder binds to hidden `let`s; printed back inside the brackets.
+    place_indexes: BTreeMap<String, ir::Expr>,
 }
 
 impl<'a> Printer<'a> {
@@ -720,6 +723,7 @@ impl<'a> Printer<'a> {
             out: String::new(),
             type_map: type_map(program),
             source,
+            place_indexes: BTreeMap::new(),
         }
     }
 
@@ -1061,6 +1065,9 @@ impl<'a> Printer<'a> {
                     .flatten();
                 match receiver {
                     Some(receiver) => format!("{attrs}{receiver}"),
+                    // Without source text, `self: Type` would take the
+                    // receiver by value, so `&mut self` keeps its spelling.
+                    None if p.mutable_receiver => format!("{attrs}&mut self"),
                     None => format!("{attrs}{}: {}", p.name, self.display_type(&p.ty)),
                 }
             })
@@ -1406,6 +1413,13 @@ impl<'a> Printer<'a> {
         let mut prev = None;
         let mut idx = 0;
         while idx < block.stmts.len() {
+            if let ir::Stmt::Let { name, expr, .. } = &block.stmts[idx] {
+                if name.starts_with(crate::ir_builder::PLACE_INDEX_BINDING_PREFIX) {
+                    self.place_indexes.insert(name.clone(), expr.clone());
+                    idx += 1;
+                    continue;
+                }
+            }
             let span = stmt_span(&block.stmts[idx]);
             let regions = stmt_nested_regions(&block.stmts[idx]);
             self.leading_hoisted(span, &regions, inner, prev);
@@ -1462,9 +1476,38 @@ impl<'a> Printer<'a> {
                 self.expr(expr, 0, indent);
                 self.out.push(';');
             }
-            ir::Stmt::Assign { target, expr, .. } => {
+            ir::Stmt::Assign {
+                target,
+                path,
+                op,
+                expr,
+                ..
+            } => {
                 self.out.push_str(target);
-                self.out.push_str(" = ");
+                for projection in path {
+                    match projection {
+                        ir::PlaceProjection::Field { name, .. } => {
+                            self.out.push('.');
+                            self.out.push_str(name);
+                        }
+                        ir::PlaceProjection::Index { binding, .. } => {
+                            self.out.push('[');
+                            match self.place_indexes.get(binding).cloned() {
+                                Some(index) => self.expr(&index, 0, indent),
+                                None => self.out.push_str(binding),
+                            }
+                            self.out.push(']');
+                        }
+                    }
+                }
+                match op {
+                    Some(op) => {
+                        self.out.push(' ');
+                        self.out.push_str(binop_info(*op).1);
+                        self.out.push_str("= ");
+                    }
+                    None => self.out.push_str(" = "),
+                }
                 self.expr(expr, 0, indent);
                 self.out.push(';');
             }
@@ -1652,6 +1695,13 @@ impl<'a> Printer<'a> {
                 self.expr(cond, 0, indent);
                 self.out.push(' ');
                 self.block(then_block, indent);
+                // `if` without `else`: the parser's empty, zero-width block.
+                if else_block.stmts.is_empty()
+                    && else_block.tail.is_none()
+                    && else_block.span.start == else_block.span.end
+                {
+                    return;
+                }
                 self.out.push_str(" else ");
                 match else_if_expr(else_block) {
                     Some(nested) => self.expr(nested, 0, indent),
@@ -1787,6 +1837,7 @@ impl<'a> Printer<'a> {
                 self.out.push_str("unsafe ");
                 self.block(block, indent);
             }
+            ir::ExprKind::Block { block } => self.block(block, indent),
             ir::ExprKind::StructInit { name, fields } => {
                 if name == TUPLE_INTERNAL_NAME {
                     let mut indexed = fields
@@ -2024,7 +2075,9 @@ fn nested_regions(expr: &ir::Expr, out: &mut Vec<(usize, usize)>) {
         ir::ExprKind::Loop { body } | ir::ExprKind::Closure { body, .. } => {
             out.push(block_region(body));
         }
-        ir::ExprKind::UnsafeBlock { block } => out.push(block_region(block)),
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+            out.push(block_region(block))
+        }
         ir::ExprKind::Match {
             expr: scrutinee, ..
         } => {
@@ -2096,7 +2149,9 @@ fn first_nested_region(expr: &ir::Expr) -> Option<usize> {
         }
         ir::ExprKind::Loop { body } => return Some(body.span.start),
         ir::ExprKind::Closure { body, .. } => return Some(body.span.start),
-        ir::ExprKind::UnsafeBlock { block } => return Some(block.span.start),
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+            return Some(block.span.start)
+        }
         ir::ExprKind::Match { .. } => return Some(expr.span.start),
         ir::ExprKind::Call { callee, args, .. } => {
             std::iter::once(&**callee).chain(args.iter()).collect()
@@ -2264,8 +2319,11 @@ fn extract_iter_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Rendere
         return None;
     }
     match some_then.stmts.first() {
-        Some(ir::Stmt::Assign { target, expr, .. })
-            if target == iter_name && is_field_of_var(expr, step_name, "iter") => {}
+        Some(ir::Stmt::Assign {
+            target, path, expr, ..
+        }) if path.is_empty()
+            && target == iter_name
+            && is_field_of_var(expr, step_name, "iter") => {}
         _ => return None,
     }
 
@@ -2366,10 +2424,13 @@ fn extract_vec_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Rendered
     if some_then.stmts.is_empty() || some_then.tail.is_some() {
         return None;
     }
-    let ir::Stmt::Assign { target, expr, .. } = &some_then.stmts[0] else {
+    let ir::Stmt::Assign {
+        target, path, expr, ..
+    } = &some_then.stmts[0]
+    else {
         return None;
     };
-    if target != index_name || !is_increment_expr(expr, index_name) {
+    if !path.is_empty() || target != index_name || !is_increment_expr(expr, index_name) {
         return None;
     }
 
@@ -2458,8 +2519,9 @@ fn extract_range_for(stmts: &[ir::Stmt], loop_body: &ir::Block) -> Option<Render
         _ => return None,
     };
     match &then_block.stmts[1] {
-        ir::Stmt::Assign { target, expr, .. }
-            if target == cur_name && is_increment_expr(expr, cur_name) => {}
+        ir::Stmt::Assign {
+            target, path, expr, ..
+        } if path.is_empty() && target == cur_name && is_increment_expr(expr, cur_name) => {}
         _ => return None,
     }
 
@@ -2618,6 +2680,23 @@ mod tests {
         let twice = format_source(&once, "test.aic").unwrap_or_else(|err| panic!("{err}"));
         assert_eq!(once, twice, "formatting is not idempotent");
         once
+    }
+
+    #[test]
+    fn place_assignments_and_mutable_receivers_round_trip() {
+        let src = "struct C {\n    n: Int,\n    t: (Int, Int),\n}\n\nimpl C {\n    fn bump(&mut self, by: Int) -> () {\n        // keep this note\n        self.n = self.n + by;\n        self.t.1 = by;\n    }\n}\n\nfn f(items: Vec[C], i: Int) -> Vec[C] {\n    let mut v = items;\n    v[i + 1].t.0 = 2;\n    v\n}\n";
+        let formatted = fmt(src);
+        assert_eq!(formatted, src);
+        // Without source text the receiver form still survives.
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let from_ir = format_program(&build(&program.expect("program")));
+        assert!(
+            from_ir.contains("fn bump(&mut self, by: Int) -> ()"),
+            "{from_ir}"
+        );
+        assert!(from_ir.contains("v[i + 1].t.0 = 2;"), "{from_ir}");
+        assert!(!from_ir.contains("$place_index"), "{from_ir}");
     }
 
     fn comment_texts(src: &str) -> Vec<String> {

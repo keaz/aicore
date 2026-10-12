@@ -514,6 +514,7 @@ fn render_expr(expr: &Expr) -> String {
         ExprKind::Await { expr } => format!("await {}", render_expr(expr)),
         ExprKind::Try { expr } => format!("{}?", render_expr(expr)),
         ExprKind::UnsafeBlock { block } => format!("unsafe {}", render_block(block)),
+        ExprKind::Block { block } => render_block(block),
         ExprKind::StructInit { name, fields } => {
             let rendered_fields = fields
                 .iter()
@@ -593,7 +594,34 @@ fn render_stmt(stmt: &Stmt) -> String {
                 render_expr(expr)
             )
         }
-        Stmt::Assign { target, expr, .. } => format!("{target} = {}", render_expr(expr)),
+        Stmt::Assign {
+            target,
+            path,
+            op,
+            expr,
+            ..
+        } => {
+            let mut place = target.clone();
+            for projection in path {
+                match projection {
+                    crate::ast::PlaceProjection::Field { name, .. } => {
+                        place.push('.');
+                        place.push_str(name);
+                    }
+                    crate::ast::PlaceProjection::Index { index, .. } => {
+                        place.push('[');
+                        place.push_str(&render_expr(index));
+                        place.push(']');
+                    }
+                }
+            }
+            let assign_op = op.map(|op| format!("{}=", render_binop(op)));
+            format!(
+                "{place} {} {}",
+                assign_op.as_deref().unwrap_or("="),
+                render_expr(expr)
+            )
+        }
         Stmt::Expr { expr, .. } => render_expr(expr),
         Stmt::Return { expr, .. } => match expr {
             Some(expr) => format!("return {}", render_expr(expr)),

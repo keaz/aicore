@@ -727,6 +727,9 @@ fn render_function_signature(func: &ir::Function, types: &BTreeMap<ir::TypeId, S
         .params
         .iter()
         .map(|param| {
+            if param.mutable_receiver {
+                return "&mut self".to_string();
+            }
             let ty = types
                 .get(&param.ty)
                 .cloned()
@@ -962,6 +965,7 @@ fn render_expr(expr: &ir::Expr) -> String {
         }
         ir::ExprKind::FieldAccess { base, field } => format!("{}.{}", render_expr(base), field),
         ir::ExprKind::UnsafeBlock { .. } => "unsafe { ... }".to_string(),
+        ir::ExprKind::Block { .. } => "{ ... }".to_string(),
     }
 }
 

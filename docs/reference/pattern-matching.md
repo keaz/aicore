@@ -8,7 +8,7 @@ This page describes `match` patterns and coverage rules implemented in `compiler
 
 ```ebnf
 match_expr      = "match" expr "{" match_arm ("," match_arm)* ","? "}" ;
-match_arm       = pattern guard_clause? "=>" expr ;
+match_arm       = pattern guard_clause? "=>" expr ;   (* the "," after an arm is optional when its body is a block *)
 guard_clause    = "if" expr ;
 
 pattern         = or_pattern ;
@@ -29,6 +29,7 @@ variant_pattern = ident "(" pattern ("," pattern)* ","? ")"
 
 ## Semantics and Rules
 
+- Arm bodies can be block expressions with statements: `Err(e) => { log(e); return 0; }`.
 - Scrutinee expression is typed first; each arm pattern must be compatible with that scrutinee type.
 - Exhaustiveness and reachability use the usefulness algorithm of Maranget ("Warnings for pattern matching") over the whole pattern, not only the top-level constructor. Nested payloads, tuples, struct fields, literals, wildcards, bindings, and or-patterns are all taken into account:
   - `Some(Red)` and `Some(Green)` are different arms, and a missing `Some(Blue)` is reported

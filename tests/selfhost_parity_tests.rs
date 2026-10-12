@@ -4879,3 +4879,78 @@ fn selfhost_parity_rejects_invalid_manifest_timeout() {
     );
     assert!(String::from_utf8_lossy(&output.stderr).contains("timeout for non-case action"));
 }
+
+#[test]
+fn selfhost_scope_decision_is_recorded_and_enforced() {
+    let root = repo_root();
+    let decision = fs::read_to_string(root.join("docs/selfhost/scope-decision.md"))
+        .expect("read scope decision record");
+    for needle in [
+        "Status: Accepted",
+        "`#447`",
+        "`#419`",
+        "frozen as a bootstrap demonstrator",
+        "## The Frozen Feature Subset",
+        "## Rules For Each Roadmap Issue",
+        "make selfhost-frozen-check",
+        "tests/selfhost/parity_manifest.json",
+        "tests/selfhost/rust_vs_selfhost_manifest.json",
+        "tests/selfhost/stage_matrix_manifest.json",
+        "## Revisiting The Decision",
+    ] {
+        assert!(
+            decision.contains(needle),
+            "scope decision missing {needle:?}"
+        );
+    }
+
+    for linking_doc in [
+        "docs/selfhost/README.md",
+        "docs/selfhost/rust-reference-retirement.md",
+        "docs/prod-readiness/language-production-roadmap.md",
+        ".github/ISSUE_TEMPLATE/roadmap-task.md",
+    ] {
+        let text = fs::read_to_string(root.join(linking_doc)).expect("read linking doc");
+        assert!(
+            text.contains("docs/selfhost/scope-decision.md"),
+            "{linking_doc} does not link the self-host scope decision"
+        );
+    }
+
+    let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
+    let check_line = makefile
+        .lines()
+        .find(|line| line.starts_with("check:"))
+        .expect("Makefile check target");
+    assert!(
+        check_line
+            .split_whitespace()
+            .any(|dep| dep == "selfhost-frozen-check"),
+        "`make check` must run selfhost-frozen-check"
+    );
+    assert!(makefile.contains("selfhost-frozen-check:\n"));
+    assert!(makefile.contains("compiler/aic/libs/*/ compiler/aic/tools/*/"));
+
+    // Every source in the frozen subset must exist so the gates keep
+    // exercising it.
+    for manifest in [
+        "tests/selfhost/parity_manifest.json",
+        "tests/selfhost/rust_vs_selfhost_manifest.json",
+        "tests/selfhost/stage_matrix_manifest.json",
+    ] {
+        let value: Value = serde_json::from_str(
+            &fs::read_to_string(root.join(manifest)).expect("read selfhost manifest"),
+        )
+        .expect("parse selfhost manifest");
+        let cases = value["cases"].as_array().expect("manifest cases");
+        assert!(!cases.is_empty(), "{manifest} has no cases");
+        for case in cases {
+            let path = case["path"].as_str().expect("case path");
+            assert!(
+                root.join(path).exists(),
+                "{manifest} case {} points at missing {path}",
+                case["name"]
+            );
+        }
+    }
+}

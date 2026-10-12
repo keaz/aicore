@@ -21,6 +21,7 @@ impl<'a> Generator<'a> {
         ) = collect_type_templates(program, &type_map, resolution);
         let drop_impl_methods = collect_drop_impl_methods(program, &type_map);
         let recursive_call_targets = collect_recursive_call_targets(program);
+        let mutable_receiver_fns = super::generator_place::collect_mutable_receiver_fns(program);
         let function_modules_by_symbol = resolution
             .map(|resolution| {
                 resolution
@@ -71,6 +72,7 @@ impl<'a> Generator<'a> {
             closure_counter: 0,
             async_counter: 0,
             deferred_fn_defs: Vec::new(),
+            mutable_receiver_fns,
             async_ready_helpers: BTreeMap::new(),
             fn_value_adapters: BTreeMap::new(),
             function_modules_by_symbol,
@@ -1220,9 +1222,15 @@ impl<'a> Generator<'a> {
         };
 
         let llvm_ret = llvm_type(&sig.ret);
+        let by_ref_receiver = func.params.first().is_some_and(|p| p.mutable_receiver);
         let mut param_defs = Vec::new();
         for (idx, ty) in sig.params.iter().enumerate() {
-            param_defs.push(format!("{} %arg{}", llvm_type(ty), idx));
+            if idx == 0 && by_ref_receiver {
+                // `&mut self`: a pointer to the caller's storage.
+                param_defs.push(format!("{}* %arg0", llvm_type(ty)));
+            } else {
+                param_defs.push(format!("{} %arg{}", llvm_type(ty), idx));
+            }
         }
 
         if let Some(scope) = debug_scope {
@@ -1266,6 +1274,19 @@ impl<'a> Generator<'a> {
             let Some(ty) = sig.params.get(idx).cloned() else {
                 continue;
             };
+            if idx == 0 && by_ref_receiver {
+                // Reads and writes of `self` go straight to the caller's
+                // storage.
+                fctx.vars.last_mut().expect("scope").insert(
+                    param.name.clone(),
+                    Local {
+                        symbol: None,
+                        ty,
+                        ptr: "%arg0".to_string(),
+                    },
+                );
+                continue;
+            }
             let ptr = self.new_temp();
             fctx.lines
                 .push(format!("  {} = alloca {}", ptr, llvm_type(&ty)));
@@ -2316,7 +2337,9 @@ impl<'a> Generator<'a> {
                 self.collect_async_locals_in_expr(cond, locals)?;
                 self.collect_async_locals_in_block(body, locals)?;
             }
-            ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            ir::ExprKind::Loop { body }
+            | ir::ExprKind::UnsafeBlock { block: body }
+            | ir::ExprKind::Block { block: body } => {
                 self.collect_async_locals_in_block(body, locals)?;
             }
             ir::ExprKind::Break { expr } | ir::ExprKind::Return { expr } => {
@@ -2669,7 +2692,17 @@ impl<'a> Generator<'a> {
                         );
                     }
                 }
-                ir::Stmt::Assign { target, expr, span } => {
+                ir::Stmt::Assign {
+                    target,
+                    path,
+                    op,
+                    expr,
+                    span,
+                } => {
+                    if !path.is_empty() || op.is_some() {
+                        self.gen_place_assign(target, path, *op, expr, *span, fctx);
+                        continue;
+                    }
                     let Some(local) = find_local(&fctx.vars, target) else {
                         self.diagnostics.push(Diagnostic::error(
                             "E5001",
@@ -2935,7 +2968,9 @@ impl<'a> Generator<'a> {
                 self.mark_moved_resource_locals_in_expr(cond, fctx);
                 self.mark_moved_resource_locals_in_block(body, fctx);
             }
-            ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+            ir::ExprKind::Loop { body }
+            | ir::ExprKind::UnsafeBlock { block: body }
+            | ir::ExprKind::Block { block: body } => {
                 self.mark_moved_resource_locals_in_block(body, fctx);
             }
             ir::ExprKind::Break { expr } => {
@@ -4726,7 +4761,9 @@ impl<'a> Generator<'a> {
             ir::ExprKind::Borrow { expr: inner, .. } => self.gen_expr(inner, fctx),
             ir::ExprKind::Await { expr: inner } => self.gen_await(inner, expr.span, fctx),
             ir::ExprKind::Try { expr: inner } => self.gen_try(inner, expr.span, fctx),
-            ir::ExprKind::UnsafeBlock { block } => self.gen_block(block, fctx),
+            ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
+                self.gen_block(block, fctx)
+            }
             ir::ExprKind::Binary { op, lhs, rhs } => {
                 let numeric_expected =
                     expected_ty.filter(|ty| is_integral_type(ty) || is_float_type(ty));
@@ -5477,6 +5514,10 @@ impl<'a> Generator<'a> {
             return value;
         }
 
+        if let Some(value) = self.gen_mutable_receiver_function_call(name, args, span, fctx) {
+            return value;
+        }
+
         if name == "aic_for_into_iter" {
             return self.gen_for_into_iter_call(args, span, expected_ty, fctx);
         }
@@ -5930,6 +5971,9 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
+        if let Some(value) = self.gen_mutable_receiver_method_call(base, field, args, span, fctx) {
+            return value;
+        }
         let receiver = self.gen_expr(base, fctx)?;
         if let LType::DynTrait(trait_name) = &receiver.ty {
             let trait_name = trait_name.clone();
@@ -5946,7 +5990,7 @@ impl<'a> Generator<'a> {
         self.gen_named_function_call_with_values(&associated, values, span, fctx)
     }
 
-    fn has_callable_name(&self, name: &str) -> bool {
+    pub(super) fn has_callable_name(&self, name: &str) -> bool {
         self.fn_sigs.contains_key(name)
             || self.generic_fn_instances.contains_key(name)
             || self.callable_declared_in_program(name)
@@ -6872,9 +6916,24 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
+        self.gen_named_function_call_with_receiver(name, values, None, span, fctx)
+    }
+
+    /// Calls `name` with `values`. When `name` has a `&mut self` receiver,
+    /// `receiver_ptr` is the address of the caller's receiver storage; a
+    /// receiver without storage (a temporary) is spilled to a fresh slot.
+    pub(super) fn gen_named_function_call_with_receiver(
+        &mut self,
+        name: &str,
+        values: Vec<Value>,
+        receiver_ptr: Option<String>,
+        span: crate::span::Span,
+        fctx: &mut FnCtx,
+    ) -> Option<Value> {
+        let by_ref_receiver = self.mutable_receiver_fns.contains(name);
         if let Some(instance) = self.resolve_generic_instance(name, &values, None, span) {
             let mut rendered_args = Vec::with_capacity(values.len());
-            for (value, expected) in values.iter().zip(instance.params.iter()) {
+            for (idx, (value, expected)) in values.iter().zip(instance.params.iter()).enumerate() {
                 let Some(coerced) =
                     self.coerce_value_to_expected(value.clone(), expected, span, fctx)
                 else {
@@ -6893,6 +6952,11 @@ impl<'a> Generator<'a> {
                         span,
                     ));
                     return None;
+                }
+                if idx == 0 && by_ref_receiver {
+                    let ptr = self.receiver_storage(receiver_ptr.as_deref(), &coerced, fctx);
+                    rendered_args.push(format!("{}* {}", llvm_type(expected), ptr));
+                    continue;
                 }
                 rendered_args.push(format!(
                     "{} {}",
@@ -6976,6 +7040,11 @@ impl<'a> Generator<'a> {
                     span,
                 ));
                 return None;
+            }
+            if idx == 0 && by_ref_receiver {
+                let ptr = self.receiver_storage(receiver_ptr.as_deref(), &coerced, fctx);
+                rendered_args.push(format!("{}* {}", llvm_type(expected), ptr));
+                continue;
             }
             rendered_args.push(format!(
                 "{} {}",
@@ -7362,21 +7431,32 @@ impl<'a> Generator<'a> {
     /// Picks the function a bare name refers to when used as a value, with
     /// the checker's shadowing order: the current function's module first,
     /// then non-std modules, then std.
+    ///
+    /// Impl methods (`C::get`) are candidates too: the `self` receiver is
+    /// passed by value, so it is an ordinary first parameter.
     pub(super) fn resolve_function_value_symbol(
         &self,
         name: &str,
         fctx: &FnCtx,
     ) -> Option<ir::SymbolId> {
+        // `&mut self` methods take the receiver by pointer, so they are not
+        // values (the checker reports E1303).
+        let lowerable = |func: &ir::Function| {
+            func.generics.is_empty()
+                && func.name == name
+                && !func.params.first().is_some_and(|p| p.mutable_receiver)
+        };
         let candidates = self
             .program
             .items
             .iter()
-            .filter_map(|item| match item {
-                ir::Item::Function(func) if func.generics.is_empty() && func.name == name => {
-                    Some(func.symbol)
-                }
-                _ => None,
+            .flat_map(|item| match item {
+                ir::Item::Function(func) => std::slice::from_ref(func),
+                ir::Item::Impl(impl_def) => impl_def.methods.as_slice(),
+                _ => &[],
             })
+            .filter(|func| lowerable(func))
+            .map(|func| func.symbol)
             .collect::<Vec<_>>();
         if candidates.len() <= 1 {
             return candidates.into_iter().next();

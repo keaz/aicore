@@ -211,7 +211,13 @@ fn collect_requires_from_block(
 ) {
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Let { expr, .. } | Stmt::Assign { expr, .. } | Stmt::Expr { expr, .. } => {
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
+                collect_requires_from_expr(expr, param_names, requires);
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_requires_from_expr(index, param_names, requires);
+                }
                 collect_requires_from_expr(expr, param_names, requires);
             }
             Stmt::Return { expr, .. } => {
@@ -322,7 +328,7 @@ fn collect_requires_from_expr(
                 collect_requires_from_expr(value, param_names, requires);
             }
         }
-        ExprKind::UnsafeBlock { block } => {
+        ExprKind::UnsafeBlock { block } | ExprKind::Block { block } => {
             collect_requires_from_block(block, param_names, requires)
         }
         ExprKind::Break { expr } | ExprKind::Return { expr } => {
@@ -435,8 +441,14 @@ fn collect_explicit_returns_from_block<'a>(
                 Some(expr) => observations.push(ReturnObservation::Expr(expr)),
                 None => observations.push(ReturnObservation::Unit),
             },
-            Stmt::Let { expr, .. } | Stmt::Assign { expr, .. } | Stmt::Expr { expr, .. } => {
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
                 collect_explicit_returns_from_expr(expr, observations)
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_explicit_returns_from_expr(index, observations);
+                }
+                collect_explicit_returns_from_expr(expr, observations);
             }
             Stmt::Assert { expr, .. } => collect_explicit_returns_from_expr(expr, observations),
         }
@@ -467,7 +479,7 @@ fn collect_explicit_returns_from_expr<'a>(
                 collect_explicit_returns_from_expr(&arm.body, observations);
             }
         }
-        ExprKind::UnsafeBlock { block } => {
+        ExprKind::UnsafeBlock { block } | ExprKind::Block { block } => {
             collect_explicit_returns_from_block(block, observations);
         }
         ExprKind::Binary { lhs, rhs, .. } => {
@@ -622,7 +634,9 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
             collect_value_vars(cond, VarContext::Value, out);
             collect_value_vars_block(body, out);
         }
-        ExprKind::Loop { body } | ExprKind::UnsafeBlock { block: body } => {
+        ExprKind::Loop { body }
+        | ExprKind::UnsafeBlock { block: body }
+        | ExprKind::Block { block: body } => {
             collect_value_vars_block(body, out);
         }
         ExprKind::Match { expr, arms } => {
@@ -658,7 +672,13 @@ fn collect_value_vars(expr: &Expr, context: VarContext, out: &mut BTreeSet<Strin
 fn collect_value_vars_block(block: &Block, out: &mut BTreeSet<String>) {
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Let { expr, .. } | Stmt::Assign { expr, .. } | Stmt::Expr { expr, .. } => {
+            Stmt::Let { expr, .. } | Stmt::Expr { expr, .. } => {
+                collect_value_vars(expr, VarContext::Value, out);
+            }
+            Stmt::Assign { path, expr, .. } => {
+                for index in crate::ast::place_index_exprs(path) {
+                    collect_value_vars(index, VarContext::Value, out);
+                }
                 collect_value_vars(expr, VarContext::Value, out);
             }
             Stmt::Return { expr, .. } => {
@@ -810,7 +830,8 @@ fn render_expr(expr: &Expr, parent_prec: u8) -> Option<String> {
         | ExprKind::Break { .. }
         | ExprKind::Return { .. }
         | ExprKind::Continue
-        | ExprKind::UnsafeBlock { .. } => None,
+        | ExprKind::UnsafeBlock { .. }
+        | ExprKind::Block { .. } => None,
     }
 }
 

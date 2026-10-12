@@ -8,6 +8,56 @@ use crate::span::Span;
 const TUPLE_INTERNAL_NAME: &str = "Tuple";
 const TUPLE_LET_TMP_PREFIX: &str = "__tuple_let_";
 
+/// The operator of an assignment token: `Some(None)` for `=`,
+/// `Some(Some(op))` for a compound operator, `None` for anything else.
+fn assignment_operator(kind: &TokenKind) -> Option<Option<BinOp>> {
+    let op = match kind {
+        TokenKind::Eq => return Some(None),
+        TokenKind::PlusEq => BinOp::Add,
+        TokenKind::MinusEq => BinOp::Sub,
+        TokenKind::StarEq => BinOp::Mul,
+        TokenKind::SlashEq => BinOp::Div,
+        TokenKind::PercentEq => BinOp::Mod,
+        TokenKind::AmpEq => BinOp::BitAnd,
+        TokenKind::PipeEq => BinOp::BitOr,
+        TokenKind::CaretEq => BinOp::BitXor,
+        TokenKind::LShiftEq => BinOp::Shl,
+        TokenKind::RShiftEq => BinOp::Shr,
+        TokenKind::URShiftEq => BinOp::Ushr,
+        _ => return None,
+    };
+    Some(Some(op))
+}
+
+/// Expressions that end in a block: they can be statements without `;`,
+/// and a match arm with such a body needs no trailing comma.
+fn is_block_like(expr: &Expr) -> bool {
+    matches!(
+        expr.kind,
+        ExprKind::If { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::While { .. }
+            | ExprKind::Loop { .. }
+            | ExprKind::Block { .. }
+            | ExprKind::UnsafeBlock { .. }
+    )
+}
+
+/// Splits the float token of a nested tuple index (`t.0.1` lexes `0.1` as
+/// one float) into its two element indexes.
+fn split_nested_tuple_index(literal: &crate::lexer::FloatLiteralToken) -> Option<(String, String)> {
+    if literal.suffix.is_some() {
+        return None;
+    }
+    let (first, second) = literal.raw_text.split_once('.')?;
+    let is_index = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    if !is_index(first) || !is_index(second) {
+        return None;
+    }
+    let normalize = |part: &str| part.parse::<u64>().ok().map(|value| value.to_string());
+    Some((normalize(first)?, normalize(second)?))
+}
+
 pub fn parse(source: &str, file: &str) -> (Option<Program>, Vec<Diagnostic>) {
     let (program, diagnostics, _stats) = parse_with_stats(source, file);
     (program, diagnostics)
@@ -85,6 +135,10 @@ struct Parser<'a> {
     for_counter: usize,
     tuple_binding_counter: usize,
     disallow_struct_literal: bool,
+    /// Set while parsing an expression that a block follows (`if` and
+    /// `while` conditions, `match` scrutinees, contracts): a `{` there
+    /// starts that block, not a block expression operand.
+    disallow_block_expr: bool,
     // Termination guard: every token inspection counts as one step. Once the
     // token-proportional budget is spent the parser only sees EOF, so every
     // parsing loop unwinds and `E1099` is reported instead of hanging.
@@ -130,6 +184,7 @@ impl<'a> Parser<'a> {
             for_counter: 0,
             tuple_binding_counter: 0,
             disallow_struct_literal: false,
+            disallow_block_expr: false,
             steps: Cell::new(0),
             step_budget,
             stuck_at: Cell::new(0),
@@ -742,12 +797,12 @@ impl<'a> Parser<'a> {
         loop {
             if self.at_kind(|k| matches!(k, TokenKind::KwRequires)) {
                 self.bump();
-                requires = Some(self.parse_expr()?);
+                requires = Some(self.parse_expr_before_block()?);
                 continue;
             }
             if self.at_kind(|k| matches!(k, TokenKind::KwEnsures)) {
                 self.bump();
-                ensures = Some(self.parse_expr()?);
+                ensures = Some(self.parse_expr_before_block()?);
                 continue;
             }
             break;
@@ -1052,7 +1107,7 @@ impl<'a> Parser<'a> {
 
         let invariant = if self.at_kind(|k| matches!(k, TokenKind::KwInvariant)) {
             self.bump();
-            Some(self.parse_expr()?)
+            Some(self.parse_expr_before_block()?)
         } else {
             None
         };
@@ -1738,7 +1793,8 @@ impl<'a> Parser<'a> {
                 if self.at_kind(|k| matches!(k, TokenKind::Ampersand)) {
                     let recv_start = self.current_span().start;
                     self.bump();
-                    if self.at_kind(|k| matches!(k, TokenKind::KwMut)) {
+                    let mutable_receiver = self.at_kind(|k| matches!(k, TokenKind::KwMut));
+                    if mutable_receiver {
                         self.bump();
                     }
                     let (recv_name, recv_span) =
@@ -1757,6 +1813,7 @@ impl<'a> Parser<'a> {
                         name: "self".to_string(),
                         attrs,
                         ty: self.self_type_expr(span),
+                        mutable_receiver,
                         span,
                     });
                     if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
@@ -1776,6 +1833,7 @@ impl<'a> Parser<'a> {
                         name: "self".to_string(),
                         attrs,
                         ty: self.self_type_expr(span),
+                        mutable_receiver: false,
                         span,
                     });
                     if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
@@ -1797,6 +1855,7 @@ impl<'a> Parser<'a> {
                 name,
                 attrs,
                 ty: ty.clone(),
+                mutable_receiver: false,
                 span: Span::new(start, ty.span.end),
             });
             if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
@@ -1982,6 +2041,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_block(&mut self) -> Option<Block> {
+        // Inside a block, `{` starts block expressions again.
+        let prev = std::mem::replace(&mut self.disallow_block_expr, false);
+        let block = self.parse_block_contents();
+        self.disallow_block_expr = prev;
+        block
+    }
+
+    fn parse_block_contents(&mut self) -> Option<Block> {
         let start = self
             .expect(
                 |k| matches!(k, TokenKind::LBrace),
@@ -2025,6 +2092,13 @@ impl<'a> Parser<'a> {
                     if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
                         let span = expr.span.join(self.current_span());
                         self.bump();
+                        stmts.push(Stmt::Expr { expr, span });
+                    } else if is_block_like(&expr)
+                        && !self.at_kind(|k| matches!(k, TokenKind::RBrace | TokenKind::Eof))
+                    {
+                        // `if`/`match`/`while`/`loop`/`for`/block expressions
+                        // that end in `}` are statements without a `;`.
+                        let span = expr.span;
                         stmts.push(Stmt::Expr { expr, span });
                     } else {
                         tail = Some(Box::new(expr));
@@ -2222,41 +2296,19 @@ impl<'a> Parser<'a> {
 
     fn parse_assign_stmt(&mut self) -> Option<Stmt> {
         let start = self.current_span().start;
-        let (target, target_span) = self.expect_ident("E1060", "expected assignment target")?;
-        let compound_op = match &self.current().kind {
-            TokenKind::Eq => None,
-            TokenKind::AmpEq => Some(BinOp::BitAnd),
-            TokenKind::PipeEq => Some(BinOp::BitOr),
-            TokenKind::CaretEq => Some(BinOp::BitXor),
-            TokenKind::LShiftEq => Some(BinOp::Shl),
-            TokenKind::RShiftEq => Some(BinOp::Shr),
-            TokenKind::URShiftEq => Some(BinOp::Ushr),
-            _ => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E1061",
-                    "expected assignment operator ('=', '&=', '|=', '^=', '<<=', '>>=', '>>>=')",
-                    self.file,
-                    self.current_span(),
-                ));
-                return None;
-            }
+        let (target, _) = self.expect_ident("E1060", "expected assignment target")?;
+        let path = self.parse_place_path()?;
+        let Some(op) = assignment_operator(&self.current().kind) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E1061",
+                "expected assignment operator ('=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '<<=', '>>=', '>>>=')",
+                self.file,
+                self.current_span(),
+            ));
+            return None;
         };
         self.bump();
-        let rhs_expr = self.parse_expr()?;
-        let expr = if let Some(op) = compound_op {
-            let lhs_expr = Expr::var(target.clone(), target_span);
-            let span = lhs_expr.span.join(rhs_expr.span);
-            Expr {
-                kind: ExprKind::Binary {
-                    op,
-                    lhs: Box::new(lhs_expr),
-                    rhs: Box::new(rhs_expr),
-                },
-                span,
-            }
-        } else {
-            rhs_expr
-        };
+        let expr = self.parse_expr()?;
         let end = if self.at_kind(|k| matches!(k, TokenKind::Semi)) {
             let span = self.current_span();
             self.bump();
@@ -2276,9 +2328,86 @@ impl<'a> Parser<'a> {
         };
         Some(Stmt::Assign {
             target,
+            path,
+            op,
             expr,
             span: Span::new(start, end),
         })
+    }
+
+    /// Parses the projections after an assignment target: `.field`, `.0`
+    /// (tuple element) and `[index]`.
+    fn parse_place_path(&mut self) -> Option<Vec<PlaceProjection>> {
+        let mut path = Vec::new();
+        loop {
+            if self.at_kind(|k| matches!(k, TokenKind::Dot)) {
+                self.bump();
+                let token = self.current().clone();
+                match token.kind {
+                    TokenKind::Ident(name) => {
+                        self.bump();
+                        path.push(PlaceProjection::Field {
+                            name,
+                            span: token.span,
+                        });
+                    }
+                    TokenKind::Int(literal) if literal.value >= 0 && literal.suffix.is_none() => {
+                        self.bump();
+                        path.push(PlaceProjection::Field {
+                            name: literal.value.to_string(),
+                            span: token.span,
+                        });
+                    }
+                    TokenKind::Float(literal) => {
+                        // `t.0.1` lexes `0.1` as one float token.
+                        let Some((first, second)) = split_nested_tuple_index(&literal) else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1036",
+                                "expected field name or tuple index after '.'",
+                                self.file,
+                                token.span,
+                            ));
+                            return None;
+                        };
+                        self.bump();
+                        path.push(PlaceProjection::Field {
+                            name: first,
+                            span: token.span,
+                        });
+                        path.push(PlaceProjection::Field {
+                            name: second,
+                            span: token.span,
+                        });
+                    }
+                    _ => {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E1036",
+                            "expected field name or tuple index after '.'",
+                            self.file,
+                            token.span,
+                        ));
+                        return None;
+                    }
+                }
+                continue;
+            }
+            if self.at_kind(|k| matches!(k, TokenKind::LBracket)) {
+                let open = self.current_span();
+                self.bump();
+                let index = self.parse_expr()?;
+                let close = self.expect(
+                    |k| matches!(k, TokenKind::RBracket),
+                    "E1036",
+                    "expected ']' after index",
+                )?;
+                path.push(PlaceProjection::Index {
+                    index,
+                    span: Span::new(open.start, close.end),
+                });
+                continue;
+            }
+            return Some(path);
+        }
     }
 
     /// Parses `return [expr]` at statement position. With a trailing `;` it
@@ -2774,6 +2903,29 @@ impl<'a> Parser<'a> {
                         self.bump();
                         (literal.value.to_string(), span)
                     }
+                    TokenKind::Float(literal) => {
+                        // `t.0.1` lexes `0.1` as one float token.
+                        let span = self.current_span();
+                        let Some((first, second)) = split_nested_tuple_index(&literal) else {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1036",
+                                "expected field name or tuple index after '.'",
+                                self.file,
+                                span,
+                            ));
+                            return None;
+                        };
+                        self.bump();
+                        let inner_span = Span::new(expr.span.start, span.end);
+                        expr = Expr {
+                            kind: ExprKind::FieldAccess {
+                                base: Box::new(expr),
+                                field: first,
+                            },
+                            span: inner_span,
+                        };
+                        (second, span)
+                    }
                     _ => {
                         self.diagnostics.push(Diagnostic::error(
                             "E1036",
@@ -2955,6 +3107,13 @@ impl<'a> Parser<'a> {
                     kind: ExprKind::UnsafeBlock { block },
                 })
             }
+            TokenKind::LBrace if !self.disallow_block_expr => {
+                let block = self.parse_block()?;
+                Some(Expr {
+                    span: block.span,
+                    kind: ExprKind::Block { block },
+                })
+            }
             TokenKind::Ident(name) => {
                 self.bump();
                 let mut full_name = name;
@@ -3026,13 +3185,26 @@ impl<'a> Parser<'a> {
     fn parse_if_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // if
-        let cond = self.parse_expr()?;
+        let cond = self.parse_expr_before_block()?;
         let then_block = self.parse_block()?;
-        self.expect(
-            |k| matches!(k, TokenKind::KwElse),
-            "E1042",
-            "expected else branch for if expression",
-        )?;
+        if !self.at_kind(|k| matches!(k, TokenKind::KwElse)) {
+            // `if cond { ... }` without `else`: the missing branch is an
+            // empty block, so the `if` has type `()`.
+            let end = then_block.span.end;
+            return Some(Expr {
+                kind: ExprKind::If {
+                    cond: Box::new(cond),
+                    then_block,
+                    else_block: Block {
+                        stmts: Vec::new(),
+                        tail: None,
+                        span: Span::new(end, end),
+                    },
+                },
+                span: Span::new(start, end),
+            });
+        }
+        self.bump(); // else
 
         let else_block = if self.at_kind(|k| matches!(k, TokenKind::KwIf)) {
             let nested = self.parse_if_expr()?;
@@ -3082,7 +3254,7 @@ impl<'a> Parser<'a> {
     fn parse_while_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // while
-        let cond = self.parse_expr()?;
+        let cond = self.parse_expr_before_block()?;
         let body = self.parse_block()?;
         let end = body.span.end;
         Some(Expr {
@@ -3489,8 +3661,17 @@ impl<'a> Parser<'a> {
     fn parse_expr_without_struct_literals(&mut self) -> Option<Expr> {
         let prev = self.disallow_struct_literal;
         self.disallow_struct_literal = true;
-        let expr = self.parse_expr();
+        let expr = self.parse_expr_before_block();
         self.disallow_struct_literal = prev;
+        expr
+    }
+
+    /// Parses an expression that a block follows; see `disallow_block_expr`.
+    fn parse_expr_before_block(&mut self) -> Option<Expr> {
+        let prev = self.disallow_block_expr;
+        self.disallow_block_expr = true;
+        let expr = self.parse_expr();
+        self.disallow_block_expr = prev;
         expr
     }
 
@@ -3684,6 +3865,8 @@ impl<'a> Parser<'a> {
 
         let mut some_body_stmts = vec![Stmt::Assign {
             target: iter_name.clone(),
+            path: Vec::new(),
+            op: None,
             expr: step_iter_expr,
             span,
         }];
@@ -3806,6 +3989,8 @@ impl<'a> Parser<'a> {
             },
             Stmt::Assign {
                 target: cur_name.clone(),
+                path: Vec::new(),
+                op: None,
                 expr: Expr {
                     kind: ExprKind::Binary {
                         op: BinOp::Add,
@@ -3898,7 +4083,7 @@ impl<'a> Parser<'a> {
     fn parse_match_expr(&mut self) -> Option<Expr> {
         let start = self.current_span().start;
         self.bump(); // match
-        let expr = self.parse_expr()?;
+        let expr = self.parse_expr_before_block()?;
         self.expect(
             |k| matches!(k, TokenKind::LBrace),
             "E1043",
@@ -3929,7 +4114,10 @@ impl<'a> Parser<'a> {
             });
             if self.at_kind(|k| matches!(k, TokenKind::Comma)) {
                 self.bump();
-            } else {
+            } else if !(is_block_like(&arms.last().expect("arm").body)
+                && !self.at_kind(|k| matches!(k, TokenKind::RBrace)))
+            {
+                // The comma after an arm is optional when its body ends in `}`.
                 break;
             }
         }
@@ -4341,23 +4529,49 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Returns `true` at `name`, `name.field...` or `name[index]...`
+    /// followed by an assignment operator.
     fn at_assignment_stmt_start(&self) -> bool {
-        matches!(self.current().kind, TokenKind::Ident(_))
-            && self
-                .peek(1)
-                .map(|token| {
-                    matches!(
-                        token.kind,
-                        TokenKind::Eq
-                            | TokenKind::AmpEq
-                            | TokenKind::PipeEq
-                            | TokenKind::CaretEq
-                            | TokenKind::LShiftEq
-                            | TokenKind::RShiftEq
-                            | TokenKind::URShiftEq
-                    )
-                })
-                .unwrap_or(false)
+        if !matches!(self.current().kind, TokenKind::Ident(_)) {
+            return false;
+        }
+        let mut offset = 1;
+        loop {
+            match self.peek(offset).map(|token| &token.kind) {
+                Some(TokenKind::Dot) => {
+                    let is_projection = matches!(
+                        self.peek(offset + 1).map(|token| &token.kind),
+                        Some(TokenKind::Ident(_) | TokenKind::Int(_) | TokenKind::Float(_))
+                    );
+                    if !is_projection {
+                        return false;
+                    }
+                    offset += 2;
+                }
+                Some(TokenKind::LBracket) => {
+                    let mut depth = 0usize;
+                    loop {
+                        match self.peek(offset).map(|token| &token.kind) {
+                            Some(TokenKind::LBracket) => depth += 1,
+                            Some(TokenKind::RBracket) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            Some(TokenKind::Semi | TokenKind::LBrace | TokenKind::RBrace)
+                            | Some(TokenKind::Eof)
+                            | None => return false,
+                            Some(_) => {}
+                        }
+                        offset += 1;
+                    }
+                    offset += 1;
+                }
+                Some(kind) => return assignment_operator(kind).is_some(),
+                None => return false,
+            }
+        }
     }
 
     fn looks_like_struct_literal(&self) -> bool {
@@ -4459,6 +4673,192 @@ mod tests {
         BinOp, Expr, ExprKind, FloatLiteralSuffix, FloatLiteralWidth, IntLiteralSignedness,
         IntLiteralSuffix, IntLiteralWidth, Item, PatternKind, Stmt, TypeKind,
     };
+
+    fn body_stmts(src: &str) -> Vec<Stmt> {
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        f.body.stmts.clone()
+    }
+
+    fn rendered_place(stmt: &Stmt) -> String {
+        let Stmt::Assign { target, path, .. } = stmt else {
+            panic!("expected assignment, found {stmt:?}");
+        };
+        let mut out = target.clone();
+        for projection in path {
+            match projection {
+                crate::ast::PlaceProjection::Field { name, .. } => {
+                    out.push('.');
+                    out.push_str(name);
+                }
+                crate::ast::PlaceProjection::Index { .. } => out.push_str("[_]"),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn parses_place_assignment_targets() {
+        let stmts = body_stmts(
+            "fn f() -> () { p.x = 1; p.a.b = 2; t.0 = 3; t.1.0 = 4; v[i + 1] = 5; items[0].qty = 6; self.n |= 7; x = 8; }",
+        );
+        let places = stmts.iter().map(rendered_place).collect::<Vec<_>>();
+        assert_eq!(
+            places,
+            [
+                "p.x",
+                "p.a.b",
+                "t.0",
+                "t.1.0",
+                "v[_]",
+                "items[_].qty",
+                "self.n",
+                "x"
+            ]
+        );
+        // `self.n |= 7` keeps its operator; the value is the right operand.
+        let Stmt::Assign { op, expr, .. } = &stmts[6] else {
+            panic!("expected assignment");
+        };
+        assert_eq!(*op, Some(BinOp::BitOr));
+        assert!(matches!(&expr.kind, ExprKind::Int(7, ..)));
+    }
+
+    #[test]
+    fn parses_every_compound_assignment_operator() {
+        let stmts = body_stmts(
+            "fn f() -> () { x += 1; x -= 1; x *= 1; x /= 1; x %= 1; x &= 1; x |= 1; x ^= 1; x <<= 1; x >>= 1; x >>>= 1; v[0] += 1; x = 1; }",
+        );
+        let ops = stmts
+            .iter()
+            .map(|stmt| match stmt {
+                Stmt::Assign { op, .. } => *op,
+                other => panic!("expected assignment, found {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ops,
+            [
+                Some(BinOp::Add),
+                Some(BinOp::Sub),
+                Some(BinOp::Mul),
+                Some(BinOp::Div),
+                Some(BinOp::Mod),
+                Some(BinOp::BitAnd),
+                Some(BinOp::BitOr),
+                Some(BinOp::BitXor),
+                Some(BinOp::Shl),
+                Some(BinOp::Shr),
+                Some(BinOp::Ushr),
+                Some(BinOp::Add),
+                None,
+            ]
+        );
+        // `x + = 1` is not an assignment operator.
+        let (_, diagnostics) = parse("fn f() -> () { x + = 1; }", "test.aic");
+        assert!(!diagnostics.is_empty());
+    }
+
+    #[test]
+    fn place_assignment_lookahead_leaves_expressions_alone() {
+        // Comparisons and method calls are expression statements.
+        let stmts = body_stmts("fn f() -> () { p.x == 1; p.go(); p.a.b < 2; }");
+        assert!(
+            stmts.iter().all(|stmt| matches!(stmt, Stmt::Expr { .. })),
+            "{stmts:#?}"
+        );
+    }
+
+    #[test]
+    fn nested_tuple_index_reads_parse() {
+        let (program, diagnostics) =
+            parse("fn f(t: (Int, (Int, Int))) -> Int { t.1.0 }", "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let tail = f.body.tail.as_ref().expect("tail");
+        let ExprKind::FieldAccess { base, field } = &tail.kind else {
+            panic!("expected field access");
+        };
+        assert_eq!(field, "0");
+        assert!(matches!(&base.kind, ExprKind::FieldAccess { field, .. } if field == "1"));
+    }
+
+    #[test]
+    fn mutable_self_receiver_is_recorded() {
+        let (program, diagnostics) = parse(
+            "struct C { n: Int } impl C { fn a(&mut self) -> () { } fn b(&self) -> () { } fn c(self) -> () { } }",
+            "test.aic",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Impl(impl_def) = &program.items[1] else {
+            panic!("expected impl");
+        };
+        let receivers = impl_def
+            .methods
+            .iter()
+            .map(|method| method.params[0].mutable_receiver)
+            .collect::<Vec<_>>();
+        assert_eq!(receivers, [true, false, false]);
+    }
+
+    #[test]
+    fn parses_block_expressions_and_if_without_else() {
+        let src = "fn f(x: Int) -> Int { let a = { let b = x; b + 1 }; if a > 1 { g(); } let c = match a { 1 => { let d = 2; d } _ => 0 }; while a > 9 { a; } { a; } c }";
+        let stmts = body_stmts(src);
+        // let a, if (no `;`), let c, while (no `;`), block (no `;`).
+        assert_eq!(stmts.len(), 5, "{stmts:#?}");
+        let Stmt::Let { expr, .. } = &stmts[0] else {
+            panic!("expected let");
+        };
+        let ExprKind::Block { block } = &expr.kind else {
+            panic!("expected block expression, found {expr:?}");
+        };
+        assert_eq!(block.stmts.len(), 1);
+        assert!(block.tail.is_some());
+        let Stmt::Expr { expr, .. } = &stmts[1] else {
+            panic!("expected if statement");
+        };
+        let ExprKind::If { else_block, .. } = &expr.kind else {
+            panic!("expected if");
+        };
+        assert!(else_block.stmts.is_empty() && else_block.tail.is_none());
+        assert_eq!(else_block.span.start, else_block.span.end);
+        let Stmt::Let { expr, .. } = &stmts[2] else {
+            panic!("expected let");
+        };
+        let ExprKind::Match { arms, .. } = &expr.kind else {
+            panic!("expected match");
+        };
+        // The comma after a block arm is optional.
+        assert_eq!(arms.len(), 2);
+        assert!(matches!(arms[0].body.kind, ExprKind::Block { .. }));
+        assert!(
+            matches!(&stmts[3], Stmt::Expr { expr, .. } if matches!(expr.kind, ExprKind::While { .. }))
+        );
+        assert!(
+            matches!(&stmts[4], Stmt::Expr { expr, .. } if matches!(expr.kind, ExprKind::Block { .. }))
+        );
+    }
+
+    #[test]
+    fn non_block_expressions_still_need_semicolons() {
+        let (_, diagnostics) = parse("fn f() -> Int { g() h() }", "test.aic");
+        assert!(!diagnostics.is_empty());
+        // A match arm whose body is not a block still needs its comma.
+        let (_, diagnostics) = parse(
+            "fn f(x: Int) -> Int { match x { 1 => 2 _ => 3 } }",
+            "test.aic",
+        );
+        assert!(!diagnostics.is_empty());
+    }
 
     #[test]
     fn parses_simple_function() {
@@ -5606,13 +6006,10 @@ fn main() -> Int {
         .enumerate()
         {
             let stmt = &function.body.stmts[index + 1];
-            let Stmt::Assign { expr, .. } = stmt else {
+            let Stmt::Assign { op, .. } = stmt else {
                 panic!("expected assignment statement");
             };
-            let ExprKind::Binary { op, .. } = &expr.kind else {
-                panic!("compound assignment should parse as binary expression");
-            };
-            assert_eq!(op, expected);
+            assert_eq!(op.as_ref(), Some(expected));
         }
     }
 

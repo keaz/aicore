@@ -30,6 +30,7 @@ mod generator_json_regex;
 mod generator_match;
 mod generator_net_tls_buffer;
 mod generator_path_proc;
+mod generator_place;
 mod generator_string_math;
 
 #[cfg(test)]
@@ -3432,7 +3433,9 @@ fn collect_direct_calls_in_expr(expr: &ir::Expr, out: &mut BTreeSet<String>) {
             collect_direct_calls_in_expr(cond, out);
             collect_direct_calls_in_block(body, out);
         }
-        ir::ExprKind::Loop { body } | ir::ExprKind::UnsafeBlock { block: body } => {
+        ir::ExprKind::Loop { body }
+        | ir::ExprKind::UnsafeBlock { block: body }
+        | ir::ExprKind::Block { block: body } => {
             collect_direct_calls_in_block(body, out);
         }
         ir::ExprKind::Break { expr } => {
@@ -3511,6 +3514,9 @@ struct Generator<'a> {
     closure_counter: usize,
     async_counter: usize,
     deferred_fn_defs: Vec<Vec<String>>,
+    /// Functions whose first parameter is a `&mut self` receiver. They take
+    /// the receiver as a pointer to the caller's storage.
+    mutable_receiver_fns: BTreeSet<String>,
     async_ready_helpers: BTreeMap<String, (String, String)>,
     fn_value_adapters: BTreeMap<String, String>,
     function_modules_by_symbol: BTreeMap<ir::SymbolId, String>,
@@ -3817,7 +3823,7 @@ fn collect_closure_captures_expr(
         | ir::ExprKind::Try { expr } => {
             collect_closure_captures_expr(expr, scopes, captures, known_functions);
         }
-        ir::ExprKind::UnsafeBlock { block } => {
+        ir::ExprKind::UnsafeBlock { block } | ir::ExprKind::Block { block } => {
             collect_closure_captures_block(block, scopes, captures, known_functions);
         }
         ir::ExprKind::StructInit { fields, .. } => {

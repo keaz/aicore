@@ -2078,7 +2078,9 @@ fn visit_expr(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
             visit_expr(cond, visit);
             visit_block(body, visit);
         }
-        ExprKind::Loop { body } | ExprKind::UnsafeBlock { block: body } => visit_block(body, visit),
+        ExprKind::Loop { body }
+        | ExprKind::UnsafeBlock { block: body }
+        | ExprKind::Block { block: body } => visit_block(body, visit),
         ExprKind::Break { expr } | ExprKind::Return { expr } => {
             if let Some(expr) = expr.as_deref() {
                 visit_expr(expr, visit);
@@ -2121,9 +2123,13 @@ fn visit_expr(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
 fn visit_block(block: &ast::Block, visit: &mut dyn FnMut(&Expr)) {
     for stmt in &block.stmts {
         match stmt {
-            ast::Stmt::Let { expr, .. }
-            | ast::Stmt::Assign { expr, .. }
-            | ast::Stmt::Expr { expr, .. } => {
+            ast::Stmt::Let { expr, .. } | ast::Stmt::Expr { expr, .. } => {
+                visit_expr(expr, visit);
+            }
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    visit_expr(index, visit);
+                }
                 visit_expr(expr, visit);
             }
             ast::Stmt::Return { expr, .. } => {

@@ -166,7 +166,7 @@ cargo run --quiet --bin aic -- run examples/io/structured_concurrency.aic
 ```
 
 Expected final line for each: `42`.
-`examples/io/signal_shutdown.aic` intentionally waits for SIGINT/SIGTERM/SIGHUP and is excluded from the batch commands.
+`examples/io/signal_shutdown.aic` intentionally waits for SIGINT/SIGTERM/SIGHUP, so `make examples-check` type-checks it but the run commands exclude it.
 
 ## Deep-Dive Docs
 

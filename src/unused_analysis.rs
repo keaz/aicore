@@ -239,7 +239,12 @@ impl<'a> Analyzer<'a> {
                     }
                     self.visit_expr(expr, module_name, caller);
                 }
-                ast::Stmt::Assign { expr, .. } => self.visit_expr(expr, module_name, caller),
+                ast::Stmt::Assign { path, expr, .. } => {
+                    for index in ast::place_index_exprs(path) {
+                        self.visit_expr(index, module_name, caller);
+                    }
+                    self.visit_expr(expr, module_name, caller);
+                }
                 ast::Stmt::Expr { expr, .. } => self.visit_expr(expr, module_name, caller),
                 ast::Stmt::Return { expr, .. } => {
                     if let Some(expr) = expr {
@@ -349,7 +354,9 @@ impl<'a> Analyzer<'a> {
             | ast::ExprKind::Borrow { expr, .. }
             | ast::ExprKind::Await { expr }
             | ast::ExprKind::Try { expr } => self.visit_expr(expr, module_name, caller),
-            ast::ExprKind::UnsafeBlock { block } => self.visit_block(block, module_name, caller),
+            ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
+                self.visit_block(block, module_name, caller)
+            }
             ast::ExprKind::StructInit { name, fields } => {
                 if let Some(module_ref) = module_prefix(name) {
                     self.record_module_reference(module_ref);
@@ -738,8 +745,13 @@ impl<'a> VariableAnalyzer<'a> {
                 let fix_span = find_let_binding_name_span(self.source, *span, name);
                 self.declare_binding(name.clone(), *span, fix_span);
             }
-            ast::Stmt::Assign { target, expr, .. } => {
+            ast::Stmt::Assign {
+                target, path, expr, ..
+            } => {
                 self.mark_used(target);
+                for index in ast::place_index_exprs(path) {
+                    self.visit_expr(index);
+                }
                 self.visit_expr(expr);
             }
             ast::Stmt::Expr { expr, .. } => self.visit_expr(expr),
@@ -815,7 +827,9 @@ impl<'a> VariableAnalyzer<'a> {
             | ast::ExprKind::Borrow { expr, .. }
             | ast::ExprKind::Await { expr }
             | ast::ExprKind::Try { expr } => self.visit_expr(expr),
-            ast::ExprKind::UnsafeBlock { block } => self.visit_block(block),
+            ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
+                self.visit_block(block)
+            }
             ast::ExprKind::StructInit { fields, .. } => {
                 for (_, field_expr, _) in fields {
                     self.visit_expr(field_expr);

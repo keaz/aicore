@@ -891,7 +891,13 @@ fn render_function_signature(
     let params = function
         .params
         .iter()
-        .map(|param| format!("{}: {}", param.name, render_type_expr(&param.ty)))
+        .map(|param| {
+            if param.mutable_receiver {
+                "&mut self".to_string()
+            } else {
+                format!("{}: {}", param.name, render_type_expr(&param.ty))
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ");
 

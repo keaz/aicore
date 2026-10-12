@@ -134,4 +134,4 @@ The language is considered production-ready when:
 
 ## Process
 
-Every child issue follows the workflow and Definition of Done in `AGENTS.md`. Self-host compiler work per issue follows the scope decision recorded in REL-T5 ([#447](https://github.com/keaz/aicore/issues/447)).
+Every child issue follows the workflow and Definition of Done in `AGENTS.md`. Self-host compiler work per issue follows the scope decision recorded in REL-T5 ([#447](https://github.com/keaz/aicore/issues/447)): the self-host compiler is frozen, roadmap issues change the Rust compiler only, and `make selfhost-frozen-check` must stay green. See `docs/selfhost/scope-decision.md`.

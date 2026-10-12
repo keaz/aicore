@@ -6,6 +6,7 @@ This directory groups the repository's executable checks by stable category rath
 
 - `unit_tests.rs` - parser, type checker, stdlib helpers, and low-level compiler behavior
 - `golden_tests.rs` - formatting and snapshot stability
+- `diagnostic_catalog_tests.rs` - every `docs/errors/catalog.md` trigger reports its code and every fix is clean
 - `execution_tests.rs` - runtime and backend execution coverage
 - `e7_cli_tests.rs` and `suggest_contracts_cli_tests.rs` - CLI contract and workflow coverage
 - `lsp_smoke_tests.rs` - LSP request/response smoke coverage
@@ -17,6 +18,7 @@ This directory groups the repository's executable checks by stable category rath
 
 - `cargo test --locked --test unit_tests`
 - `cargo test --locked --test golden_tests`
+- `cargo test --locked --test diagnostic_catalog_tests`
 - `cargo test --locked --test execution_tests`
 - `cargo test --locked --test e7_cli_tests`
 - `cargo test --locked --test lsp_smoke_tests`

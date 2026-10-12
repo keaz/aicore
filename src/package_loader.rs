@@ -708,9 +708,13 @@ fn block_uses_compiler_iterator_helpers(block: &ast::Block) -> bool {
 
 fn stmt_uses_compiler_iterator_helpers(stmt: &ast::Stmt) -> bool {
     match stmt {
-        ast::Stmt::Let { expr, .. }
-        | ast::Stmt::Assign { expr, .. }
-        | ast::Stmt::Assert { expr, .. } => expr_uses_compiler_iterator_helpers(expr),
+        ast::Stmt::Let { expr, .. } | ast::Stmt::Assert { expr, .. } => {
+            expr_uses_compiler_iterator_helpers(expr)
+        }
+        ast::Stmt::Assign { path, expr, .. } => {
+            ast::place_index_exprs(path).any(expr_uses_compiler_iterator_helpers)
+                || expr_uses_compiler_iterator_helpers(expr)
+        }
         ast::Stmt::Expr { expr, .. } => expr_uses_compiler_iterator_helpers(expr),
         ast::Stmt::Return { expr, .. } => expr
             .as_ref()
@@ -767,7 +771,9 @@ fn expr_uses_compiler_iterator_helpers(expr: &ast::Expr) -> bool {
         | ast::ExprKind::Borrow { expr, .. }
         | ast::ExprKind::Await { expr }
         | ast::ExprKind::Try { expr } => expr_uses_compiler_iterator_helpers(expr),
-        ast::ExprKind::UnsafeBlock { block } => block_uses_compiler_iterator_helpers(block),
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
+            block_uses_compiler_iterator_helpers(block)
+        }
         ast::ExprKind::StructInit { fields, .. } => fields
             .iter()
             .any(|(_, value, _)| expr_uses_compiler_iterator_helpers(value)),

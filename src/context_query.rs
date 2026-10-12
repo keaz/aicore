@@ -627,9 +627,14 @@ fn collect_block_call_names(
     for stmt in &block.stmts {
         match stmt {
             ast::Stmt::Let { expr, .. }
-            | ast::Stmt::Assign { expr, .. }
             | ast::Stmt::Expr { expr, .. }
             | ast::Stmt::Assert { expr, .. } => {
+                collect_expr_call_names(expr, caller_name, call_graph);
+            }
+            ast::Stmt::Assign { path, expr, .. } => {
+                for index in ast::place_index_exprs(path) {
+                    collect_expr_call_names(index, caller_name, call_graph);
+                }
                 collect_expr_call_names(expr, caller_name, call_graph);
             }
             ast::Stmt::Return { expr, .. } => {
@@ -712,7 +717,7 @@ fn collect_expr_call_names(
         | ast::ExprKind::Try { expr } => {
             collect_expr_call_names(expr, caller_name, call_graph);
         }
-        ast::ExprKind::UnsafeBlock { block } => {
+        ast::ExprKind::UnsafeBlock { block } | ast::ExprKind::Block { block } => {
             collect_block_call_names(block, caller_name, call_graph);
         }
         ast::ExprKind::StructInit { fields, .. } => {

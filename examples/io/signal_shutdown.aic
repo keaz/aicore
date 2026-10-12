@@ -9,7 +9,7 @@ fn signal_name(sig: Signal) -> String {
     }
 }
 
-fn main() -> Int effects { io, proc } {
+fn main() -> Int effects { io, proc } capabilities { io, proc } {
     let registered = match register_shutdown_handlers() {
         Ok(_) => true,
         Err(_) => false,

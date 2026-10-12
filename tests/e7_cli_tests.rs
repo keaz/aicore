@@ -8667,3 +8667,13 @@ fn agent_doc_entry_points_use_resolved_relative_links() {
         );
     }
 }
+
+#[test]
+fn repl_supports_compound_assignment() {
+    let output = run_repl_session(&["repl"], "let mut x = 40\nx += 2\nx *= 3\nx %= 5\n:quit\n");
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("x = 42 : Int"), "stdout:\n{text}");
+    assert!(text.contains("x = 126 : Int"), "stdout:\n{text}");
+    assert!(text.contains("x = 1 : Int"), "stdout:\n{text}");
+}

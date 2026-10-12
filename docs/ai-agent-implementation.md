@@ -569,6 +569,38 @@ Diagnostics:
 - Coverage guarantee:
   - `registry_explain_coverage()` test ensures all registered codes have explain metadata/range mapping.
 
+### Diagnostic catalog contract
+
+`docs/errors/catalog.md` has exactly one row per code in `REGISTERED_DIAGNOSTIC_CODES`:
+
+```text
+| `E1234` | Mode | Description | Trigger | Fix |
+```
+
+- Runnable modes hold single-file programs (one line, `|` written as `\|`):
+  - `check`: `aic check` reports the code for the trigger.
+  - `warn-unused`: `aic check --warn-unused` reports it (unused-analysis warnings).
+  - `build`: the trigger passes the checker and code generation reports the code.
+  - The fix must not report the code and must have no error diagnostics at all.
+- Described modes are not run; their trigger/fix cells say how the code is produced and resolved:
+  `cli` (a CLI command), `package` (manifest, lockfile, registry or workspace fixture),
+  `selfhost` (self-host tools under `compiler/aic`), `internal` (defensive backstop the checker
+  always pre-empts; the row names the code users see instead), `reserved` (never emitted),
+  `retired` (no longer emitted).
+- `tests/diagnostic_catalog_tests.rs` (run by `make test-unit`) parses the table, runs every runnable
+  trigger and fix through `driver::run_frontend` (plus `unused_analysis` for `warn-unused`, plus
+  `codegen` for `build`), and fails when:
+  - a registered code has no row, a row names an unregistered code, or a code has two rows;
+  - a row is malformed (wrong cell count, unknown mode, trigger/fix not one code span);
+  - two rows share a trigger program, or two non-`reserved` rows share a description (the placeholder
+    pattern this test replaced);
+  - a trigger does not report its code, or a fix reports it or any error.
+- `build` rows other than `E5037` are known check/build parity gaps (listed in `docs/diagnostic-codes.md`).
+  Closing one makes the checker reject the trigger first, so the test fails until the row moves to the
+  checker code.
+- When you add a diagnostic code: register it, add its row with a verified trigger and fix, and update
+  the `(N codes)` count in the catalog introduction.
+
 ### LSP support and IDE integration (E7-T4)
 
 - Server entrypoint: `aic lsp` (`src/lsp.rs`)
@@ -913,12 +945,45 @@ Verifier-focused examples:
   - `CompatibilityPolicy` in `src/release_ops.rs`
   - `LtsPolicy` in `src/release_ops.rs`
 
+## Impl Methods as Function Values (#445 parity)
+
+- Language surface: `C::get` names an impl method (inherent or trait impl) as a value. The `self` receiver is the first parameter, so `fn get(self) -> Int` gives `Fn(C) -> Int`; `fn scaled(&self, k: Int) -> Int` gives `Fn(C, Int) -> Int`.
+- Checker (`src/typecheck.rs`, `ExprKind::Var` value path): the same rules as named functions apply (`E1282` generic, `E1283` effectful).
+- Codegen (`src/codegen/generator_core.rs`): `resolve_function_value_symbol` considers impl methods as well as top-level functions, skipping generic ones; `ensure_fn_value_adapter` builds the usual env-ignoring adapter that forwards to the method's LLVM symbol.
+- `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`.
+- Verification: `src/typecheck.rs` test `method_values_take_the_receiver_as_first_parameter`, `src/codegen/tests.rs` test `impl_methods_lower_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+## Place Assignment and `&mut self` (SYNTAX-T1, #448)
+
+- Language surface: `p.x = v`, `p.a.b = v`, `t.0 = v`, `t.1.0 = v`, `v[i] = x`, `items[i].qty = x`, and `self.n = v` / `self = v` in `&mut self` methods. Rules and diagnostics are in `docs/reference/statements.md`.
+- Data model:
+  - `ast::Stmt::Assign` / `ir::Stmt::Assign` carry `path: Vec<PlaceProjection>` after the root `target`.
+  - The IR builder binds each index expression to a hidden `$place_index<N>` local (`ir_builder::PLACE_INDEX_BINDING_PREFIX`) emitted just before the assignment; `ir::PlaceProjection::Index` names that binding. The formatter prints the expression back inside the brackets.
+  - `Param.mutable_receiver` marks a `&mut self` receiver; the resolver copies it to `FunctionInfo.mutable_receiver`.
+- Checker (`src/typecheck.rs`): `place_type` types the path (`E1297`, `E1298`); the borrow pass checks the root's mutability, borrows and moves; `mutable_receiver_calls` records `&mut self` calls so `check_mutable_receiver_call` and the closure capture check can validate the receiver.
+- Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
+- Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
+
+## Block Expressions and `if` Without `else` (SYNTAX-T3, #450)
+
+- Language surface: `{ stmts; tail }` as an expression, `if cond { ... }` without `else`, block bodies in match arms (the arm comma is then optional), and block-like statements without `;`. Rules: `docs/reference/expressions.md`, `docs/reference/statements.md`.
+- Data model: `ast::ExprKind::Block` / `ir::ExprKind::Block { block }`; every walker that visits `UnsafeBlock` visits `Block` the same way, without the unsafe context. `if` without `else` is an `If` whose else block is empty and zero-width (`else_block.span.start == else_block.span.end`); the checker uses that to explain `E1220`, and `aic fmt` omits the `else`.
+- Parser: `parse_primary` accepts `{`; `is_block_like` decides when a statement may omit `;` and a match arm its comma.
+- Verification: `tests/execution_tests.rs` (`exec_block_expressions_and_if_without_else`), `src/parser.rs` and `src/typecheck.rs` unit tests, golden `tests/golden/case26_block_expressions.aic`, `examples/core/block_expressions.aic`, and `examples/io/signal_shutdown.aic` in `make examples-check`.
+
+## Compound Assignment (SYNTAX-T2, #449)
+
+- Language surface: `+=`, `-=`, `*=`, `/=`, `%=` alongside the bitwise `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`, on any assignment place (`x`, `p.a.b`, `t.0`, `v[i]`, `items[i].qty`).
+- Data model: the parser no longer desugars compound assignment. `ast::Stmt::Assign.op` / `ir::Stmt::Assign.op` hold the operator and `expr` is the right operand, so `aic fmt` prints the compound form and indexed places need no expression for the element read.
+- Checker: the stored value is typed with `check_binary(op, place, rhs)`; a compound assignment reads the root, so it is checked for use after move.
+- Codegen (`gen_place_assign` in `src/codegen/generator_place.rs`): evaluates the right-hand side, reads the place (`read_place`, which panics on an out-of-range `Vec` index), applies `gen_binary`, and rebuilds the place.
+- Verification: `tests/execution_tests.rs` (`exec_compound_assignment_*`), `src/typecheck.rs` (`compound_assignment_is_type_checked`), `src/parser.rs` (`parses_every_compound_assignment_operator`), golden `tests/golden/case25_place_assignment.aic`, REPL test in `tests/e7_cli_tests.rs`.
+
 ## Connectivity Primitive: Bitwise Operators (CONN-T1)
 
 - Language surface:
   - Binary: `&`, `|`, `^`, `<<`, `>>`, `>>>`
   - Unary: `~`
-  - Compound assignment: `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`
+  - Compound assignment: `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=` (arithmetic `+=` and friends: see SYNTAX-T2 below)
   - Hex literals: `0x...` (`Int`)
 - Type rules:
   - All bitwise/shift operators require `Int` operands and produce `Int`.
@@ -1094,6 +1159,7 @@ Verifier-focused examples:
   - `src/execution_matrix.rs`
   - `src/perf_gate.rs`
   - `tests/unit_tests.rs`
+  - `tests/diagnostic_catalog_tests.rs` (every catalog trigger/fix program)
 - Runtime/execution tests in:
   - `tests/execution_tests.rs`
   - `tests/e8_matrix_tests.rs`

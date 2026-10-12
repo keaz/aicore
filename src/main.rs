@@ -4123,8 +4123,33 @@ fn eval_repl_statement(
                 binding: Some(name.clone()),
             })
         }
-        aicore::ast::Stmt::Assign { target, expr, .. } => {
-            let value = eval_repl_expr(expr, &state.env)?;
+        aicore::ast::Stmt::Assign {
+            target,
+            path,
+            op,
+            expr,
+            span,
+        } => {
+            if !path.is_empty() {
+                return Err(format!(
+                    "cannot assign to a field or element of `{target}`: REPL values are Int, Float, Bool, String and Unit"
+                ));
+            }
+            let value = match op {
+                // `x op= e` evaluates as `x = x op e`.
+                Some(op) => {
+                    let combined = aicore::ast::Expr {
+                        kind: aicore::ast::ExprKind::Binary {
+                            op: *op,
+                            lhs: Box::new(aicore::ast::Expr::var(target.clone(), *span)),
+                            rhs: Box::new(expr.clone()),
+                        },
+                        span: *span,
+                    };
+                    eval_repl_expr(&combined, &state.env)?
+                }
+                None => eval_repl_expr(expr, &state.env)?,
+            };
             let Some(binding) = state.env.get_mut(target) else {
                 return Err(format!("unknown variable `{target}`"));
             };
@@ -4507,6 +4532,7 @@ fn repl_expr_kind_name(kind: &aicore::ast::ExprKind) -> &'static str {
         aicore::ast::ExprKind::Await { .. } => "await expression",
         aicore::ast::ExprKind::Try { .. } => "try expression",
         aicore::ast::ExprKind::UnsafeBlock { .. } => "unsafe block",
+        aicore::ast::ExprKind::Block { .. } => "block",
         aicore::ast::ExprKind::StructInit { .. } => "struct initializer",
         aicore::ast::ExprKind::FieldAccess { .. } => "field access",
     }

@@ -655,6 +655,57 @@ fn main() -> Int effects { io, env } capabilities { io, env } {
 }
 
 #[test]
+fn exec_first_class_fn_value_from_impl_method() {
+    let src = r#"
+import std.io;
+
+struct C { n: Int }
+struct D { label: String, n: Int }
+
+trait Score[T] { fn score(self) -> Int; }
+
+impl C {
+    fn get(self) -> Int { self.n }
+    fn scaled(&self, k: Int) -> Int { self.n * k }
+    fn with(self, n: Int) -> C { C { n: self.n + n } }
+}
+
+impl D {
+    fn get(self) -> Int { self.n + 100 }
+    fn name(self) -> String { self.label }
+}
+
+impl Score[C] { fn score(self) -> Int { self.n * 10 } }
+
+struct Holder { f: Fn(C) -> Int }
+
+fn apply(f: Fn(C) -> Int, c: C) -> Int { f(c) }
+
+fn apply2(f: Fn(C, Int) -> Int, c: C, k: Int) -> Int { f(c, k) }
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(apply(C::get, C { n: 5 }));
+    print_int(apply2(C::scaled, C { n: 6 }, 7));
+    let g = D::get;
+    print_int(g(D { label: "d", n: 1 }));
+    let s: Fn(D) -> String = D::name;
+    print_str(s(D { label: "hello", n: 0 }));
+    print_str("\n");
+    print_int(apply(C::score, C { n: 3 }));
+    let w = C::with;
+    print_int(w(C { n: 4 }, 5).n);
+    let h = Holder { f: C::get };
+    let hf = h.f;
+    print_int(hf(C { n: 11 }));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "5\n42\n101\nhello\n30\n9\n11\n");
+}
+
+#[test]
 fn exec_closure_literal_invocation() {
     let src = r#"
 import std.io;
@@ -18171,4 +18222,394 @@ fn sample(a: USize, b: Int) -> Int {
         "diagnostics={:#?}",
         front.diagnostics
     );
+}
+
+#[test]
+fn exec_place_assignment_to_fields_tuples_and_vec_elements() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct Inner { b: Int, tag: String }
+struct Outer { a: Inner, n: Int, pair: (Int, Bool) }
+struct Item { qty: Int }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut o = Outer { a: Inner { b: 1, tag: "x" }, n: 2, pair: (3, false) };
+    o.n = 20;
+    o.a.b = 10;
+    o.a.tag = "y";
+    o.pair.0 = 30;
+    o.pair.1 = true;
+    print_int(o.n + o.a.b + o.pair.0);
+    print_str(o.a.tag);
+    print_int(if o.pair.1 { 1 } else { 0 });
+
+    let mut t = (1, (2, 3));
+    t.1.0 = 7;
+    t.0 = 5;
+    print_int(t.0 + t.1.0 + t.1.1);
+
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 1);
+    v = vec.push(v, 2);
+    let copy = vec.slice(v, 0, 2);
+    let i = 1;
+    v[i] = 9;
+    v[i - 1] = v_first(v) + 4;
+    print_int(v_at(v, 0) * 100 + v_at(v, 1));
+    print_int(v_at(copy, 1));
+
+    let mut items: Vec[Item] = vec.new_vec();
+    items = vec.push(items, Item { qty: 1 });
+    items = vec.push(items, Item { qty: 2 });
+    items[1].qty = 40;
+    o.a.b |= 5;
+    print_int(item_qty(items, 0) + item_qty(items, 1));
+    print_int(o.a.b);
+    0
+}
+
+fn v_at(v: Vec[Int], i: Int) -> Int {
+    match vec.get(v, i) { Some(x) => x, None => -1 }
+}
+
+fn v_first(v: Vec[Int]) -> Int {
+    v_at(v, 0)
+}
+
+fn item_qty(items: Vec[Item], i: Int) -> Int {
+    match vec.get(items, i) { Some(item) => item.qty, None => -1 }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "60\ny1\n15\n509\n2\n41\n15\n");
+}
+
+#[test]
+fn exec_mutable_self_methods_update_the_callers_value() {
+    let src = r#"
+import std.io;
+
+struct Counter { n: Int, hits: Int }
+struct Pair { left: Counter, right: Counter }
+
+impl Counter {
+    fn bump(&mut self, by: Int) -> Int {
+        self.n = self.n + by;
+        self.hits = self.hits + 1;
+        self.n
+    }
+    fn reset(&mut self) -> () {
+        self = Counter { n: 0, hits: self.hits };
+    }
+    fn twice(&mut self) -> () {
+        self.bump(1);
+        self.bump(1);
+    }
+    fn get(self) -> Int { self.n }
+}
+
+trait Tick[T] { fn tick(&mut self) -> Int; }
+impl Tick[Counter] {
+    fn tick(&mut self) -> Int { self.bump(10) }
+}
+
+fn make() -> Counter { Counter { n: 500, hits: 0 } }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut c = Counter { n: 1, hits: 0 };
+    print_int(c.bump(5));
+    print_int(c.n);
+    c.twice();
+    print_int(c.n);
+    let mut p = Pair { left: Counter { n: 0, hits: 0 }, right: Counter { n: 100, hits: 0 } };
+    p.right.bump(1);
+    p.left.twice();
+    print_int(p.left.n + p.right.n);
+    c.reset();
+    print_int(c.n * 1000 + c.hits);
+    c.tick();
+    print_int(c.get());
+    print_int(make().bump(1));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "6\n6\n8\n103\n3\n10\n501\n");
+}
+
+#[test]
+fn exec_place_assignment_in_async_functions() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct C { n: Int }
+impl C {
+    fn bump(&mut self) -> Int {
+        self.n = self.n + 1;
+        self.n
+    }
+}
+
+async fn work(x: Int) -> Int {
+    let mut c = C { n: x };
+    c.n = c.n * 2;
+    c.bump();
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 0);
+    let i = 0;
+    v[i] = c.n;
+    match vec.get(v, 0) { Some(y) => y, None => -1 }
+}
+
+async fn main() -> Int effects { io } capabilities { io } {
+    print_int(await work(20));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "41\n");
+}
+
+#[test]
+fn exec_field_assignment_rechecks_struct_invariants() {
+    let src = r#"
+import std.io;
+
+struct Range { lo: Int, hi: Int } invariant lo <= hi
+struct Holder { r: Range, label: Int }
+
+impl Range {
+    fn widen(&mut self, by: Int) -> () {
+        self.lo = self.lo - by;
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut h = Holder { r: Range { lo: 1, hi: 5 }, label: 0 };
+    h.r.hi = 3;
+    h.label = 7;
+    h.r.widen(1);
+    print_int(h.r.lo * 10 + h.r.hi);
+    h.r.lo = 9;
+    print_int(h.r.lo);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "3\n", "stderr={stderr}");
+    assert!(
+        stderr.contains("contract_violation{kind:invariant,owner:Range}"),
+        "assigning a field that breaks the invariant must panic: {stderr}"
+    );
+}
+
+#[test]
+fn exec_vec_index_assignment_out_of_bounds_panics() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct P { x: Int }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut v: Vec[P] = vec.new_vec();
+    v = vec.push(v, P { x: 1 });
+    v[0].x = 2;
+    print_int(vec_len(v));
+    let i = 3;
+    v[i].x = 5;
+    print_int(0);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "1\n", "stderr={stderr}");
+    assert!(
+        stderr.contains("index_out_of_bounds{op:assign,type:Vec}"),
+        "stderr={stderr}"
+    );
+}
+
+#[test]
+fn exec_compound_assignment_on_locals_places_and_vec_elements() {
+    let src = r#"
+import std.io;
+import std.vec;
+
+struct Stats { total: Int, ratio: Float64, small: (Int, UInt8) }
+struct Item { qty: Int }
+
+fn at(v: Vec[Int], i: Int) -> Int {
+    match vec.get(v, i) { Some(x) => x, None => -1 }
+}
+
+fn qty(items: Vec[Item], i: Int) -> Int {
+    match vec.get(items, i) { Some(item) => item.qty, None => -1 }
+}
+
+fn next_index(n: Int) -> Int effects { io } capabilities { io } {
+    print_int(n);
+    n
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut a = 10;
+    a += 5;
+    a -= 3;
+    a *= 4;
+    a /= 6;
+    a %= 5;
+    a <<= 2;
+    a |= 1;
+    print_int(a);
+
+    let mut s = Stats { total: 7, ratio: 1.5, small: (2, 250u8) };
+    s.total += 3;
+    s.ratio *= 2.0;
+    s.small.0 -= 1;
+    s.small.1 += 5u8;
+    print_int(s.total + s.small.0);
+    print_int(if s.ratio == 3.0 { 1 } else { 0 });
+    print_int(if s.small.1 == 255u8 { 1 } else { 0 });
+
+    let mut v: Vec[Int] = vec.new_vec();
+    v = vec.push(v, 4);
+    v = vec.push(v, 9);
+    v[1] *= 3;
+    // The index is evaluated once.
+    v[next_index(0)] += 10;
+    print_int(at(v, 0) * 100 + at(v, 1));
+
+    let mut items: Vec[Item] = vec.new_vec();
+    items = vec.push(items, Item { qty: 5 });
+    items[0].qty -= 2;
+    print_int(qty(items, 0));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "13\n11\n1\n1\n0\n1427\n3\n");
+}
+
+#[test]
+fn exec_compound_division_by_zero_panics() {
+    let src = r#"
+import std.io;
+
+struct Acc { n: Int }
+
+fn zero() -> Int { 0 }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut acc = Acc { n: 10 };
+    acc.n /= 2;
+    print_int(acc.n);
+    acc.n /= zero();
+    print_int(acc.n);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_ne!(code, 0);
+    assert_eq!(stdout, "5\n", "stderr={stderr}");
+    assert!(stderr.contains("AICore panic"), "stderr={stderr}");
+}
+
+#[test]
+fn exec_compound_assignment_through_mutable_self() {
+    let src = r#"
+import std.io;
+
+struct Meter { reading: Int, peaks: (Int, Int) }
+
+impl Meter {
+    fn add(&mut self, amount: Int) -> () {
+        self.reading += amount;
+        self.peaks.0 += 1;
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut m = Meter { reading: 30, peaks: (0, 0) };
+    m.add(10);
+    m.add(1);
+    m.reading += 1;
+    print_int(m.reading);
+    print_int(m.peaks.0);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "42\n2\n");
+}
+
+#[test]
+fn exec_block_expressions_and_if_without_else() {
+    let src = r#"
+import std.io;
+
+fn classify(n: Int) -> Int {
+    let label = match n {
+        0 => {
+            let base = 100;
+            base + 1
+        }
+        1 => {
+            if n > 0 {
+                return 7;
+            }
+            0
+        }
+        _ => {
+            let doubled = n * 2;
+            doubled
+        },
+    };
+    label
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let x = {
+        let a = 20;
+        let b = { let c = 1; c + a };
+        a + b
+    };
+    print_int(x);
+    let mut hits = 0;
+    if x > 40 {
+        hits = hits + 1;
+    }
+    if x > 100 {
+        hits = hits + 10;
+    }
+    print_int(hits);
+    {
+        let shadow = 5;
+        hits = hits + shadow;
+    }
+    print_int(hits);
+    print_int(classify(0));
+    print_int(classify(1));
+    print_int(classify(4));
+    let mut i = 0;
+    while i < 3 {
+        i = i + 1;
+    }
+    print_int(i);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "41\n1\n6\n101\n7\n8\n3\n");
 }

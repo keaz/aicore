@@ -76,9 +76,8 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 - Current behavior:
   - Method dispatch is static and receiver-aware (`receiver type + method name`) with deterministic unknown-method handling.
   - Method effects participate in normal effect propagation checks.
-  - Receiver reference forms currently normalize to `Self` in parser/type paths; distinct `&self` vs `&mut self` borrow semantics are not yet fully differentiated.
+  - `self` and `&self` take the receiver by value. `&mut self` takes the caller's storage: assignments to `self` and its fields inside the method update the caller's binding, the receiver must be a mutable, unborrowed place (`E1266`, `E1263`), and the receiver form must match the trait declaration (`E1108`). See [Statements](./statements.md).
 - Target behavior:
-  - If receiver-reference semantics are split, enforce explicit mutability/alias checks for `&self` and `&mut self` end-to-end.
   - Preserve existing static dispatch behavior and deterministic effect accounting.
 
 ### Expected diagnostics
@@ -102,7 +101,7 @@ The sections below intentionally separate `Current behavior` from `Target behavi
 
 ### Agent implementation checklist
 
-- [ ] Add explicit tests that distinguish `self`/`&self`/`&mut self` semantics once borrow modeling is separated.
+- [x] Add explicit tests that distinguish `self`/`&self`/`&mut self` semantics (`exec_mutable_self_methods_update_the_callers_value`, `mutable_self_receivers_are_checked`).
 - [ ] Expand negative-path coverage for associated-vs-instance misuse and receiver-shape mismatches.
 - [ ] Keep method-call docs and diagnostics examples synchronized with implementation.
 
