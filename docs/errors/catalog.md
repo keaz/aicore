@@ -5,6 +5,8 @@ This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (3
 Each code has one row: what the compiler reports, how to produce it, and how to fix it.
 `tests/diagnostic_catalog_tests.rs` runs every trigger and fix program in this table, so the
 examples stay true as the compiler changes.
+Open follow-ups (parity gaps, code reuse, untested package rows) are tracked in
+[`catalog-remaining-work.md`](catalog-remaining-work.md).
 
 ## Reading a row
 
