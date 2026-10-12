@@ -150,6 +150,16 @@ The language is considered production-ready when:
 - Contracts are checked at call sites, arithmetic is checked, and effects are polymorphic.
 - CI is green on Linux, macOS and Windows, docs match the implementation, and a tagged release exists.
 
+## Open follow-ups
+
+Work found while implementing roadmap issues that is not yet done:
+
+- `CORR-T9` ([#440](https://github.com/keaz/aicore/issues/440)): user functions that shadow std generics (`first`, `last`, `get`) now lower to the user function, and same-named generic functions keep separate instances (`fn_first__s<symbol>_Int`). The commits are local only; the GitHub issue still needs the implementation evidence and the Done status once they are pushed.
+- Codegen still looks up `fn_sigs` and `generic_fn_instances` by bare name on paths that carry no checker symbol: `gen_named_function_call_with_receiver` (method calls such as `Type::method`) and `resolve_call_sig_for_types`. When two functions share a name, the signature collected last wins there. No failing program is known; key these lookups by symbol when those paths receive one.
+- `scripts/ci/examples.sh` writes fixed paths (`/tmp/aic-example.out`, `/tmp/aic-example.err`). Two checkouts that run `make examples-check` or `make examples-run` at the same time overwrite each other's output and fail with wrong values. Write these files under `$ARTIFACT_DIR` instead.
+- The REST runtime perf/soak gate (`scripts/ci/rest-runtime-soak-gate.py`, run by `make test-e8`) times whole `cargo test` invocations against fixed baselines. On a loaded host (load average 16-19) three checks exceeded their 45% regression limit by 70-104% with no code cause. Measure the test binary alone, or scale the limits to host load.
+- `examples/core/std_name_shadowing.aic` does not pass `aic fmt --check`; this predates `CORR-T9` and the examples gate does not format-check this file.
+
 ## Process
 
 Every child issue follows the workflow and Definition of Done in `AGENTS.md`. Self-host compiler work per issue follows the scope decision recorded in REL-T5 ([#447](https://github.com/keaz/aicore/issues/447)): the self-host compiler is frozen, roadmap issues change the Rust compiler only, and `make selfhost-frozen-check` must stay green. See `docs/selfhost/scope-decision.md`.
