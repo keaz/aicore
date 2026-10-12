@@ -12,10 +12,12 @@ Start here if you want the shortest path to the right docs.
 - Self-hosting parity and supported operation: [selfhost/README.md](selfhost/README.md), [selfhost/supported-operation-runbook.md](selfhost/supported-operation-runbook.md), [selfhost/release-provenance.md](selfhost/release-provenance.md)
 - Agent tooling: [agent-tooling/README.md](agent-tooling/README.md), [agent-recipes/README.md](agent-recipes/README.md)
 - Runtime and operations: [IO runtime](io-runtime/README.md), [security ops](security-ops/README.md)
+- Architecture decision records: [ADR 0001: Memory model (hybrid reference counting)](adr/0001-memory-model.md)
 
 ## What this tree contains
 
 - `reference/` for language reference material
+- `adr/` for architecture decision records
 - `agent-tooling/` for protocol and workflow docs
 - `examples/` for workflow-oriented example docs
 - `verification-quality/` for gate and release runbooks

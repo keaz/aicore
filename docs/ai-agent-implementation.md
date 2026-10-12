@@ -965,6 +965,11 @@ Verifier-focused examples:
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
 
+## Memory Model Decision (MEM-T1, #469)
+
+- The memory model is hybrid reference counting: [ADR 0001](adr/0001-memory-model.md). Shared values (`String`, `Bytes`, `Vec`, closures, `Box[T]`, and aggregates containing them) are copied in O(1), changed copy-on-write, and freed when their last copy is gone; last uses transfer ownership without count updates; resource handles stay single-owner with moves and explicit close.
+- Work in MEM-T2 to MEM-T6 and TRAIT-T8 follows the "Consequences for the follow-up issues" section of the ADR; do not introduce Rust-style move errors for shared values.
+
 ## String Ergonomics (SYNTAX-T12, #463)
 
 - Language surface: `String + String`, string ordering, raw (`r"..."`, `r#"..."#`) and multiline (`"""..."""`) literals, interpolation of numbers, `Bool` and `Char`; `std.string` gains `byte_count`, `char_count` and `compare` (`byte_len`/`concat` would clash with `std.bytes` names in modules that import both). Rules: `docs/reference/expressions.md`, `docs/reference/syntax.md`.

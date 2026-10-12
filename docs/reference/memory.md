@@ -4,6 +4,8 @@ See also: [Statements](./statements.md), [Expressions](./expressions.md), [Types
 
 This page documents the current mutability and borrow discipline implemented by type checking.
 
+The memory model is **hybrid reference counting**: shared values (`String`, `Bytes`, `Vec`, closures, and structs or enums containing them) are copied in O(1) by sharing storage, changed copy-on-write, and freed deterministically when their last copy is gone; resource handles have a single owner and are moved and closed. The design record, including what holds today and what MEM-T2 to MEM-T6 add, is [ADR 0001: Memory model](../adr/0001-memory-model.md).
+
 ## Grammar
 
 ```ebnf
