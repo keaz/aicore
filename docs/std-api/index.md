@@ -14,13 +14,13 @@ This page defines how AICore standard-library API documentation is generated and
 2. Regenerate snapshot:
 
 ```bash
-cargo run --quiet --bin aic -- std-compat > docs/std-api-baseline.json
+AIC_STD_ROOT=$PWD/std cargo run --quiet --bin aic -- std-compat > docs/std-api-baseline.json
 ```
 
 3. Validate compatibility against baseline:
 
 ```bash
-cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json
+AIC_STD_ROOT=$PWD/std cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseline.json
 ```
 
 4. If `--check` reports `E6002`, either:
@@ -28,6 +28,8 @@ cargo run --quiet --bin aic -- std-compat --check --baseline docs/std-api-baseli
 - explicitly document a migration and intentionally update baseline in the same change.
 
 The check treats removed/changed symbols as breaking and additive symbols as compatible.
+
+`aic std-compat` reads the std of the configured toolchain (`AIC_STD_ROOT`, else the installed `$AIC_HOME/toolchains/<version>/std` when it exists). Point `AIC_STD_ROOT` at the repository's `std/` when generating or checking the baseline, as `make docs-check` does; otherwise an older installed std is compared.
 
 ## Std doc coverage gate
 

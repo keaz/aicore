@@ -484,7 +484,7 @@ docs-check:
 	@$(CARGO) test --locked --test agent_recipe_tests tutorial_chapters_and_agent_steps_contract_is_deterministic -- --exact
 	@$(CARGO) test --locked --test agent_recipe_tests std_api_docs_explain_human_and_machine_readable_outputs -- --exact
 	@$(CARGO) test --locked --test agent_recipe_tests std_api_docs_test_commands_generate_expected_files_for_module_and_std_inputs -- --exact
-	@./target/debug/aic std-compat --check --baseline docs/std-api-baseline.json >/dev/null
+	@AIC_STD_ROOT=$(CURDIR)/std ./target/debug/aic std-compat --check --baseline docs/std-api-baseline.json >/dev/null
 	@./target/debug/aic release policy --check >/dev/null
 	@./target/debug/aic release lts --check >/dev/null
 
