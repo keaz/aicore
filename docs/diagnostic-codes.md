@@ -177,7 +177,7 @@ Recent core-language additions:
 - `E5024`: backstop for an extern function with a non-`C` ABI or no native symbol name (the checker reports `E2120` first).
 - `E5025`: backend encountered `break` outside a loop.
 - `E5026`: backend encountered `continue` outside a loop.
-- `E5031`: a closure captures a name that is not a local where the closure is created (currently reached when a closure body calls a closure defined inside that body).
+- `E5031`: backstop for a closure that captures a name that is not a local where the closure is created; no program accepted by the checker reaches it.
 - `E5032`: indirect call target is not a first-class `Fn(...) -> ...` value.
 - `E5033`: closure parameter type is missing during backend lowering.
 - `E5034`: backend cannot lower the referenced function as a first-class function value.
@@ -211,11 +211,9 @@ The corpus gate above passes, but these single-file programs pass `aic check` an
 | `E5006` | Const `String` equality or const division by zero (`const A: Bool = "a" == "b";`). |
 | `E5007` | Sized-integer const with an `Int` literal (`const A: Int8 = 1;`). |
 | `E5010`, `E5011` | A user file that declares a `std.*` module and defines a function named like a runtime builtin (`poll_value_task`) with the wrong arity or types. |
-| `E5012` | A closure body that calls a closure-valued variable captured from the enclosing function. |
 | `E5019` | Cyclic type aliases that are used (`type A = B; type B = A;`). |
 | `E5020` | A user-declared `intrinsic fn` with no runtime lowering. |
 | `E5023` | Cyclic const dependencies (`const A: Int = B; const B: Int = A;`). |
-| `E5031` | A closure body that defines a nested closure and calls it. |
 | `E5036` | `json.encode` on a closure value. |
 
 ## IO + Runtime Quick Reference

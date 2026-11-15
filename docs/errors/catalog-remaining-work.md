@@ -27,11 +27,11 @@ cargo test --locked --test diagnostic_catalog_tests
 
 ## 1. Close the check/build parity gaps (compiler bugs)
 
-Twelve codes have `build` rows whose triggers pass `aic check` and then fail in code generation.
+Ten codes have `build` rows whose triggers pass `aic check` and then fail in code generation.
 Policy (`docs/diagnostic-codes.md`, "Check/build parity") says only `E5037` may do that. The list,
 with one program per gap, is in "Known parity gaps" in `docs/diagnostic-codes.md`.
 
-- Clear checker gaps: `E5002`, `E5004`, `E5006`, `E5007`, `E5012`, `E5019`, `E5023`, `E5031`, `E5036`.
+- Clear checker gaps: `E5002`, `E5004`, `E5006`, `E5007`, `E5019`, `E5023`, `E5036`.
 - Edge cases that need a policy decision first:
   - `E5010`, `E5011`: reachable only from a user file that declares `module std.<name>;`. Decide
     whether user files may claim `std.*` module names; if not, reject that and make these `internal`.

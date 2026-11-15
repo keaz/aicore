@@ -432,7 +432,7 @@ fn parse_catalog_reports_malformed_rows() {
 
 #[test]
 fn run_program_reports_codes_for_each_mode() {
-    let parse_error = run_program("fn main() -> Int { @ }", "check");
+    let parse_error = run_program("fn main() -> Int { $ }", "check");
     assert!(parse_error.codes.contains(&"E0001".to_string()));
     assert!(!parse_error.errors.is_empty());
 

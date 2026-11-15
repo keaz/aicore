@@ -10097,6 +10097,31 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Checks a variant's payload sub-patterns. Unfolded `V(a, b)` arguments
+    /// (see `folded_payload_args`) already got an arity error, so they only
+    /// bind their names.
+    fn check_payload_args(
+        &mut self,
+        folded: Option<&[ir::Pattern]>,
+        args: &[ir::Pattern],
+        payload_ty: &str,
+        locals: &mut BTreeMap<String, String>,
+        bound_names: &mut BTreeSet<String>,
+    ) {
+        match folded {
+            Some(inner) => {
+                for arg in inner {
+                    self.check_pattern(arg, "<?>", locals, bound_names);
+                }
+            }
+            None => {
+                for arg in args {
+                    self.check_pattern(arg, payload_ty, locals, bound_names);
+                }
+            }
+        }
+    }
+
     fn check_pattern(
         &mut self,
         pattern: &ir::Pattern,
@@ -10644,17 +10669,19 @@ impl<'a> Checker<'a> {
                                     }
                                 })
                                 .unwrap_or_else(|| "<?>".to_string());
-                            if args.len() != 1 {
+                            let folded = folded_payload_args(pattern, args, &inner);
+                            let count = folded.map_or(args.len(), <[_]>::len);
+                            if count != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1238",
-                                    "Some pattern takes one payload pattern",
+                                    format!(
+                                        "Some pattern takes one payload pattern, found {count}"
+                                    ),
                                     self.file,
                                     pattern.span,
                                 ));
                             }
-                            for arg in args {
-                                self.check_pattern(arg, &inner, locals, bound_names);
-                            }
+                            self.check_payload_args(folded, args, &inner, locals, bound_names);
                         }
                         _ => {
                             self.diagnostics.push(Diagnostic::error(
@@ -10678,17 +10705,20 @@ impl<'a> Checker<'a> {
                             } else {
                                 vars.get(1).cloned().unwrap_or_else(|| "<?>".to_string())
                             };
-                            if args.len() != 1 {
+                            let folded = folded_payload_args(pattern, args, &payload_ty);
+                            let count = folded.map_or(args.len(), <[_]>::len);
+                            if count != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1240",
-                                    format!("{} pattern takes one payload pattern", name),
+                                    format!(
+                                        "{} pattern takes one payload pattern, found {}",
+                                        name, count
+                                    ),
                                     self.file,
                                     pattern.span,
                                 ));
                             }
-                            for arg in args {
-                                self.check_pattern(arg, &payload_ty, locals, bound_names);
-                            }
+                            self.check_payload_args(folded, args, &payload_ty, locals, bound_names);
                         }
                         _ => {
                             self.diagnostics.push(Diagnostic::error(
@@ -10736,17 +10766,20 @@ impl<'a> Checker<'a> {
                                 &enum_bindings,
                                 &enum_generic_set,
                             );
-                            if args.len() != 1 {
+                            let folded = folded_payload_args(pattern, args, &payload);
+                            let count = folded.map_or(args.len(), <[_]>::len);
+                            if count != 1 {
                                 self.diagnostics.push(Diagnostic::error(
                                     "E1242",
-                                    format!("variant '{}' takes one payload pattern", name),
+                                    format!(
+                                        "variant '{}' takes one payload pattern, found {}",
+                                        name, count
+                                    ),
                                     self.file,
                                     pattern.span,
                                 ));
                             }
-                            for arg in args {
-                                self.check_pattern(arg, &payload, locals, bound_names);
-                            }
+                            self.check_payload_args(folded, args, &payload, locals, bound_names);
                         } else if !args.is_empty() {
                             self.diagnostics.push(Diagnostic::error(
                                 "E1243",
@@ -14377,6 +14410,30 @@ fn preflight_render_target(module: Option<&str>, name: &str) -> String {
         .unwrap_or_else(|| name.to_string())
 }
 
+/// The sub-patterns of `V(a, b)` when the variant's payload is not a tuple.
+/// The parser reads `V(a, b)` as `V((a, b))` with the same span as `V`, so
+/// an explicit `V((a, b))` (a narrower inner span) is not unfolded.
+fn folded_payload_args<'p>(
+    pattern: &ir::Pattern,
+    args: &'p [ir::Pattern],
+    payload_ty: &str,
+) -> Option<&'p [ir::Pattern]> {
+    let [single] = args else {
+        return None;
+    };
+    let ir::PatternKind::Variant { name, args: inner } = &single.kind else {
+        return None;
+    };
+    if name != TUPLE_INTERNAL_NAME
+        || single.span != pattern.span
+        || payload_ty == "<?>"
+        || base_type_name(payload_ty) == TUPLE_INTERNAL_NAME
+    {
+        return None;
+    }
+    Some(inner)
+}
+
 fn base_type_name(ty: &str) -> &str {
     ty.split('[').next().unwrap_or(ty)
 }
@@ -17092,7 +17149,9 @@ fn main() -> Int {
 
     #[test]
     fn place_assignment_targets_are_type_checked() {
+        // The unit harness loads no std modules: declare `std.vec`'s `Vec`.
         let ok = r#"
+struct Vec[T] { ptr: Int, len: Int, cap: Int }
 struct Inner { b: Int }
 struct Outer { a: Inner, pair: (Int, Bool) }
 fn update(items: Vec[Outer]) -> Vec[Outer] {
@@ -17227,6 +17286,48 @@ fn main() -> Int { 0 }
             !codes.is_empty(),
             "checked conversion must not type as UInt8"
         );
+    }
+
+    #[test]
+    fn several_sub_patterns_for_a_single_payload_report_the_variant_arity_code() {
+        let cases = [
+            (
+                "fn main() -> Int { match Some(1) { Some(x, y) => 0, _ => 1 } }",
+                "E1238",
+            ),
+            (
+                "fn f(r: Result[Int, Int]) -> Int { match r { Ok(x, y) => 0, _ => 1 } } fn main() -> Int { 0 }",
+                "E1240",
+            ),
+            (
+                "fn f(r: Result[Int, Int]) -> Int { match r { Err(x, y, z) => 0, _ => 1 } } fn main() -> Int { 0 }",
+                "E1240",
+            ),
+            (
+                "enum E { A(Int), B } fn f(e: E) -> Int { match e { A(x, y) => 0, _ => 1 } } fn main() -> Int { 0 }",
+                "E1242",
+            ),
+            // An explicit tuple pattern against a non-tuple payload is a shape error.
+            (
+                "fn main() -> Int { match Some(1) { Some((x, y)) => 0, _ => 1 } }",
+                "E1245",
+            ),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()) && !codes.contains(&"E1245".to_string())
+                    || code == "E1245" && codes == vec!["E1245".to_string()],
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+        // A tuple payload still takes `V(a, b)`.
+        for src in [
+            "fn main() -> Int { match Some((1, 2)) { Some(x, y) => x + y, _ => 1 } }",
+            "enum E { A(Int, Int), B } fn f(e: E) -> Int { match e { A(x, y) => x + y, B => 0 } } fn main() -> Int { 0 }",
+        ] {
+            assert!(error_codes(src).is_empty(), "{src}: {:?}", error_codes(src));
+        }
     }
 
     #[test]
@@ -17427,7 +17528,9 @@ fn main() -> Int {
 
     #[test]
     fn compound_assignment_is_type_checked() {
+        // The unit harness loads no std modules: declare `std.vec`'s `Vec`.
         let ok = r#"
+struct Vec[T] { ptr: Int, len: Int, cap: Int }
 struct P { x: Int, f: Float64, b: UInt8 }
 fn bump(items: Vec[P]) -> Vec[P] {
     let mut v = items;
