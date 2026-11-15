@@ -42,7 +42,7 @@ fi
 "${AIC[@]}" lock "$PROJECT_DIR" >/dev/null
 "${AIC[@]}" check "$PROJECT_DIR" --offline >/dev/null
 "${AIC[@]}" doc "$MAIN_FILE" -o "$DOC_DIR" >/dev/null
-"${AIC[@]}" std-compat --check >/dev/null
+AIC_STD_ROOT="$ROOT_DIR/std" "${AIC[@]}" std-compat --check >/dev/null
 "${AIC[@]}" release manifest --root "$ROOT_DIR" --output "$REPRO_MANIFEST" --source-date-epoch 1700000000 >/dev/null
 "${AIC[@]}" release verify-manifest --root "$ROOT_DIR" --manifest "$REPRO_MANIFEST" >/dev/null
 "${AIC[@]}" release sbom --root "$ROOT_DIR" --output "$SBOM_JSON" --source-date-epoch 1700000000 >/dev/null
