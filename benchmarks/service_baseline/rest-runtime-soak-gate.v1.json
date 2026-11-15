@@ -1,41 +1,35 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "warmup_runs": 1,
-  "measure_runs": 3,
+  "measure_runs": 7,
   "regression_tolerance_pct": 45.0,
+  "regression_floor_ms": 25.0,
+  "calibration": {
+    "description": "Fixed pure-Python integer loop timed once per round; scales the regression limit on a slower host",
+    "iterations": 4000000,
+    "max_speed_factor": 2.0,
+    "thresholds": {
+      "linux": {
+        "baseline_ms": 200.0
+      },
+      "macos": {
+        "baseline_ms": 200.0
+      },
+      "windows": {
+        "baseline_ms": 200.0
+      }
+    }
+  },
   "env": {
     "CARGO_TERM_COLOR": "never"
   },
-  "preflight": [
-    [
-      "cargo",
-      "test",
-      "--locked",
-      "--test",
-      "e8_perf_tests",
-      "--no-run"
-    ],
-    [
-      "cargo",
-      "test",
-      "--locked",
-      "--test",
-      "execution_tests",
-      "--no-run"
-    ]
-  ],
   "scenarios": [
     {
       "id": "parse_pipeline_benchmark",
       "description": "Parse/typecheck/codegen benchmark gate on fixed service dataset",
-      "command": [
-        "cargo",
-        "test",
-        "--locked",
-        "--test",
-        "e8_perf_tests",
+      "test": "e8_perf_tests",
+      "args": [
         "perf_budget_gate_passes_for_reference_dataset",
-        "--",
         "--exact",
         "--nocapture"
       ],
@@ -57,14 +51,9 @@
     {
       "id": "router_match_path_order",
       "description": "REST router match path/param ordering runtime path",
-      "command": [
-        "cargo",
-        "test",
-        "--locked",
-        "--test",
-        "execution_tests",
+      "test": "execution_tests",
+      "args": [
         "exec_router_matches_paths_params_and_order",
-        "--",
         "--exact",
         "--nocapture",
         "--test-threads=1"
@@ -87,14 +76,9 @@
     {
       "id": "json_runtime_hardening",
       "description": "JSON parse limits/format diagnostics deterministic runtime path",
-      "command": [
-        "cargo",
-        "test",
-        "--locked",
-        "--test",
-        "execution_tests",
+      "test": "execution_tests",
+      "args": [
         "exec_json_runtime_hardening_limits_and_format_failures_are_deterministic",
-        "--",
         "--exact",
         "--nocapture",
         "--test-threads=1"
@@ -117,14 +101,9 @@
     {
       "id": "async_net_lifecycle_sustained_churn",
       "description": "Async net submit/wait/cancel sustained churn soak path",
-      "command": [
-        "cargo",
-        "test",
-        "--locked",
-        "--test",
-        "execution_tests",
+      "test": "execution_tests",
+      "args": [
         "exec_runtime_net_async_lifecycle_sustained_churn_is_leak_free",
-        "--",
         "--exact",
         "--nocapture",
         "--test-threads=1"
@@ -147,14 +126,9 @@
     {
       "id": "async_net_multi_worker_service_load",
       "description": "Shared-queue multi-worker async net service-load path",
-      "command": [
-        "cargo",
-        "test",
-        "--locked",
-        "--test",
-        "execution_tests",
+      "test": "execution_tests",
+      "args": [
         "exec_runtime_net_async_multi_worker_service_load_is_stable",
-        "--",
         "--exact",
         "--nocapture",
         "--test-threads=1"

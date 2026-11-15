@@ -1209,3 +1209,101 @@ fn rest_conformance_harness_runs_matrix_scenarios() {
         );
     }
 }
+
+fn run_soak_gate_dry_run(policy: &std::path::Path) -> std::process::Output {
+    Command::new("python3")
+        .arg(repo_root().join("scripts/ci/rest-runtime-soak-gate.py"))
+        .arg("--policy")
+        .arg(policy)
+        .arg("--dry-run")
+        .output()
+        .expect("run rest runtime soak gate")
+}
+
+#[test]
+fn rest_runtime_soak_policy_times_test_binaries_with_calibration() {
+    let root = repo_root();
+    let policy_path = root.join("benchmarks/service_baseline/rest-runtime-soak-gate.v1.json");
+    let policy: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&policy_path).expect("read soak policy"))
+            .expect("parse soak policy");
+    assert!(policy["measure_runs"].as_i64().unwrap_or(0) >= 5);
+    assert!(policy.get("preflight").is_none());
+    let calibration = &policy["calibration"];
+    assert!(calibration["iterations"].as_i64().unwrap_or(0) > 0);
+    let cap = calibration["max_speed_factor"]
+        .as_f64()
+        .expect("speed factor cap");
+    assert!((1.0..=2.0).contains(&cap), "cap={cap}");
+    for scenario in policy["scenarios"].as_array().expect("scenarios") {
+        assert!(scenario.get("command").is_none(), "{scenario}");
+        assert!(scenario["test"].as_str().is_some(), "{scenario}");
+        for target in ["linux", "macos", "windows"] {
+            let thresholds = &scenario["thresholds"][target];
+            let baseline = thresholds["baseline_ms"].as_f64().expect("baseline_ms");
+            let max = thresholds["max_ms"].as_f64().expect("max_ms");
+            assert!(baseline > 0.0 && baseline < max, "{scenario}");
+        }
+    }
+
+    let output = run_soak_gate_dry_run(&policy_path);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[calibration]"), "{stdout}");
+    assert!(stdout.contains("test binary>"), "{stdout}");
+}
+
+#[test]
+fn rest_runtime_soak_gate_rejects_invalid_policies() {
+    let root = repo_root();
+    let policy: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            root.join("benchmarks/service_baseline/rest-runtime-soak-gate.v1.json"),
+        )
+        .expect("read soak policy"),
+    )
+    .expect("parse soak policy");
+    let dir = tempdir().expect("tempdir");
+
+    let mut old_shape = policy.clone();
+    old_shape["preflight"] = serde_json::json!([["cargo", "test", "--no-run"]]);
+    let mut no_calibration = policy.clone();
+    no_calibration["calibration"]["iterations"] = serde_json::json!(0);
+    let mut stricter_on_fast_host = policy.clone();
+    stricter_on_fast_host["calibration"]["max_speed_factor"] = serde_json::json!(0.5);
+    let mut missing_test = policy.clone();
+    missing_test["scenarios"][0]
+        .as_object_mut()
+        .expect("scenario object")
+        .remove("test");
+
+    for (name, bad, expected) in [
+        ("old_shape", old_shape, "old `preflight`/`command` fields"),
+        (
+            "no_calibration",
+            no_calibration,
+            "calibration.iterations must be >= 1",
+        ),
+        (
+            "stricter_on_fast_host",
+            stricter_on_fast_host,
+            "calibration.max_speed_factor must be >= 1.0",
+        ),
+        (
+            "missing_test",
+            missing_test,
+            "must name its cargo test target",
+        ),
+    ] {
+        let path = dir.path().join(format!("{name}.json"));
+        fs::write(&path, serde_json::to_string_pretty(&bad).expect("encode")).expect("write");
+        let output = run_soak_gate_dry_run(&path);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "{name} should fail");
+        assert!(stderr.contains(expected), "{name}: {stderr}");
+    }
+}

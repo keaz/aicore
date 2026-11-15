@@ -37,11 +37,15 @@ Artifacts:
 
 The REST runtime soak gate uses deterministic command selection and deterministic scoring:
 
-- fixed scenario list: parse pipeline benchmark, router path matching, JSON hardening path, async net lifecycle churn
-- fixed warmup and measured iterations from `rest-runtime-soak-gate.v1.json`
-- median of measured wall-clock samples (`observed_ms`) per scenario
+- fixed scenario list: parse pipeline benchmark, router path matching, JSON hardening path, async net lifecycle churn, async net multi-worker load
+- each scenario names a cargo test target (`test`) and the test binary arguments (`args`). The gate builds the test binaries once (`cargo test --no-run`) and times the binary alone, so cargo startup and freshness checks are not part of a sample (they were about 90% of the parse pipeline sample)
+- scenarios run in interleaved rounds: one warmup round, then `measure_runs` (7) measured rounds; a burst of runner load hits every scenario instead of all samples of one
+- `observed_ms` is the median of the measured samples
 - host-target thresholds from policy (`thresholds.<target>.baseline_ms` and `thresholds.<target>.max_ms`)
-- single tolerance policy from `regression_tolerance_pct`
+- regression limit: `max(baseline_ms * (1 + regression_tolerance_pct/100), baseline_ms + regression_floor_ms) * speed_factor`
+- `regression_floor_ms` (25 ms) keeps scheduler jitter from failing scenarios of a few milliseconds
+- host calibration: every round also times a fixed pure-Python integer loop (`calibration.iterations`). `speed_factor` is the median calibration time divided by `calibration.thresholds.<target>.baseline_ms`, clamped to `[1.0, calibration.max_speed_factor]` (2.0). A slow shared runner widens the regression limit by the same factor; a fast host never tightens it; `max_ms` is an absolute cap that never scales
+- the report records the calibration samples, the host speed factor and the applied factor next to each scenario's samples
 
 Failure output is actionable by design:
 
@@ -70,6 +74,7 @@ make test-e8
 6. For regressions, add focused benchmark regression test and fix before baseline updates.
 7. For REST runtime soak regressions, inspect `rest-runtime-soak-report-<target>.json` and rerun the listed repro command for failing scenarios.
 8. Baseline refresh workflow:
-   - run `python3 scripts/ci/rest-runtime-soak-gate.py --update-baseline`
+   - run `python3 scripts/ci/rest-runtime-soak-gate.py --update-baseline` on the target host (for CI targets, take the medians from the `e8-perf-<os>` artifact's `rest-runtime-soak-report-<target>.json`)
+   - this updates the scenario `baseline_ms` values and `calibration.thresholds.<target>.baseline_ms` together; keep them from the same run
    - review changed `baseline_ms` values in `rest-runtime-soak-gate.v1.json`
    - keep or tighten `max_ms`; do not raise both baseline and max without explicit performance sign-off
