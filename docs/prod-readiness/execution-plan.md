@@ -84,7 +84,7 @@ Steps 1 to 4 were tried on 2026-11-15 in a scratch clone. Each step lists what t
 8. **Close the implemented issues.** Use the evidence template and cite the rebased commits on `origin/main`. Check each issue's acceptance criteria against the code first. If a criterion is not met, keep that issue open, comment what is missing (AGENTS.md), and add the missing work to the right wave.
    - Close [#429] to [#444], [#446] to [#463], and [#469] (35 issues). Close [#429] only once CI is green.
    - Keep [#445] open. Its remaining scope is Wave 1, item 1.1.
-   - Close the epics whose children are all closed: [#421] (CORR) and [#423] (SYNTAX).
+   - Close the epic [#423] (SYNTAX), whose children are then all closed. [#421] (CORR) stays open for [#499], [#500] and [#502].
 9. **Clean up.**
    - Delete local branches whose work is on `origin/main`. `git cherry -v main <branch>` shows rebased copies.
    - Remove the stale worktree `.claude/worktrees/strange-colden-d6bfc9` (detached at `c96d8d1`, no changes) with `git worktree remove`.
@@ -93,7 +93,7 @@ Steps 1 to 4 were tried on 2026-11-15 in a scratch clone. Each step lists what t
    - In `docs/errors/catalog-remaining-work.md`, drop the items Wave 0 resolved: the `E5012` and `E5031` parity gaps, and the `v[0]` index read (#455).
    - Run `graphify update .`.
 
-Exit: `origin/main` contains every commit listed in "Starting state", CI is green on all three platforms, and the 35 issues and epics [#421] and [#423] are closed with evidence.
+Exit: `origin/main` contains every commit listed in "Starting state", CI is green on all three platforms, and the 35 issues and the epic [#423] are closed with evidence.
 
 ## Wave 1: Finish soundness
 
@@ -102,13 +102,13 @@ Goal: no known silent wrong result, and every program that passes `aic check` bu
 | # | Item | Issue | Size | Needs |
 |---|---|---|---|---|
 | 1.1 | Close the remaining check/build parity gaps | [#445] | M | Wave 0 |
-| 1.2 | Injective generic name mangling | **needs issue** (CORR-T11) | S | Wave 0 |
+| 1.2 | Injective generic name mangling | [#499] (CORR-T11) | S | Wave 0 |
 | 1.3 | Checked integer arithmetic | [#486] | M | Wave 0 |
 | 1.4 | Effects for `extern` calls | [#488] | S | Wave 0 |
 | 1.5 | Every example passes `check` and `build` | [#468] | S | Wave 0 (1.1 helps) |
-| 1.6 | Channel slot reclamation | **needs issue** | M | Wave 0 |
-| 1.7 | Execution tests run outside `make` | **needs issue** | S | Wave 0 |
-| 1.8 | Codegen signature lookups by symbol | **needs issue** (low priority) | S | Wave 0 |
+| 1.6 | Channel slot reclamation | [#500] (CORR-T12) | M | Wave 0 |
+| 1.7 | Execution tests run outside `make` | [#501] (REL-T8) | S | Wave 0 |
+| 1.8 | Codegen signature lookups by symbol | [#502] (CORR-T13), low priority | S | Wave 0 |
 
 Notes:
 
@@ -338,3 +338,7 @@ The roadmap's exit criteria and the waves that meet them:
 [#496]: https://github.com/keaz/aicore/issues/496
 [#497]: https://github.com/keaz/aicore/issues/497
 [#498]: https://github.com/keaz/aicore/issues/498
+[#499]: https://github.com/keaz/aicore/issues/499
+[#500]: https://github.com/keaz/aicore/issues/500
+[#501]: https://github.com/keaz/aicore/issues/501
+[#502]: https://github.com/keaz/aicore/issues/502

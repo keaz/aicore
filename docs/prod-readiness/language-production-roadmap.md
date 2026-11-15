@@ -40,14 +40,14 @@ Phases run in order. Items in the Continuous phase start at the position shown i
 
 | Epic | Issue | Phase | Child issues |
 |---|---|---|---|
-| [EPIC CORR] Silent wrong results and soundness fixes | [#421](https://github.com/keaz/aicore/issues/421) | Phase 1 | 10 |
+| [EPIC CORR] Silent wrong results and soundness fixes | [#421](https://github.com/keaz/aicore/issues/421) | Phase 1 | 13 |
 | [EPIC PARITY] Pattern matching correctness and check/build parity | [#422](https://github.com/keaz/aicore/issues/422) | Phase 1 | 4 |
 | [EPIC SYNTAX] Core statement and expression constructs | [#423](https://github.com/keaz/aicore/issues/423) | Phase 2 | 16 |
 | [EPIC MEM] Memory management and ownership | [#424](https://github.com/keaz/aicore/issues/424) | Phase 3 | 6 |
 | [EPIC TRAIT] Traits, derive, and generic data | [#425](https://github.com/keaz/aicore/issues/425) | Phase 4 | 9 |
 | [EPIC VERIFY] Agent-grade verification: contracts, effects, refinement, typestate | [#426](https://github.com/keaz/aicore/issues/426) | Phase 5 | 12 |
 | [EPIC DIAG] Diagnostics that let agents fix code in one iteration | [#427](https://github.com/keaz/aicore/issues/427) | Continuous | 6 |
-| [EPIC REL] Release health: CI, docs accuracy, examples, hygiene | [#428](https://github.com/keaz/aicore/issues/428) | Continuous | 7 |
+| [EPIC REL] Release health: CI, docs accuracy, examples, hygiene | [#428](https://github.com/keaz/aicore/issues/428) | Continuous | 8 |
 
 ## Global implementation order
 
@@ -123,6 +123,12 @@ Phases run in order. Items in the Continuous phase start at the position shown i
 | 68 | [#496](https://github.com/keaz/aicore/issues/496) | `VERIFY-T12` | `aic testgen` emits placeholder `assert(true)` tests | S | [#489](https://github.com/keaz/aicore/issues/489) |
 | 69 | [#497](https://github.com/keaz/aicore/issues/497) | `VERIFY-T11` | Capabilities as values (object-capability model) | L | - |
 | 70 | [#498](https://github.com/keaz/aicore/issues/498) | `REL-T7` | Std essentials: CSPRNG, CLI argument parsing, test assertions | M | - |
+| 71 | [#499](https://github.com/keaz/aicore/issues/499) | `CORR-T11` | Generic instantiation mangling is not injective; valid programs are rejected with E1255 | S | - |
+| 72 | [#500](https://github.com/keaz/aicore/issues/500) | `CORR-T12` | Closed channels never free their runtime slot; the 129th channel in a process gets a zero handle | M | - |
+| 73 | [#501](https://github.com/keaz/aicore/issues/501) | `REL-T8` | Execution tests fail outside `make test-exec`: test-thread stack overflow and a parallel-load flake | S | - |
+| 74 | [#502](https://github.com/keaz/aicore/issues/502) | `CORR-T13` | Codegen looks up some call signatures by bare function name | S | [#440](https://github.com/keaz/aicore/issues/440) |
+
+Rows 71-74 were added on 2026-11-15 from [execution-plan.md](execution-plan.md), which places them in Wave 1.
 
 ## Open follow-ups
 

@@ -9,7 +9,7 @@ This file defines mandatory execution rules for autonomous agents working in thi
 
 ## Language Roadmap Work Queue
 
-- Before you start a language roadmap issue (`#420`-`#498`, label `lang-prod-readiness`), read `docs/prod-readiness/execution-plan.md`. It sets the order of work (Wave 0 integration blocks everything else), how to claim an issue, the diagnostic code block each issue owns, and how to land the work.
+- Before you start a language roadmap issue (label `lang-prod-readiness`, tracking epic `#420`), read `docs/prod-readiness/execution-plan.md`. It sets the order of work (Wave 0 integration blocks everything else), how to claim an issue, the diagnostic code block each issue owns, and how to land the work.
 
 ## Non-Negotiable Rule: No Placeholder Completions
 
