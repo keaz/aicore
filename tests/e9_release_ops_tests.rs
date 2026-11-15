@@ -787,7 +787,7 @@ fn main() -> Int effects { io, time } capabilities { io, time } {
 
     let rewritten_source = fs::read_to_string(project.join("src/main.aic")).expect("read source");
     assert!(rewritten_source.contains("std.time.now_ms()"));
-    assert!(rewritten_source.contains("None()"));
+    assert!(rewritten_source.contains("None"));
     assert!(!rewritten_source.contains("null"));
 
     let migrated_ir: serde_json::Value =

@@ -55,6 +55,11 @@ pub struct TypecheckOutput {
     pub expr_type_hints: BTreeMap<ir::NodeId, String>,
     /// Inferred types of `_` holes in signatures and struct fields.
     pub hole_types: TypedHoleTypes,
+    /// Variant expressions to canonicalize before codegen, by node: a bare
+    /// or qualified unit variant value (`Red`, `Color::Red`, `None`) becomes
+    /// a zero-argument constructor call with this callee name, and a
+    /// qualified builtin constructor call (`Option::Some(x)`) is renamed.
+    pub variant_callees: BTreeMap<ir::NodeId, String>,
 }
 
 /// Types the checker inferred for `_` holes in function signatures and
@@ -186,6 +191,24 @@ impl MutableReceiverCall {
     }
 }
 
+/// Splits `Enum::Variant` into its enum and variant names.
+fn split_variant_path(name: &str) -> Option<(&str, &str)> {
+    let (enum_name, variant) = name.rsplit_once("::")?;
+    (!enum_name.is_empty() && !variant.is_empty()).then_some((enum_name, variant))
+}
+
+/// `Option::Some`, `Option::None`, `Result::Ok` and `Result::Err` name the
+/// builtin constructors `Some`, `None`, `Ok` and `Err`.
+fn builtin_variant_constructor(name: &str) -> Option<&'static str> {
+    match name {
+        "Option::Some" => Some("Some"),
+        "Option::None" => Some("None"),
+        "Result::Ok" => Some("Ok"),
+        "Result::Err" => Some("Err"),
+        _ => None,
+    }
+}
+
 fn projection_span(projection: &ir::PlaceProjection) -> crate::span::Span {
     match projection {
         ir::PlaceProjection::Field { span, .. } | ir::PlaceProjection::Index { span, .. } => *span,
@@ -264,6 +287,8 @@ struct Checker<'a> {
     /// Calls of `&mut self` methods, by call node. The borrow pass requires
     /// their receiver to be a mutable place.
     mutable_receiver_calls: BTreeMap<ir::NodeId, MutableReceiverCall>,
+    /// See `TypecheckOutput::variant_callees`.
+    variant_callees: BTreeMap<ir::NodeId, String>,
     // Type parameters each generic function compares with `==`/`!=`, and
     // the generic calls that bind them; `finish` checks that every concrete
     // binding supports equality (E1291).
@@ -783,6 +808,7 @@ impl<'a> Checker<'a> {
             struct_field_inferred: BTreeMap::new(),
             hole_function_symbols: BTreeMap::new(),
             mutable_receiver_calls: BTreeMap::new(),
+            variant_callees: BTreeMap::new(),
             equality_type_params: BTreeMap::new(),
             generic_call_sites: Vec::new(),
             current_param_positions: BTreeMap::new(),
@@ -1047,6 +1073,9 @@ impl<'a> Checker<'a> {
     /// alias, or generic parameter in scope, with a "did you mean" hint.
     fn check_type_name_known(&mut self, base: &str, span: crate::span::Span) {
         let base = canonical_builtin_type_name(base.trim());
+        if self.check_std_module_type_loaded(base, span) {
+            return;
+        }
         if base.is_empty()
             || base == "_"
             || contains_unresolved_type(base)
@@ -1082,6 +1111,38 @@ impl<'a> Checker<'a> {
             }
         }
         self.diagnostics.push(diag);
+    }
+
+    /// `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer` and `JsonValue` are
+    /// known by name, but their layout comes from a std module that code
+    /// generation needs loaded. Reports E1313 when `base` names one of them,
+    /// the module is not loaded, and no struct, enum, alias, or generic
+    /// parameter of that name is visible. Returns true when `base` is such a
+    /// std type.
+    fn check_std_module_type_loaded(&mut self, base: &str, span: crate::span::Span) -> bool {
+        let Some(module) = std_module_for_type(base) else {
+            return false;
+        };
+        if self.type_params_in_scope.contains(base)
+            || self.type_aliases.contains_key(base)
+            || self.visible_struct_info(base).is_some()
+            || self.visible_enum_info(base).is_some()
+        {
+            return true;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1313",
+                format!(
+                    "type '{}' is defined in module '{}', which is not imported",
+                    base, module
+                ),
+                self.file,
+                span,
+            )
+            .with_help(format!("add `import {};` at the top of the file", module)),
+        );
+        true
     }
 
     /// A generic function that calls itself with a type built from its own
@@ -1424,6 +1485,7 @@ impl<'a> Checker<'a> {
             call_target_modules: self.call_target_modules,
             expr_type_hints: self.expr_type_hints,
             hole_types,
+            variant_callees: self.variant_callees,
         }
     }
 
@@ -5536,6 +5598,33 @@ impl<'a> Checker<'a> {
                     }
                     return render_fn_type(&sig.params, &ret);
                 }
+                if let Some(callee) = self.unit_variant_callee(name) {
+                    // A unit variant used as a value (`Red`, `Color::Red`,
+                    // `None`) is a constructor call without arguments.
+                    let call = ir::Expr {
+                        node: expr.node,
+                        kind: ir::ExprKind::Call {
+                            callee: Box::new(ir::Expr {
+                                node: expr.node,
+                                kind: ir::ExprKind::Var(callee.clone()),
+                                span: expr.span,
+                            }),
+                            args: Vec::new(),
+                            arg_names: Vec::new(),
+                            symbol: None,
+                        },
+                        span: expr.span,
+                    };
+                    self.variant_callees.insert(expr.node, callee);
+                    return self.check_expr_with_expected(
+                        &call,
+                        locals,
+                        allowed_effects,
+                        ctx,
+                        contract_mode,
+                        expected_ty,
+                    );
+                }
                 self.diagnostics.push(Diagnostic::error(
                     "E1208",
                     format!("unknown symbol '{}'", name),
@@ -5582,7 +5671,7 @@ impl<'a> Checker<'a> {
                         contract_mode,
                     );
                 };
-                let Some(name) = call_path.last().cloned() else {
+                let Some(mut name) = call_path.last().cloned() else {
                     self.diagnostics.push(Diagnostic::error(
                         "E1209",
                         "callee path cannot be empty",
@@ -5592,6 +5681,13 @@ impl<'a> Checker<'a> {
                     return "<?>".to_string();
                 };
                 let qualified = call_path.len() > 1;
+                if !qualified {
+                    if let Some(builtin) = builtin_variant_constructor(&name) {
+                        // `Option::Some(x)` is `Some(x)`.
+                        self.variant_callees.insert(expr.node, builtin.to_string());
+                        name = builtin.to_string();
+                    }
+                }
                 let rendered_path = call_path.join(".");
 
                 if self.is_user_written_intrinsic_use(&name, callee.span) {
@@ -6520,15 +6616,20 @@ impl<'a> Checker<'a> {
                             })
                             .collect::<Vec<_>>();
                         if applied.iter().all(|arg| !contains_unresolved_type(arg)) {
-                            let symbol = resolved_module
-                                .as_ref()
-                                .and_then(|module| {
-                                    self.resolution
-                                        .module_function_infos
-                                        .get(&(module.clone(), resolved_name.clone()))
-                                })
-                                .or_else(|| self.resolution.functions.get(&resolved_name))
-                                .map(|f| f.symbol);
+                            // The resolved callee's own symbol: a bare-name
+                            // lookup would pick std `first[T]` over a user
+                            // `first[T]` that shadows it.
+                            let symbol = sig.symbol.or_else(|| {
+                                resolved_module
+                                    .as_ref()
+                                    .and_then(|module| {
+                                        self.resolution
+                                            .module_function_infos
+                                            .get(&(module.clone(), resolved_name.clone()))
+                                    })
+                                    .or_else(|| self.resolution.functions.get(&resolved_name))
+                                    .map(|f| f.symbol)
+                            });
                             self.record_instantiation(
                                 ir::GenericInstantiationKind::Function,
                                 &resolved_name,
@@ -6542,7 +6643,29 @@ impl<'a> Checker<'a> {
                 }
 
                 if !qualified {
-                    let mut candidates = self.find_variants(&name);
+                    let (enum_filter, variant_name) = match split_variant_path(&name) {
+                        Some((enum_name, variant)) => (Some(enum_name), variant),
+                        None => (None, name.as_str()),
+                    };
+                    let mut candidates = self.find_variants(variant_name);
+                    if let Some(enum_name) = enum_filter {
+                        candidates.retain(|c| {
+                            Self::unqualified_name(&c.enum_name)
+                                == Self::unqualified_name(enum_name)
+                        });
+                        if candidates.is_empty() && self.find_enum(enum_name).is_some() {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1244",
+                                format!(
+                                    "unknown variant '{}' for enum '{}'",
+                                    variant_name, enum_name
+                                ),
+                                self.file,
+                                callee.span,
+                            ));
+                            return "<?>".to_string();
+                        }
+                    }
                     if candidates.len() > 1 {
                         if let Some(expected_enum) = expected_ty
                             .and_then(|expected| self.extract_expected_enum_name(expected))
@@ -9656,6 +9779,34 @@ impl<'a> Checker<'a> {
                     return;
                 }
 
+                // `Enum::Variant` must name the scrutinee's enum; the rest of
+                // the check uses the variant name.
+                let name = match split_variant_path(name) {
+                    Some((enum_name, variant)) => {
+                        let scrutinee_enum = base_type_name(&normalized_scrutinee_ty);
+                        if Self::unqualified_name(enum_name)
+                            != Self::unqualified_name(scrutinee_enum)
+                        {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E1245",
+                                format!(
+                                    "variant pattern '{}' not valid for type '{}'",
+                                    name, scrutinee_ty
+                                ),
+                                self.file,
+                                pattern.span,
+                            ));
+                            for arg in args {
+                                self.check_pattern(arg, "<?>", locals, bound_names);
+                            }
+                            return;
+                        }
+                        variant.to_string()
+                    }
+                    None => name.clone(),
+                };
+                let name = &name;
+
                 if normalized_scrutinee_ty.starts_with("Option[") {
                     match name.as_str() {
                         "None" => {
@@ -9853,7 +10004,8 @@ impl<'a> Checker<'a> {
                 let ctor = if name == TUPLE_INTERNAL_NAME {
                     Ctor::Tuple(args.len())
                 } else {
-                    Ctor::Variant(name.clone())
+                    let short = split_variant_path(name).map_or(name.as_str(), |(_, v)| v);
+                    Ctor::Variant(short.to_string())
                 };
                 let Some(all) = match_usefulness::PatternTypes::constructors(self, &ty) else {
                     return Pat::Wild;
@@ -10048,8 +10200,24 @@ impl<'a> Checker<'a> {
         }
 
         let kind_tag = instantiation_kind_tag(&kind);
-        let key = format!("{}::{}[{}]", kind_tag, name, type_args.join(", "));
-        let mangled = mangle_instantiation(kind_tag, name, type_args);
+        // Functions that share a bare name across modules (a user `first[T]`
+        // and std `first[T]`) are distinct instantiations; codegen applies
+        // the same rule (`generic_fn_instance_name`).
+        let mangle_name = match symbol {
+            Some(symbol)
+                if kind == ir::GenericInstantiationKind::Function
+                    && self
+                        .resolution
+                        .function_modules
+                        .get(name)
+                        .is_some_and(|modules| modules.len() > 1) =>
+            {
+                format!("{}__s{}", name, symbol.0)
+            }
+            _ => name.to_string(),
+        };
+        let key = format!("{}::{}[{}]", kind_tag, mangle_name, type_args.join(", "));
+        let mangled = mangle_instantiation(kind_tag, &mangle_name, type_args);
 
         if let Some(existing_key) = self.mangled_keys.get(&mangled) {
             if existing_key != &key {
@@ -10146,6 +10314,29 @@ impl<'a> Checker<'a> {
             return Some(Self::unqualified_name(base).to_string());
         }
         None
+    }
+
+    /// The constructor name for `name` used as a value when it names a unit
+    /// variant: `None`, `Option::None`, `Red` or `Color::Red`.
+    fn unit_variant_callee(&self, name: &str) -> Option<String> {
+        if let Some(builtin) = builtin_variant_constructor(name) {
+            return (builtin == "None").then(|| builtin.to_string());
+        }
+        if name == "None" {
+            return Some(name.to_string());
+        }
+        let (enum_filter, variant) = match split_variant_path(name) {
+            Some((enum_name, variant)) => (Some(enum_name), variant),
+            None => (None, name),
+        };
+        let is_unit = self.find_variants(variant).iter().any(|candidate| {
+            candidate.payload.is_none()
+                && enum_filter.is_none_or(|enum_name| {
+                    Self::unqualified_name(&candidate.enum_name)
+                        == Self::unqualified_name(enum_name)
+                })
+        });
+        is_unit.then(|| name.to_string())
     }
 
     fn find_variants(&self, name: &str) -> Vec<VariantMatch> {
@@ -11914,6 +12105,20 @@ fn canonical_builtin_type_name(base: &str) -> &str {
     }
 }
 
+/// The std module that defines a type the checker knows by name.
+fn std_module_for_type(base: &str) -> Option<&'static str> {
+    match base {
+        "Vec" => Some("std.vec"),
+        "Map" => Some("std.map"),
+        "Set" => Some("std.set"),
+        "Deque" => Some("std.deque"),
+        "Bytes" => Some("std.bytes"),
+        "ByteBuffer" => Some("std.buffer"),
+        "JsonValue" => Some("std.json"),
+        _ => None,
+    }
+}
+
 fn preflight_builtin_type_known(base: &str) -> bool {
     matches!(
         base,
@@ -12442,6 +12647,100 @@ fn main() -> Int { 0 }
         let found = unknown_type_messages(src);
         assert_eq!(found.len(), 1, "{found:#?}");
         assert_eq!(found[0].0, "unknown type 'T'");
+    }
+
+    fn std_type_import_messages(src: &str) -> Vec<(String, Vec<String>)> {
+        let (program, d1) = parse(src, "test.aic");
+        assert!(d1.is_empty(), "parse diagnostics: {d1:#?}");
+        let ir = build(&program.expect("program"));
+        let (res, _d2) = resolve(&ir, "test.aic");
+        check(&ir, &res, "test.aic")
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == "E1313")
+            .map(|d| (d.message, d.help))
+            .collect()
+    }
+
+    #[test]
+    fn std_types_without_their_module_are_reported() {
+        let cases = [
+            ("fn f(x: Vec[Int]) -> Int { 0 }", "Vec", "std.vec"),
+            ("fn f(x: Map[String, Int]) -> Int { 0 }", "Map", "std.map"),
+            ("fn f(x: Set[Int]) -> Int { 0 }", "Set", "std.set"),
+            ("fn f(x: Deque[Int]) -> Int { 0 }", "Deque", "std.deque"),
+            ("fn f(x: Bytes) -> Int { 0 }", "Bytes", "std.bytes"),
+            (
+                "fn f(x: ByteBuffer) -> Int { 0 }",
+                "ByteBuffer",
+                "std.buffer",
+            ),
+            ("fn f(x: JsonValue) -> Int { 0 }", "JsonValue", "std.json"),
+            ("fn f() -> Option[Vec[Int]] { None }", "Vec", "std.vec"),
+            ("struct S { items: Vec[String] }", "Vec", "std.vec"),
+            ("enum E { A(Bytes), B }", "Bytes", "std.bytes"),
+            ("type Names = Vec[String];", "Vec", "std.vec"),
+            (
+                "fn f() -> Int { let g = |v: Set[Int]| -> Int { 0 }; 0 }",
+                "Set",
+                "std.set",
+            ),
+            (
+                "fn f(g: Fn(Int) -> Deque[Int]) -> Int { 0 }",
+                "Deque",
+                "std.deque",
+            ),
+            (
+                "fn f(x: (Int, JsonValue)) -> Int { 0 }",
+                "JsonValue",
+                "std.json",
+            ),
+        ];
+        for (body, name, module) in cases {
+            let src = format!("{body}\nfn main() -> Int {{ 0 }}\n");
+            let found = std_type_import_messages(&src);
+            let expected =
+                format!("type '{name}' is defined in module '{module}', which is not imported");
+            let Some((_, help)) = found.iter().find(|(message, _)| *message == expected) else {
+                panic!("missing {expected} in {found:#?} for {body}");
+            };
+            assert_eq!(
+                help,
+                &vec![format!("add `import {module};` at the top of the file")],
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn std_type_names_bound_by_user_declarations_are_accepted() {
+        let src = r#"
+struct Vec[T] { first: T }
+enum Map[K, V] { Empty, One((K, V)) }
+type Bytes = String;
+fn uses(v: Vec[Int], m: Map[Int, Bool], b: Bytes) -> Int { 0 }
+fn generic[Set](x: Set) -> Set { x }
+fn main() -> Int { 0 }
+"#;
+        let found = std_type_import_messages(src);
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    #[test]
+    fn non_std_builtin_types_need_no_import() {
+        let src = r#"
+fn uses(
+    a: Option[Int],
+    b: Result[String, Bool],
+    c: (Int, Char),
+    d: Fn(Float64) -> UInt8,
+) -> Int {
+    0
+}
+fn main() -> Int { 0 }
+"#;
+        let found = std_type_import_messages(src);
+        assert!(found.is_empty(), "{found:#?}");
     }
 
     fn e1289_messages(src: &str) -> Vec<String> {
@@ -14225,6 +14524,33 @@ fn main() -> Int {
         let wrong_arity =
             "struct C { n: Int } impl C { fn get(self) -> Int { self.n } } fn main() -> Int { let f: Fn() -> Int = C::get; 0 }";
         assert!(!error_codes(wrong_arity).is_empty());
+
+        let mutable = "struct C { n: Int } impl C { fn bump(&mut self) -> Int { self.n = self.n + 1; self.n } }";
+        let cases = [
+            // Passed where an `Fn(C) -> Int` is expected.
+            format!("{mutable} fn apply(f: Fn(C) -> Int, c: C) -> Int {{ f(c) }} fn main() -> Int {{ apply(C::bump, C {{ n: 0 }}) }}"),
+            // Stored in a struct field.
+            format!("{mutable} struct H {{ f: Fn(C) -> Int }} fn main() -> Int {{ let h = H {{ f: C::bump }}; 0 }}"),
+            // A trait impl method with a `&mut self` receiver.
+            "struct C { n: Int } trait T2[X] { fn go(&mut self) -> Int; } impl T2[C] { fn go(&mut self) -> Int { self.n } } fn main() -> Int { let f = C::go; 0 }".to_string(),
+        ];
+        for src in cases {
+            let codes = error_codes(&src);
+            assert!(
+                codes.contains(&"E1303".to_string()),
+                "{src}: expected E1303, got {codes:?}"
+            );
+        }
+
+        // Direct calls of `&mut self` methods are unaffected.
+        let direct = format!(
+            "{mutable} fn main() -> Int {{ let mut c = C {{ n: 0 }}; c.bump(); C::bump(c) }}"
+        );
+        assert!(
+            !error_codes(&direct).contains(&"E1303".to_string()),
+            "{:?}",
+            error_codes(&direct)
+        );
     }
 
     #[test]
@@ -14267,6 +14593,53 @@ fn main() -> Int {
             ("struct P { x: String } fn main() -> Int { let mut p = P { x: \"a\" }; let q = p; p.x = \"b\"; 0 }", "E1277"),
             // Closures cannot update captured variables.
             ("struct P { x: Int } fn main() -> Int { let mut p = P { x: 1 }; let f = || -> Int { p.x = 2; 0 }; 0 }", "E1289"),
+        ];
+        for (src, code) in cases {
+            let codes = error_codes(src);
+            assert!(
+                codes.contains(&code.to_string()),
+                "{src}: expected {code}, got {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bare_and_qualified_unit_variants_resolve() {
+        let ok = r#"
+enum Color { Red, Green, Blue(Int) }
+enum Light { Red, Off }
+fn pick(c: Color) -> Int {
+    match c {
+        Color::Red => 1,
+        Green => 2,
+        Color::Blue(n) => n,
+    }
+}
+fn main() -> Int {
+    let a: Color = Red;
+    let b = Color::Green;
+    let c = Color::Blue(3);
+    let l = Light::Red;
+    let n: Option[Int] = None;
+    let m: Option[Int] = Option::None;
+    let s = Option::Some(2);
+    let r: Result[Int, Int] = Result::Ok(1);
+    let legacy: Option[Int] = None();
+    let Green = 5;
+    pick(a) + pick(b) + pick(c) + Green
+}
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            // Ambiguous bare variant without a typed context.
+            ("enum A { X } enum B { X } fn main() -> Int { let v = X; 0 }", "E2104"),
+            // The qualifier must name an enum that has the variant.
+            ("enum A { X } fn main() -> Int { let v = A::Y; 0 }", "E1208"),
+            ("enum A { X(Int) } fn main() -> Int { let v = A::Y(1); 0 }", "E1244"),
+            // A qualified pattern must name the scrutinee's enum.
+            ("enum A { X } enum B { X } fn f(a: A) -> Int { match a { B::X => 1 } } fn main() -> Int { 0 }", "E1245"),
+            // Payload variants are not values.
+            ("enum A { X(Int) } fn main() -> Int { let v = A::X; 0 }", "E1208"),
         ];
         for (src, code) in cases {
             let codes = error_codes(src);

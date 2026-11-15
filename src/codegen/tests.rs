@@ -72,6 +72,31 @@ fn main() -> Int { apply(C::get, C { n: 5 }) }
 }
 
 #[test]
+fn mutable_receiver_methods_are_not_lowered_as_function_values() {
+    // The checker rejects this (E1303); codegen must not build an adapter
+    // that passes the receiver by value to a method expecting a pointer.
+    let src = r#"
+struct C { n: Int }
+impl C { fn bump(&mut self) -> Int { self.n = self.n + 1; self.n } }
+fn apply(f: Fn(C) -> Int, c: C) -> Int { f(c) }
+fn main() -> Int { apply(C::bump, C { n: 5 }) }
+"#;
+    let (program, d) = parse(src, "test.aic");
+    assert!(d.is_empty(), "{d:#?}");
+    let ir = build(&program.expect("program"));
+    let lowered = lower_runtime_asserts(&ir);
+    let Err(diagnostics) = emit_llvm(&lowered, "test.aic") else {
+        panic!("expected E5034 for a `&mut self` method value");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.code == "E5034" && d.message.contains("C::bump")),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn fixed_width_integer_functions_keep_exact_llvm_types() {
     let src = r#"
 fn add_i8(a: Int8, b: Int8) -> Int8 { a + b }

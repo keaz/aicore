@@ -7,6 +7,10 @@ This file defines mandatory execution rules for autonomous agents working in thi
 - Applies to the entire repository.
 - Applies to all epics/issues and all GitHub projects, including Project 6: `AICore Complete IO Runtime`.
 
+## Language Roadmap Work Queue
+
+- Before you start a language roadmap issue (label `lang-prod-readiness`, tracking epic `#420`), read `docs/prod-readiness/execution-plan.md`. It sets the order of work (Wave 0 integration blocks everything else), how to claim an issue, the diagnostic code block each issue owns, and how to land the work.
+
 ## Non-Negotiable Rule: No Placeholder Completions
 
 - Never mark an issue as Done if any part is still a stub, dummy, placeholder, TODO, or partial workaround.

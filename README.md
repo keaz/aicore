@@ -227,9 +227,11 @@ fn describe(opt: Option[Int]) -> String {
 }
 
 // Or-patterns
-match value {
-    None | Some(0) => "empty or zero",
-    Some(n) => int_to_string(n),
+fn classify(value: Option[Int]) -> String {
+    match value {
+        None | Some(0) => "empty or zero",
+        Some(_) => "non-zero",
+    }
 }
 ```
 
@@ -479,8 +481,10 @@ Preconditions/invariants give agents executable correctness boundaries during ge
 #### No null: explicit absence handling
 
 ```aic
+import std.io;
+
 fn maybe_even(x: Int) -> Option[Int] {
-    if x % 2 == 0 { Some(x) } else { None() }
+    if x % 2 == 0 { Some(x) } else { None }
 }
 
 fn main() -> Int effects { io } capabilities { io } {

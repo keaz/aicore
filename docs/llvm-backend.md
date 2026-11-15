@@ -167,6 +167,7 @@ Match lowering notes:
 - Codegen builds per-function concrete instances from this metadata.
 - Specialized symbols use stable mangled names (`aic_<instantiation-mangle>`).
 - Duplicate instantiations are deduplicated by mangled key.
+- A function name that more than one module declares (a user `first[T]` next to std `first[T]`) gets the function's symbol in its mangled name (`fn_first__s<symbol>_Int`), so each function keeps its own instances. A call with a resolved callee symbol only matches instances of that function, and a call resolved to a non-generic function never matches a generic instance.
 
 ## Artifact Modes (E5-T5)
 

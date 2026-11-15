@@ -95,6 +95,7 @@ hex_int        = "0x" hexdigit+ ;
 - `while` requires a `Bool` condition. Its expression type is unit unless broken with typed flow.
 - `loop` and `break` are typed together: all breaks in one loop must agree on one break type.
 - `continue` and `break` are valid only inside loop contexts.
+- Enum variants as values: a unit variant is written bare (`Red`, `None`) or qualified (`Color::Red`, `Option::None`); a payload variant is called (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`). A bare name that more than one visible enum declares needs a typed context or a qualifier (`E2104`). Local bindings shadow variant names. The legacy `None()` spelling is accepted, and `aic fmt` prints it as `None`.
 - Block expressions (`{ stmts; tail }`) open a new scope; bindings declared inside end with the block. The block's value is its tail expression, or `()` without one: `let x = { let a = 1; a + 1 };`.
 - `if cond { ... }` without `else` has type `()`: the branch's value must be `()` (end it with `;` to discard a value). Otherwise `E1220` reports "`if` without `else` has type '()'".
 - Expressions that end in a block (`if`, `match`, `while`, `loop`, `for`, `{ ... }`, `unsafe { ... }`) can be statements without a trailing `;`; `aic fmt` keeps the `;` form.
@@ -111,7 +112,7 @@ hex_int        = "0x" hexdigit+ ;
   - direct function names
   - qualified module calls (`module.symbol(...)`)
   - first-class `Fn(...) -> ...` values
-  - a non-generic, pure function or impl method named as a value (`apply(double, 2)`, `apply(C::get, c)`) becomes a `Fn(...) -> ...` value; a method's `self` receiver is its first parameter, so `C::get` with `fn get(self) -> Int` has type `Fn(C) -> Int`. Generic functions (`E1282`) and effectful functions (`E1283`) cannot be used as values
+  - a non-generic, pure function or impl method named as a value (`apply(double, 2)`, `apply(C::get, c)`) becomes a `Fn(...) -> ...` value; a method's `self` receiver is its first parameter, so `C::get` with `fn get(self) -> Int` has type `Fn(C) -> Int`. Generic functions (`E1282`), effectful functions (`E1283`) and `&mut self` methods (`E1303`: the receiver is passed by pointer, and an `Fn(C) -> R` value receives `C` by value) cannot be used as values
   - arguments may be positional (`f(1, 2)`) or named (`f(x: 1, y: 2)`)
   - when mixed, positional arguments must come first; otherwise `E1092` is reported
   - named arguments can be supplied in any order and are matched by parameter name

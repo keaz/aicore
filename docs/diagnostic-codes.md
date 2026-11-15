@@ -97,6 +97,7 @@ Recent core-language additions:
 - `E1300`: call to `print_int`, `print_str`, `print_float` or `panic` from a module that does not import `std.io`.
 - `E1301`: call to `len` from a module that does not import `std.string`.
 - `E1288`: const type/initializer mismatch, or a const without an initializer.
+- `E1313`: a std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. These types are not prelude types: code generation takes their layout from the std module. The help line names the `import` to add. A module loaded through another import (for example `std.vec` through `std.string`) is enough, and a user struct, enum, alias, or generic parameter with the same name is accepted.
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound (including the `Send` marker bound) not satisfied by the concrete type.
 - `E1259`: generic bound names an unknown trait or a trait whose arity is not 1.

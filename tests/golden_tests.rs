@@ -157,3 +157,8 @@ fn golden_case25_place_assignment() {
 fn golden_case26_block_expressions() {
     run_golden_case("case26_block_expressions.aic");
 }
+
+#[test]
+fn golden_case27_unit_variants() {
+    run_golden_case("case27_unit_variants.aic");
+}

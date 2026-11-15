@@ -19,7 +19,7 @@ aic migrate <path> --report target/ops/migration-report.json
 ## Current automated rules
 
 - `MIG001` (low risk): replace deprecated `std.time.now(...)` calls with `std.time.now_ms(...)`.
-- `MIG002` (high risk): replace legacy `null` with `None()`.
+- `MIG002` (high risk): replace legacy `null` with `None`.
 - `MIG003` (medium risk): migrate legacy IR JSON to current `schema_version`.
 
 ## Concurrency Migration (AGX3)

@@ -55,6 +55,7 @@ assert_stmt    = "assert" "(" expr ")" ";" ;   (* IR/runtime form; not user surf
   - `value.method(...)` and `Type::method(value, ...)` pass the receiver's storage, so assignments to `self` or its fields inside the method are visible to the caller
   - the receiver must be a `let mut` binding (or a field of one, or `self` in another `&mut self` method) that is not borrowed (`E1266`, `E1263`); a temporary receiver (`make().bump()`) is allowed and its update is discarded
   - a closure cannot call a `&mut self` method on a captured variable (`E1289`)
+  - a `&mut self` method cannot be used as a first-class function value (`let f = C::bump;` is `E1303`); methods with a `self` receiver can (`C::get` has type `Fn(C) -> Int`)
   - `&mut self` is not allowed on `async` methods (`E1299`) or on trait methods used through `dyn Trait` (`E1214`), and an impl must use the same receiver form as its trait (`E1108`)
   - `self` and `&self` receivers take the receiver by value; assigning to `self` there is rejected (`E1266`)
 - Return statements are checked against the return type of the enclosing function or closure, at any nesting depth: inside `if`, `while`, `loop`, `for`, and `match` blocks. A nested block's expected value type never changes what `return` must produce.

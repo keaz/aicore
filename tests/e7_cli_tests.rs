@@ -5690,6 +5690,100 @@ fn check_and_build_reject_unknown_type_names_before_codegen() {
 }
 
 #[test]
+fn check_and_build_reject_std_types_without_their_module_before_codegen() {
+    let check = run_aic(&[
+        "check",
+        "examples/core/std_type_without_import_invalid.aic",
+        "--json",
+    ]);
+    assert_eq!(check.status.code(), Some(1));
+    let diags: Value = serde_json::from_slice(&check.stdout).expect("diagnostics json");
+    let missing: Vec<&Value> = diags
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter(|diag| diag["code"] == "E1313")
+        .collect();
+    assert_eq!(missing.len(), 2, "param and return type: {diags:#}");
+    for diag in &missing {
+        assert_eq!(
+            diag["message"],
+            "type 'Vec' is defined in module 'std.vec', which is not imported"
+        );
+        assert!(
+            diag["help"]
+                .as_array()
+                .expect("help")
+                .iter()
+                .any(|help| help == "add `import std.vec;` at the top of the file"),
+            "{diag:#}"
+        );
+    }
+
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("std_type_without_import_bin");
+    let build = run_aic(&[
+        "build",
+        "examples/core/std_type_without_import_invalid.aic",
+        "-o",
+        &out.to_string_lossy(),
+    ]);
+    assert_ne!(build.status.code(), Some(0));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    assert!(text.contains("E1313"), "build output: {text}");
+    assert!(
+        !text.contains("E5019"),
+        "codegen must not be reached: {text}"
+    );
+    assert!(!out.exists());
+}
+
+#[test]
+fn std_types_build_when_their_module_is_loaded_directly_or_transitively() {
+    let dir = tempdir().expect("tempdir");
+    // `std.string` imports `std.vec`, so the Vec layout is loaded without a
+    // direct `import std.vec;`.
+    let cases = [
+        ("direct.aic", "import std.vec;", "Vec[Int]"),
+        ("transitive.aic", "import std.string;", "Vec[String]"),
+        ("bytes.aic", "import std.bytes;", "Bytes"),
+        ("map.aic", "import std.map;", "Map[String, Int]"),
+        ("json.aic", "import std.json;", "JsonValue"),
+    ];
+    for (name, import, ty) in cases {
+        let src = dir.path().join(name);
+        fs::write(
+            &src,
+            format!("{import}\n\nfn keep(x: {ty}) -> {ty} {{\n    x\n}}\n\nfn main() -> Int {{\n    0\n}}\n"),
+        )
+        .expect("write source");
+        let src_path = src.to_string_lossy().to_string();
+        let check = run_aic(&["check", &src_path]);
+        assert_eq!(
+            check.status.code(),
+            Some(0),
+            "{name}: {}{}",
+            String::from_utf8_lossy(&check.stdout),
+            String::from_utf8_lossy(&check.stderr)
+        );
+        let out = dir.path().join(format!("{name}.bin"));
+        let build = run_aic(&["build", &src_path, "-o", &out.to_string_lossy()]);
+        assert_eq!(
+            build.status.code(),
+            Some(0),
+            "{name}: {}{}",
+            String::from_utf8_lossy(&build.stdout),
+            String::from_utf8_lossy(&build.stderr)
+        );
+        assert!(out.exists(), "{name}: missing artifact");
+    }
+}
+
+#[test]
 fn check_rejects_closure_assignment_to_captured_variable() {
     let check = run_aic(&[
         "check",

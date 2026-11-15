@@ -579,9 +579,21 @@ impl<'a> Generator<'a> {
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
+        // `Enum::Variant` names one enum's variant.
+        let (enum_filter, name) = match name.rsplit_once("::") {
+            Some((enum_name, variant)) if !enum_name.is_empty() => (Some(enum_name), variant),
+            _ => (None, name),
+        };
         let Some(mut candidates) = self.variant_ctors.get(name).cloned() else {
             return None;
         };
+        if let Some(enum_name) = enum_filter {
+            let enum_name = base_type_name(enum_name);
+            candidates.retain(|candidate| candidate.enum_name == enum_name);
+            if candidates.is_empty() {
+                return None;
+            }
+        }
         let expected_layout = if let Some(LType::Enum(layout)) = expected_ty {
             Some(layout.clone())
         } else {
@@ -2776,7 +2788,14 @@ impl<'a> Generator<'a> {
     ) -> Option<&'p ir::Pattern> {
         match &pattern.kind {
             ir::PatternKind::Wildcard | ir::PatternKind::Var(_) => Some(pattern),
-            ir::PatternKind::Variant { name, .. } if name == variant_name => Some(pattern),
+            ir::PatternKind::Variant { name, .. }
+                if name == variant_name
+                    || name
+                        .rsplit_once("::")
+                        .is_some_and(|(_, short)| short == variant_name) =>
+            {
+                Some(pattern)
+            }
             ir::PatternKind::Or { patterns } => patterns
                 .iter()
                 .find_map(|part| self.select_enum_pattern(part, variant_name)),

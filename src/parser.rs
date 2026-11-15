@@ -4251,8 +4251,21 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(name) => {
                 self.bump();
-                if self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
-                    let start = token.span.start;
+                // `Enum::Variant` paths name a variant of that enum.
+                let mut name = name;
+                let mut name_end = token.span.end;
+                while self.at_kind(|k| matches!(k, TokenKind::ColonColon)) {
+                    self.bump();
+                    let (segment, segment_span) =
+                        self.expect_ident("E1088", "expected path segment after '::'")?;
+                    name.push_str("::");
+                    name.push_str(&segment);
+                    name_end = segment_span.end;
+                }
+                let qualified = name.contains("::");
+                let name_span = Span::new(token.span.start, name_end);
+                if !qualified && self.at_kind(|k| matches!(k, TokenKind::LBrace)) {
+                    let start = name_span.start;
                     self.bump();
                     let mut fields = Vec::new();
                     let mut has_rest = false;
@@ -4300,7 +4313,7 @@ impl<'a> Parser<'a> {
                         span: Span::new(start, close.end),
                     })
                 } else if self.at_kind(|k| matches!(k, TokenKind::LParen)) {
-                    let start = token.span.start;
+                    let start = name_span.start;
                     self.bump();
                     let mut args = Vec::new();
                     while !self.at_kind(|k| matches!(k, TokenKind::RParen)) {
@@ -4320,23 +4333,24 @@ impl<'a> Parser<'a> {
                         kind: PatternKind::Variant { name, args },
                         span: Span::new(start, close.end),
                     })
-                } else if name
-                    .chars()
-                    .next()
-                    .map(|c| c.is_uppercase())
-                    .unwrap_or(false)
+                } else if qualified
+                    || name
+                        .chars()
+                        .next()
+                        .map(|c| c.is_uppercase())
+                        .unwrap_or(false)
                 {
                     Some(Pattern {
                         kind: PatternKind::Variant {
                             name,
                             args: Vec::new(),
                         },
-                        span: token.span,
+                        span: name_span,
                     })
                 } else {
                     Some(Pattern {
                         kind: PatternKind::Var(name),
-                        span: token.span,
+                        span: name_span,
                     })
                 }
             }
@@ -4858,6 +4872,41 @@ mod tests {
             "test.aic",
         );
         assert!(!diagnostics.is_empty());
+    }
+
+    #[test]
+    fn parses_qualified_variant_patterns_and_values() {
+        let src = "fn f(c: Color) -> Int { let d = Color::Red; match c { Color::Red => 1, Color::Blue(n) => n, Green => 2, other => 3 } }";
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(f) = &program.items[0] else {
+            panic!("expected function");
+        };
+        let Stmt::Let { expr, .. } = &f.body.stmts[0] else {
+            panic!("expected let");
+        };
+        assert!(matches!(&expr.kind, ExprKind::Var(name) if name == "Color::Red"));
+        let ExprKind::Match { arms, .. } = &f.body.tail.as_ref().expect("tail").kind else {
+            panic!("expected match");
+        };
+        let kinds = arms
+            .iter()
+            .map(|arm| match &arm.pattern.kind {
+                PatternKind::Variant { name, args } => format!("variant {name}/{}", args.len()),
+                PatternKind::Var(name) => format!("binding {name}"),
+                other => format!("{other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            [
+                "variant Color::Red/0",
+                "variant Color::Blue/1",
+                "variant Green/0",
+                "binding other"
+            ]
+        );
     }
 
     #[test]

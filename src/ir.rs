@@ -540,6 +540,138 @@ pub enum PatternKind {
     },
 }
 
+/// Calls `f` on every expression in `program` (function and method
+/// bodies, contracts, struct defaults and invariants), parents before
+/// children. `f` may replace an expression; the walk then descends into the
+/// replacement.
+pub fn visit_exprs_mut(program: &mut Program, f: &mut dyn FnMut(&mut Expr)) {
+    fn function(func: &mut Function, f: &mut dyn FnMut(&mut Expr)) {
+        if let Some(req) = func.requires.as_mut() {
+            expr(req, f);
+        }
+        if let Some(ens) = func.ensures.as_mut() {
+            expr(ens, f);
+        }
+        block(&mut func.body, f);
+    }
+    fn block(block_ref: &mut Block, f: &mut dyn FnMut(&mut Expr)) {
+        for stmt in &mut block_ref.stmts {
+            match stmt {
+                Stmt::Let { expr: value, .. }
+                | Stmt::Assign { expr: value, .. }
+                | Stmt::Expr { expr: value, .. }
+                | Stmt::Assert { expr: value, .. } => expr(value, f),
+                Stmt::Return { expr: value, .. } => {
+                    if let Some(value) = value {
+                        expr(value, f);
+                    }
+                }
+            }
+        }
+        if let Some(tail) = block_ref.tail.as_mut() {
+            expr(tail, f);
+        }
+    }
+    fn expr(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
+        f(e);
+        match &mut e.kind {
+            ExprKind::Call { callee, args, .. } => {
+                expr(callee, f);
+                for arg in args {
+                    expr(arg, f);
+                }
+            }
+            ExprKind::TemplateLiteral { args, .. } => {
+                for arg in args {
+                    expr(arg, f);
+                }
+            }
+            ExprKind::Closure { body, .. }
+            | ExprKind::Loop { body }
+            | ExprKind::UnsafeBlock { block: body }
+            | ExprKind::Block { block: body } => block(body, f),
+            ExprKind::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                expr(cond, f);
+                block(then_block, f);
+                block(else_block, f);
+            }
+            ExprKind::While { cond, body } => {
+                expr(cond, f);
+                block(body, f);
+            }
+            ExprKind::Break { expr: value } | ExprKind::Return { expr: value } => {
+                if let Some(value) = value {
+                    expr(value, f);
+                }
+            }
+            ExprKind::Match {
+                expr: scrutinee,
+                arms,
+            } => {
+                expr(scrutinee, f);
+                for arm in arms {
+                    if let Some(guard) = arm.guard.as_mut() {
+                        expr(guard, f);
+                    }
+                    expr(&mut arm.body, f);
+                }
+            }
+            ExprKind::Binary { lhs, rhs, .. } => {
+                expr(lhs, f);
+                expr(rhs, f);
+            }
+            ExprKind::Unary { expr: inner, .. }
+            | ExprKind::Borrow { expr: inner, .. }
+            | ExprKind::Await { expr: inner }
+            | ExprKind::Try { expr: inner } => expr(inner, f),
+            ExprKind::FieldAccess { base, .. } => expr(base, f),
+            ExprKind::StructInit { fields, .. } => {
+                for (_, value, _) in fields {
+                    expr(value, f);
+                }
+            }
+            ExprKind::Int(..)
+            | ExprKind::Float(..)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::String(_)
+            | ExprKind::Unit
+            | ExprKind::Var(_)
+            | ExprKind::Continue => {}
+        }
+    }
+    for item in &mut program.items {
+        match item {
+            Item::Function(func) => function(func, f),
+            Item::Struct(strukt) => {
+                for field in &mut strukt.fields {
+                    if let Some(default) = field.default_value.as_mut() {
+                        expr(default, f);
+                    }
+                }
+                if let Some(invariant) = strukt.invariant.as_mut() {
+                    expr(invariant, f);
+                }
+            }
+            Item::Enum(_) => {}
+            Item::Trait(trait_def) => {
+                for method in &mut trait_def.methods {
+                    function(method, f);
+                }
+            }
+            Item::Impl(impl_def) => {
+                for method in &mut impl_def.methods {
+                    function(method, f);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{migrate_json_to_current, CURRENT_IR_SCHEMA_VERSION};

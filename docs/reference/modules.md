@@ -50,7 +50,7 @@ unqualified_call = ident "(" arg_list? ")" ;
   1. a function defined in the current module
   2. a function from an imported user or package (non-std) module
   3. a function from an imported std module
-  If more than one candidate remains at the winning level (for example two imported user modules both define `size`, or `std.vec` and `std.map` both provide `get` and the program defines none), the call is ambiguous (`E2104`); qualify it as `module.name(...)`. The same order applies to a function used as a value (`apply(count, 1)`).
+  If more than one candidate remains at the winning level (for example two imported user modules both define `size`, or `std.vec` and `std.map` both provide `get` and the program defines none), the call is ambiguous (`E2104`); qualify it as `module.name(...)`. The same order applies to a function used as a value (`apply(count, 1)`). Code generation lowers the call to the function the checker picked, with that function's own signature, so a user `first(v: Vec[Int]) -> Int` next to std `first[T](v: Vec[T]) -> Option[T]` builds and runs the user function; this holds when both functions are generic too.
 - Method calls (`value.get()`) resolve to methods of the receiver's type and never to a free function from another module; effect and capability checks follow the method's own body.
 - Unqualified callable names become diagnostics when ambiguous across imported modules.
 - Import tail alias collisions are tracked; ambiguous aliases are rejected and require explicit full qualification.

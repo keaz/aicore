@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (314 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (315 codes).
 
 Each code has one row: what the compiler reports, how to produce it, and how to fix it.
 `tests/diagnostic_catalog_tests.rs` runs every trigger and fix program in this table, so the
@@ -241,7 +241,7 @@ Programs are written on one line; `\|` in a program stands for `|`.
 | `E1289` | check | Closure assigns to, mutably borrows, or calls a `&mut self` method on a variable captured from an enclosing scope. | `fn main() -> Int { let mut n = 0; let f = \|\| -> () { n = 1; }; f(); n }` | `fn main() -> Int { let mut n = 0; n = 1; n }` |
 | `E1290` | check | Non-exhaustive match over a tuple, struct, integer, string, char or other type not covered by `E1246`-`E1249`; the message lists witness patterns. | `fn f(x: Int) -> Int { match x { 0 => 1 } }` | `fn f(x: Int) -> Int { match x { 0 => 1, _ => 0 } }` |
 | `E1291` | check | `==`/`!=` on a type without equality (only integers, floats, `Bool`, `Char`, `String`), or a generic call instantiating a compared type parameter with such a type. | `struct P { x: Int } fn f(a: P, b: P) -> Bool { a == b }` | `struct P { x: Int } fn f(a: P, b: P) -> Bool { a.x == b.x }` |
-| `E1292` | check | `Map`/`Set` key or `Map` value type the runtime cannot store (supported: `String`, `Bytes`, `Int`, `UInt64`, `Bool`). | `fn f(m: Map[Float64, Int]) -> Int { 0 }` | `fn f(m: Map[Int, Int]) -> Int { 0 }` |
+| `E1292` | check | `Map`/`Set` key or `Map` value type the runtime cannot store (supported: `String`, `Bytes`, `Int`, `UInt64`, `Bool`). | `import std.map; fn f(m: Map[Float64, Int]) -> Int { 0 }` | `import std.map; fn f(m: Map[Int, Int]) -> Int { 0 }` |
 | `E1293` | check | Polymorphic recursion: a generic function calls itself with a type argument that grows (`f[T]` calls `f[Option[T]]`). | `fn f[T](x: T, n: Int) -> Int { if n == 0 { 0 } else { f(Some(x), n - 1) } }` | `fn f[T](x: T, n: Int) -> Int { if n == 0 { 0 } else { f(x, n - 1) } }` |
 | `E1294` | check | Recursive struct or enum that contains itself directly or through other types (not supported yet). | `struct Node { next: Option[Node] }` | `struct Node { next_index: Int }` |
 | `E1295` | check | Entry `main` has type parameters, parameters, or a return type other than an integer type, `Bool` or `()`. | `fn main(name: String) -> String { name }` | `fn main() -> Int { 0 }` |
@@ -252,6 +252,7 @@ Programs are written on one line; `\|` in a program stands for `|`.
 | `E1300` | check | Call to the std IO function `print_int`, `print_str`, `print_float` or `panic` from a module that does not import `std.io`. | `fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` | `import std.io; fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` |
 | `E1301` | check | Call to the std `len` function from a module that does not import `std.string`. | `fn main() -> Int { len("abc") }` | `import std.string; fn main() -> Int { len("abc") }` |
 | `E1303` | check | A `&mut self` method is referenced as a function value (e.g. `C::bump`). | `struct C { n: Int } impl C { fn bump(&mut self) -> () { self.n = 1; } } fn main() -> Int { let f: Fn(C) -> () = C::bump; 0 }` | `struct C { n: Int } impl C { fn bump(&mut self) -> () { self.n = 1; } } fn main() -> Int { let mut c = C { n: 0 }; c.bump(); 0 }` |
+| `E1313` | check | A std type (`Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, `JsonValue`) is used in a type position, but its module (`std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, `std.json`) is not loaded. The help line names the `import` to add. | `fn f(items: Vec[Int]) -> Vec[Int] { items } fn main() -> Int { 0 }` | `import std.vec; fn f(items: Vec[Int]) -> Vec[Int] { items } fn main() -> Int { 0 }` |
 | `E2001` | check | A function body (or a call inside it) uses an effect, directly or through a callee's signature, that is not listed in the enclosing function's `effects { ... }` clause. | `import std.io; fn main() -> Int { print_int(1); 0 }` | `import std.io; fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` |
 | `E2002` | check | A `requires`/`ensures`/`invariant` contract expression calls a function or method whose signature declares effects; contracts must be pure. | `import std.time; fn f(x: Int) -> Int effects { time } capabilities { time } requires now_ms() > 0 { x } fn main() -> Int { 0 }` | `fn f(x: Int) -> Int requires x > 0 { x } fn main() -> Int { 0 }` |
 | `E2003` | check | A function's `effects { ... }` clause names an effect that is not one of the known effects (`io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`). | `fn main() -> Int effects { disk } { 0 }` | `fn main() -> Int effects { fs } capabilities { fs } { 0 }` |

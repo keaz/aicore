@@ -2,6 +2,8 @@
 
 Tracking epic: [#420](https://github.com/keaz/aicore/issues/420). Label: `lang-prod-readiness`.
 
+Order of the remaining work, the starting state and the rules for picking up an issue: [execution-plan.md](execution-plan.md).
+
 This roadmap comes from an audit of commit `2a11587` (2026-10). The audit ran about 200 probe programs through a fresh `cargo build --release` of the Rust reference compiler (the default `aic` front end and backend). It focuses on language features, data types and constructs that help AI agents write correct code.
 
 ## Current state summary
@@ -38,14 +40,14 @@ Phases run in order. Items in the Continuous phase start at the position shown i
 
 | Epic | Issue | Phase | Child issues |
 |---|---|---|---|
-| [EPIC CORR] Silent wrong results and soundness fixes | [#421](https://github.com/keaz/aicore/issues/421) | Phase 1 | 10 |
+| [EPIC CORR] Silent wrong results and soundness fixes | [#421](https://github.com/keaz/aicore/issues/421) | Phase 1 | 13 |
 | [EPIC PARITY] Pattern matching correctness and check/build parity | [#422](https://github.com/keaz/aicore/issues/422) | Phase 1 | 4 |
 | [EPIC SYNTAX] Core statement and expression constructs | [#423](https://github.com/keaz/aicore/issues/423) | Phase 2 | 16 |
 | [EPIC MEM] Memory management and ownership | [#424](https://github.com/keaz/aicore/issues/424) | Phase 3 | 6 |
 | [EPIC TRAIT] Traits, derive, and generic data | [#425](https://github.com/keaz/aicore/issues/425) | Phase 4 | 9 |
 | [EPIC VERIFY] Agent-grade verification: contracts, effects, refinement, typestate | [#426](https://github.com/keaz/aicore/issues/426) | Phase 5 | 12 |
 | [EPIC DIAG] Diagnostics that let agents fix code in one iteration | [#427](https://github.com/keaz/aicore/issues/427) | Continuous | 6 |
-| [EPIC REL] Release health: CI, docs accuracy, examples, hygiene | [#428](https://github.com/keaz/aicore/issues/428) | Continuous | 7 |
+| [EPIC REL] Release health: CI, docs accuracy, examples, hygiene | [#428](https://github.com/keaz/aicore/issues/428) | Continuous | 8 |
 
 ## Global implementation order
 
@@ -121,6 +123,27 @@ Phases run in order. Items in the Continuous phase start at the position shown i
 | 68 | [#496](https://github.com/keaz/aicore/issues/496) | `VERIFY-T12` | `aic testgen` emits placeholder `assert(true)` tests | S | [#489](https://github.com/keaz/aicore/issues/489) |
 | 69 | [#497](https://github.com/keaz/aicore/issues/497) | `VERIFY-T11` | Capabilities as values (object-capability model) | L | - |
 | 70 | [#498](https://github.com/keaz/aicore/issues/498) | `REL-T7` | Std essentials: CSPRNG, CLI argument parsing, test assertions | M | - |
+| 71 | [#499](https://github.com/keaz/aicore/issues/499) | `CORR-T11` | Generic instantiation mangling is not injective; valid programs are rejected with E1255 | S | - |
+| 72 | [#500](https://github.com/keaz/aicore/issues/500) | `CORR-T12` | Closed channels never free their runtime slot; the 129th channel in a process gets a zero handle | M | - |
+| 73 | [#501](https://github.com/keaz/aicore/issues/501) | `REL-T8` | Execution tests fail outside `make test-exec`: test-thread stack overflow and a parallel-load flake | S | - |
+| 74 | [#502](https://github.com/keaz/aicore/issues/502) | `CORR-T13` | Codegen looks up some call signatures by bare function name | S | [#440](https://github.com/keaz/aicore/issues/440) |
+
+Rows 71-74 were added on 2026-11-15 from [execution-plan.md](execution-plan.md), which places them in Wave 1.
+
+## Open follow-ups
+
+Items found while landing roadmap work that are not tracked by a child issue yet.
+
+- **Std types without their module (PARITY-T4 follow-up, [#445](https://github.com/keaz/aicore/issues/445)).** Fixed on `lang-prod-roadmap`: `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer` and `JsonValue` in a type position without their std module now fail `aic check` with `E1313` instead of `aic build` with `E5019`. Remaining:
+  - Push the commit and add the evidence (commit, `make ci`, targeted tests, the `examples/core/std_type_*.aic` examples) to [#445](https://github.com/keaz/aicore/issues/445) or a new child issue.
+  - Run `graphify update .` in the main checkout after the merge.
+- **Diagnostic code collisions between unmerged branches.** `lang-prod-roadmap` uses `E1303` (`&mut self` method value) and `E1313` (std type without its module). The unmerged branches `syntax-t5-pattern-lets`, `syntax-t8-indexing`, `syntax-t9-numeric-casts`, `syntax-t10-loop-labels`, `syntax-t11-ranges-patterns` and `syntax-t15-type-args` register `E1302`-`E1312` independently, and several reuse `E1303`. Renumber each branch onto the next free code when it merges, and check `src/diagnostic_codes.rs` on `lang-prod-roadmap` before you pick a new code.
+- **Execution tests outside `make`.** A plain `cargo test --test execution_tests` overflows the default 2 MiB test-thread stack in `exec_string_ops_full_surface_and_edge_cases`, and `exec_pool_discarded_connection_is_replaced` can fail under parallel load. `make test-exec` sets `RUST_MIN_STACK=33554432` and `--test-threads=1` and passes. Either make the test binary set its own stack size and thread count, or document that only `make test-exec` is supported.
+- `CORR-T9` ([#440](https://github.com/keaz/aicore/issues/440)): user functions that shadow std generics (`first`, `last`, `get`) now lower to the user function, and same-named generic functions keep separate instances (`fn_first__s<symbol>_Int`). The commits are local only; the GitHub issue still needs the implementation evidence and the Done status once they are pushed.
+- Codegen still looks up `fn_sigs` and `generic_fn_instances` by bare name on paths that carry no checker symbol: `gen_named_function_call_with_receiver` (method calls such as `Type::method`) and `resolve_call_sig_for_types`. When two functions share a name, the signature collected last wins there. No failing program is known; key these lookups by symbol when those paths receive one.
+- `scripts/ci/examples.sh` writes fixed paths (`/tmp/aic-example.out`, `/tmp/aic-example.err`). Two checkouts that run `make examples-check` or `make examples-run` at the same time overwrite each other's output and fail with wrong values. Write these files under `$ARTIFACT_DIR` instead.
+- The REST runtime perf/soak gate (`scripts/ci/rest-runtime-soak-gate.py`, run by `make test-e8`) times whole `cargo test` invocations against fixed baselines. On a loaded host (load average 16-19) three checks exceeded their 45% regression limit by 70-104% with no code cause. Measure the test binary alone, or scale the limits to host load.
+- `examples/core/std_name_shadowing.aic` does not pass `aic fmt --check`; this predates `CORR-T9` and the examples gate does not format-check this file.
 
 ## Exit criteria
 

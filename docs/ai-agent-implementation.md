@@ -950,8 +950,9 @@ Verifier-focused examples:
 - Language surface: `C::get` names an impl method (inherent or trait impl) as a value. The `self` receiver is the first parameter, so `fn get(self) -> Int` gives `Fn(C) -> Int`; `fn scaled(&self, k: Int) -> Int` gives `Fn(C, Int) -> Int`.
 - Checker (`src/typecheck.rs`, `ExprKind::Var` value path): the same rules as named functions apply (`E1282` generic, `E1283` effectful).
 - Codegen (`src/codegen/generator_core.rs`): `resolve_function_value_symbol` considers impl methods as well as top-level functions, skipping generic ones; `ensure_fn_value_adapter` builds the usual env-ignoring adapter that forwards to the method's LLVM symbol.
-- `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`.
-- Verification: `src/typecheck.rs` test `method_values_take_the_receiver_as_first_parameter`, `src/codegen/tests.rs` test `impl_methods_lower_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+- `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`. A `&mut self` method value that reaches codegen without the checker reports `E5034` instead of getting a by-value adapter.
+- Verification: `src/typecheck.rs` tests `method_values_take_the_receiver_as_first_parameter` (types, and `E1303` for arguments, struct fields and trait impl methods) and `mutable_self_receivers_are_checked`, `src/codegen/tests.rs` tests `impl_methods_lower_as_function_values` and `mutable_receiver_methods_are_not_lowered_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
+
 ## Place Assignment and `&mut self` (SYNTAX-T1, #448)
 
 - Language surface: `p.x = v`, `p.a.b = v`, `t.0 = v`, `t.1.0 = v`, `v[i] = x`, `items[i].qty = x`, and `self.n = v` / `self = v` in `&mut self` methods. Rules and diagnostics are in `docs/reference/statements.md`.
@@ -962,6 +963,14 @@ Verifier-focused examples:
 - Checker (`src/typecheck.rs`): `place_type` types the path (`E1297`, `E1298`); the borrow pass checks the root's mutability, borrows and moves; `mutable_receiver_calls` records `&mut self` calls so `check_mutable_receiver_call` and the closure capture check can validate the receiver.
 - Codegen (`src/codegen/generator_place.rs`): a place assignment rebuilds each level (`insertvalue` for structs and tuples, `aic_rt_vec_set` for `Vec`), re-runs invariant helpers, and stores the new root. A `&mut self` function takes its receiver as `T*`; callers pass the receiver's storage address (`place_address`) or spill a temporary.
 - Verification: `tests/execution_tests.rs` (`exec_place_assignment_*`, `exec_mutable_self_methods_update_the_callers_value`, `exec_field_assignment_rechecks_struct_invariants`, `exec_vec_index_assignment_out_of_bounds_panics`), `src/typecheck.rs` tests (`place_assignment_targets_are_type_checked`, `mutable_self_receivers_are_checked`, `trait_impl_receiver_mode_must_match`), `src/parser.rs` tests, and `examples/core/place_assignment.aic`.
+
+## Bare and Qualified Unit Variants (SYNTAX-T7, #451)
+
+- Language surface: unit variants as values (`Red`, `Color::Red`, `None`, `Option::None`), qualified constructor calls (`Color::Blue(3)`, `Option::Some(x)`, `Result::Ok(v)`), and qualified patterns (`Color::Red =>`, `Option::Some(x) =>`).
+- Checker: `unit_variant_callee` resolves a value name the scope does not bind; the `Var` is checked as a zero-argument constructor call and recorded in `TypecheckOutput::variant_callees`. Qualified calls filter `find_variants` by enum (`split_variant_path`); `builtin_variant_constructor` maps `Option::`/`Result::` names to the builtins. Qualified patterns must name the scrutinee's enum (`E1245`).
+- Driver: `apply_variant_callees` (using `ir::visit_exprs_mut`) rewrites those `Var`s into constructor calls before codegen; `gen_variant_constructor` filters candidates by the qualifier.
+- Formatter: prints `None()` as `None`, and its verifier treats the two as the same program.
+- Verification: `exec_bare_and_qualified_unit_variants`, `bare_and_qualified_unit_variants_resolve`, `parses_qualified_variant_patterns_and_values`, golden `case27_unit_variants.aic`, `examples/core/unit_variants.aic`, and the README examples.
 
 ## Block Expressions and `if` Without `else` (SYNTAX-T3, #450)
 
@@ -1198,6 +1207,14 @@ per-run `ARTIFACT_DIR` (`mktemp -d`, removed by an `EXIT` trap); use
 `"$EXAMPLE_OUT"`, `"$EXAMPLE_ERR"`, or a path under `"$ARTIFACT_DIR"` for new
 checks, never a fixed `/tmp/...` path, so concurrent runs from different
 worktrees stay isolated.
+
+## Std Types Need Their Module (E1313)
+
+- `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer`, and `JsonValue` are known to the checker by name, but they are not prelude types. Code generation takes their layout from the struct in `std.vec`, `std.map`, `std.set`, `std.deque`, `std.bytes`, `std.buffer`, or `std.json`.
+- `check_type_name_known` in `src/typecheck.rs` calls `check_std_module_type_loaded`, which reports `E1313` when one of these names is used in a type position and no struct, enum, alias, or generic parameter of that name is visible. The help line names the `import` to add (mapping in `std_module_for_type`).
+- A module loaded through another import (for example `std.vec` through `std.string`) satisfies the check, because code generation then has the layout. A user declaration with the same name shadows the std type.
+- Without this check, such programs passed `aic check` and failed `aic build` with `E5019`, which broke the check/build parity gate (`tests/check_build_parity_tests.rs`).
+- Examples: `examples/core/std_type_without_import_invalid.aic` (check-fail) and `examples/core/std_type_with_import.aic` (run, prints `2`).
 
 ## Safe Extension Checklist
 
