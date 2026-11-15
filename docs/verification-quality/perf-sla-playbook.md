@@ -46,6 +46,7 @@ The REST runtime soak gate uses deterministic command selection and deterministi
 - `regression_floor_ms` (25 ms) keeps scheduler jitter from failing scenarios of a few milliseconds
 - host calibration: every round also times a fixed pure-Python integer loop (`calibration.iterations`). `speed_factor` is the median calibration time divided by `calibration.thresholds.<target>.baseline_ms`, clamped to `[1.0, calibration.max_speed_factor]` (2.0). A slow shared runner widens the regression limit by the same factor; a fast host never tightens it; `max_ms` is an absolute cap that never scales
 - the report records the calibration samples, the host speed factor and the applied factor next to each scenario's samples
+- Linux and macOS baselines come from the CI run `43745071167` (`e8-perf-<os>` artifacts), each with the calibration baseline of the same run. Windows does not run this gate in CI: its baselines are the Linux baselines scaled by the earlier Windows/Linux ratio per scenario, and must be recalibrated on a Windows host before Windows is gated
 
 Failure output is actionable by design:
 
