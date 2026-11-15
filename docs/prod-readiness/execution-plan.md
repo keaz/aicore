@@ -57,6 +57,22 @@ One agent. Goal: every finished commit is on `origin/main`, CI is green on Linux
 
 Steps 1 to 4 were tried on 2026-11-15 in a scratch clone. Each step lists what that trial found.
 
+### Wave 0 progress
+
+| Step | State | Result |
+|---|---|---|
+| 1 | done (2026-11-15) | On `lang-prod-roadmap`: `6fa2b21` -> `26fb336`, `c96d8d1` -> `58e49e2`, then `ded9079` merges the two "Open follow-ups" sections. Not pushed. |
+| 2 | done (2026-11-15) | Local `main` merge commit `1f2565c`. Kept `main`'s catalog format, added the `E1313` row, added `import std.map;` to the `E1292` trigger and fix. `diagnostic_catalog_tests` passed after the merge. |
+| 3 | done (2026-11-15) | `mem-t1-memory-model-adr` rebased onto `1f2565c` (the four duplicate commits were skipped): #452 to #463 and #469 are `a26825b`..`2152b1a`. Local `main` was fast-forwarded to it, plus `1c54542` (`cargo fmt` of the registry). Registry conflicts took the union of codes. Catalog conflicts kept `main`'s format, and each commit's new rows were ported with mode `check`: `E1110`, `E1302`, `E1304` to `E1312` (catalog has 326 rows). Their triggers and fixes pass `diagnostic_catalog_tests`. `docs/diagnostic-codes.md` and `docs/reference/types.md` kept both sides. `cargo build` and `cargo fmt --check` pass. Not pushed. |
+| 4 | next | Continue on local `main` (head `1c54542` plus this plan update). |
+
+Notes for step 5, found during step 3:
+
+- The "Catalog rows are missing" bullet is done.
+- `diagnostic_catalog_tests` on `main` now fails exactly as the trial predicted, and nothing else: `E0001`, `E1011`, `E1074`, `E1238`, `E1240`, `E1242`, `E5012`, `E5031`, plus the `@` case in `run_program_reports_codes_for_each_mode`.
+- #459 makes the compiler emit `E0002` (unclosed block comment, trigger `fn main() -> Int { 0 } /* note`) and `E0003` (digit not allowed by the literal's base, trigger `0b102`). The catalog still lists both as `reserved`, which the test does not catch. Rewrite both rows as `check` rows. #459 used `$` as the new `E0001` trigger.
+- `cargo test --lib`, the other test suites and `make ci` were not run after the rebase.
+
 1. **Collect the CORR-T9 follow-up.** On `lang-prod-roadmap`, cherry-pick `6fa2b21` and `c96d8d1`. `c96d8d1` adds a second `## Open follow-ups` section to `language-production-roadmap.md`. Merge the two sections into one.
 2. **Merge `lang-prod-roadmap` into `main`.** Conflicts: `docs/diagnostic-codes.md` and `docs/errors/catalog.md`. Keep the format of `main`'s rewritten catalog and add the branch's changes. The catalog test then needs:
    - a row for `E1313`;
