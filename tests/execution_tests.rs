@@ -14685,6 +14685,49 @@ fn main() -> Int effects { io } capabilities { io } {
 }
 
 #[test]
+fn exec_match_lowers_tuple_and_literal_payloads_three_levels_deep() {
+    let src = r#"import std.io;
+
+enum Shape { Rect((Int, (Int, Option[Int]))), Dot }
+
+fn deep(s: Option[Shape]) -> Int {
+    match s {
+        Some(Rect((1, (2, Some(3))))) => 1,
+        Some(Rect((w, (h, Some(d))))) => w * 100 + h * 10 + d,
+        Some(Rect((w, (_, None)))) => w,
+        Some(Dot) => 7,
+        None => 0,
+    }
+}
+
+fn chain(r: Result[Option[Result[Int, String]], String]) -> Int {
+    match r {
+        Ok(Some(Ok(5))) => 5,
+        Ok(Some(Ok(n))) => n * 2,
+        Ok(Some(Err("x"))) => 11,
+        Ok(Some(Err(_))) => 12,
+        Ok(None) => 13,
+        Err(_) => 14,
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(deep(Some(Rect((1, (2, Some(3)))))));
+    print_int(deep(Some(Rect((4, (5, Some(6)))))));
+    print_int(deep(Some(Rect((9, (0, None))))));
+    print_int(deep(Some(Dot)) + deep(None));
+    print_int(chain(Ok(Some(Ok(5)))) + chain(Ok(Some(Ok(4)))) * 10);
+    print_int(chain(Ok(Some(Err("x")))) + chain(Ok(Some(Err("y")))) * 100);
+    print_int(chain(Ok(None)) + chain(Err("e")) * 100);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n456\n9\n7\n85\n1211\n1413\n", "stderr={stderr}");
+}
+
+#[test]
 fn exec_match_every_integer_width_uses_literal_patterns() {
     let mut functions = String::new();
     let mut calls = String::new();

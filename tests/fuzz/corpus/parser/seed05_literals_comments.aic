@@ -1,0 +1,12 @@
+/* Block comments nest: /* inner */ and the outer one continues. */
+fn masks() -> Int {
+    let a = 0b1010_0101; /* trailing */
+    let b = 0o7_55;
+    let c = 1_000_000 /* between operands */ + 0xFF_FF;
+    a + b + c
+}
+
+fn main() -> Int {
+    /* comment before a statement */
+    masks() - 1_065_660
+}

@@ -1,0 +1,2 @@
+/* outer /* nested */ still a comment */ 0b1010_0101 0o7_77 1_000_000 0xFF_FF 1_0.5_0 3u8 0b1u8
+/* unterminated /* nested */ 0b102 0o78 0b 0o 1__0 _1 0x_

@@ -1,0 +1,8 @@
+/* File header /* nested */ comment. */
+fn main() -> Int {
+    let bits = 0b1111_0000;
+    let perms = 0o755;
+    let big = 1_000_000;
+    /* keep me */
+    bits + perms + big - 1_000_733
+}

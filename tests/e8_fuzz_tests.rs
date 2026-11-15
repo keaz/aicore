@@ -229,3 +229,25 @@ fn fuzz_nightly_stress_suite() {
     )
     .expect("write report");
 }
+
+#[test]
+fn fuzz_corpus_covers_block_comments_and_number_literal_forms() {
+    for target in [FuzzTarget::Lexer, FuzzTarget::Parser, FuzzTarget::Formatter] {
+        let corpus = load_corpus(&corpus_root(), target).expect("load corpus");
+        let joined = corpus.join("\n");
+        for form in ["/*", "*/", "0b", "0o", "_000"] {
+            assert!(
+                joined.contains(form),
+                "{target:?} corpus has no seed with `{form}`"
+            );
+        }
+    }
+    let lexer = load_corpus(&corpus_root(), FuzzTarget::Lexer).expect("load lexer corpus");
+    let joined = lexer.join("\n");
+    for malformed in ["0b102", "0o78", "/* unterminated"] {
+        assert!(
+            joined.contains(malformed),
+            "lexer corpus has no malformed seed `{malformed}`"
+        );
+    }
+}
