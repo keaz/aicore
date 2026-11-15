@@ -38,7 +38,7 @@ Artifacts:
 The REST runtime soak gate uses deterministic command selection and deterministic scoring:
 
 - fixed scenario list: parse pipeline benchmark, router path matching, JSON hardening path, async net lifecycle churn, async net multi-worker load
-- each scenario names a cargo test target (`test`) and the test binary arguments (`args`). The gate builds the test binaries once (`cargo test --no-run`) and times the binary alone, so cargo startup and freshness checks are not part of a sample (they were about 90% of the parse pipeline sample)
+- each scenario names its test target (`test`) and the test binary arguments (`args`). The gate builds the test binaries once (`cargo test --locked --no-run --test <target>`) and times the binary alone, so cargo startup and freshness checks are not part of a sample (they were about 90% of the parse pipeline sample)
 - scenarios run in interleaved rounds: one warmup round, then `measure_runs` (7) measured rounds; a burst of runner load hits every scenario instead of all samples of one
 - `observed_ms` is the median of the measured samples
 - host-target thresholds from policy (`thresholds.<target>.baseline_ms` and `thresholds.<target>.max_ms`)
