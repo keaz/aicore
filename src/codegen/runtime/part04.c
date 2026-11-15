@@ -4868,6 +4868,12 @@ static void* aic_rt_tls_async_worker_main(void* raw) {
     char* worker_payload_ptr = NULL;
     int have_lock = 0;
     int should_complete = 0;
+    /* Declared before the first `goto unlock_then_finish` so the finish path
+       never reads (or frees) an uninitialized value. */
+    int64_t err = 5;
+    int64_t out_int = 0;
+    char* out_string_ptr = NULL;
+    int64_t out_string_len = 0;
 
     int lock_rc = pthread_mutex_lock(&op->mutex);
     if (lock_rc != 0) {
@@ -4895,10 +4901,6 @@ static void* aic_rt_tls_async_worker_main(void* raw) {
     pthread_mutex_unlock(&op->mutex);
     have_lock = 0;
 
-    int64_t err = 5;
-    int64_t out_int = 0;
-    char* out_string_ptr = NULL;
-    int64_t out_string_len = 0;
     should_complete = 1;
 
     if (op_kind == AIC_RT_TLS_ASYNC_OP_SEND) {
@@ -4926,7 +4928,6 @@ unlock_then_finish:
         pthread_mutex_unlock(&op->mutex);
         have_lock = 0;
     }
-finish:
     if (should_complete) {
         aic_rt_tls_async_complete_op(op_handle, err, out_int, out_string_ptr, out_string_len);
     } else if (out_string_ptr != NULL) {
