@@ -2,6 +2,8 @@
 
 Tracking epic: [#420](https://github.com/keaz/aicore/issues/420). Label: `lang-prod-readiness`.
 
+Order of the remaining work, the starting state and the rules for picking up an issue: [execution-plan.md](execution-plan.md).
+
 This roadmap comes from an audit of commit `2a11587` (2026-10). The audit ran about 200 probe programs through a fresh `cargo build --release` of the Rust reference compiler (the default `aic` front end and backend). It focuses on language features, data types and constructs that help AI agents write correct code.
 
 ## Current state summary
