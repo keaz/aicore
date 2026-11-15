@@ -13,17 +13,12 @@ cargo test --locked --test diagnostic_catalog_tests
 
 ## State at hand-off
 
-- Done: one row per registered code (314), with a Mode column: 234 `check`, 3 `warn-unused`,
-  13 `build`, 1 `cli`, 19 `package`, 14 `selfhost`, 24 `internal`, 5 `reserved`, 1 `retired`.
-  Every runnable trigger reports its code and every fix is error-free (verified by
-  `tests/diagnostic_catalog_tests.rs`, registered in `make test-unit`).
-- Verification: the full `make ci` passed on the commit before the rebase onto #449/#450. After the
-  rebase, the catalog test, `cargo test --lib` and the first half of `make ci` (`fmt-check` through
-  `std-doc-check`) passed; `examples-check` through `repro-check` were not re-run. Run `make ci`
-  before relying on the merge.
-- Not yet re-verified against `lang-prod-roadmap` commits after #450 (for example #451, bare unit
-  variants as values). Rebasing onto them may change which code some triggers report; the catalog
-  test shows exactly which rows.
+- Done: one row per registered code (326 after Wave 0 of the execution plan), with a Mode column:
+  248 `check`, 3 `warn-unused`, 11 `build`, 1 `cli`, 19 `package`, 14 `selfhost`, 26 `internal`,
+  3 `reserved`, 1 `retired`. Every runnable trigger reports its code and every fix is error-free
+  (verified by `tests/diagnostic_catalog_tests.rs`, registered in `make test-unit`).
+- Verification: the catalog test and the full `make ci` passed after the Wave 0 integration
+  (all roadmap work up to #463 and #469 merged on `main`).
 
 ## 1. Close the check/build parity gaps (compiler bugs)
 
@@ -100,5 +95,3 @@ Found while writing triggers; none blocks the catalog.
   `;`) is a dead branch.
 - `E1092` is reported twice for one argument (parser and `src/typecheck.rs`), plus `E1213`.
 - `E1253` only fires for `Null`/`NULL`; lowercase `null` is rejected by the parser as `E1051`.
-- Reading an element by index in an expression (`let cur = v[0];`) does not parse (`E1033`/`E1041`),
-  although `v[0] = x` assigns. Check whether index reads are meant to be supported.

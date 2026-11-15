@@ -132,18 +132,15 @@ Rows 71-74 were added on 2026-11-15 from [execution-plan.md](execution-plan.md),
 
 ## Open follow-ups
 
-Items found while landing roadmap work that are not tracked by a child issue yet.
+None open. Wave 0 of [execution-plan.md](execution-plan.md) resolved or reassigned the earlier entries:
 
-- **Std types without their module (PARITY-T4 follow-up, [#445](https://github.com/keaz/aicore/issues/445)).** Fixed on `lang-prod-roadmap`: `Vec`, `Map`, `Set`, `Deque`, `Bytes`, `ByteBuffer` and `JsonValue` in a type position without their std module now fail `aic check` with `E1313` instead of `aic build` with `E5019`. Remaining:
-  - Push the commit and add the evidence (commit, `make ci`, targeted tests, the `examples/core/std_type_*.aic` examples) to [#445](https://github.com/keaz/aicore/issues/445) or a new child issue.
-  - Run `graphify update .` in the main checkout after the merge.
-- **Diagnostic code collisions between unmerged branches.** `lang-prod-roadmap` uses `E1303` (`&mut self` method value) and `E1313` (std type without its module). The unmerged branches `syntax-t5-pattern-lets`, `syntax-t8-indexing`, `syntax-t9-numeric-casts`, `syntax-t10-loop-labels`, `syntax-t11-ranges-patterns` and `syntax-t15-type-args` register `E1302`-`E1312` independently, and several reuse `E1303`. Renumber each branch onto the next free code when it merges, and check `src/diagnostic_codes.rs` on `lang-prod-roadmap` before you pick a new code.
-- **Execution tests outside `make`.** A plain `cargo test --test execution_tests` overflows the default 2 MiB test-thread stack in `exec_string_ops_full_surface_and_edge_cases`, and `exec_pool_discarded_connection_is_replaced` can fail under parallel load. `make test-exec` sets `RUST_MIN_STACK=33554432` and `--test-threads=1` and passes. Either make the test binary set its own stack size and thread count, or document that only `make test-exec` is supported.
-- `CORR-T9` ([#440](https://github.com/keaz/aicore/issues/440)): user functions that shadow std generics (`first`, `last`, `get`) now lower to the user function, and same-named generic functions keep separate instances (`fn_first__s<symbol>_Int`). The commits are local only; the GitHub issue still needs the implementation evidence and the Done status once they are pushed.
-- Codegen still looks up `fn_sigs` and `generic_fn_instances` by bare name on paths that carry no checker symbol: `gen_named_function_call_with_receiver` (method calls such as `Type::method`) and `resolve_call_sig_for_types`. When two functions share a name, the signature collected last wins there. No failing program is known; key these lookups by symbol when those paths receive one.
-- `scripts/ci/examples.sh` writes fixed paths (`/tmp/aic-example.out`, `/tmp/aic-example.err`). Two checkouts that run `make examples-check` or `make examples-run` at the same time overwrite each other's output and fail with wrong values. Write these files under `$ARTIFACT_DIR` instead.
-- The REST runtime perf/soak gate (`scripts/ci/rest-runtime-soak-gate.py`, run by `make test-e8`) times whole `cargo test` invocations against fixed baselines. On a loaded host (load average 16-19) three checks exceeded their 45% regression limit by 70-104% with no code cause. Measure the test binary alone, or scale the limits to host load.
-- `examples/core/std_name_shadowing.aic` does not pass `aic fmt --check`; this predates `CORR-T9` and the examples gate does not format-check this file.
+- Std types without their module (`E1313`) and the CORR-T9 commits are on `origin/main`.
+- The diagnostic code collisions were resolved during the merge. New codes come from the blocks in the execution plan.
+- Execution tests outside `make` are [#501](https://github.com/keaz/aicore/issues/501). Bare-name signature lookups in codegen are [#502](https://github.com/keaz/aicore/issues/502). `examples/core/std_name_shadowing.aic` failing `aic fmt --check` is part of [#468](https://github.com/keaz/aicore/issues/468).
+- `scripts/ci/examples.sh` writes its scratch files under a per-run `$ARTIFACT_DIR`.
+- The REST runtime perf/soak gate times the test binaries and scales its regression limit by a host calibration (Wave 0, step 6).
+
+Add new findings to the execution plan or a new issue.
 
 ## Exit criteria
 
