@@ -127,8 +127,9 @@ Phases run in order. Items in the Continuous phase start at the position shown i
 | 72 | [#500](https://github.com/keaz/aicore/issues/500) | `CORR-T12` | Closed channels never free their runtime slot; the 129th channel in a process gets a zero handle | M | - |
 | 73 | [#501](https://github.com/keaz/aicore/issues/501) | `REL-T8` | Execution tests fail outside `make test-exec`: test-thread stack overflow and a parallel-load flake | S | - |
 | 74 | [#502](https://github.com/keaz/aicore/issues/502) | `CORR-T13` | Codegen looks up some call signatures by bare function name | S | [#440](https://github.com/keaz/aicore/issues/440) |
+| 75 | [#503](https://github.com/keaz/aicore/issues/503) | `REL-T9` | TLS handshake execution test fails with OpenSSL 4.x | S | - |
 
-Rows 71-74 were added on 2026-11-15 from [execution-plan.md](execution-plan.md), which places them in Wave 1.
+Rows 71-75 were added on 2026-11-15 from [execution-plan.md](execution-plan.md), which places them in Wave 1.
 
 ## Open follow-ups
 

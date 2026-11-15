@@ -65,7 +65,9 @@ Steps 1 to 4 were tried on 2026-11-15 in a scratch clone. Each step lists what t
 | 2 | done (2026-11-15) | Local `main` merge commit `1f2565c`. Kept `main`'s catalog format, added the `E1313` row, added `import std.map;` to the `E1292` trigger and fix. `diagnostic_catalog_tests` passed after the merge. |
 | 3 | done (2026-11-15) | `mem-t1-memory-model-adr` rebased onto `1f2565c` (the four duplicate commits were skipped): #452 to #463 and #469 are `a26825b`..`2152b1a`. Local `main` was fast-forwarded to it, plus `1c54542` (`cargo fmt` of the registry). Registry conflicts took the union of codes. Catalog conflicts kept `main`'s format, and each commit's new rows were ported with mode `check`: `E1110`, `E1302`, `E1304` to `E1312` (catalog has 326 rows). Their triggers and fixes pass `diagnostic_catalog_tests`. `docs/diagnostic-codes.md` and `docs/reference/types.md` kept both sides. `cargo build` and `cargo fmt --check` pass. Not pushed. |
 | 4 | done (2026-11-15) | `92ef59f` cherry-picked cleanly onto local `main` as `96d0c52`. `AIC_STD_ROOT=$PWD/std target/debug/aic std-compat --check --baseline docs/std-api-baseline.json` passes (`ok (1 additions)`). Not pushed. |
-| 5 | next | Continue on local `main`. |
+| 5 | done (2026-11-15) | `39442f5` restores `E1238`/`E1240`/`E1242` for `V(a, b)` on a non-tuple payload (the parser folds the sub-patterns into one tuple, #454), with a unit test; new catalog triggers for `E0001`, `E1011`, `E1074`; `E0002`/`E0003` are `check` rows; `E5012`/`E5031` are `internal` and left "Known parity gaps"; two typecheck unit tests declare `std.vec`'s `Vec`. `e7c1e74` makes `scripts/ci/cli-smoke.sh` check the std baseline against the repository's `std/`. CI then exposed two TLS runtime bugs on Linux, both fixed: `a4d074e` (the TLS async worker freed an uninitialized pointer, `free(): invalid pointer`) and `c50dc03` (async `SSL_read`/`SSL_write` on one stream ran concurrently on two threads). `32b902b` adds the missing #459 fuzz seeds and a #444 depth-3 payload test found during step 8's review. `make ci` passes locally except `exec_tls_local_server_handshake_and_certificate_paths`, which fails only with OpenSSL 4.1 (Homebrew) and is now [#503] (Wave 1, item 1.9). |
+| 6 | done (2026-11-15) | `91a98c0`, `b3c6e0e`: the soak gate builds the test binaries once and times the binary alone (cargo startup was about 90% of the parse pipeline sample), runs interleaved rounds with the median of 7, and times a fixed CPU calibration loop each round. A slower host widens the regression limit by the same factor, capped at 2x; `max_ms` never scales. A 25 ms floor covers sub-100 ms scenarios. Linux and macOS baselines come from CI run 43745071167; Windows values are scaled from Linux (the gate does not run on Windows in CI). Policy validation is tested in `tests/e8_conformance_tests.rs`. Docs: `docs/verification-quality/perf-sla-playbook.md`. |
+| 7 | next | CI run 43761484432 on the pushed branch `wave0-integration` (same tree as local `main`) is green on Linux, macOS and Windows. Push `main`. |
 
 Notes for step 5, found during step 3:
 
@@ -126,6 +128,7 @@ Goal: no known silent wrong result, and every program that passes `aic check` bu
 | 1.6 | Channel slot reclamation | [#500] (CORR-T12) | M | Wave 0 |
 | 1.7 | Execution tests run outside `make` | [#501] (REL-T8) | S | Wave 0 |
 | 1.8 | Codegen signature lookups by symbol | [#502] (CORR-T13), low priority | S | Wave 0 |
+| 1.9 | TLS handshake test fails with OpenSSL 4.x | [#503] (REL-T9) | S | Wave 0 |
 
 Notes:
 
@@ -148,6 +151,7 @@ Notes:
 - **1.6** Closed channels never free their runtime slot, so the 129th channel in a process gets a zero handle, and `std.pool` hits this after about 125 calls. Long-running services fail. The brief with evidence and acceptance criteria is `docs/io-runtime/channel-slot-reclamation.md`.
 - **1.7** `cargo test --test execution_tests` overflows the 2 MiB test-thread stack (`exec_string_ops_full_surface_and_edge_cases`), and `exec_pool_discarded_connection_is_replaced` fails under parallel load. Make the test binary set its own stack size and isolate the pool test, or document that only `make test-exec` is supported.
 - **1.8** CORR-T9 follow-up: `gen_named_function_call_with_receiver` and `resolve_call_sig_for_types` look up `fn_sigs` and `generic_fn_instances` by bare name, so the last same-named signature wins. No failing program is known. Key the lookups by symbol.
+- **1.9** Found in Wave 0: with Homebrew OpenSSL 4.1 the three `verify_server: true` connects in `exec_tls_local_server_handshake_and_certificate_paths` fail (the test prints 12, expects 42); CI uses OpenSSL 3.5 and passes. Fix the runtime or the test certificate, and document the supported OpenSSL versions.
 
 All items can run in parallel. 1.1, 1.3 and 1.4 all touch `src/typecheck.rs` and code generation, so rebase often.
 
@@ -359,3 +363,4 @@ The roadmap's exit criteria and the waves that meet them:
 [#500]: https://github.com/keaz/aicore/issues/500
 [#501]: https://github.com/keaz/aicore/issues/501
 [#502]: https://github.com/keaz/aicore/issues/502
+[#503]: https://github.com/keaz/aicore/issues/503
