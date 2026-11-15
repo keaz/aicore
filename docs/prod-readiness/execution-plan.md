@@ -64,7 +64,8 @@ Steps 1 to 4 were tried on 2026-11-15 in a scratch clone. Each step lists what t
 | 1 | done (2026-11-15) | On `lang-prod-roadmap`: `6fa2b21` -> `26fb336`, `c96d8d1` -> `58e49e2`, then `ded9079` merges the two "Open follow-ups" sections. Not pushed. |
 | 2 | done (2026-11-15) | Local `main` merge commit `1f2565c`. Kept `main`'s catalog format, added the `E1313` row, added `import std.map;` to the `E1292` trigger and fix. `diagnostic_catalog_tests` passed after the merge. |
 | 3 | done (2026-11-15) | `mem-t1-memory-model-adr` rebased onto `1f2565c` (the four duplicate commits were skipped): #452 to #463 and #469 are `a26825b`..`2152b1a`. Local `main` was fast-forwarded to it, plus `1c54542` (`cargo fmt` of the registry). Registry conflicts took the union of codes. Catalog conflicts kept `main`'s format, and each commit's new rows were ported with mode `check`: `E1110`, `E1302`, `E1304` to `E1312` (catalog has 326 rows). Their triggers and fixes pass `diagnostic_catalog_tests`. `docs/diagnostic-codes.md` and `docs/reference/types.md` kept both sides. `cargo build` and `cargo fmt --check` pass. Not pushed. |
-| 4 | next | Continue on local `main` (head `1c54542` plus this plan update). |
+| 4 | done (2026-11-15) | `92ef59f` cherry-picked cleanly onto local `main` as `96d0c52`. `AIC_STD_ROOT=$PWD/std target/debug/aic std-compat --check --baseline docs/std-api-baseline.json` passes (`ok (1 additions)`). Not pushed. |
+| 5 | next | Continue on local `main`. |
 
 Notes for step 5, found during step 3:
 
