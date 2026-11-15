@@ -4353,6 +4353,15 @@ typedef struct {
 static AicTlsSlot aic_rt_tls_table[AIC_RT_TLS_TABLE_CAP];
 static AicTlsAsyncOp aic_rt_tls_async_ops[AIC_RT_TLS_ASYNC_OP_CAP];
 static pthread_mutex_t aic_rt_tls_async_ops_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* Async TLS ops on one stream run on separate worker threads. OpenSSL forbids
+   concurrent calls on one SSL object, so every SSL_read/SSL_write of an async
+   op (with its SSL_get_error and errno capture) holds this lock. The lock also
+   guards the per-stream count of running async ops: the first op switches the
+   socket to non-blocking and the last one restores the mode it found, so one
+   op never flips the mode under another. */
+static pthread_mutex_t aic_rt_tls_async_io_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int64_t aic_rt_tls_async_io_users[AIC_RT_TLS_TABLE_CAP];
+static int aic_rt_tls_async_io_restore_blocking[AIC_RT_TLS_TABLE_CAP];
 static int64_t aic_rt_tls_table_limit = AIC_RT_TLS_TABLE_CAP;
 static int64_t aic_rt_tls_async_op_limit = AIC_RT_TLS_ASYNC_OP_CAP;
 static int aic_rt_tls_async_shutdown_requested = 0;
@@ -4596,6 +4605,80 @@ static int64_t aic_rt_tls_async_wait_slice(int64_t timeout_ms, int64_t deadline_
     return wait_timeout;
 }
 
+#if AIC_RT_TLS_OPENSSL
+/* Registers an async op on `tls_handle`; returns 0 or a TLS error code. */
+static int64_t aic_rt_tls_async_io_begin(int64_t tls_handle, AicTlsSlot* slot) {
+    int64_t index = tls_handle - 1;
+    if (pthread_mutex_lock(&aic_rt_tls_async_io_mutex) != 0) {
+        return 7;
+    }
+    if (aic_rt_tls_async_io_users[index] == 0) {
+        int prev_nonblocking = 0;
+        int get_rc = aic_rt_net_get_nonblocking_state(slot->fd, &prev_nonblocking);
+        if (get_rc != 0) {
+            pthread_mutex_unlock(&aic_rt_tls_async_io_mutex);
+            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(get_rc));
+        }
+        aic_rt_tls_async_io_restore_blocking[index] = 0;
+        if (prev_nonblocking == 0) {
+            int set_rc = aic_rt_net_set_nonblocking_state(slot->fd, 1);
+            if (set_rc != 0) {
+                pthread_mutex_unlock(&aic_rt_tls_async_io_mutex);
+                return aic_rt_tls_map_net_error(aic_rt_net_map_errno(set_rc));
+            }
+            aic_rt_tls_async_io_restore_blocking[index] = 1;
+        }
+    }
+    aic_rt_tls_async_io_users[index] += 1;
+    pthread_mutex_unlock(&aic_rt_tls_async_io_mutex);
+    return 0;
+}
+
+static void aic_rt_tls_async_io_end(int64_t tls_handle, AicTlsSlot* slot) {
+    int64_t index = tls_handle - 1;
+    if (pthread_mutex_lock(&aic_rt_tls_async_io_mutex) != 0) {
+        return;
+    }
+    if (aic_rt_tls_async_io_users[index] > 0) {
+        aic_rt_tls_async_io_users[index] -= 1;
+        if (aic_rt_tls_async_io_users[index] == 0
+            && aic_rt_tls_async_io_restore_blocking[index]) {
+            (void)aic_rt_net_set_nonblocking_state(slot->fd, 0);
+            aic_rt_tls_async_io_restore_blocking[index] = 0;
+        }
+    }
+    pthread_mutex_unlock(&aic_rt_tls_async_io_mutex);
+}
+
+/* One SSL_read or SSL_write under the async I/O lock. Returns the SSL call's
+   result; `*out_ssl_error` is SSL_get_error's verdict and `*out_net_error` the
+   mapped socket error for SSL_ERROR_SYSCALL (0 when errno was 0). */
+static int aic_rt_tls_async_ssl_io(
+    SSL* ssl,
+    int is_write,
+    void* buffer,
+    int len,
+    int* out_ssl_error,
+    int64_t* out_net_error
+) {
+    *out_ssl_error = SSL_ERROR_SSL;
+    *out_net_error = 0;
+    if (pthread_mutex_lock(&aic_rt_tls_async_io_mutex) != 0) {
+        return -1;
+    }
+    errno = 0;
+    int rc = is_write ? SSL_write(ssl, buffer, len) : SSL_read(ssl, buffer, len);
+    if (rc <= 0) {
+        *out_ssl_error = SSL_get_error(ssl, rc);
+        if (*out_ssl_error == SSL_ERROR_SYSCALL && errno != 0) {
+            *out_net_error = aic_rt_net_map_errno(aic_rt_net_last_socket_error());
+        }
+    }
+    pthread_mutex_unlock(&aic_rt_tls_async_io_mutex);
+    return rc;
+}
+#endif
+
 static int64_t aic_rt_tls_async_send_timeout(
     int64_t op_handle,
     int64_t tls_handle,
@@ -4618,18 +4701,9 @@ static int64_t aic_rt_tls_async_send_timeout(
 #if !AIC_RT_TLS_OPENSSL
     return 5;
 #else
-    int prev_nonblocking = 0;
-    int restore_nonblocking = 0;
-    int get_nonblocking_rc = aic_rt_net_get_nonblocking_state(slot->fd, &prev_nonblocking);
-    if (get_nonblocking_rc != 0) {
-        return aic_rt_tls_map_net_error(aic_rt_net_map_errno(get_nonblocking_rc));
-    }
-    if (prev_nonblocking == 0) {
-        int set_nonblocking_rc = aic_rt_net_set_nonblocking_state(slot->fd, 1);
-        if (set_nonblocking_rc != 0) {
-            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(set_nonblocking_rc));
-        }
-        restore_nonblocking = 1;
+    int64_t begin_err = aic_rt_tls_async_io_begin(tls_handle, slot);
+    if (begin_err != 0) {
+        return begin_err;
     }
 
     int64_t deadline_ms = -1;
@@ -4641,9 +4715,7 @@ static int64_t aic_rt_tls_async_send_timeout(
             deadline_ms = start_ms + timeout_ms;
         }
     } else if (timeout_ms == 0) {
-        if (restore_nonblocking) {
-            (void)aic_rt_net_set_nonblocking_state(slot->fd, prev_nonblocking);
-        }
+        aic_rt_tls_async_io_end(tls_handle, slot);
         return 8;
     }
 
@@ -4659,8 +4731,16 @@ static int64_t aic_rt_tls_async_send_timeout(
         }
 
         size_t chunk = remaining > (size_t)INT_MAX ? (size_t)INT_MAX : remaining;
-        errno = 0;
-        int rc = SSL_write(slot->ssl, cursor, (int)chunk);
+        int ssl_error = 0;
+        int64_t net_error = 0;
+        int rc = aic_rt_tls_async_ssl_io(
+            slot->ssl,
+            1,
+            (void*)cursor,
+            (int)chunk,
+            &ssl_error,
+            &net_error
+        );
         if (rc > 0) {
             total += (size_t)rc;
             cursor += (size_t)rc;
@@ -4668,19 +4748,12 @@ static int64_t aic_rt_tls_async_send_timeout(
             continue;
         }
 
-        int ssl_error = SSL_get_error(slot->ssl, rc);
         if (ssl_error == SSL_ERROR_ZERO_RETURN) {
             result = 6;
             goto cleanup;
         }
         if (ssl_error == SSL_ERROR_SYSCALL) {
-            if (errno == 0) {
-                result = 6;
-            } else {
-                result = aic_rt_tls_map_net_error(
-                    aic_rt_net_map_errno(aic_rt_net_last_socket_error())
-                );
-            }
+            result = net_error == 0 ? 6 : aic_rt_tls_map_net_error(net_error);
             goto cleanup;
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
@@ -4709,9 +4782,7 @@ static int64_t aic_rt_tls_async_send_timeout(
     result = 0;
 
 cleanup:
-    if (restore_nonblocking) {
-        (void)aic_rt_net_set_nonblocking_state(slot->fd, prev_nonblocking);
-    }
+    aic_rt_tls_async_io_end(tls_handle, slot);
     if (out_sent != NULL) {
         *out_sent = (int64_t)total;
     }
@@ -4744,18 +4815,9 @@ static int64_t aic_rt_tls_async_recv(
 #if !AIC_RT_TLS_OPENSSL
     return 5;
 #else
-    int prev_nonblocking = 0;
-    int restore_nonblocking = 0;
-    int get_nonblocking_rc = aic_rt_net_get_nonblocking_state(slot->fd, &prev_nonblocking);
-    if (get_nonblocking_rc != 0) {
-        return aic_rt_tls_map_net_error(aic_rt_net_map_errno(get_nonblocking_rc));
-    }
-    if (prev_nonblocking == 0) {
-        int set_nonblocking_rc = aic_rt_net_set_nonblocking_state(slot->fd, 1);
-        if (set_nonblocking_rc != 0) {
-            return aic_rt_tls_map_net_error(aic_rt_net_map_errno(set_nonblocking_rc));
-        }
-        restore_nonblocking = 1;
+    int64_t begin_err = aic_rt_tls_async_io_begin(tls_handle, slot);
+    if (begin_err != 0) {
+        return begin_err;
     }
 
     int64_t deadline_ms = -1;
@@ -4767,18 +4829,14 @@ static int64_t aic_rt_tls_async_recv(
             deadline_ms = start_ms + timeout_ms;
         }
     } else if (timeout_ms == 0) {
-        if (restore_nonblocking) {
-            (void)aic_rt_net_set_nonblocking_state(slot->fd, prev_nonblocking);
-        }
+        aic_rt_tls_async_io_end(tls_handle, slot);
         return 8;
     }
 
     size_t cap = (size_t)max_bytes;
     char* buffer = (char*)malloc(cap + 1);
     if (buffer == NULL) {
-        if (restore_nonblocking) {
-            (void)aic_rt_net_set_nonblocking_state(slot->fd, prev_nonblocking);
-        }
+        aic_rt_tls_async_io_end(tls_handle, slot);
         return 7;
     }
 
@@ -4806,8 +4864,9 @@ static int64_t aic_rt_tls_async_recv(
             break;
         }
 
-        errno = 0;
-        int rc = SSL_read(slot->ssl, buffer, chunk);
+        int ssl_error = 0;
+        int64_t net_error = 0;
+        int rc = aic_rt_tls_async_ssl_io(slot->ssl, 0, buffer, chunk, &ssl_error, &net_error);
         if (rc > 0) {
             buffer[(size_t)rc] = '\0';
             if (out_ptr != NULL) {
@@ -4821,19 +4880,12 @@ static int64_t aic_rt_tls_async_recv(
             break;
         }
 
-        int ssl_error = SSL_get_error(slot->ssl, rc);
         if (ssl_error == SSL_ERROR_ZERO_RETURN) {
             result = 6;
             break;
         }
         if (ssl_error == SSL_ERROR_SYSCALL) {
-            if (errno == 0) {
-                result = 6;
-            } else {
-                result = aic_rt_tls_map_net_error(
-                    aic_rt_net_map_errno(aic_rt_net_last_socket_error())
-                );
-            }
+            result = net_error == 0 ? 6 : aic_rt_tls_map_net_error(net_error);
             break;
         }
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
@@ -4846,9 +4898,7 @@ static int64_t aic_rt_tls_async_recv(
     if (buffer != NULL) {
         free(buffer);
     }
-    if (restore_nonblocking) {
-        (void)aic_rt_net_set_nonblocking_state(slot->fd, prev_nonblocking);
-    }
+    aic_rt_tls_async_io_end(tls_handle, slot);
     return result;
 #endif
 }
