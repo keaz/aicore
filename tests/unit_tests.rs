@@ -1756,8 +1756,10 @@ fn sample(pair: (Int, Int)) -> String {
     .expect("write source");
     let front = run_frontend(&path).expect("frontend");
     assert!(
-        front.diagnostics.iter().any(|d| d.code == "E1204"
-            && d.message.contains("cannot show a value of type")),
+        front
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "E1204" && d.message.contains("cannot show a value of type")),
         "diags={:#?}",
         front.diagnostics
     );
