@@ -113,6 +113,12 @@ Recent core-language additions:
 - `E1305`: a numeric conversion that is not available: `x as T` that could change a value (narrowing, sign change, `Int64` to `Float64`, float to integer) or involves a non-numeric type, or a conversion method that does not exist for its target (`to_int`, `checked_to_f64`, `wrapping_to_` with floats).
 - `E1302`: the `else` block of `let PATTERN = expr else { ... };` does not diverge (it must end in `return`, `break`, `continue` or `panic(...)`).
 - `E1110` (parser): refutable pattern in a plain `let` (`let Some(x) = o;`); use `let ... else` or `if let`.
+- `E1314` (package loader): a file outside every std root declares a `module std.*;` name. The `std.*` namespace is reserved for the standard library (see "Check/build parity" for the decision).
+- `E1315`: an `intrinsic fn` names an intrinsic the code generator does not lower, or declares a signature its runtime binding does not expect.
+- `E1316`: constants that depend on each other in a cycle.
+- `E1317`: a const initializer or struct field default without a compile-time value: division or modulo by zero, an integer result that overflows the declared type, or a shift by a negative amount or at least the bit width.
+- `E1318`: a type alias that expands to itself, directly or through other aliases or type arguments.
+- `E1319`: a `std.json` serialization call (`encode`, `decode_with`, `schema`, or a generic function that passes its type parameter to one) instantiated with a type that contains a function value, `dyn` trait object or `Async` value.
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound (including the `Send` marker bound) not satisfied by the concrete type.
 - `E1259`: generic bound names an unknown trait or a trait whose arity is not 1.
@@ -173,7 +179,7 @@ Recent core-language additions:
 - `E4003` (note): contract neither proved nor refuted; kept as a runtime assertion. `E4005` (note): contract proved at compile time; no runtime check is emitted.
 - `E5021`: backend lowering failure for invalid `?` operand/result layout.
 - `E5022`: backend lowering failure for incompatible function `Result` return layout.
-- `E5023`: backend const evaluation could not evaluate an initializer: a cyclic const dependency, a missing initializer, or an operand failure such as division by zero (unsupported initializer forms are rejected earlier as `E1287`).
+- `E5023`: backstop for a const initializer the backend could not evaluate; the checker reports cycles (`E1316`), missing initializers (`E1288`), unsupported forms (`E1287`) and operand failures (`E1317`) first.
 - `E5024`: backstop for an extern function with a non-`C` ABI or no native symbol name (the checker reports `E2120` first).
 - `E5025`: backend encountered `break` outside a loop.
 - `E5026`: backend encountered `continue` outside a loop.
@@ -182,7 +188,7 @@ Recent core-language additions:
 - `E5033`: closure parameter type is missing during backend lowering.
 - `E5034`: backend cannot lower the referenced function as a first-class function value.
 - `E5035`: closure helper return type mismatch during backend lowering.
-- `E5036`: JSON encode/decode for function values is unsupported.
+- `E5036`: backstop for JSON encode/decode of a function, `dyn` or `Async` value; the checker reports `E1319` first.
 - `E5037`: generic instantiation exceeds the nesting depth limit (12) because of mutual polymorphic recursion that `E1293` does not catch.
 - `E6003`: typed hole (`_`) warning with inferred type/context.
 - `E6004`: unused import warning with safe remove-import autofix.
@@ -200,21 +206,13 @@ A program that passes `aic check` must also build. `tests/check_build_parity_tes
 
 Any other `E5xxx` after a clean check is a compiler bug: add a checker rule (or fix code generation) and keep the gate green.
 
-### Known parity gaps
+### Decisions behind the parity rules
 
-The corpus gate above passes, but these single-file programs pass `aic check` and then fail in code generation. They are open compiler bugs, not design: each is a `build` row in [`docs/errors/catalog.md`](errors/catalog.md), so `tests/diagnostic_catalog_tests.rs` fails as soon as a fix makes the checker report the program instead. When you close a gap, move that catalog row to the checker code (or to `internal`) and remove it from this table.
+- **`std.*` module names are reserved.** Code generation lowers functions in `std.*` modules to runtime builtins by name, so a user file that claimed a `std.*` name could reach those lowerings with arbitrary signatures (`E5010`, `E5011`). Only files under a std root (`AIC_STD_ROOT`, `<project>/std`, or the bundled or installed std) may declare `module std.*;`; any other file reports `E1314`. Vendoring std into `<project>/std` keeps working.
+- **User code may declare `intrinsic fn`, but only for intrinsics the compiler implements.** A declaration must name an intrinsic in the backend's binding or builtin-lowering tables and, for a runtime binding, use the signature the binding expects; otherwise it reports `E1315` at the declaration (the same rules as `aic verify-intrinsics`, `VI1002`/`VI1003`). Calling an intrinsic stays std-only (`E2102`), and an intrinsic declaration does not need `capabilities` (its callers carry the authority).
+- **Constants are evaluated by the checker.** `aic check` runs the evaluator code generation uses (`src/const_eval.rs`) on every const initializer and struct field default. Integer values are exact and take the declared integer type, so `const A: Int8 = 1;` and `struct S { x: Int8 = 1 }` build, and a value that overflows its type is `E1317` instead of a wrapped value. String `==`, `!=`, ordering and `+` evaluate at compile time.
 
-| Code | Program the checker accepts |
-|---|---|
-| `E5002` | Unary `-` on a `UInt` value (the checker rejects it for `UInt8`/`UInt64`, not for the `UInt` alias). |
-| `E5004` | `Int` literal default on a sized-integer struct field (`struct S { x: Int8 = 1 }`). |
-| `E5006` | Const `String` equality or const division by zero (`const A: Bool = "a" == "b";`). |
-| `E5007` | Sized-integer const with an `Int` literal (`const A: Int8 = 1;`). |
-| `E5010`, `E5011` | A user file that declares a `std.*` module and defines a function named like a runtime builtin (`poll_value_task`) with the wrong arity or types. |
-| `E5019` | Cyclic type aliases that are used (`type A = B; type B = A;`). |
-| `E5020` | A user-declared `intrinsic fn` with no runtime lowering. |
-| `E5023` | Cyclic const dependencies (`const A: Int = B; const B: Int = A;`). |
-| `E5036` | `json.encode` on a closure value. |
+The former "Known parity gaps" (`E5002`, `E5004`, `E5006`, `E5007`, `E5010`, `E5011`, `E5019`, `E5020`, `E5023`, `E5036`) are closed: each is an `internal` catalog row that names the checker code reporting its programs first.
 
 ## IO + Runtime Quick Reference
 
@@ -231,7 +229,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E2007` | Unknown capability name in a function signature. | Use only known capabilities: `io, fs, net, time, rand, env, proc, concurrency`. |
 | `E2008` | Duplicate capability listed in one function signature. | Remove duplicates; keep one declaration per capability. |
 | `E2009` | Missing capability authority for declared or transitive effects. | Add `capabilities { ... }` to match required effect authority and thread capability boundaries across callers. |
-| `E5023` | Backend const evaluation hit a const dependency cycle, a missing initializer, or an operand failure such as division by zero. | Break the constant dependency cycle and keep initializers to evaluable literal/arithmetic forms. |
+| `E5023` | Backstop: backend const evaluation failed after a clean check (the checker reports `E1316`, `E1317`, `E1288` or `E1287` first). | Report it as a compiler bug; the checker diagnostic names the fix. |
 | `E5024` | Backstop for an extern function with a non-`C` ABI or no native symbol name; the checker reports `E2120` first. | Use `extern \"C\"` plain signatures and wrapper functions. |
 | `E5025` | `break` reached backend outside loop context. | Ensure `break` is only emitted inside `loop`/`while`. |
 | `E5026` | `continue` reached backend outside loop context. | Ensure `continue` is only emitted inside `loop`/`while`. |
@@ -265,6 +263,12 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E1305` | Lossy or non-numeric `as`, or an unavailable conversion method. | Use `checked_to_*` (Option), `saturating_to_*` or `wrapping_to_*` for integers, `to_f32` / `to_f64` for floats. |
 | `E1302` | `let ... else` block does not diverge. | End the block with `return`, `break`, `continue` or `panic(...)`. |
 | `E1110` | Refutable pattern in a plain `let`. | Use `let PATTERN = expr else { return ...; };` or `if let`. |
+| `E1314` | User file declares a reserved `module std.*;` name. | Rename the module (`module app.name;`); only std roots may use `std.*`. |
+| `E1315` | `intrinsic fn` without a backend lowering, or with the wrong signature. | Declare only intrinsics the compiler implements, with their expected signature, or write a plain function. |
+| `E1316` | Cyclic const dependency. | Give one constant in the cycle an initializer that does not refer back. |
+| `E1317` | Const initializer or field default has no compile-time value. | Avoid division by zero and keep the result in the declared type's range. |
+| `E1318` | Cyclic type alias. | Make one alias in the cycle name a concrete type. |
+| `E1319` | JSON serialization of a type that contains a function, `dyn` or `Async` value. | Serialize plain data; keep closures and handles out of encoded types. |
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
 | `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |

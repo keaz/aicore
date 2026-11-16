@@ -13,28 +13,18 @@ cargo test --locked --test diagnostic_catalog_tests
 
 ## State at hand-off
 
-- Done: one row per registered code (326 after Wave 0 of the execution plan), with a Mode column:
-  248 `check`, 3 `warn-unused`, 11 `build`, 1 `cli`, 19 `package`, 14 `selfhost`, 26 `internal`,
+- Done: one row per registered code (332 after Wave 1 item 1.1 of the execution plan), with a Mode
+  column: 254 `check`, 3 `warn-unused`, 1 `build`, 1 `cli`, 19 `package`, 14 `selfhost`, 36 `internal`,
   3 `reserved`, 1 `retired`. Every runnable trigger reports its code and every fix is error-free
   (verified by `tests/diagnostic_catalog_tests.rs`, registered in `make test-unit`).
 - Verification: the catalog test and the full `make ci` passed after the Wave 0 integration
   (all roadmap work up to #463 and #469 merged on `main`).
 
-## 1. Close the check/build parity gaps (compiler bugs)
+## 1. Check/build parity gaps (done)
 
-Ten codes have `build` rows whose triggers pass `aic check` and then fail in code generation.
-Policy (`docs/diagnostic-codes.md`, "Check/build parity") says only `E5037` may do that. The list,
-with one program per gap, is in "Known parity gaps" in `docs/diagnostic-codes.md`.
-
-- Clear checker gaps: `E5002`, `E5004`, `E5006`, `E5007`, `E5019`, `E5023`, `E5036`.
-- Edge cases that need a policy decision first:
-  - `E5010`, `E5011`: reachable only from a user file that declares `module std.<name>;`. Decide
-    whether user files may claim `std.*` module names; if not, reject that and make these `internal`.
-  - `E5020`: a user-declared `intrinsic fn` without a runtime lowering. Decide whether user code may
-    declare intrinsics; if yes, add a checker rule for unknown intrinsics.
-- For each fix: add the checker rule (or make code generation handle the program), move the
-  catalog row to the checker code (the `E5xxx` row becomes `internal` and names that code), delete
-  the line from "Known parity gaps", and add unit tests. The catalog test fails until the row moves.
+Closed by #445: the ten former gaps are `internal` rows that name the checker code reporting them
+first (`E1222`, `E1257`, `E1314` to `E1319`). Section numbers below are kept stable because the
+execution plan cites them.
 
 ## 2. Generic mangling collision (`E1255`)
 
