@@ -596,9 +596,15 @@ Diagnostics:
   - two rows share a trigger program, or two non-`reserved` rows share a description (the placeholder
     pattern this test replaced);
   - a trigger does not report its code, or a fix reports it or any error.
-- `build` rows other than `E5037` are known check/build parity gaps (listed in `docs/diagnostic-codes.md`).
-  Closing one makes the checker reject the trigger first, so the test fails until the row moves to the
-  checker code.
+- `E5037` is the only `build` row: the check/build parity policy (`docs/diagnostic-codes.md`) allows
+  no other codegen error after a clean `aic check`. Every other `E5xxx` row is `internal` and names
+  the checker code that reports its programs first. A new `build` row is a parity bug to fix, not to
+  document.
+- Const initializers and struct field defaults: the checker and code generation share the evaluator
+  in `src/const_eval.rs` (exact `i128` integers that take the declared integer type). The checker runs
+  it after all items are checked (`Checker::evaluate_compile_time_values`) and reports `E1316`/`E1317`;
+  codegen's reports (`E5002`, `E5006`, `E5007`, `E5023`) are backstops. Extend the evaluator, not one
+  side, when you add a compile-time operator.
 - When you add a diagnostic code: register it, add its row with a verified trigger and fix, and update
   the `(N codes)` count in the catalog introduction.
 

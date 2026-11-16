@@ -1,11 +1,11 @@
-module std.intrinsic_demo;
+module examples.core.intrinsic_declaration_demo;
 
+// Intrinsic declarations are signatures only. `aic check` verifies that the
+// code generator lowers this name with this signature (E1315 otherwise).
+// Only std modules may call intrinsics (E2102); user code calls the public
+// std wrapper instead (`path.is_abs` from `std.path` for this one).
 intrinsic fn aic_path_is_abs_intrinsic(path: String) -> Bool effects { fs };
 
-fn is_abs(path: String) -> Bool effects { fs } capabilities { fs  } {
-    aic_path_is_abs_intrinsic(path)
-}
-
-fn main() -> Int effects { fs } capabilities { fs  } {
-    if is_abs("/tmp") { 1 } else { 0 }
+fn main() -> Int {
+    0
 }

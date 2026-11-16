@@ -3047,531 +3047,132 @@ impl<'a> Generator<'a> {
             return None;
         };
 
+        let expected_ty = self.parse_type_repr(&def.declared_ty, def.span);
+        let context = format!("const '{}'", name);
         stack.push(name.to_string());
-        let evaluated = self.eval_const_expr(name, &init, stack);
+        let evaluated =
+            self.eval_const_for_slot(&context, &init, expected_ty.as_ref(), "E5007", stack);
         stack.pop();
 
         let Some(value) = evaluated else {
             self.const_failures.insert(name.to_string());
             return None;
         };
-
-        if let Some(expected_ty) = self.parse_type_repr(&def.declared_ty, def.span) {
-            let actual_ty = self.const_value_ty(&value);
-            let is_float_const_match = is_float_type(&actual_ty) && is_float_type(&expected_ty);
-            if actual_ty != expected_ty && !is_float_const_match {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5007",
-                    format!(
-                        "const '{}' codegen type mismatch: expected '{}', found '{}'",
-                        name,
-                        render_type(&expected_ty),
-                        render_type(&actual_ty)
-                    ),
-                    self.file,
-                    def.span,
-                ));
-            }
-        }
-
         self.const_values.insert(name.to_string(), value.clone());
         Some(value)
+    }
+
+    /// Evaluates a const initializer or field default for a slot of type
+    /// `expected_ty`, reporting a mismatch between the value and the slot with
+    /// `mismatch_code`. The checker rejects every failure first (`E1316`,
+    /// `E1317`, `E1288`, `E1226`); these reports are backstops.
+    fn eval_const_for_slot(
+        &mut self,
+        context: &str,
+        expr: &ir::Expr,
+        expected_ty: Option<&LType>,
+        mismatch_code: &'static str,
+        stack: &mut Vec<String>,
+    ) -> Option<ConstValue> {
+        let slot_kind = expected_ty.and_then(const_int_kind_of);
+        let value = self.eval_const_expr(context, expr, slot_kind, stack)?;
+        let Some(expected_ty) = expected_ty else {
+            return Some(value);
+        };
+        let matches_slot = match &value {
+            ConstValue::Int { .. } => is_integral_type(expected_ty),
+            ConstValue::Float(_) => is_float_type(expected_ty),
+            other => &const_value_ty(other) == expected_ty,
+        };
+        if !matches_slot {
+            self.diagnostics.push(Diagnostic::error(
+                mismatch_code,
+                format!(
+                    "{} codegen type mismatch: expected '{}', found '{}'",
+                    context,
+                    render_type(expected_ty),
+                    render_type(&const_value_ty(&value))
+                ),
+                self.file,
+                expr.span,
+            ));
+            return None;
+        }
+        match const_eval::fit_to_slot(value, slot_kind, expr.span) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                self.diagnostics.push(Diagnostic::error(
+                    mismatch_code,
+                    format!("{} {}", context, err.message()),
+                    self.file,
+                    err.span,
+                ));
+                None
+            }
+        }
     }
 
     pub(super) fn eval_const_expr(
         &mut self,
         const_name: &str,
         expr: &ir::Expr,
+        expected: Option<const_eval::IntKind>,
         stack: &mut Vec<String>,
     ) -> Option<ConstValue> {
-        match &expr.kind {
-            ir::ExprKind::Int(v, ..) => Some(ConstValue::Int(*v)),
-            ir::ExprKind::Float(v, ..) => Some(ConstValue::Float(*v)),
-            ir::ExprKind::Bool(v) => Some(ConstValue::Bool(*v)),
-            ir::ExprKind::Char(v) => Some(ConstValue::Char(*v)),
-            ir::ExprKind::String(v) => Some(ConstValue::String(v.clone())),
-            ir::ExprKind::Unit => Some(ConstValue::Unit),
-            ir::ExprKind::Var(name) => {
+        let result = {
+            let mut lookup = |name: &str| {
                 if self.const_defs.contains_key(name) || self.const_values.contains_key(name) {
-                    self.evaluate_const_by_name(name, stack)
+                    match self.evaluate_const_by_name(name, stack) {
+                        Some(value) => const_eval::ConstLookup::Value(value),
+                        None => const_eval::ConstLookup::Failed,
+                    }
                 } else {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5001",
-                        format!(
-                            "const '{}' references unknown constant '{}'",
-                            const_name, name
-                        ),
-                        self.file,
-                        expr.span,
-                    ));
-                    None
+                    const_eval::ConstLookup::Unknown
                 }
-            }
-            ir::ExprKind::Unary { op, expr: inner } => {
-                let value = self.eval_const_expr(const_name, inner, stack)?;
-                self.eval_const_unary(const_name, *op, value, expr.span)
-            }
-            ir::ExprKind::Binary { op, lhs, rhs } => {
-                let lhs = self.eval_const_expr(const_name, lhs, stack)?;
-                let rhs = self.eval_const_expr(const_name, rhs, stack)?;
-                self.eval_const_binary(const_name, *op, lhs, rhs, expr.span)
-            }
-            ir::ExprKind::Call { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported function call in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::TemplateLiteral { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported template literal in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Closure { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported closure expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::If { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `if` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::While { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `while` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Loop { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `loop` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Break { .. } | ir::ExprKind::Return { .. } => {
-                let keyword = if matches!(expr.kind, ir::ExprKind::Break { .. }) {
-                    "break"
-                } else {
-                    "return"
+            };
+            const_eval::eval_expr(expr, expected, &mut lookup)
+        };
+        match result {
+            Ok(value) => value,
+            Err(err) => {
+                let code = match &err.kind {
+                    const_eval::ConstEvalErrorKind::UnknownConst(_) => "E5001",
+                    const_eval::ConstEvalErrorKind::UnsupportedExpr(_) => "E5023",
+                    const_eval::ConstEvalErrorKind::UnsupportedUnary { .. } => "E5002",
+                    _ => "E5006",
                 };
                 self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `{keyword}` expression in LLVM backend",
-                        const_name
-                    ),
+                    code,
+                    format!("{} initializer {}", const_name, err.message()),
                     self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Continue { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `continue` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Match { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `match` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Borrow { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported borrow expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Await { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `await` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Try { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `?` expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::UnsafeBlock { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported `unsafe` block in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::Block { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported block expression in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::StructInit { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported struct construction in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
-                ));
-                None
-            }
-            ir::ExprKind::FieldAccess { .. } => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5023",
-                    format!(
-                        "const '{}' initializer uses unsupported field access in LLVM backend",
-                        const_name
-                    ),
-                    self.file,
-                    expr.span,
+                    err.span,
                 ));
                 None
             }
         }
     }
 
-    pub(super) fn eval_const_unary(
-        &mut self,
-        const_name: &str,
-        op: UnaryOp,
-        value: ConstValue,
-        span: crate::span::Span,
-    ) -> Option<ConstValue> {
-        match (op, value) {
-            (UnaryOp::Neg, ConstValue::Int(v)) => Some(ConstValue::Int(v.wrapping_neg())),
-            (UnaryOp::Neg, ConstValue::Float(v)) => Some(ConstValue::Float(-v)),
-            (UnaryOp::Not, ConstValue::Bool(v)) => Some(ConstValue::Bool(!v)),
-            (UnaryOp::BitNot, ConstValue::Int(v)) => Some(ConstValue::Int(!v)),
-            (op, value) => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E5002",
-                    format!(
-                        "const '{}' unary operator '{}' does not support '{}'",
-                        const_name,
-                        unary_op_name(op),
-                        const_value_name(&value)
-                    ),
-                    self.file,
-                    span,
-                ));
-                None
-            }
-        }
-    }
-
-    pub(super) fn eval_const_binary(
-        &mut self,
-        const_name: &str,
-        op: BinOp,
-        lhs: ConstValue,
-        rhs: ConstValue,
-        span: crate::span::Span,
-    ) -> Option<ConstValue> {
-        match op {
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => match (&lhs, &rhs) {
-                (ConstValue::Int(a), ConstValue::Int(b)) => match op {
-                    BinOp::Add => Some(ConstValue::Int(a.wrapping_add(*b))),
-                    BinOp::Sub => Some(ConstValue::Int(a.wrapping_sub(*b))),
-                    BinOp::Mul => Some(ConstValue::Int(a.wrapping_mul(*b))),
-                    BinOp::Div => {
-                        if *b == 0 {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E5006",
-                                format!("const '{}' divides by zero in initializer", const_name),
-                                self.file,
-                                span,
-                            ));
-                            None
-                        } else {
-                            Some(ConstValue::Int(a.wrapping_div(*b)))
-                        }
-                    }
-                    BinOp::Mod => {
-                        if *b == 0 {
-                            self.diagnostics.push(Diagnostic::error(
-                                "E5006",
-                                format!(
-                                    "const '{}' computes modulo by zero in initializer",
-                                    const_name
-                                ),
-                                self.file,
-                                span,
-                            ));
-                            None
-                        } else {
-                            Some(ConstValue::Int(a.wrapping_rem(*b)))
-                        }
-                    }
-                    _ => unreachable!(),
-                },
-                (ConstValue::Float(a), ConstValue::Float(b)) if !matches!(op, BinOp::Mod) => {
-                    match op {
-                        BinOp::Add => Some(ConstValue::Float(*a + *b)),
-                        BinOp::Sub => Some(ConstValue::Float(*a - *b)),
-                        BinOp::Mul => Some(ConstValue::Float(*a * *b)),
-                        BinOp::Div => Some(ConstValue::Float(*a / *b)),
-                        _ => unreachable!(),
-                    }
-                }
-                _ => {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5006",
-                        format!(
-                            "const '{}' binary operator '{}' does not support '{}' and '{}'",
-                            const_name,
-                            binary_op_name(op),
-                            const_value_name(&lhs),
-                            const_value_name(&rhs)
-                        ),
-                        self.file,
-                        span,
-                    ));
-                    None
-                }
-            },
-            BinOp::BitAnd
-            | BinOp::BitOr
-            | BinOp::BitXor
-            | BinOp::Shl
-            | BinOp::Shr
-            | BinOp::Ushr => match (&lhs, &rhs) {
-                (ConstValue::Int(a), ConstValue::Int(b)) => {
-                    let out = match op {
-                        BinOp::BitAnd => a & b,
-                        BinOp::BitOr => a | b,
-                        BinOp::BitXor => a ^ b,
-                        BinOp::Shl => {
-                            let shift = (*b as u64 & 63) as u32;
-                            a.wrapping_shl(shift)
-                        }
-                        BinOp::Shr => {
-                            let shift = (*b as u64 & 63) as u32;
-                            a.wrapping_shr(shift)
-                        }
-                        BinOp::Ushr => {
-                            let shift = (*b as u64 & 63) as u32;
-                            ((*a as u64).wrapping_shr(shift)) as i64
-                        }
-                        _ => unreachable!(),
-                    };
-                    Some(ConstValue::Int(out))
-                }
-                _ => {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5006",
-                        format!(
-                            "const '{}' binary operator '{}' does not support '{}' and '{}'",
-                            const_name,
-                            binary_op_name(op),
-                            const_value_name(&lhs),
-                            const_value_name(&rhs)
-                        ),
-                        self.file,
-                        span,
-                    ));
-                    None
-                }
-            },
-            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                match (&lhs, &rhs) {
-                    (ConstValue::Int(a), ConstValue::Int(b)) => {
-                        let result = match op {
-                            BinOp::Eq => a == b,
-                            BinOp::Ne => a != b,
-                            BinOp::Lt => a < b,
-                            BinOp::Le => a <= b,
-                            BinOp::Gt => a > b,
-                            BinOp::Ge => a >= b,
-                            _ => unreachable!(),
-                        };
-                        Some(ConstValue::Bool(result))
-                    }
-                    (ConstValue::Float(a), ConstValue::Float(b)) => {
-                        let result = match op {
-                            BinOp::Eq => a == b,
-                            BinOp::Ne => a != b,
-                            BinOp::Lt => a < b,
-                            BinOp::Le => a <= b,
-                            BinOp::Gt => a > b,
-                            BinOp::Ge => a >= b,
-                            _ => unreachable!(),
-                        };
-                        Some(ConstValue::Bool(result))
-                    }
-                    (ConstValue::Char(a), ConstValue::Char(b)) => {
-                        let result = match op {
-                            BinOp::Eq => a == b,
-                            BinOp::Ne => a != b,
-                            BinOp::Lt => a < b,
-                            BinOp::Le => a <= b,
-                            BinOp::Gt => a > b,
-                            BinOp::Ge => a >= b,
-                            _ => unreachable!(),
-                        };
-                        Some(ConstValue::Bool(result))
-                    }
-                    (ConstValue::Bool(a), ConstValue::Bool(b))
-                        if matches!(op, BinOp::Eq | BinOp::Ne) =>
-                    {
-                        let result = if matches!(op, BinOp::Eq) {
-                            a == b
-                        } else {
-                            a != b
-                        };
-                        Some(ConstValue::Bool(result))
-                    }
-                    _ => {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E5006",
-                            format!(
-                                "const '{}' binary operator '{}' does not support '{}' and '{}'",
-                                const_name,
-                                binary_op_name(op),
-                                const_value_name(&lhs),
-                                const_value_name(&rhs)
-                            ),
-                            self.file,
-                            span,
-                        ));
-                        None
-                    }
-                }
-            }
-            BinOp::And | BinOp::Or => match (&lhs, &rhs) {
-                (ConstValue::Bool(a), ConstValue::Bool(b)) => {
-                    let result = if matches!(op, BinOp::And) {
-                        *a && *b
-                    } else {
-                        *a || *b
-                    };
-                    Some(ConstValue::Bool(result))
-                }
-                _ => {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E5006",
-                        format!(
-                            "const '{}' binary operator '{}' does not support '{}' and '{}'",
-                            const_name,
-                            binary_op_name(op),
-                            const_value_name(&lhs),
-                            const_value_name(&rhs)
-                        ),
-                        self.file,
-                        span,
-                    ));
-                    None
-                }
-            },
-        }
-    }
-
-    pub(super) fn const_value_ty(&self, value: &ConstValue) -> LType {
-        match value {
-            ConstValue::Int(_) => LType::Int,
-            ConstValue::Float(_) => LType::Float64,
-            ConstValue::Bool(_) => LType::Bool,
-            ConstValue::Char(_) => LType::Char,
-            ConstValue::Unit => LType::Unit,
-            ConstValue::String(_) => LType::String,
-        }
-    }
-
+    /// Lowers a constant to a runtime value. An integer takes the integer type
+    /// `ty` (the declared type of the constant or field) when one is given;
+    /// callers coerce other values to the slot type.
     pub(super) fn runtime_value_from_const(
         &mut self,
         value: &ConstValue,
+        ty: Option<&LType>,
         fctx: &mut FnCtx,
     ) -> Value {
         match value {
-            ConstValue::Int(v) => Value {
-                ty: LType::Int,
-                repr: Some(v.to_string()),
-            },
+            ConstValue::Int { value, .. } => {
+                let ty = ty
+                    .filter(|ty| is_integral_type(ty))
+                    .cloned()
+                    .unwrap_or(LType::Int);
+                let bits = integer_width_bits(&ty).unwrap_or(64) as u8;
+                Value {
+                    repr: Some(ConstValue::int_repr_for_width(*value, bits).to_string()),
+                    ty,
+                }
+            }
             ConstValue::Float(v) => Value {
                 ty: LType::Float64,
                 repr: Some(llvm_float_literal(*v)),
@@ -3601,25 +3202,9 @@ impl<'a> Generator<'a> {
         fctx: &mut FnCtx,
     ) -> Option<Value> {
         let context = format!("default value for field '{}.{}'", struct_name, field_name);
-        let value = self.eval_const_expr(&context, expr, &mut Vec::new())?;
-        let actual_ty = self.const_value_ty(&value);
-        let is_float_const_match = is_float_type(&actual_ty) && is_float_type(expected_ty);
-        if &actual_ty != expected_ty && !is_float_const_match {
-            self.diagnostics.push(Diagnostic::error(
-                "E5004",
-                format!(
-                    "default value for field '{}.{}' expects '{}', found '{}'",
-                    struct_name,
-                    field_name,
-                    render_type(expected_ty),
-                    render_type(&actual_ty)
-                ),
-                self.file,
-                expr.span,
-            ));
-            return None;
-        }
-        let const_value = self.runtime_value_from_const(&value, fctx);
+        let value =
+            self.eval_const_for_slot(&context, expr, Some(expected_ty), "E5004", &mut Vec::new())?;
+        let const_value = self.runtime_value_from_const(&value, Some(expected_ty), fctx);
         self.coerce_value_to_expected(const_value, expected_ty, expr.span, fctx)
     }
 

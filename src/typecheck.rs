@@ -32,6 +32,24 @@ enum FloatKind {
     F64,
 }
 
+#[derive(Debug, Clone)]
+struct PendingCompileTimeValue {
+    item_index: usize,
+    context: String,
+    expr: ir::Expr,
+    slot_ty: String,
+}
+
+#[derive(Debug, Default)]
+struct CompileTimeEvals {
+    consts: BTreeMap<String, PendingCompileTimeValue>,
+    /// Constants whose declaration already has errors; references to them
+    /// are not evaluated again.
+    blocked_consts: BTreeSet<String>,
+    field_defaults: Vec<PendingCompileTimeValue>,
+    values: BTreeMap<String, Option<crate::const_eval::ConstValue>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IntegerLiteralValue {
     NonNegative(u128),
@@ -332,6 +350,10 @@ struct Checker<'a> {
     // the containment path for the E1294 message.
     recursive_types: BTreeMap<(String, String), String>,
     const_types: BTreeMap<String, String>,
+    // Compile-time values to evaluate after every item is checked, so that
+    // `aic check` reports what code generation's const evaluator would reject.
+    compile_time_evals: CompileTimeEvals,
+    current_item_index: usize,
     typed_holes: Vec<TypedHole>,
     let_binding_types: BTreeMap<ir::SymbolId, String>,
     fn_param_holes: BTreeMap<(String, usize), DeferredHole>,
@@ -926,6 +948,8 @@ impl<'a> Checker<'a> {
             type_params_in_scope: BTreeSet::new(),
             recursive_types: BTreeMap::new(),
             const_types,
+            compile_time_evals: CompileTimeEvals::default(),
+            current_item_index: 0,
             typed_holes: Vec::new(),
             fn_param_holes: BTreeMap::new(),
             fn_param_inferred: BTreeMap::new(),
@@ -956,6 +980,7 @@ impl<'a> Checker<'a> {
         self.recursive_types = self.find_recursive_types();
         for (index, item) in self.program.items.iter().enumerate() {
             self.activate_item_file(index);
+            self.current_item_index = index;
             // Type names in struct, enum, trait and impl declarations resolve
             // against the module that declares them.
             self.current_module = Some(self.module_name_for_item(index));
@@ -1020,6 +1045,7 @@ impl<'a> Checker<'a> {
             }
         }
         self.type_params_in_scope = BTreeSet::new();
+        self.evaluate_compile_time_values();
         self.check_transitive_effects();
         self.check_capability_authority();
     }
@@ -1397,11 +1423,221 @@ impl<'a> Checker<'a> {
         self.equality_type_params = required;
     }
 
+    /// `std.json` serialization (`encode`, `decode_with`, `schema` and the
+    /// serde intrinsics behind them) has no JSON form for function values,
+    /// `dyn` trait objects or `Async` values. Follows each generic call chain
+    /// from those intrinsics to the call site that fixes the type, and
+    /// reports a type that contains one of them in its layout (E1319).
+    fn check_generic_json_bindings(&mut self) {
+        const SERDE_INTRINSICS: [&str; 3] = [
+            "aic_json_serde_encode_intrinsic",
+            "aic_json_serde_decode_intrinsic",
+            "aic_json_serde_schema_intrinsic",
+        ];
+        let short_name = |callee: &str| -> String {
+            callee
+                .rsplit("::")
+                .next()
+                .unwrap_or(callee)
+                .rsplit('.')
+                .next()
+                .unwrap_or(callee)
+                .to_string()
+        };
+        let mut required: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for site in &self.generic_call_sites {
+            if SERDE_INTRINSICS.contains(&short_name(&site.callee).as_str()) {
+                required
+                    .entry(site.callee.clone())
+                    .or_default()
+                    .insert("T".to_string());
+            }
+        }
+        if required.is_empty() {
+            return;
+        }
+        let sites = std::mem::take(&mut self.generic_call_sites);
+        loop {
+            let mut changed = false;
+            for site in &sites {
+                let Some(caller) = site.caller.as_ref() else {
+                    continue;
+                };
+                let Some(callee_params) = required.get(&site.callee).cloned() else {
+                    continue;
+                };
+                for param in callee_params {
+                    let Some(bound) = site.bindings.get(&param) else {
+                        continue;
+                    };
+                    let mut reached = BTreeSet::new();
+                    self.json_blocking_component(
+                        bound,
+                        &site.caller_type_params,
+                        &mut BTreeSet::new(),
+                        &mut reached,
+                    );
+                    for type_param in reached {
+                        if required
+                            .entry(caller.clone())
+                            .or_default()
+                            .insert(type_param)
+                        {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        for site in &sites {
+            let Some(callee_params) = required.get(&site.callee) else {
+                continue;
+            };
+            for param in callee_params {
+                let Some(bound) = site.bindings.get(param) else {
+                    continue;
+                };
+                let Some(component) = self.json_blocking_component(
+                    bound,
+                    &site.caller_type_params,
+                    &mut BTreeSet::new(),
+                    &mut BTreeSet::new(),
+                ) else {
+                    continue;
+                };
+                let callee = short_name(&site.callee);
+                let detail = if component == *bound {
+                    String::new()
+                } else {
+                    format!(", which contains '{component}'")
+                };
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1319",
+                        format!(
+                            "'{}' needs a JSON-serializable type for type parameter '{}', found '{}'{}",
+                            callee, param, bound, detail
+                        ),
+                        &site.file,
+                        site.span,
+                    )
+                    .with_help(
+                        "function values, dyn trait objects and Async values cannot be encoded or decoded; serialize plain data instead",
+                    ),
+                );
+            }
+        }
+        self.generic_call_sites = sites;
+    }
+
+    /// The first function, `dyn` or `Async` type in the JSON layout of `ty`
+    /// (struct fields, enum payloads, tuple elements, borrowed values), the
+    /// way code generation walks it. Type parameters in `type_params` are
+    /// collected into `reached` instead.
+    fn json_blocking_component(
+        &self,
+        ty: &str,
+        type_params: &BTreeSet<String>,
+        seen: &mut BTreeSet<String>,
+        reached: &mut BTreeSet<String>,
+    ) -> Option<String> {
+        let ty = self.normalize_type(ty);
+        if type_params.contains(&ty) {
+            reached.insert(ty);
+            return None;
+        }
+        if !seen.insert(ty.clone()) {
+            return None;
+        }
+        let base = base_type_name(&ty).to_string();
+        let args = extract_generic_args(&ty).unwrap_or_default();
+        if base == "Fn" || base == "Async" || parse_dyn_trait_name(&base).is_some() {
+            return Some(ty);
+        }
+        let mut first = None;
+        let mut visit = |checker: &Self, member: &str, reached: &mut BTreeSet<String>| {
+            if let Some(found) = checker.json_blocking_component(member, type_params, seen, reached)
+            {
+                first.get_or_insert(found);
+            }
+        };
+        if matches!(base.as_str(), "Tuple" | "Ref" | "RefMut") {
+            for arg in &args {
+                visit(self, arg, reached);
+            }
+            return first;
+        }
+        let (struct_info, enum_info) = match base.rsplit_once('.') {
+            Some((module, short)) => {
+                let key = (module.to_string(), short.to_string());
+                (
+                    self.resolution.module_struct_infos.get(&key),
+                    self.resolution.module_enum_infos.get(&key),
+                )
+            }
+            None => (
+                self.resolution.structs.get(&base),
+                self.resolution.enums.get(&base),
+            ),
+        };
+        let member_types = if let Some(info) = struct_info {
+            let bindings = info
+                .generics
+                .iter()
+                .cloned()
+                .zip(args.iter().cloned())
+                .collect::<BTreeMap<_, _>>();
+            let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+            info.fields
+                .values()
+                .filter_map(|ty| self.types.get(ty))
+                .map(|field| substitute_type_vars(field, &bindings, &generic_set))
+                .collect::<Vec<_>>()
+        } else if let Some(info) = enum_info {
+            let bindings = info
+                .generics
+                .iter()
+                .cloned()
+                .zip(args.iter().cloned())
+                .collect::<BTreeMap<_, _>>();
+            let generic_set = info.generics.iter().cloned().collect::<BTreeSet<_>>();
+            info.variants
+                .values()
+                .flatten()
+                .filter_map(|ty| self.types.get(ty))
+                .map(|payload| substitute_type_vars(payload, &bindings, &generic_set))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        for member in &member_types {
+            visit(self, member, reached);
+        }
+        first
+    }
+
     /// Rejects `Map`/`Set` instantiations the runtime cannot store (E1292).
     /// Type parameters and unresolved types are checked where they become
     /// concrete. Nested type arguments are checked recursively.
     fn validate_collection_element_types(&mut self, ty: &str, span: crate::span::Span) {
+        self.validate_collection_element_types_in(ty, span, &mut BTreeSet::new());
+    }
+
+    // `seen` stops the walk at a cyclic alias (`type A = Option[A]`), whose
+    // normalized form contains the alias again; `E1318` reports the cycle.
+    fn validate_collection_element_types_in(
+        &mut self,
+        ty: &str,
+        span: crate::span::Span,
+        seen: &mut BTreeSet<String>,
+    ) {
         let ty = self.normalize_type(ty);
+        if !seen.insert(ty.clone()) {
+            return;
+        }
         let base = base_type_name(&ty).to_string();
         let args = extract_generic_args(&ty).unwrap_or_default();
         let concrete = |checker: &Self, arg: &str| {
@@ -1455,7 +1691,7 @@ impl<'a> Checker<'a> {
             if base == "Fn" {
                 break;
             }
-            self.validate_collection_element_types(arg, span);
+            self.validate_collection_element_types_in(arg, span, seen);
         }
     }
 
@@ -1551,6 +1787,7 @@ impl<'a> Checker<'a> {
     fn finish(mut self) -> TypecheckOutput {
         self.flush_deferred_holes();
         self.check_generic_equality_bindings();
+        self.check_generic_json_bindings();
         let generic_instantiations = self
             .instantiation_seen
             .into_values()
@@ -1981,6 +2218,70 @@ impl<'a> Checker<'a> {
             .cloned()
             .unwrap_or_else(|| "<?>".to_string());
         self.check_generic_arity(&target, func.span);
+        if let Some(alias_name) = decode_internal_type_alias(&func.name) {
+            if let Some(cycle) = self.type_alias_cycle(alias_name) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1318",
+                        format!(
+                            "type alias '{}' is cyclic: {}",
+                            alias_name,
+                            cycle.join(" -> ")
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("make one alias in the cycle name a concrete type"),
+                );
+            }
+        }
+    }
+
+    /// The path `start -> ... -> start` when expanding alias `start` (its
+    /// target and every type argument in it) reaches `start` again; code
+    /// generation expands aliases eagerly and cannot lower such an alias.
+    fn type_alias_cycle(&self, start: &str) -> Option<Vec<String>> {
+        fn referenced_aliases(checker: &Checker, alias: &str) -> Vec<String> {
+            let Some(def) = checker.type_aliases.get(alias) else {
+                return Vec::new();
+            };
+            let mut out = Vec::new();
+            for word in def
+                .target
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+            {
+                if def.generics.iter().any(|generic| generic == word) {
+                    continue;
+                }
+                if checker.type_aliases.contains_key(word) && !out.iter().any(|seen| seen == word) {
+                    out.push(word.to_string());
+                }
+            }
+            out
+        }
+
+        let mut path = vec![start.to_string()];
+        let mut visited = BTreeSet::new();
+        let mut stack = vec![referenced_aliases(self, start)];
+        while let Some(frame) = stack.last_mut() {
+            let Some(next) = frame.pop() else {
+                stack.pop();
+                path.pop();
+                continue;
+            };
+            if next == start {
+                path.push(next);
+                return Some(path);
+            }
+            if !visited.insert(next.clone()) {
+                continue;
+            }
+            let children = referenced_aliases(self, &next);
+            path.push(next);
+            stack.push(children);
+        }
+        None
     }
 
     fn check_const_item(&mut self, func: &ir::Function) {
@@ -2006,6 +2307,7 @@ impl<'a> Checker<'a> {
             return;
         };
 
+        let errors_before = self.error_count();
         self.validate_const_initializer(const_name, expr);
 
         let mut locals = BTreeMap::new();
@@ -2031,6 +2333,144 @@ impl<'a> Checker<'a> {
                 )
                 .with_help("make the const initializer type match its annotation"),
             );
+        }
+        if self.error_count() == errors_before {
+            self.compile_time_evals.consts.insert(
+                const_name.to_string(),
+                PendingCompileTimeValue {
+                    item_index: self.current_item_index,
+                    context: format!("const '{}'", const_name),
+                    expr: (**expr).clone(),
+                    slot_ty: declared_ty,
+                },
+            );
+        } else {
+            self.compile_time_evals
+                .blocked_consts
+                .insert(const_name.to_string());
+        }
+    }
+
+    fn error_count(&self) -> usize {
+        self.diagnostics
+            .iter()
+            .filter(|d| matches!(d.severity, crate::diagnostics::Severity::Error))
+            .count()
+    }
+
+    /// Evaluates every const initializer and struct field default that type
+    /// checked cleanly, with the evaluator code generation uses: reports
+    /// const dependency cycles (`E1316`) and values that cannot be computed
+    /// (`E1317`: division by zero, overflow of the declared integer type,
+    /// out-of-range shifts).
+    fn evaluate_compile_time_values(&mut self) {
+        let names = self
+            .compile_time_evals
+            .consts
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for name in names {
+            self.evaluate_checked_const(&name, &mut Vec::new());
+        }
+        let defaults = std::mem::take(&mut self.compile_time_evals.field_defaults);
+        for pending in defaults {
+            self.evaluate_pending_compile_time_value(&pending, &mut Vec::new());
+        }
+        self.activate_module_file(None);
+    }
+
+    fn evaluate_checked_const(
+        &mut self,
+        name: &str,
+        stack: &mut Vec<String>,
+    ) -> Option<crate::const_eval::ConstValue> {
+        if let Some(value) = self.compile_time_evals.values.get(name) {
+            return value.clone();
+        }
+        if self.compile_time_evals.blocked_consts.contains(name) {
+            return None;
+        }
+        if let Some(position) = stack.iter().position(|entry| entry == name) {
+            let cycle = stack[position..].to_vec();
+            let pending = self.compile_time_evals.consts.get(name).cloned()?;
+            self.activate_item_file(pending.item_index);
+            let mut path = cycle.clone();
+            path.push(name.to_string());
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E1316",
+                    format!("cyclic const dependency: {}", path.join(" -> ")),
+                    self.file,
+                    pending.expr.span,
+                )
+                .with_help("give one of these constants an initializer that does not refer back to the others"),
+            );
+            for member in cycle {
+                self.compile_time_evals.values.insert(member, None);
+            }
+            return None;
+        }
+        let pending = self.compile_time_evals.consts.get(name).cloned()?;
+        stack.push(name.to_string());
+        let value = self.evaluate_pending_compile_time_value(&pending, stack);
+        stack.pop();
+        // A cycle member was already recorded as failed while unwinding.
+        if let Some(recorded) = self.compile_time_evals.values.get(name) {
+            return recorded.clone();
+        }
+        self.compile_time_evals
+            .values
+            .insert(name.to_string(), value.clone());
+        value
+    }
+
+    fn evaluate_pending_compile_time_value(
+        &mut self,
+        pending: &PendingCompileTimeValue,
+        stack: &mut Vec<String>,
+    ) -> Option<crate::const_eval::ConstValue> {
+        use crate::const_eval::{self, ConstLookup};
+        let slot_kind = const_eval::IntKind::from_type_name(&self.normalize_type(&pending.slot_ty));
+        let result = {
+            let mut lookup = |name: &str| {
+                if !self.compile_time_evals.consts.contains_key(name)
+                    && !self.compile_time_evals.blocked_consts.contains(name)
+                {
+                    return ConstLookup::Unknown;
+                }
+                match self.evaluate_checked_const(name, stack) {
+                    Some(value) => ConstLookup::Value(value),
+                    None => ConstLookup::Failed,
+                }
+            };
+            const_eval::eval_expr(&pending.expr, slot_kind, &mut lookup)
+        }
+        .and_then(|value| match value {
+            Some(value) => const_eval::fit_to_slot(value, slot_kind, pending.expr.span).map(Some),
+            None => Ok(None),
+        });
+        match result {
+            Ok(value) => value,
+            Err(err) => {
+                self.activate_item_file(pending.item_index);
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1317",
+                        format!(
+                            "{} cannot be evaluated at compile time: it {}",
+                            pending.context,
+                            err.message()
+                        ),
+                        self.file,
+                        err.span,
+                    )
+                    .with_help(
+                        "change the initializer so its value is defined and fits the declared type",
+                    ),
+                );
+                None
+            }
         }
     }
 
@@ -2975,7 +3415,7 @@ impl<'a> Checker<'a> {
 
     fn check_intrinsic_function_signature(&mut self, func: &ir::Function) {
         match func.intrinsic_abi.as_deref() {
-            Some("runtime") => {}
+            Some("runtime") => self.check_intrinsic_lowering(func),
             Some(other) => {
                 self.diagnostics.push(
                     Diagnostic::error(
@@ -3026,6 +3466,120 @@ impl<'a> Checker<'a> {
                 ),
             );
         }
+    }
+
+    /// Records the concrete type of each argument of a generic call that
+    /// still had holes when it was checked (`mk(None)` once `T` is fixed by
+    /// another argument or the expected result type), so code generation
+    /// lowers the argument as the instance the checker chose.
+    fn record_generic_argument_hints(
+        &mut self,
+        generic_set: &BTreeSet<String>,
+        generic_bindings: &BTreeMap<String, String>,
+        args: &[ir::Expr],
+        arg_types: &[String],
+        arg_to_param: &[Option<usize>],
+        params: &[String],
+    ) {
+        for (arg_idx, arg) in args.iter().enumerate() {
+            if !arg_types
+                .get(arg_idx)
+                .is_some_and(|ty| contains_unresolved_type(ty))
+            {
+                continue;
+            }
+            let Some(param) = arg_to_param
+                .get(arg_idx)
+                .copied()
+                .flatten()
+                .and_then(|idx| params.get(idx))
+            else {
+                continue;
+            };
+            let refined = substitute_type_vars(param, generic_bindings, generic_set);
+            if contains_unresolved_type(&refined)
+                || self.type_mentions_generic(&refined, generic_set)
+            {
+                continue;
+            }
+            let refined = self.normalize_type(&refined);
+            self.expr_type_hints.insert(arg.node, refined);
+        }
+    }
+
+    fn type_mentions_generic(&self, ty: &str, generic_set: &BTreeSet<String>) -> bool {
+        ty.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .any(|word| generic_set.contains(word))
+    }
+
+    /// An `intrinsic fn` must name an intrinsic code generation lowers: a
+    /// runtime binding whose signature matches, or a builtin lowering.
+    fn check_intrinsic_lowering(&mut self, func: &ir::Function) {
+        let render = |checker: &Self, ty: &ir::TypeId| {
+            checker
+                .types
+                .get(ty)
+                .cloned()
+                .unwrap_or_else(|| "<?>".to_string())
+        };
+        if let Some(binding) = crate::codegen::intrinsic_binding_expectation(&func.name) {
+            let params = func
+                .params
+                .iter()
+                .map(|param| render(self, &param.ty))
+                .collect::<Vec<_>>();
+            let ret = render(self, &func.ret_type);
+            let matches = binding.signatures.iter().any(|shape| {
+                shape.params.len() == params.len()
+                    && shape
+                        .params
+                        .iter()
+                        .zip(params.iter())
+                        .all(|(expected, actual)| expected == actual)
+                    && shape.ret == ret
+            });
+            if !matches {
+                let expected = binding
+                    .signatures
+                    .iter()
+                    .map(|shape| format!("({}) -> {}", shape.params.join(", "), shape.ret))
+                    .collect::<Vec<_>>()
+                    .join(" or ");
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1315",
+                        format!(
+                            "intrinsic '{}' is declared as ({}) -> {}, but its runtime lowering expects {}",
+                            func.name,
+                            params.join(", "),
+                            ret,
+                            expected
+                        ),
+                        self.file,
+                        func.span,
+                    )
+                    .with_help("declare the intrinsic with the signature its runtime lowering expects"),
+                );
+            }
+            return;
+        }
+        if crate::codegen::builtin_intrinsic_lowering(&func.name) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1315",
+                format!(
+                    "intrinsic '{}' has no runtime lowering in the code generator",
+                    func.name
+                ),
+                self.file,
+                func.span,
+            )
+            .with_help(
+                "declare only intrinsics the compiler implements (see `aic verify-intrinsics`), or write a plain function",
+            ),
+        );
     }
 
     fn record_call_edge(&mut self, callee: &str, span: crate::span::Span) {
@@ -3165,9 +3719,20 @@ impl<'a> Checker<'a> {
 
     fn check_capability_authority(&mut self) {
         let user_functions = self.user_function_entries();
+        // An intrinsic declaration has no body and cannot list capabilities
+        // (E2121); its callers carry the authority.
+        let intrinsic_names = self
+            .program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ir::Item::Function(func) if func.is_intrinsic => Some(func.name.clone()),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
 
         for (function_name, function_key) in &user_functions {
-            if self.is_std_function(function_key) {
+            if self.is_std_function(function_key) || intrinsic_names.contains(function_name) {
                 continue;
             }
             let declared_capabilities = self
@@ -4786,6 +5351,7 @@ impl<'a> Checker<'a> {
 
             if let Some(default_expr) = &field.default_value {
                 let context = format!("default value for field '{}.{}'", strukt.name, field.name);
+                let errors_before = self.error_count();
                 self.validate_compile_time_expr(&context, default_expr);
 
                 let mut locals = BTreeMap::new();
@@ -4811,6 +5377,16 @@ impl<'a> Checker<'a> {
                         self.file,
                         default_expr.span,
                     ));
+                }
+                if self.error_count() == errors_before && !contains_unresolved_type(&ty) {
+                    self.compile_time_evals
+                        .field_defaults
+                        .push(PendingCompileTimeValue {
+                            item_index: self.current_item_index,
+                            context,
+                            expr: default_expr.clone(),
+                            slot_ty: ty.clone(),
+                        });
                 }
             }
         }
@@ -6876,6 +7452,42 @@ impl<'a> Checker<'a> {
                         &generic_bindings,
                         expr.span,
                     );
+                    let mut ret_ty =
+                        substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
+                    self.validate_collection_element_types(&ret_ty, expr.span);
+                    if sig.is_async {
+                        ret_ty = format!("Async[{ret_ty}]");
+                    }
+                    if contains_unresolved_type(&ret_ty) {
+                        if let Some(expected) = expected_ty {
+                            let expected_norm = self.normalize_type(expected);
+                            if self.types_compatible(&ret_ty, &expected_norm) {
+                                let merged = self.merge_compatible_types(&ret_ty, &expected_norm);
+                                self.observe_fn_return_hole(&resolved_name, &merged);
+                                ret_ty = merged;
+                                if !generic_set.is_empty() && !sig.is_async {
+                                    let sig_ret = self.normalize_type(&sig.ret);
+                                    let resolved_ret = self.normalize_type(&ret_ty);
+                                    let _ = infer_generic_bindings(
+                                        &sig_ret,
+                                        &resolved_ret,
+                                        &generic_set,
+                                        &mut generic_bindings,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    if !generic_set.is_empty() {
+                        self.record_generic_argument_hints(
+                            &generic_set,
+                            &generic_bindings,
+                            args,
+                            &arg_types,
+                            &arg_to_param,
+                            &sig.params,
+                        );
+                    }
                     if !generic_bindings.is_empty() {
                         let callee =
                             self.resolved_function_key(&resolved_name, resolved_module.as_deref());
@@ -6891,22 +7503,6 @@ impl<'a> Checker<'a> {
                             file: self.file.to_string(),
                             span: expr.span,
                         });
-                    }
-                    let mut ret_ty =
-                        substitute_type_vars(&sig.ret, &generic_bindings, &generic_set);
-                    self.validate_collection_element_types(&ret_ty, expr.span);
-                    if sig.is_async {
-                        ret_ty = format!("Async[{ret_ty}]");
-                    }
-                    if contains_unresolved_type(&ret_ty) {
-                        if let Some(expected) = expected_ty {
-                            let expected_norm = self.normalize_type(expected);
-                            if self.types_compatible(&ret_ty, &expected_norm) {
-                                let merged = self.merge_compatible_types(&ret_ty, &expected_norm);
-                                self.observe_fn_return_hole(&resolved_name, &merged);
-                                ret_ty = merged;
-                            }
-                        }
                     }
                     if contains_unresolved_type(&ret_ty) {
                         self.observe_fn_return_hole(&resolved_name, &ret_ty);
@@ -7831,7 +8427,10 @@ impl<'a> Checker<'a> {
                             return float_kind_type_name(kind).to_string();
                         }
                         if let Some(kind) = parse_integer_kind(&ty_norm) {
-                            if matches!(kind, IntegerKind::Fixed { signed: false, .. }) {
+                            if matches!(
+                                kind,
+                                IntegerKind::USize | IntegerKind::Fixed { signed: false, .. }
+                            ) {
                                 self.diagnostics.push(
                                     Diagnostic::error(
                                         "E1222",
@@ -17664,5 +18263,239 @@ fn main() -> Int {
                 .get(&("Counter".to_string(), "value".to_string())),
             Some(&"Int".to_string())
         );
+    }
+
+    #[test]
+    fn const_cycles_are_reported_once_per_cycle() {
+        let msgs = error_messages(
+            "const A: Int = B + 1;\nconst B: Int = C;\nconst C: Int = A;\nconst D: Int = A;\nfn main() -> Int { D }\n",
+        );
+        assert_eq!(
+            msgs,
+            vec!["E1316: cyclic const dependency: A -> B -> C -> A".to_string()]
+        );
+        let msgs = error_messages("const A: Int = A;\nfn main() -> Int { 0 }\n");
+        assert_eq!(
+            msgs,
+            vec!["E1316: cyclic const dependency: A -> A".to_string()]
+        );
+        // A field default that refers into the cycle adds no second report.
+        let codes = error_codes(
+            "const A: Int = B;\nconst B: Int = A;\nstruct S { x: Int = A }\nfn main() -> Int { 0 }\n",
+        );
+        assert_eq!(codes, vec!["E1316".to_string()]);
+    }
+
+    #[test]
+    fn const_evaluation_failures_are_reported() {
+        let cases = [
+            ("const A: Int = 1 / 0;", "divides by zero"),
+            ("const Z: Int = 0;\nconst A: Int = 1 % Z;", "computes a modulo by zero"),
+            ("const A: Int8 = 100 + 100;", "overflows 'Int8' (range -128..=127)"),
+            ("const A: UInt8 = 3 - 4;", "overflows 'UInt8' (range 0..=255)"),
+            (
+                "const A: Int = 9223372036854775807 + 1;",
+                "overflows 'Int' (range -9223372036854775808..=9223372036854775807)",
+            ),
+            ("const A: Int8 = -(-128i8);", "overflows 'Int8'"),
+            ("const A: Int = 1 << 64;", "shifts a value of type 'Int' by 64 bits"),
+            ("const A: Int32 = 1 << -1;", "shifts a value of type 'Int32' by -1 bits"),
+            ("const A: Int8 = 2;\nconst B: Int8 = A * 100;", "overflows 'Int8'"),
+            (
+                "struct S { x: Int8 = 100 + 100 }",
+                "default value for field 'S.x' cannot be evaluated at compile time: it overflows 'Int8'",
+            ),
+            ("struct S { x: Int = 1 / 0 }", "divides by zero"),
+        ];
+        for (decls, expected) in cases {
+            let src = format!("{decls}\nfn main() -> Int {{ 0 }}\n");
+            let msgs = error_messages(&src);
+            assert_eq!(msgs.len(), 1, "{decls}: {msgs:#?}");
+            assert!(
+                msgs[0].starts_with("E1317: ") && msgs[0].contains(expected),
+                "{decls}: {msgs:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn const_values_in_range_of_sized_types_are_accepted() {
+        let src = r#"
+const A: Int8 = -128;
+const B: Int8 = A + 127;
+const C: UInt8 = 255;
+const D: UInt64 = 9223372036854775807u64 * 2u64;
+const E: UInt64 = D / 2u64;
+const F: Int16 = 1 << 14;
+const G: Int32 = -1 >> 1;
+const H: UInt8 = ~0u8;
+const S: String = "a" + "b";
+const T: Bool = "a" < "b";
+const U: Bool = S == "ab";
+const MIN: Int = -9223372036854775807 - 1;
+struct P { x: Int8 = 3, y: UInt16 = 65535, z: Bool = "q" != "r" }
+fn main() -> Int { 0 }
+"#;
+        let msgs = error_messages(src);
+        assert!(msgs.is_empty(), "{msgs:#?}");
+    }
+
+    #[test]
+    fn const_with_type_errors_is_not_evaluated_again() {
+        // E1288 for the mismatch. A const that refers to the broken one is
+        // not evaluated, so neither reports an evaluator error.
+        let codes =
+            error_codes("const A: Int = \"x\";\nconst B: Int = A / 0;\nfn main() -> Int { 0 }\n");
+        assert_eq!(codes, vec!["E1288".to_string()]);
+        let codes =
+            error_codes("const A: Int = \"x\";\nconst B: Int = A + 1;\nfn main() -> Int { 0 }\n");
+        assert_eq!(codes, vec!["E1288".to_string()]);
+    }
+
+    #[test]
+    fn cyclic_type_aliases_are_reported() {
+        let msgs = error_messages(
+            "type A = B;\ntype B = A;\nfn f(x: A) -> Int { 0 }\nfn main() -> Int { 0 }\n",
+        );
+        assert_eq!(
+            msgs,
+            vec![
+                "E1318: type alias 'A' is cyclic: A -> B -> A".to_string(),
+                "E1318: type alias 'B' is cyclic: B -> A -> B".to_string(),
+            ]
+        );
+        let msgs = error_messages(
+            "type A = Option[A];\nfn f(x: A) -> Int { 0 }\nfn main() -> Int { 0 }\n",
+        );
+        assert_eq!(
+            msgs,
+            vec!["E1318: type alias 'A' is cyclic: A -> A".to_string()]
+        );
+        let codes = error_codes("type A[T] = Option[A[T]];\nfn main() -> Int { 0 }\n");
+        assert_eq!(codes, vec!["E1318".to_string()]);
+        // A generic parameter named like an alias is not a reference to it.
+        let codes = error_codes(
+            "type T = Int;\ntype W[T] = Option[T];\ntype X = W[T];\nfn f(x: X) -> Int { 0 }\nfn main() -> Int { 0 }\n",
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+        // An alias that only reaches a cycle is not part of it.
+        let msgs =
+            error_messages("type A = B;\ntype B = C;\ntype C = B;\nfn main() -> Int { 0 }\n");
+        assert!(msgs.iter().all(|m| !m.contains("'A'")), "{msgs:#?}");
+        assert_eq!(msgs.len(), 2, "{msgs:#?}");
+    }
+
+    #[test]
+    fn unary_minus_on_uint_alias_is_rejected() {
+        let msgs = error_messages("fn main() -> Int { let x: UInt = 1; let y: UInt = -x; 0 }\n");
+        assert_eq!(msgs.len(), 1, "{msgs:#?}");
+        assert!(
+            msgs[0].starts_with("E1222: unary '-' cannot be applied to unsigned"),
+            "{msgs:#?}"
+        );
+        let codes = error_codes("fn main() -> Int { let x: USize = 1; let y = -x; 0 }\n");
+        assert_eq!(codes, vec!["E1222".to_string()]);
+    }
+
+    #[test]
+    fn intrinsic_declarations_need_a_backend_lowering() {
+        let msgs = error_messages("intrinsic fn my_magic() -> Int;\nfn main() -> Int { 0 }\n");
+        assert_eq!(
+            msgs,
+            vec![
+                "E1315: intrinsic 'my_magic' has no runtime lowering in the code generator"
+                    .to_string()
+            ]
+        );
+        // A runtime binding with the expected signature, and a builtin lowering.
+        let ok = r#"
+intrinsic fn aic_path_is_abs_intrinsic(path: String) -> Bool effects { fs };
+intrinsic fn aic_vec_push_intrinsic[T](v: Int, value: T) -> Int;
+fn main() -> Int { 0 }
+"#;
+        let codes = error_codes(ok);
+        assert!(!codes.contains(&"E1315".to_string()), "{codes:?}");
+        // Intrinsic declarations carry no capabilities (E2121 forbids them).
+        assert!(!codes.contains(&"E2009".to_string()), "{codes:?}");
+    }
+
+    #[test]
+    fn intrinsic_signature_must_match_its_runtime_binding() {
+        let binding = crate::codegen::intrinsic_binding_expectations()
+            .iter()
+            .find(|binding| {
+                binding.signatures.len() == 1 && binding.signatures[0].params == ["String"]
+            })
+            .expect("a runtime binding that takes one String");
+        let src = format!(
+            "intrinsic fn {}(path: Int) -> {};\nfn main() -> Int {{ 0 }}\n",
+            binding.intrinsic, binding.signatures[0].ret
+        );
+        let msgs = error_messages(&src);
+        let e1315 = msgs
+            .iter()
+            .filter(|m| m.starts_with("E1315: "))
+            .collect::<Vec<_>>();
+        assert_eq!(e1315.len(), 1, "{msgs:#?}");
+        assert!(
+            e1315[0].contains("is declared as (Int)")
+                && e1315[0].contains("but its runtime lowering expects (String)"),
+            "{msgs:#?}"
+        );
+    }
+
+    #[test]
+    fn json_serde_type_arguments_must_be_serializable() {
+        let prelude = r#"module std.jtest;
+intrinsic fn aic_json_serde_encode_intrinsic[T](value: T) -> Int;
+fn encode[T](value: T) -> Int { aic_json_serde_encode_intrinsic(value) }
+fn wrap[U](value: U) -> Int { encode(value) }
+struct Holder { f: Fn(Int) -> Int, n: Int }
+struct Box1[A] { inner: A }
+enum Either { L(Int), R(Fn() -> Int) }
+"#;
+        let bad = [
+            ("encode(|x: Int| -> Int { x })", "found 'Fn[Int, Int]'"),
+            (
+                "encode(Holder { f: |x: Int| -> Int { x }, n: 1 })",
+                "found 'Holder', which contains 'Fn[Int, Int]'",
+            ),
+            (
+                "encode(Box1 { inner: |x: Int| -> Int { x } })",
+                "which contains 'Fn[Int, Int]'",
+            ),
+            (
+                "encode(Either::L(1))",
+                "found 'Either', which contains 'Fn[Int]'",
+            ),
+            (
+                "wrap(|x: Int| -> Int { x })",
+                "'wrap' needs a JSON-serializable type for type parameter 'U'",
+            ),
+            ("encode((1, || -> Int { 1 }))", "which contains 'Fn[Int]'"),
+        ];
+        for (call, expected) in bad {
+            let src = format!("{prelude}fn main() -> Int {{ {call} }}\n");
+            let msgs = error_messages(&src);
+            let e1319 = msgs
+                .iter()
+                .filter(|m| m.starts_with("E1319: "))
+                .collect::<Vec<_>>();
+            assert_eq!(e1319.len(), 1, "{call}: {msgs:#?}");
+            assert!(e1319[0].contains(expected), "{call}: {msgs:#?}");
+        }
+        for call in [
+            "encode(1)",
+            "encode(Box1 { inner: 2 })",
+            "wrap(\"s\")",
+            "encode((1, true))",
+        ] {
+            let src = format!("{prelude}fn main() -> Int {{ {call} }}\n");
+            let msgs = error_messages(&src);
+            assert!(
+                msgs.iter().all(|m| !m.starts_with("E1319")),
+                "{call}: {msgs:#?}"
+            );
+        }
     }
 }

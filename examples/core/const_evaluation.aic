@@ -1,0 +1,37 @@
+module examples.core.const_evaluation;
+
+import std.io;
+
+// `aic check` evaluates every const initializer and field default with the
+// evaluator code generation uses. Integer constants take their declared
+// type, so sized integer constants and defaults build. A value that does
+// not fit its type, a division by zero, or a const cycle fails `aic check`
+// (E1317, E1316; see const_evaluation_invalid.aic).
+const SMALL: Int8 = -100;
+
+const OFFSET: Int8 = SMALL + 120;
+
+const MASK: UInt8 = ~0u8;
+
+const SHIFTED: UInt16 = 1u16 << 10;
+
+const GREETING: String = "hello, " + "const";
+
+const ORDERED: Bool = "abc" < "abd";
+
+struct Limits {
+    low: Int8 = -128,
+    high: UInt16 = 65535,
+    named: Bool = GREETING == "hello, const",
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let limits = Limits {};
+    print_str(GREETING + "\n");
+    if ORDERED && limits.named {
+        print_int(OFFSET as Int + MASK as Int + SHIFTED as Int + limits.low as Int + limits.high as Int);
+    } else {
+        print_int(0);
+    };
+    0
+}

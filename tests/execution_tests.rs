@@ -1344,6 +1344,66 @@ fn main() -> Int effects { io } capabilities { io  } {
 }
 
 #[test]
+fn exec_sized_and_string_constants_build_with_their_declared_types() {
+    let src = r#"
+import std.io;
+
+const SMALL: Int8 = -128;
+const NEXT: Int8 = SMALL + 1;
+const BIG: UInt64 = 9223372036854775807u64 * 2u64;
+const HALF: UInt64 = BIG / 2u64;
+const WIDE: Int128 = 1i128 << 100;
+const MASK: UInt8 = ~0u8;
+const TAG: String = "id-" + "7";
+const SAME: Bool = TAG == "id-7";
+const LESS: Bool = "a" < "b";
+
+struct Packet {
+    kind: UInt8 = 200,
+    level: Int16 = -300,
+    tagged: Bool = TAG != "",
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let p = Packet {};
+    print_int(SMALL as Int);
+    print_int(NEXT as Int);
+    if HALF == 9223372036854775807u64 { print_int(1) } else { print_int(0) };
+    if WIDE > 0i128 { print_int(1) } else { print_int(0) };
+    print_int(MASK as Int);
+    print_str(TAG + "\n");
+    if SAME && LESS && p.tagged { print_int(1) } else { print_int(0) };
+    print_int(p.kind as Int + p.level as Int);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "-128\n-127\n1\n1\n255\nid-7\n1\n-100\n");
+}
+
+#[test]
+fn exec_generic_call_fixed_by_expected_type_builds() {
+    let src = r#"
+import std.io;
+
+fn keep[T](m: Option[T]) -> Option[T] { m }
+
+fn main() -> Int effects { io } capabilities { io } {
+    let a: Option[Int8] = keep(None);
+    let b: Option[String] = keep(None);
+    let ra = match a { Some(_) => 1, None => 2 };
+    let rb = match b { Some(_) => 10, None => 20 };
+    print_int(ra + rb);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "22\n");
+}
+
+#[test]
 fn exec_struct_defaults_allow_const_arithmetic() {
     let src = r#"
 import std.io;

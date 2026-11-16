@@ -141,6 +141,8 @@ Notes:
   - May user code declare `intrinsic fn`? This decides `E5020`.
 
   For each gap, add the checker rule or make code generation handle the program, move the catalog row, and delete the table line.
+
+  Done on branch `parity-t4-check-build-parity` (2026-11-16). Decisions (recorded in `docs/diagnostic-codes.md`, "Decisions behind the parity rules"): `std.*` module names are reserved for files under a std root (`E1314`); user code may declare `intrinsic fn` only for intrinsics the backend lowers, with the expected signature (`E1315`). The checker now evaluates consts and field defaults with the backend's evaluator (`src/const_eval.rs`: `E1316` cycles, `E1317` overflow, division by zero, shift range), rejects cyclic aliases (`E1318`) and non-serializable `std.json` type arguments (`E1319`); `-x` on `UInt` reports `E1222`. Found and fixed on the way: `type A = Option[A]` overflowed the checker's stack, a generic call fixed only by the expected type (`let r: Option[Int8] = keep(None)`) failed in codegen, and an intrinsic declaration with effects could never pass `E2009`. All ten former gaps are `internal` catalog rows; `E5037` is the only `build` row left.
 - **1.2** `f[B, Int]` and `f_B[Int]` both mangle to `fn_f_B_Int`, so a valid program is rejected with `E1255` (catalog-remaining-work section 2). Make mangling injective and keep `E1255` as an `internal` backstop.
 - **1.3** Moved up from Phase 5 because overflow is a silent wrong result: `Int` max + 1 prints `-9223372036854775808` today.
 - **1.4** Moved up from Phase 5: a pure function can call `extern "C" fn puts` inside `unsafe { }` and print.

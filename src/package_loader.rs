@@ -347,6 +347,29 @@ impl Loader {
                 .or_insert_with(|| canonical.clone());
         }
 
+        if let Some(module) = program
+            .module
+            .as_ref()
+            .filter(|module| module.path.first().is_some_and(|root| root == "std"))
+        {
+            if !self.is_under_std_root(&canonical) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1314",
+                        format!(
+                            "module name '{}' is reserved for the standard library",
+                            module.path.join(".")
+                        ),
+                        &machine_paths::normalize_separators_path(&canonical),
+                        module.span,
+                    )
+                    .with_help(
+                        "only files under a std root (AIC_STD_ROOT, <project>/std or the installed std) may declare `module std.*;`; rename the module",
+                    ),
+                );
+            }
+        }
+
         if !is_entry && program.module.is_none() {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -501,6 +524,13 @@ impl Loader {
 
     fn std_roots(&self) -> Vec<PathBuf> {
         toolchain::std_import_roots(&self.project_root)
+    }
+
+    fn is_under_std_root(&self, file: &Path) -> bool {
+        self.std_roots()
+            .into_iter()
+            .map(canonical_or_self)
+            .any(|root| file.starts_with(&root))
     }
 
     fn ensure_parsed(&mut self, file: &Path) -> anyhow::Result<()> {
@@ -839,6 +869,82 @@ mod tests {
             ]
         );
         assert!(loaded.parsed_module_count >= 2);
+    }
+
+    #[test]
+    fn std_module_names_are_reserved_outside_std_roots() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
+        fs::write(
+            root.join("aic.toml"),
+            "[package]\nname = \"demo\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("write manifest");
+        fs::write(
+            root.join("src/main.aic"),
+            "module app.main;\nimport std.hack;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("write main");
+        // Found by the conventional path lookup, but not under a std root.
+        fs::create_dir_all(root.join("src/std")).expect("mkdir src/std");
+        fs::write(
+            root.join("src/std/hack.aic"),
+            "module std.hack;\nfn f() -> Int { 1 }\n",
+        )
+        .expect("write hack");
+        let loaded = load_entry(&root.join("src/main.aic")).expect("load package");
+        let e1314 = loaded
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "E1314")
+            .collect::<Vec<_>>();
+        assert_eq!(e1314.len(), 1, "{:#?}", loaded.diagnostics);
+        assert!(e1314[0]
+            .message
+            .contains("module name 'std.hack' is reserved for the standard library"));
+
+        // The entry file itself.
+        fs::write(
+            root.join("src/main.aic"),
+            "module std.main;\nfn main() -> Int { 0 }\n",
+        )
+        .expect("write main");
+        let loaded = load_entry(&root.join("src/main.aic")).expect("load package");
+        assert!(
+            loaded.diagnostics.iter().any(|d| d.code == "E1314"),
+            "{:#?}",
+            loaded.diagnostics
+        );
+    }
+
+    #[test]
+    fn project_std_root_may_declare_std_modules() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
+        fs::create_dir_all(root.join("std")).expect("mkdir std");
+        fs::write(
+            root.join("aic.toml"),
+            "[package]\nname = \"demo\"\nmain = \"src/main.aic\"\n",
+        )
+        .expect("write manifest");
+        fs::write(
+            root.join("src/main.aic"),
+            "module app.main;\nimport std.vendored;\nfn main() -> Int { vendored.one() }\n",
+        )
+        .expect("write main");
+        fs::write(
+            root.join("std/vendored.aic"),
+            "module std.vendored;\npub fn one() -> Int { 1 }\n",
+        )
+        .expect("write vendored");
+        let loaded = load_entry(&root.join("src/main.aic")).expect("load package");
+        assert!(
+            loaded.diagnostics.iter().all(|d| d.code != "E1314"),
+            "{:#?}",
+            loaded.diagnostics
+        );
     }
 
     #[test]

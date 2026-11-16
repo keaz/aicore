@@ -23,7 +23,9 @@ Every `intrinsic fn` in `std` has exactly one backend lowering, of one of two ki
 - **Runtime binding**: the call becomes one call to a C runtime symbol. The declaration must match an entry in `INTRINSIC_BINDING_EXPECTATIONS` (`src/codegen/mod.rs`): the runtime symbol mapping exists and is non-empty, and the declared signature matches the expected lowering signature.
 - **Builtin lowering**: the code generator lowers the call by name with dedicated code (element sizes, struct layouts, handles), for example `aic_vec_push_intrinsic[T]`. The name must be listed in `BUILTIN_INTRINSIC_LOWERINGS` (`src/codegen/mod.rs`); a codegen unit test checks that the generator dispatches every listed name. Builtin intrinsics may be generic.
 
-No std function that the backend lowers has an AICore body: a declaration with a missing lowering fails at compile time (`E5020`) instead of running a placeholder body, and `aic verify-intrinsics` reports it as `VI1002`.
+No std function that the backend lowers has an AICore body: a declaration with a missing lowering, or with a signature its runtime binding does not expect, fails `aic check` with `E1315` instead of running a placeholder body, and `aic verify-intrinsics` reports it as `VI1002`/`VI1003`.
+
+User modules may declare intrinsics too, under the same `E1315` rules, but only std modules may call them (`E2102`). An intrinsic declaration needs no `capabilities`; the functions that call it carry the authority. Only files under a std root may declare `module std.*;` (`E1314`).
 
 Validate with:
 
@@ -67,6 +69,8 @@ Effect authority is carried by intrinsic signatures and wrapper APIs:
 Common diagnostics:
 
 - `E1093`: malformed intrinsic declaration (body, generics, contracts, or missing `;`).
+- `E1315`: intrinsic without a backend lowering, or with a signature its runtime binding does not expect.
+- `E1314`: a file outside the std roots declares `module std.*;`.
 - `VI1001`: unsupported intrinsic ABI metadata.
 - `VI1002`: missing backend lowering.
 - `VI1003`: signature mismatch against backend expectation.

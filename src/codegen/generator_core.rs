@@ -4691,14 +4691,19 @@ impl<'a> Generator<'a> {
                         repr: Some(reg),
                     })
                 } else if let Some(const_value) = self.const_values.get(name).cloned() {
-                    let mut value = self.runtime_value_from_const(&const_value, fctx);
-                    if let Some(def) = self.const_defs.get(name).cloned() {
-                        if let Some(const_ty) = self.parse_type_repr(&def.declared_ty, def.span) {
-                            value =
-                                self.coerce_value_to_expected(value, &const_ty, expr.span, fctx)?;
+                    let const_ty = self
+                        .const_defs
+                        .get(name)
+                        .cloned()
+                        .and_then(|def| self.parse_type_repr(&def.declared_ty, def.span));
+                    let value =
+                        self.runtime_value_from_const(&const_value, const_ty.as_ref(), fctx);
+                    match const_ty {
+                        Some(const_ty) => {
+                            self.coerce_value_to_expected(value, &const_ty, expr.span, fctx)
                         }
+                        None => Some(value),
                     }
-                    Some(value)
                 } else if self.const_defs.contains_key(name) {
                     self.diagnostics.push(Diagnostic::error(
                         "E5023",
@@ -5923,7 +5928,13 @@ impl<'a> Generator<'a> {
         let sig_hint = exact_sig.clone().or_else(|| self.fn_sig(name).cloned());
         let mut values = Vec::new();
         for (idx, expr) in args.iter().enumerate() {
-            let expected_hint = sig_hint.as_ref().and_then(|sig| sig.params.get(idx));
+            // A checker hint (the argument's type once the call's generics
+            // are fixed) is exact; the signature's parameter type may still
+            // contain the callee's type variables.
+            let expected_hint = sig_hint
+                .as_ref()
+                .and_then(|sig| sig.params.get(idx))
+                .filter(|_| !self.program.expr_type_hints.contains_key(&expr.node));
             let value = if let Some(expected_hint) = expected_hint {
                 self.gen_expr_with_expected(expr, Some(expected_hint), fctx)?
             } else {

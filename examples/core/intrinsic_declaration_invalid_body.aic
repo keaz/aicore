@@ -1,4 +1,4 @@
-module std.intrinsic_invalid;
+module examples.core.intrinsic_invalid;
 
 intrinsic fn aic_bad_intrinsic() -> Int {
     1

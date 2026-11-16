@@ -2081,15 +2081,7 @@ struct ConstDef {
     span: crate::span::Span,
 }
 
-#[derive(Debug, Clone)]
-enum ConstValue {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Char(char),
-    Unit,
-    String(String),
-}
+use crate::const_eval::{self, ConstValue};
 
 #[derive(Debug, Clone)]
 struct Value {
@@ -4673,47 +4665,23 @@ fn split_top_level(text: &str) -> Vec<String> {
     parts
 }
 
-fn unary_op_name(op: UnaryOp) -> &'static str {
-    match op {
-        UnaryOp::Neg => "-",
-        UnaryOp::Not => "!",
-        UnaryOp::BitNot => "~",
-    }
-}
-
-fn binary_op_name(op: BinOp) -> &'static str {
-    match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::Ushr => ">>>",
-        BinOp::Eq => "==",
-        BinOp::Ne => "!=",
-        BinOp::Lt => "<",
-        BinOp::Le => "<=",
-        BinOp::Gt => ">",
-        BinOp::Ge => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-    }
-}
-
-fn const_value_name(value: &ConstValue) -> &'static str {
+fn const_value_ty(value: &ConstValue) -> LType {
     match value {
-        ConstValue::Int(_) => "Int",
-        ConstValue::Float(_) => "Float",
-        ConstValue::Bool(_) => "Bool",
-        ConstValue::Char(_) => "Char",
-        ConstValue::Unit => "()",
-        ConstValue::String(_) => "String",
+        ConstValue::Int { .. } => LType::Int,
+        ConstValue::Float(_) => LType::Float64,
+        ConstValue::Bool(_) => LType::Bool,
+        ConstValue::Char(_) => LType::Char,
+        ConstValue::Unit => LType::Unit,
+        ConstValue::String(_) => LType::String,
     }
+}
+
+fn const_int_kind_of(ty: &LType) -> Option<const_eval::IntKind> {
+    let bits = integer_width_bits(ty)? as u8;
+    Some(const_eval::IntKind {
+        signed: is_signed_integer_type(ty),
+        bits,
+    })
 }
 
 fn mangle_generic_instantiation(kind_tag: &str, name: &str, type_args: &[String]) -> String {

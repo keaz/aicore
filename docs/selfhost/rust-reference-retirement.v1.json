@@ -95,6 +95,7 @@
       "description": "Rust parser, resolver, diagnostics, typing, IR, formatting, and core semantic compiler behavior still available as the reference implementation.",
       "patterns": [
         "src/ast.rs",
+        "src/const_eval.rs",
         "src/contracts.rs",
         "src/diagnostic_codes.rs",
         "src/diagnostic_reasoning.rs",

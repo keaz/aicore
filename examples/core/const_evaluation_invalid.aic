@@ -1,0 +1,9 @@
+module examples.core.const_evaluation_invalid;
+
+// `100 + 100` does not fit Int8: aic check reports E1317 instead of
+// letting code generation wrap the value to -56.
+const TOO_BIG: Int8 = 100 + 100;
+
+fn main() -> Int {
+    0
+}

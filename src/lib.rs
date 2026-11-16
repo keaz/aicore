@@ -5,6 +5,7 @@ pub mod checkpoint;
 pub mod cli_contract;
 pub mod codegen;
 pub mod conformance;
+pub mod const_eval;
 pub mod context_query;
 pub mod contracts;
 pub mod daemon;
