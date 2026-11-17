@@ -13,7 +13,8 @@ openssl req \
   -out "$PGDATA/server.crt" \
   -days 365 \
   -nodes \
-  -subj "/CN=localhost"
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost"
 
 chmod 600 "$PGDATA/server.key"
 chmod 644 "$PGDATA/server.crt"

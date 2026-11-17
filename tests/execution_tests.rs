@@ -268,27 +268,42 @@ fn openssl_cli_available_for_tests() -> bool {
         .unwrap_or(false)
 }
 
+/// Self-signed certificate for `localhost` with `subjectAltName=DNS:localhost`.
+/// The runtime matches host names against subjectAltName only, so the SAN is required.
 fn generate_local_tls_cert(root: &Path) {
+    generate_local_tls_cert_with(root, "/CN=localhost", Some("DNS:localhost"));
+}
+
+/// Writes `tls_cert.pem` and `tls_key.pem` into `root`. `san` is the value of the
+/// `subjectAltName` extension, or `None` for a certificate without one.
+fn generate_local_tls_cert_with(root: &Path, subject: &str, san: Option<&str>) {
     let cert_path = root.join("tls_cert.pem");
     let key_path = root.join("tls_key.pem");
+    let mut args = vec![
+        "req".to_string(),
+        "-x509".to_string(),
+        "-newkey".to_string(),
+        "rsa:2048".to_string(),
+        "-sha256".to_string(),
+        "-nodes".to_string(),
+        "-days".to_string(),
+        "8".to_string(),
+        "-subj".to_string(),
+        subject.to_string(),
+    ];
+    if let Some(san) = san {
+        args.push("-addext".to_string());
+        args.push(format!("subjectAltName={san}"));
+    }
+    args.extend([
+        "-keyout".to_string(),
+        key_path.to_str().expect("key path").to_string(),
+        "-out".to_string(),
+        cert_path.to_str().expect("cert path").to_string(),
+    ]);
     let req_status = Command::new("openssl")
         .current_dir(root)
-        .args([
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-sha256",
-            "-nodes",
-            "-days",
-            "8",
-            "-subj",
-            "/CN=localhost",
-            "-keyout",
-            key_path.to_str().expect("key path"),
-            "-out",
-            cert_path.to_str().expect("cert path"),
-        ])
+        .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -16553,6 +16568,117 @@ fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
     } else {
         assert_eq!(stdout, "43\n", "stderr={stderr}");
     }
+}
+
+/// Connects three times to a local `openssl s_server` that serves a certificate
+/// built from `subject` and `san`, and prints `a * 100 + b * 10 + c`, where each
+/// digit is 0 for a successful handshake or the `TlsError` code otherwise:
+/// a = verified connect to `localhost`, b = verified connect to `other.invalid`,
+/// c = unverified connect. The CA file is the server certificate itself.
+fn run_tls_hostname_verification_probe(subject: &str, san: Option<&str>) -> Option<String> {
+    if !(tls_backend_enabled_for_tests() && openssl_cli_available_for_tests()) {
+        return None;
+    }
+
+    let src = r#"
+import std.io;
+import std.tls;
+import std.env;
+
+fn read_env_or(key: String, fallback: String) -> String effects { env } capabilities { env } {
+    match env.get(key) {
+        Ok(value) => value,
+        Err(_) => fallback,
+    }
+}
+
+fn none_string() -> Option[String] {
+    None()
+}
+
+fn tls_code(err: TlsError) -> Int {
+    match err {
+        HandshakeFailed => 1,
+        CertificateInvalid => 2,
+        CertificateExpired => 3,
+        HostnameMismatch => 4,
+        ProtocolError => 5,
+        ConnectionClosed => 6,
+        Io => 7,
+        Timeout => 8,
+        Cancelled => 9,
+    }
+}
+
+fn connect_code(addr: String, verify: Bool, ca_path: String, host: String) -> Int effects { net } capabilities { net } {
+    let cfg = TlsConfig {
+        verify_server: verify,
+        ca_cert_path: Some(ca_path),
+        client_cert_path: none_string(),
+        client_key_path: none_string(),
+        server_name: Some(host),
+    };
+    match tls_connect_addr(addr, cfg, 5000) {
+        Ok(stream) => match tls_close(stream) {
+            Ok(_) => 0,
+            Err(err) => tls_code(err),
+        },
+        Err(err) => tls_code(err),
+    }
+}
+
+fn main() -> Int effects { io, net, env } capabilities { io, net, env } {
+    let addr = read_env_or("AIC_TLS_ADDR", "127.0.0.1:65535");
+    let ca_path = read_env_or("AIC_TLS_CA_PATH", "tls_cert.pem");
+    let a = connect_code(addr, true, ca_path, "localhost");
+    let b = connect_code(addr, true, ca_path, "other.invalid");
+    let c = connect_code(addr, false, ca_path, "localhost");
+    print_int(a * 100 + b * 10 + c);
+    0
+}
+"#;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind tls probe listener");
+    let port = listener.local_addr().expect("listener addr").port();
+    drop(listener);
+
+    let addr_env = format!("127.0.0.1:{port}");
+    let envs = [
+        ("AIC_TLS_ADDR", addr_env.as_str()),
+        ("AIC_TLS_CA_PATH", "tls_cert.pem"),
+    ];
+    let (code, stdout, stderr) =
+        compile_and_run_with_server_setup_and_args_and_input_and_env(src, &[], "", &envs, |root| {
+            generate_local_tls_cert_with(root, subject, san);
+            let mut server = spawn_local_tls_server(root, port, true);
+            wait_for_local_tls_server(port, &mut server);
+            Some(server)
+        });
+    assert_eq!(code, 0, "stderr={stderr}");
+    Some(stdout)
+}
+
+#[test]
+fn exec_tls_hostname_verification_ignores_subject_cn_without_san() {
+    // A certificate whose only identity is the subject CN must not satisfy the
+    // host name check. OpenSSL 3.x would accept it by default and OpenSSL 4.1
+    // would not; the runtime sets X509_CHECK_FLAG_NEVER_CHECK_SUBJECT so both
+    // versions reject it with HostnameMismatch.
+    let Some(stdout) = run_tls_hostname_verification_probe("/CN=localhost", None) else {
+        return;
+    };
+    assert_eq!(stdout, "440\n");
+}
+
+#[test]
+fn exec_tls_hostname_verification_matches_subject_alt_name() {
+    // The CN does not name the host; only the DNS subjectAltName does.
+    let Some(stdout) =
+        run_tls_hostname_verification_probe("/CN=aic-test-server", Some("DNS:localhost"))
+    else {
+        return;
+    };
+    assert_eq!(stdout, "40\n");
 }
 
 #[test]

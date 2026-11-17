@@ -51,6 +51,7 @@ Use this when building CLI tools, network services, scheduled jobs, and concurre
 - Windows `std.net` typed fallback contract: unsupported socket-option paths return `NetError::Io`; invalid-handle/type misuse remains `NetError::InvalidInput`; peer-close still surfaces `NetError::ConnectionClosed`.
 - Windows: `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`; branch on typed errors instead of assuming success.
 - `std.tls` is supported on builds that compile the OpenSSL-backed TLS runtime; on builds without TLS backend support, `std.tls` APIs return typed `TlsError::ProtocolError`.
+- Supported OpenSSL versions are 3.x and 4.x (found through `pkg-config openssl`). Host name verification matches `subjectAltName` DNS entries only, never the subject CN, on both versions. See `docs/std-api/tls.md` ("OpenSSL Versions and Host Name Verification").
 - On supported TLS builds, async pressure snapshots report occupied-slot depth and configured slot limit rather than a separate reactor queue.
 - Windows and other non-Linux/macOS targets: `std.signal` returns `SignalError::UnsupportedPlatform`.
 - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.

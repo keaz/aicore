@@ -5727,6 +5727,12 @@ static int64_t aic_rt_tls_connect_core(
                 result = 5;
                 goto cleanup;
             }
+            /* Match the host against subjectAltName only (RFC 6125). OpenSSL 3.x
+               falls back to the subject CN when the certificate has no DNS SAN;
+               OpenSSL 4.1 does not. The flag gives one behavior on both. */
+#ifdef X509_CHECK_FLAG_NEVER_CHECK_SUBJECT
+            X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NEVER_CHECK_SUBJECT);
+#endif
         }
 #endif
     }

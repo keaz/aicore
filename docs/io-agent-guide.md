@@ -58,6 +58,7 @@ Treat error enums as control-flow boundaries, not exceptions.
   - Unsupported socket-option paths return `NetError::Io`; invalid-handle/type misuse remains `NetError::InvalidInput`.
   - `std.proc` operations can still surface `ProcError::Io` and `ProcError::UnknownProcess`.
   - `std.tls` is supported on builds that compile the OpenSSL-backed TLS runtime; builds without TLS backend support return typed `TlsError::ProtocolError`.
+  - Supported OpenSSL versions are 3.x and 4.x. Host name checks use `subjectAltName` DNS entries only, so a CN-only certificate fails with `TlsError::HostnameMismatch`; generate test certificates with `-addext subjectAltName=DNS:<host>` (see `docs/std-api/tls.md`).
   - On supported TLS builds, async TLS APIs are fully surfaced, and `tls_async_runtime_pressure` reports occupied-slot depth and configured slot limit rather than a reactor queue.
   - `std.signal` remains unsupported and returns `SignalError::UnsupportedPlatform`.
   - `std.http_server` and `std.router` are synchronous control-plane APIs and are exercised through the current REST examples rather than network mocks.

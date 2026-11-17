@@ -266,6 +266,34 @@ fn main() -> Int effects { net } capabilities { net } {
 }
 ```
 
+## OpenSSL Versions and Host Name Verification
+
+The TLS runtime is built against the OpenSSL that `pkg-config openssl` reports when `aic` compiles a program. Without it, `std.tls` APIs return `TlsError::ProtocolError`.
+
+| OpenSSL | Status | Evidence |
+|---|---|---|
+| 3.x | Supported | CI (`ubuntu-latest`, distro `libssl-dev`; 3.5 when #503 was fixed) and a local macOS run against Homebrew `openssl@3` 3.5.9 |
+| 4.x | Supported | Local macOS run against Homebrew `openssl` 4.1.0 |
+| 1.1.1 and older | Not tested | |
+
+CI does not pin an OpenSSL version: each runner uses the OpenSSL its image provides. To test a specific version locally, point `pkg-config` and `PATH` at it, for example with Homebrew:
+
+```bash
+O3=$(brew --prefix openssl@3)
+PATH="$O3/bin:$PATH" PKG_CONFIG_PATH="$O3/lib/pkgconfig" \
+  RUST_MIN_STACK=33554432 cargo test --locked --test execution_tests -- --test-threads=1 tls
+```
+
+With `verify_server: true` and a server name (`server_name`, or the `hostname` argument of `tls_connect`/`tls_upgrade`), the host name is matched against the certificate's `subjectAltName` DNS entries only (RFC 6125). The subject common name (CN) is never used, on any OpenSSL version. OpenSSL 3.x would fall back to the CN when a certificate has no DNS `subjectAltName`, and OpenSSL 4.1 stopped doing that, so the runtime sets `X509_CHECK_FLAG_NEVER_CHECK_SUBJECT` to give the same result on both. A certificate whose only identity is the CN fails with `TlsError::HostnameMismatch`.
+
+Certificates for local testing therefore need a `subjectAltName`:
+
+```bash
+openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 8 \
+  -subj /CN=localhost -addext subjectAltName=DNS:localhost \
+  -keyout tls_key.pem -out tls_cert.pem
+```
+
 ## Operational Notes
 
 - `default_tls_config()` is secure-by-default (`verify_server: true`).

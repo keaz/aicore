@@ -793,6 +793,7 @@ Notes:
 - Machine-readable policy contract: `docs/security-ops/tls-policy.v1.json`.
 - `tls_connect_with_config` upgrades an existing TCP connection handle using `config.server_name` when provided.
 - `tls_connect` / `tls_upgrade` are explicit hostname-aware wrappers for StartTLS-style upgrades over existing TCP handles.
+- With `verify_server: true`, the host name is matched against `subjectAltName` DNS entries only, never the subject CN, on OpenSSL 3.x and 4.x alike; a CN-only certificate fails with `TlsError::HostnameMismatch`. Supported OpenSSL versions: see `docs/std-api/tls.md`.
 - `tls_connect_addr` performs TCP connect + TLS handshake in one call.
 - `tls_accept` / `tls_accept_timeout` provide server-side TLS wrapping over listener handles.
 - `tls_send_bytes` / `tls_recv_bytes` are the stable binary payload APIs for protocol clients.
