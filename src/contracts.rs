@@ -1321,7 +1321,7 @@ fn eval_const(expr: &ir::Expr) -> Option<Value> {
         ir::ExprKind::Unary { op, expr } => {
             let v = eval_const(expr)?;
             match (op, v) {
-                (UnaryOp::Neg, Value::Int(i)) => Some(Value::Int(-i)),
+                (UnaryOp::Neg, Value::Int(i)) => i.checked_neg().map(Value::Int),
                 (UnaryOp::Not, Value::Bool(b)) => Some(Value::Bool(!b)),
                 _ => None,
             }
@@ -1330,11 +1330,13 @@ fn eval_const(expr: &ir::Expr) -> Option<Value> {
             let l = eval_const(lhs)?;
             let r = eval_const(rhs)?;
             match (op, l, r) {
-                (BinOp::Add, Value::Int(a), Value::Int(b)) => Some(Value::Int(a + b)),
-                (BinOp::Sub, Value::Int(a), Value::Int(b)) => Some(Value::Int(a - b)),
-                (BinOp::Mul, Value::Int(a), Value::Int(b)) => Some(Value::Int(a * b)),
-                (BinOp::Div, Value::Int(a), Value::Int(b)) => Some(Value::Int(a / b)),
-                (BinOp::Mod, Value::Int(a), Value::Int(b)) => Some(Value::Int(a % b)),
+                // An operation that overflows or divides by zero traps at
+                // run time, so it has no constant value.
+                (BinOp::Add, Value::Int(a), Value::Int(b)) => a.checked_add(b).map(Value::Int),
+                (BinOp::Sub, Value::Int(a), Value::Int(b)) => a.checked_sub(b).map(Value::Int),
+                (BinOp::Mul, Value::Int(a), Value::Int(b)) => a.checked_mul(b).map(Value::Int),
+                (BinOp::Div, Value::Int(a), Value::Int(b)) => a.checked_div(b).map(Value::Int),
+                (BinOp::Mod, Value::Int(a), Value::Int(b)) => a.checked_rem(b).map(Value::Int),
                 (BinOp::Eq, Value::Int(a), Value::Int(b)) => Some(Value::Bool(a == b)),
                 (BinOp::Eq, Value::Bool(a), Value::Bool(b)) => Some(Value::Bool(a == b)),
                 (BinOp::Ne, Value::Int(a), Value::Int(b)) => Some(Value::Bool(a != b)),

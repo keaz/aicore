@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::{
-    emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
+    add_library_panic_fallback, emit_llvm, emit_llvm_with_options, ensure_supported_toolchain,
     ensure_supported_toolchain_with_pin, instrument_llvm_for_leak_tracking, normalize_macos_uuid,
     parse_llvm_major, rewrite_wasm_entry_wrapper, runtime_c_source, runtime_compile_flags,
     target_is_linux, target_is_wasm, CodegenOptions, CompileOptions, OptimizationLevel,
@@ -2911,6 +2911,177 @@ fn main() -> Int { 0 }
         "integer_overflow{op:div,type:Int}: Int division overflows (-9223372036854775808 / -1)"
     ));
     assert!(llvm.contains("division_by_zero{op:div,type:UInt32}"));
+}
+
+#[test]
+fn integer_arithmetic_uses_overflow_intrinsics_on_every_width() {
+    let widths = [
+        ("Int", "i64", "s"),
+        ("Int8", "i8", "s"),
+        ("Int16", "i16", "s"),
+        ("Int32", "i32", "s"),
+        ("Int64", "i64", "s"),
+        ("Int128", "i128", "s"),
+        ("ISize", "i64", "s"),
+        ("UInt8", "i8", "u"),
+        ("UInt16", "i16", "u"),
+        ("UInt32", "i32", "u"),
+        ("UInt64", "i64", "u"),
+        ("UInt128", "i128", "u"),
+        ("USize", "i64", "u"),
+    ];
+    let mut src = String::new();
+    for (idx, (ty, _, _)) in widths.iter().enumerate() {
+        src.push_str(&format!(
+            "fn add{idx}(a: {ty}, b: {ty}) -> {ty} {{ a + b }}\n\
+             fn sub{idx}(a: {ty}, b: {ty}) -> {ty} {{ a - b }}\n\
+             fn mul{idx}(a: {ty}, b: {ty}) -> {ty} {{ a * b }}\n"
+        ));
+    }
+    src.push_str("fn neg(a: Int16) -> Int16 { -a }\nfn main() -> Int { 0 }\n");
+    let (program, diags) = parse(&src, "overflow_widths.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let lowered = lower_runtime_asserts(&build(&program.expect("program")));
+    let output = emit_llvm(&lowered, "overflow_widths.aic").expect("llvm");
+    let llvm = &output.llvm_ir;
+    for (idx, (ty, llvm_ty, sign)) in widths.iter().enumerate() {
+        for (op, noun) in [
+            ("add", "addition"),
+            ("sub", "subtraction"),
+            ("mul", "multiplication"),
+        ] {
+            let body = llvm_function_body(llvm, &format!("aic_{op}{idx}"));
+            let intrinsic = format!("@llvm.{sign}{op}.with.overflow.{llvm_ty}(");
+            assert!(body.contains(&intrinsic), "{ty} {op}: {body}");
+            assert_eq!(body.matches("\nint_overflow").count(), 1, "{ty} {op}");
+            assert!(
+                llvm.contains(&format!(
+                    "integer_overflow{{op:{op},type:{ty}}}: {ty} {noun} overflows"
+                )),
+                "{ty} {op} panic message"
+            );
+            assert!(llvm.contains(&format!("declare {{{llvm_ty}, i1}} {intrinsic}")));
+        }
+    }
+    let neg = llvm_function_body(llvm, "aic_neg");
+    assert!(
+        neg.contains("@llvm.ssub.with.overflow.i16(i16 0, "),
+        "{neg}"
+    );
+    assert!(llvm.contains("integer_overflow{op:neg,type:Int16}: Int16 negation overflows"));
+}
+
+#[test]
+fn negated_literals_at_the_minimum_are_constants() {
+    let src = r#"
+fn min8() -> Int8 { -128i8 }
+fn min16() -> Int16 { -32768i16 }
+fn min32() -> Int32 { -2147483648i32 }
+fn min64() -> Int { -9223372036854775807 - 1 }
+fn untyped8() -> Int8 { -128 }
+fn neg_var(a: Int8) -> Int8 { -a }
+fn main() -> Int { 0 }
+"#;
+    let (program, diags) = parse(src, "negated_literals.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let lowered = lower_runtime_asserts(&build(&program.expect("program")));
+    let output = emit_llvm(&lowered, "negated_literals.aic").expect("llvm");
+    let llvm = &output.llvm_ir;
+    for (name, constant) in [
+        ("aic_min8", "i8 -128"),
+        ("aic_min16", "i16 -32768"),
+        ("aic_min32", "i32 -2147483648"),
+        ("aic_untyped8", " -128"),
+    ] {
+        let body = llvm_function_body(llvm, name);
+        assert!(body.contains(constant), "{name}: {body}");
+        assert!(!body.contains("with.overflow"), "{name}: {body}");
+        assert!(!body.contains("int_overflow"), "{name}: {body}");
+    }
+    let var = llvm_function_body(llvm, "aic_neg_var");
+    assert!(var.contains("@llvm.ssub.with.overflow.i8(i8 0, "), "{var}");
+}
+
+#[test]
+fn library_artifacts_get_a_weak_panic_fallback() {
+    let ir = "declare void @aic_rt_panic(i8*, i64, i64, i64, i64)\n\
+              define i64 @aic_f() {\n  call void @aic_rt_panic(i8* null, i64 0, i64 0, i64 1, i64 2)\n  unreachable\n}\n";
+    let unix = add_library_panic_fallback(ir, false);
+    assert!(!unix.contains("declare void @aic_rt_panic("), "{unix}");
+    assert!(unix.contains(
+        "define weak void @aic_rt_panic(i8* %ptr, i64 %len, i64 %cap, i64 %line, i64 %column)"
+    ));
+    assert!(unix.contains("declare i64 @write(i32, i8*, i64)"));
+    assert!(unix.contains("declare void @exit(i32)"));
+    assert!(unix.contains("define i64 @aic_f()"));
+    let windows = add_library_panic_fallback(ir, true);
+    assert!(windows.contains("declare i32 @_write(i32, i8*, i32)"));
+    assert!(!windows.contains("@write("));
+
+    // A module that never panics is left alone.
+    let quiet = "declare void @aic_rt_panic(i8*, i64, i64, i64, i64)\ndefine i64 @aic_g() {\n  ret i64 0\n}\n";
+    assert_eq!(add_library_panic_fallback(quiet, false), quiet);
+
+    // An existing declaration of `exit` is reused, not redeclared.
+    let with_exit = format!("{ir}declare void @exit(i32)\n");
+    let reused = add_library_panic_fallback(&with_exit, false);
+    assert_eq!(
+        reused.matches("declare void @exit(i32)").count(),
+        1,
+        "{reused}"
+    );
+}
+
+#[test]
+fn overflow_checks_are_skipped_only_when_ranges_prove_them_safe() {
+    let src = r#"
+fn unknown(a: Int, b: Int) -> Int { a * b + 1 }
+fn bounded(n: Int) -> Int requires n >= 0 && n <= 1000000 { n * n + n }
+fn half_bounded(n: Int) -> Int requires n >= 0 { n + 1 }
+fn rebound(n: Int) -> Int requires n >= 0 && n <= 1000 { let n = n * 2; n * n }
+fn bytes(a: UInt8, b: UInt8) -> Int { let x = a as Int; let y = b as Int; x * y + 1 }
+fn mutable_let(a: UInt8) -> Int { let mut x = a as Int; x = 9223372036854775807; x + 1 }
+fn shadowed_let(a: UInt8, b: Int) -> Int { let x = a as Int; let y = { let x = b; x }; x * 2 + y }
+fn narrow(a: UInt8, b: UInt8) -> UInt8 { a + b }
+fn masked(a: Int) -> Int { (a & 255) * 3 - (a % 10) }
+fn literals() -> Int { 2 * 3 + 4 }
+fn negated(n: Int) -> Int requires n <= 0 && n >= -100 { -n }
+fn negated_unknown(n: Int) -> Int { -n }
+fn compound(n: Int) -> Int requires n >= 0 && n <= 10 { let mut x = 0; x += n; x * 2 }
+fn compound_param(n: Int) -> Int requires n >= 0 && n <= 10 { let mut acc = n; acc += 1; acc }
+fn wide(a: Int128) -> Int128 requires a >= 0 && a <= 10 { a + 1 }
+
+fn main() -> Int { 0 }
+"#;
+    let (program, diags) = parse(src, "overflow_facts.aic");
+    assert!(diags.is_empty(), "parse diagnostics={diags:#?}");
+    let lowered = lower_runtime_asserts(&build(&program.expect("program")));
+    let output = emit_llvm(&lowered, "overflow_facts.aic").expect("llvm");
+    let llvm = &output.llvm_ir;
+    let checks = |name: &str| {
+        llvm_function_body(llvm, &format!("aic_{name}"))
+            .matches("\nint_overflow")
+            .count()
+    };
+    assert_eq!(checks("unknown"), 2);
+    assert_eq!(checks("bounded"), 0);
+    assert!(llvm_function_body(llvm, "aic_bounded").contains("mul nsw i64"));
+    assert_eq!(checks("half_bounded"), 1);
+    assert_eq!(checks("rebound"), 2);
+    assert_eq!(checks("bytes"), 0);
+    assert_eq!(checks("mutable_let"), 1);
+    // The outer `x` keeps its byte range; only `+ y` needs a check.
+    assert_eq!(checks("shadowed_let"), 1);
+    assert_eq!(checks("narrow"), 1);
+    assert_eq!(checks("masked"), 0);
+    assert_eq!(checks("literals"), 0);
+    assert_eq!(checks("negated"), 0);
+    assert_eq!(checks("negated_unknown"), 1);
+    // `x` is a mutable local with no range beyond its type; `n` is bounded.
+    assert_eq!(checks("compound"), 2);
+    // `acc` starts from `n` but is reassigned, so only its type is known.
+    assert_eq!(checks("compound_param"), 1);
+    assert_eq!(checks("wide"), 1);
 }
 
 #[test]

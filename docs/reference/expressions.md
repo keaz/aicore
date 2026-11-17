@@ -96,6 +96,7 @@ octal_int      = ("0o" | "0O") ("0".."7" | "_")+ ;
 - Arithmetic:
   - `+ - * /` require matching numeric operands (`Int` with `Int`, or `Float` with `Float`)
   - `%` requires `Int` operands
+  - Integer `+`, `-`, `*`, unary `-` and their compound forms panic with `integer_overflow{op:<add|sub|mul|neg>,type:<T>}: <T> <operation> overflows` when the result does not fit the type; literal-only operations that always overflow are `E1320`. `x.wrapping_add(y)`, `x.checked_add(y)` (`Option[T]`), `x.saturating_add(y)` and the `sub`/`mul`/`neg` (and `checked_div`/`checked_rem`) variants choose another policy (misuse is `E1321`). Details, the checks the compiler removes, and shifts: [Integer Arithmetic and Overflow](./integer-arithmetic.md).
   - Integer division and remainder are defined on every platform and for every integer width:
     - `/` truncates toward zero; `%` has the sign of the dividend (`-7 / 2 == -3`, `-7 % 2 == -1`)
     - a zero divisor panics with `division_by_zero{op:div,type:<T>}: integer division by zero` (`op:rem` and `integer remainder by zero` for `%`)

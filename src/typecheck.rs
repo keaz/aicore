@@ -339,6 +339,9 @@ struct Checker<'a> {
     current_function_generics: BTreeSet<String>,
     current_function_ret_type: Option<String>,
     unsafe_depth: usize,
+    // Set while checking a const initializer or field default; their
+    // overflow is reported by the const evaluator (E1317), not E1320.
+    in_compile_time_expr: bool,
     instantiation_seen: BTreeMap<String, PendingInstantiation>,
     mangled_keys: BTreeMap<String, String>,
     enforce_import_visibility: bool,
@@ -941,6 +944,7 @@ impl<'a> Checker<'a> {
             current_function_generics: BTreeSet::new(),
             current_function_ret_type: None,
             unsafe_depth: 0,
+            in_compile_time_expr: false,
             instantiation_seen: BTreeMap::new(),
             mangled_keys: BTreeMap::new(),
             enforce_import_visibility: false,
@@ -2312,6 +2316,7 @@ impl<'a> Checker<'a> {
 
         let mut locals = BTreeMap::new();
         let mut ctx = ExprContext::default();
+        self.in_compile_time_expr = true;
         let expr_ty = self.check_expr_with_expected(
             expr,
             &mut locals,
@@ -2320,6 +2325,7 @@ impl<'a> Checker<'a> {
             true,
             Some(&declared_ty),
         );
+        self.in_compile_time_expr = false;
         if !self.types_compatible(&declared_ty, &expr_ty) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -5365,6 +5371,7 @@ impl<'a> Checker<'a> {
 
                 let mut locals = BTreeMap::new();
                 let mut ctx = ExprContext::default();
+                self.in_compile_time_expr = true;
                 let default_ty = self.check_expr_with_expected(
                     default_expr,
                     &mut locals,
@@ -5373,6 +5380,7 @@ impl<'a> Checker<'a> {
                     true,
                     Some(&ty),
                 );
+                self.in_compile_time_expr = false;
                 if contains_unresolved_type(&ty) {
                     self.observe_struct_field_hole(&strukt.name, &field.name, &default_ty);
                 }
@@ -8420,7 +8428,9 @@ impl<'a> Checker<'a> {
                         right_ty = refined;
                     }
                 }
-                self.check_binary(*op, &left_ty, &right_ty, expr.span)
+                let ty = self.check_binary(*op, &left_ty, &right_ty, expr.span);
+                self.check_constant_arithmetic_overflow(expr, *op, lhs, rhs, &ty);
+                ty
             }
             ir::ExprKind::Unary { op, expr: inner } => {
                 if matches!(op, crate::ast::UnaryOp::Neg) {
@@ -9620,6 +9630,19 @@ impl<'a> Checker<'a> {
         {
             return ty;
         }
+        if let Some(ty) = self.check_integer_arithmetic_method(
+            base,
+            field,
+            args,
+            &receiver_ty,
+            call_expr,
+            locals,
+            allowed_effects,
+            ctx,
+            contract_mode,
+        ) {
+            return ty;
+        }
         if let Some(ty) = self.check_std_method_call(
             base,
             field,
@@ -10428,6 +10451,51 @@ impl<'a> Checker<'a> {
                 self.check_generic_arity(&arg, span);
             }
         }
+    }
+
+    /// E1320: integer `+`, `-`, `*` or `/` whose operands are literals and
+    /// whose exact result does not fit the result type (`200u8 + 100`). The
+    /// operation would trap on every run. An operand that already overflows
+    /// on its own is reported once, at that operand.
+    fn check_constant_arithmetic_overflow(
+        &mut self,
+        expr: &ir::Expr,
+        op: BinOp,
+        lhs: &ir::Expr,
+        rhs: &ir::Expr,
+        result_ty: &str,
+    ) {
+        use crate::const_eval::{self, IntKind, LiteralArith};
+        if self.in_compile_time_expr
+            || !matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div)
+            || !is_integer_literal_expr(lhs)
+            || !is_integer_literal_expr(rhs)
+        {
+            return;
+        }
+        let result_norm = self.normalize_type(result_ty);
+        let Some(kind) = IntKind::from_type_name(&result_norm) else {
+            return;
+        };
+        if const_eval::literal_binary_overflow(op, lhs, rhs, kind) != LiteralArith::Overflows {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E1320",
+                format!(
+                    "integer '{}' on constant operands always overflows '{}' (range {})",
+                    const_eval::binary_op_symbol(op),
+                    result_norm,
+                    kind.range_text()
+                ),
+                self.file,
+                expr.span,
+            )
+            .with_help(
+                "use a wider integer type, or `wrapping_*`, `checked_*` or `saturating_*` for the intended overflow behavior",
+            ),
+        );
     }
 
     fn check_binary(&mut self, op: BinOp, lhs: &str, rhs: &str, span: crate::span::Span) -> String {
@@ -12585,6 +12653,137 @@ impl<'a> Checker<'a> {
         })
     }
 
+    /// Explicit integer arithmetic methods: `x.wrapping_add(y)`,
+    /// `x.checked_mul(y)` (`Option[T]`), `x.saturating_sub(y)`,
+    /// `x.wrapping_neg()`, ... The operand has the receiver's type. They are
+    /// recorded as `$arith:<method>:<T>(x[, y])` for codegen. Misuse (a
+    /// non-integer receiver, an operation the mode does not offer, an operand
+    /// of another type) is E1321.
+    #[allow(clippy::too_many_arguments)]
+    fn check_integer_arithmetic_method(
+        &mut self,
+        base: &ir::Expr,
+        field: &str,
+        args: &[ir::Expr],
+        receiver_ty: &str,
+        call_expr: &ir::Expr,
+        locals: &mut BTreeMap<String, String>,
+        allowed_effects: &BTreeSet<String>,
+        ctx: &mut ExprContext,
+        contract_mode: bool,
+    ) -> Option<String> {
+        let (mode, op) = field.split_once('_')?;
+        if !matches!(mode, "wrapping" | "checked" | "saturating")
+            || !matches!(op, "add" | "sub" | "mul" | "div" | "rem" | "neg")
+        {
+            return None;
+        }
+        let receiver = self.normalize_type(receiver_ty);
+        let kind = numeric_kind(&receiver)?;
+        let signed = matches!(kind, NumericKind::Integer { signed: true, .. });
+        // Errors still give the method's result type so they do not cascade.
+        let result_ty = if mode == "checked" {
+            format!("Option[{receiver}]")
+        } else {
+            receiver.clone()
+        };
+        let problem = if kind.is_float() {
+            Some(format!(
+                "'{field}' is an integer method; '{receiver_ty}' is a float type and its arithmetic does not overflow"
+            ))
+        } else {
+            match (mode, op) {
+                ("wrapping", "div" | "rem") | ("saturating", "div" | "rem") => Some(format!(
+                    "'{mode}_{op}' does not exist; use 'checked_{op}' (Option) or the '{}' operator",
+                    if op == "div" { "/" } else { "%" }
+                )),
+                ("saturating", "neg") if !signed => Some(format!(
+                    "'saturating_neg' needs a signed type, found '{receiver_ty}'"
+                )),
+                _ => None,
+            }
+        };
+        if let Some(problem) = problem {
+            self.diagnostics.push(Diagnostic::error(
+                "E1321",
+                format!("invalid integer arithmetic method call: {problem}"),
+                self.file,
+                call_expr.span,
+            ));
+            return Some(result_ty);
+        }
+        let arity = if op == "neg" { 0 } else { 1 };
+        if args.len() != arity {
+            self.diagnostics.push(Diagnostic::error(
+                "E1213",
+                format!(
+                    "integer arithmetic method '{field}' takes {arity} argument{}, found {}",
+                    if arity == 1 { "" } else { "s" },
+                    args.len()
+                ),
+                self.file,
+                call_expr.span,
+            ));
+            return Some(result_ty);
+        }
+        if let Some(arg) = args.first() {
+            let arg_ty = self.check_expr_with_expected(
+                arg,
+                locals,
+                allowed_effects,
+                ctx,
+                contract_mode,
+                Some(&receiver),
+            );
+            let arg_norm = self.normalize_type(&arg_ty);
+            let same_kind = match (parse_integer_kind(&arg_norm), parse_integer_kind(&receiver)) {
+                (Some(a), Some(b)) => integer_kinds_match_exact(a, b),
+                _ => false,
+            };
+            if !contains_unresolved_type(&arg_norm) && !same_kind {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E1321",
+                        format!(
+                            "invalid integer arithmetic method call: '{field}' on '{receiver_ty}' needs a '{receiver_ty}' operand, found '{arg_ty}'"
+                        ),
+                        self.file,
+                        arg.span,
+                    )
+                    .with_help(format!(
+                        "convert the operand to '{receiver}' first: `as {receiver}` widens losslessly, `.checked_to_{}()` narrows",
+                        numeric_method_suffix(&receiver).unwrap_or("int")
+                    )),
+                );
+                return Some(result_ty);
+            }
+        }
+        let callee = self.synthetic_expr(
+            ir::ExprKind::Var(format!(
+                "{}{field}:{receiver}",
+                crate::ast::ARITH_BUILTIN_PREFIX
+            )),
+            call_expr.span,
+        );
+        let mut call_args = vec![base.clone()];
+        call_args.extend(args.iter().cloned());
+        self.expr_rewrites.insert(
+            call_expr.node,
+            ir::Expr {
+                node: call_expr.node,
+                kind: ir::ExprKind::Call {
+                    callee: Box::new(callee),
+                    args: call_args,
+                    arg_names: Vec::new(),
+                    type_args: Vec::new(),
+                    symbol: None,
+                },
+                span: call_expr.span,
+            },
+        );
+        Some(result_ty)
+    }
+
     /// `lo..=hi`, `lo..hi`, `lo..`, `..=hi`: integer bounds for an integer
     /// scrutinee (each within its range), char bounds for `Char`, and a
     /// range that contains at least one value (E1309).
@@ -14217,6 +14416,23 @@ fn merge_types(a: &str, b: &str) -> String {
     }
 
     "<?>".to_string()
+}
+
+/// An integer literal, or `+ - * /` and unary `-` over integer literals.
+fn is_integer_literal_expr(expr: &ir::Expr) -> bool {
+    match &expr.kind {
+        ir::ExprKind::Int(..) => true,
+        ir::ExprKind::Unary {
+            op: crate::ast::UnaryOp::Neg,
+            expr,
+        } => is_integer_literal_expr(expr),
+        ir::ExprKind::Binary { op, lhs, rhs } => {
+            matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div)
+                && is_integer_literal_expr(lhs)
+                && is_integer_literal_expr(rhs)
+        }
+        _ => false,
+    }
 }
 
 fn parse_integer_kind(ty: &str) -> Option<IntegerKind> {
@@ -17869,6 +18085,158 @@ fn main() -> Int { 0 }
         assert!(
             !codes.is_empty(),
             "checked conversion must not type as UInt8"
+        );
+    }
+
+    #[test]
+    fn integer_arithmetic_methods_are_checked() {
+        let ok = r#"
+fn f(a: Int, b: UInt8, c: Int8, d: UInt128, e: USize) -> Int {
+    let w1: Int = a.wrapping_add(1).wrapping_sub(a).wrapping_mul(3).wrapping_neg();
+    let w2: UInt8 = b.wrapping_add(250).wrapping_neg();
+    let c1: Option[Int] = a.checked_add(1);
+    let c2: Option[UInt8] = b.checked_sub(b);
+    let c3: Option[Int8] = c.checked_mul(c);
+    let c4: Option[Int] = a.checked_div(0);
+    let c5: Option[Int8] = c.checked_rem(-1);
+    let c6: Option[UInt8] = b.checked_neg();
+    let s1: Int8 = c.saturating_add(100).saturating_sub(c).saturating_mul(2).saturating_neg();
+    let s2: UInt128 = d.saturating_mul(d);
+    let s3: USize = e.saturating_sub(e);
+    w1 + (w2 as Int) + (s1 as Int)
+}
+fn main() -> Int { 0 }
+"#;
+        assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+        let cases = [
+            (
+                "fn f(x: Float64) -> Float64 { x.wrapping_add(1.0) }",
+                "E1321",
+            ),
+            (
+                "fn f(x: Float32) -> Float32 { x.saturating_neg() }",
+                "E1321",
+            ),
+            ("fn f(x: Int) -> Int { x.wrapping_div(2) }", "E1321"),
+            ("fn f(x: Int) -> Int { x.saturating_rem(2) }", "E1321"),
+            ("fn f(x: UInt8) -> UInt8 { x.saturating_neg() }", "E1321"),
+            (
+                "fn f(x: UInt8, y: Int) -> UInt8 { x.wrapping_add(y) }",
+                "E1321",
+            ),
+            (
+                "fn f(x: Int, y: Int64) -> Int { x.saturating_mul(y) }",
+                "E1321",
+            ),
+            ("fn f(x: Int) -> Int { x.wrapping_add(true) }", "E1321"),
+            ("fn f(x: Int) -> Int { x.wrapping_add(1, 2) }", "E1213"),
+            ("fn f(x: Int) -> Int { x.wrapping_neg(1) }", "E1213"),
+            ("fn f(x: Int) -> Int { x.saturating_add() }", "E1213"),
+            // `checked_*` returns an Option.
+            ("fn f(x: Int) -> Int { x.checked_add(1) }", "E1202"),
+            // Names outside the family are ordinary unknown methods.
+            ("fn f(x: Int) -> Int { x.wrapping_pow(2) }", "E1228"),
+        ];
+        for (case, code) in cases {
+            let src = format!("{case} fn main() -> Int {{ 0 }}");
+            let codes = error_codes(&src);
+            assert!(codes.contains(&code.to_string()), "{case}: {codes:?}");
+            assert_eq!(codes.len(), 1, "{case} should not cascade: {codes:?}");
+        }
+    }
+
+    #[test]
+    fn constant_arithmetic_that_always_overflows_is_rejected() {
+        let cases = [
+            "fn f() -> UInt8 { 200 + 100 }",
+            "fn f() -> UInt8 { 255u8 + 1 }",
+            "fn f() -> UInt16 { 0u16 - 1 }",
+            "fn f() -> Int8 { 64i8 * 2 }",
+            "fn f() -> Int { 9223372036854775807 + 1 }",
+            "fn f() -> Int { -9223372036854775807 - 2 }",
+            "fn f() -> Int32 { 2147483647i32 * 2 }",
+            "fn f() -> UInt64 { 0u64 - 1 }",
+            "fn f() -> Int64 { (-9223372036854775807i64 - 1) / -1 }",
+            "fn f() -> Int { (4611686018427387904 + 4611686018427387904) * 2 }",
+        ];
+        for case in cases {
+            let src = format!("{case} fn main() -> Int {{ 0 }}");
+            let codes = error_codes(&src);
+            assert_eq!(codes, vec!["E1320".to_string()], "{case}");
+        }
+        let fits = [
+            "fn f() -> UInt8 { 200 + 55 }",
+            "fn f() -> Int8 { -64i8 * 2 }",
+            "fn f() -> Int { 9223372036854775806 + 1 }",
+            "fn f(x: UInt8) -> UInt8 { x + 255 }",
+            // Constants are reported by the const evaluator (E1317) only.
+            "const A: Int = 1; fn f() -> Int { A + 1 }",
+        ];
+        for case in fits {
+            let src = format!("{case} fn main() -> Int {{ 0 }}");
+            assert!(error_codes(&src).is_empty(), "{case}");
+        }
+        let codes = error_codes("const A: Int8 = 100 + 100; fn main() -> Int { 0 }");
+        assert_eq!(codes, vec!["E1317".to_string()]);
+    }
+
+    #[test]
+    fn constant_arithmetic_is_exact_at_the_128_and_64_bit_edges() {
+        // Literals hold at most i64::MAX, so wide values are built from
+        // products. UInt128 values above i128::MAX fit: its range is
+        // 0..=2^128-1.
+        let p96 = "(4294967296u128 * 4294967296u128 * 4294967296u128)";
+        let u128_max = format!("({p96} * 4294967295u128 + ({p96} - 1))");
+        let s96 = "(4294967296i128 * 4294967296i128 * 4294967296i128)";
+        let i128_max = format!("({s96} * 2147483647i128 + ({s96} - 1))");
+        let i128_min = "(-4294967296i128 * 4294967296i128 * 4294967296i128 * 2147483648i128)";
+        let fits = [
+            format!("fn f() -> UInt128 {{ {p96} * 4294967295u128 }}"),
+            format!("fn f() -> UInt128 {{ {u128_max} }}"),
+            format!("fn f() -> UInt128 {{ {u128_max} / 1 }}"),
+            format!("fn f() -> UInt128 {{ {u128_max} - {p96} }}"),
+            format!("fn f() -> Int128 {{ {i128_max} }}"),
+            format!("fn f() -> Int128 {{ {i128_min} }}"),
+            format!("fn f() -> Int128 {{ {i128_min} + 1 }}"),
+            "fn f() -> UInt64 { 4294967295u64 * 4294967297u64 }".to_string(),
+            "fn f() -> Int64 { -9223372036854775807i64 - 1 }".to_string(),
+            "fn f() -> Int8 { -128i8 + 0 }".to_string(),
+            "fn f() -> Int8 { -128i8 / 1 }".to_string(),
+        ];
+        for case in &fits {
+            let src = format!("{case} fn main() -> Int {{ 0 }}");
+            assert!(error_codes(&src).is_empty(), "{case}");
+        }
+        let overflows = [
+            format!("fn f() -> UInt128 {{ {u128_max} + 1 }}"),
+            format!("fn f() -> UInt128 {{ {p96} * 4294967296u128 }}"),
+            "fn f() -> UInt128 { 0u128 - 1 }".to_string(),
+            format!("fn f() -> Int128 {{ {i128_max} + 1 }}"),
+            format!("fn f() -> Int128 {{ {i128_min} - 1 }}"),
+            format!("fn f() -> Int128 {{ {i128_min} / -1 }}"),
+            format!("fn f() -> Int128 {{ {s96} * 2147483648i128 }}"),
+            "fn f() -> UInt64 { 4294967295u64 * 4294967297u64 + 1 }".to_string(),
+            "fn f() -> UInt64 { 4294967296u64 * 4294967296u64 }".to_string(),
+            "fn f() -> Int8 { -128i8 - 1 }".to_string(),
+        ];
+        for case in &overflows {
+            let src = format!("{case} fn main() -> Int {{ 0 }}");
+            assert_eq!(error_codes(&src), vec!["E1320".to_string()], "{case}");
+        }
+        let src =
+            format!("fn f() -> UInt128 {{ {p96} * 4294967296u128 }} fn main() -> Int {{ 0 }}");
+        let (program, _) = parse(&src, "test.aic");
+        let ir = build(&program.expect("program"));
+        let (res, _) = resolve(&ir, "test.aic");
+        let message = check(&ir, &res, "test.aic")
+            .diagnostics
+            .iter()
+            .find(|diag| diag.code == "E1320")
+            .map(|diag| diag.message.clone())
+            .expect("E1320");
+        assert!(
+            message.contains("range 0..=340282366920938463463374607431768211455"),
+            "{message}"
         );
     }
 

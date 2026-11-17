@@ -61,6 +61,24 @@ impl IntKind {
         }
     }
 
+    /// Largest value of the kind as an unsigned number, exact for `UInt128`.
+    fn max_unsigned(self) -> u128 {
+        if !self.signed && self.bits == 128 {
+            u128::MAX
+        } else {
+            self.max() as u128
+        }
+    }
+
+    /// The kind's range as `min..=max` text, with `UInt128`'s true maximum.
+    pub fn range_text(self) -> String {
+        if self.signed {
+            format!("{}..={}", self.min(), self.max())
+        } else {
+            format!("0..={}", self.max_unsigned())
+        }
+    }
+
     pub fn contains(self, value: i128) -> bool {
         value >= self.min() && value <= self.max()
     }
@@ -159,10 +177,9 @@ impl ConstEvalError {
             ConstEvalErrorKind::DivisionByZero => "divides by zero".to_string(),
             ConstEvalErrorKind::ModuloByZero => "computes a modulo by zero".to_string(),
             ConstEvalErrorKind::Overflow { kind } => format!(
-                "overflows '{}' (range {}..={})",
+                "overflows '{}' (range {})",
                 kind.type_name(),
-                kind.min(),
-                kind.max()
+                kind.range_text()
             ),
             ConstEvalErrorKind::ShiftOutOfRange { amount, kind } => format!(
                 "shifts a value of type '{}' by {} bits (allowed 0..{})",
@@ -265,6 +282,146 @@ pub fn eval_expr(
         }
     };
     Ok(Some(value))
+}
+
+/// Outcome of [`literal_binary_overflow`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiteralArith {
+    /// The exact result fits the kind.
+    Fits,
+    /// The operation overflows the kind on every run.
+    Overflows,
+    /// An operand is not integer literal arithmetic, is a literal that does
+    /// not fit the kind on its own, overflows on its own, or divides by zero.
+    /// Those are reported at the operand or by other checks.
+    NotConstant,
+}
+
+/// Whether `lhs op rhs` (`+`, `-`, `*` or `/`), where both operands are
+/// integer literal arithmetic of `kind`, overflows `kind`. Every nested
+/// operation is checked against `kind`, as it is at run time, and a negated
+/// literal is a constant (`-128i8` is `Int8`'s minimum). The evaluation is
+/// exact on every width: unsigned kinds use `u128`, so `UInt128` values above
+/// `i128::MAX` are not mistaken for overflow.
+pub fn literal_binary_overflow(
+    op: BinOp,
+    lhs: &ir::Expr,
+    rhs: &ir::Expr,
+    kind: IntKind,
+) -> LiteralArith {
+    let (Ok(lhs), Ok(rhs)) = (literal_value(lhs, kind), literal_value(rhs, kind)) else {
+        return LiteralArith::NotConstant;
+    };
+    match literal_apply(op, lhs, rhs, kind) {
+        Ok(_) => LiteralArith::Fits,
+        Err(LiteralFail::Overflow) => LiteralArith::Overflows,
+        Err(LiteralFail::NotConstant) => LiteralArith::NotConstant,
+    }
+}
+
+/// An exact integer of a known kind: `i128` holds every signed value and
+/// `u128` every unsigned one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Exact {
+    Signed(i128),
+    Unsigned(u128),
+}
+
+enum LiteralFail {
+    Overflow,
+    NotConstant,
+}
+
+fn literal_magnitude(expr: &ir::Expr) -> Option<u128> {
+    match &expr.kind {
+        ir::ExprKind::Int(value, meta) => match meta {
+            Some(meta) => crate::lexer::parse_int_literal_text(&meta.raw_literal_text),
+            None => u128::try_from(*value).ok(),
+        },
+        _ => None,
+    }
+}
+
+fn literal_value(expr: &ir::Expr, kind: IntKind) -> Result<Exact, LiteralFail> {
+    match &expr.kind {
+        ir::ExprKind::Int(..) => {
+            let magnitude = literal_magnitude(expr).ok_or(LiteralFail::NotConstant)?;
+            if kind.signed {
+                i128::try_from(magnitude)
+                    .ok()
+                    .filter(|value| kind.contains(*value))
+                    .map(Exact::Signed)
+                    .ok_or(LiteralFail::NotConstant)
+            } else if magnitude <= kind.max_unsigned() {
+                Ok(Exact::Unsigned(magnitude))
+            } else {
+                Err(LiteralFail::NotConstant)
+            }
+        }
+        ir::ExprKind::Unary {
+            op: UnaryOp::Neg,
+            expr: inner,
+        } if kind.signed => {
+            if let Some(magnitude) = literal_magnitude(inner) {
+                // `-literal` is a constant, whose magnitude may be one past
+                // the kind's maximum.
+                let min_magnitude = kind.min().unsigned_abs();
+                return if magnitude <= min_magnitude {
+                    Ok(Exact::Signed(0i128.wrapping_sub_unsigned(magnitude)))
+                } else {
+                    Err(LiteralFail::NotConstant)
+                };
+            }
+            match literal_value(inner, kind)? {
+                Exact::Signed(value) => value
+                    .checked_neg()
+                    .filter(|negated| kind.contains(*negated))
+                    .map(Exact::Signed)
+                    .ok_or(LiteralFail::Overflow),
+                Exact::Unsigned(_) => Err(LiteralFail::NotConstant),
+            }
+        }
+        ir::ExprKind::Binary { op, lhs, rhs } => {
+            let lhs = literal_value(lhs, kind)?;
+            let rhs = literal_value(rhs, kind)?;
+            literal_apply(*op, lhs, rhs, kind)
+        }
+        _ => Err(LiteralFail::NotConstant),
+    }
+}
+
+fn literal_apply(op: BinOp, lhs: Exact, rhs: Exact, kind: IntKind) -> Result<Exact, LiteralFail> {
+    match (lhs, rhs) {
+        (Exact::Signed(lhs), Exact::Signed(rhs)) => {
+            let result = match op {
+                BinOp::Add => lhs.checked_add(rhs),
+                BinOp::Sub => lhs.checked_sub(rhs),
+                BinOp::Mul => lhs.checked_mul(rhs),
+                BinOp::Div if rhs == 0 => return Err(LiteralFail::NotConstant),
+                BinOp::Div => lhs.checked_div(rhs),
+                _ => return Err(LiteralFail::NotConstant),
+            };
+            result
+                .filter(|value| kind.contains(*value))
+                .map(Exact::Signed)
+                .ok_or(LiteralFail::Overflow)
+        }
+        (Exact::Unsigned(lhs), Exact::Unsigned(rhs)) => {
+            let result = match op {
+                BinOp::Add => lhs.checked_add(rhs),
+                BinOp::Sub => lhs.checked_sub(rhs),
+                BinOp::Mul => lhs.checked_mul(rhs),
+                BinOp::Div if rhs == 0 => return Err(LiteralFail::NotConstant),
+                BinOp::Div => lhs.checked_div(rhs),
+                _ => return Err(LiteralFail::NotConstant),
+            };
+            result
+                .filter(|value| *value <= kind.max_unsigned())
+                .map(Exact::Unsigned)
+                .ok_or(LiteralFail::Overflow)
+        }
+        _ => Err(LiteralFail::NotConstant),
+    }
 }
 
 /// Gives an untyped integer the kind of its slot and checks that it fits.
@@ -623,6 +780,12 @@ mod tests {
         assert_eq!(ConstValue::int_repr_for_width(u64::MAX as i128, 64), -1);
         assert_eq!(ConstValue::int_repr_for_width(255, 8), -1);
         assert_eq!(ConstValue::int_repr_for_width(127, 8), 127);
+        let u128k = IntKind::from_type_name("UInt128").unwrap();
+        assert_eq!(u128k.range_text(), format!("0..={}", u128::MAX));
+        let i128k = IntKind::from_type_name("Int128").unwrap();
+        assert_eq!(i128k.range_text(), format!("{}..={}", i128::MIN, i128::MAX));
+        assert_eq!(U8.range_text(), "0..=255");
+        assert_eq!(I8.range_text(), "-128..=127");
     }
 
     #[test]

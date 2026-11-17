@@ -513,6 +513,9 @@ pub const CAST_BUILTIN_PREFIX: &str = "$as:";
 /// Prefix of the builtin callee of a numeric conversion method
 /// (`x.checked_to_u8()` is checked as `$convert:checked:UInt8(x)`).
 pub const CONVERT_BUILTIN_PREFIX: &str = "$convert:";
+/// Prefix of the builtin callee of an explicit integer arithmetic method
+/// (`x.wrapping_add(y)` is checked as `$arith:wrapping_add:Int(x, y)`).
+pub const ARITH_BUILTIN_PREFIX: &str = "$arith:";
 
 /// Builtin callees of range expressions: `a..b` is `$range(a, b)`, `a..=b`
 /// is `$range_inclusive(a, b)`, `a..` is `$range_from(a)`, `..b` is

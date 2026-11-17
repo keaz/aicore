@@ -1290,6 +1290,8 @@ impl<'a> Generator<'a> {
             suppress_lifetime_end: false,
             async_poll_ctx: None,
             divisor_facts: divisor_facts::requires_divisor_facts(func),
+            range_facts: overflow_facts::requires_range_facts(func),
+            local_ranges: BTreeMap::new(),
         };
         fctx.lines.push("entry:".to_string());
 
@@ -1604,6 +1606,8 @@ impl<'a> Generator<'a> {
             suppress_lifetime_end: true,
             async_poll_ctx: None,
             divisor_facts: divisor_facts::requires_divisor_facts(func),
+            range_facts: overflow_facts::requires_range_facts(func),
+            local_ranges: BTreeMap::new(),
         };
 
         let frame_ptr = self.new_temp();
@@ -1796,6 +1800,8 @@ impl<'a> Generator<'a> {
             suppress_lifetime_end: true,
             async_poll_ctx: None,
             divisor_facts: BTreeMap::new(),
+            range_facts: BTreeMap::new(),
+            local_ranges: BTreeMap::new(),
         };
 
         let cleanup_done_label = self.new_label("async_drop_cleanup_done");
@@ -1996,6 +2002,8 @@ impl<'a> Generator<'a> {
             suppress_lifetime_end: true,
             async_poll_ctx: None,
             divisor_facts: BTreeMap::new(),
+            range_facts: BTreeMap::new(),
+            local_ranges: BTreeMap::new(),
         };
         for (idx, param) in func.params.iter().enumerate() {
             let Some(field_index) = frame_plan.param_indices.get(idx) else {
@@ -2587,10 +2595,10 @@ impl<'a> Generator<'a> {
                 ir::Stmt::Let {
                     symbol,
                     name,
+                    mutable,
                     ty,
                     expr,
                     span,
-                    ..
                 } => {
                     let expected = if let Some(ty) = ty {
                         self.type_from_id(*ty, *span)
@@ -2696,6 +2704,9 @@ impl<'a> Generator<'a> {
                         llvm_type(&expected),
                         ptr
                     ));
+                    if !*mutable {
+                        self.record_let_range(&ptr, expr, &expected, fctx);
+                    }
                     fctx.vars.last_mut().expect("scope").insert(
                         name.clone(),
                         Local {
@@ -3105,6 +3116,8 @@ impl<'a> Generator<'a> {
                 suppress_lifetime_end: true,
                 async_poll_ctx: None,
                 divisor_facts: BTreeMap::new(),
+                range_facts: BTreeMap::new(),
+                local_ranges: BTreeMap::new(),
             };
             let slot = DropSlot {
                 ty: inner_ty.clone(),
@@ -4588,6 +4601,29 @@ impl<'a> Generator<'a> {
             .unwrap_or_else(|| fallback.to_string())
     }
 
+    /// The constant for `-literal` on the signed type `ty`, when the negated
+    /// literal is within the type's range. A negated literal is a constant,
+    /// so `-128i8` is `Int8`'s minimum even though `128i8` alone does not fit.
+    fn negated_int_literal_repr(&self, inner: &ir::Expr, ty: &LType) -> Option<String> {
+        let ir::ExprKind::Int(value, _) = &inner.kind else {
+            return None;
+        };
+        let magnitude = match inner.int_literal_metadata() {
+            Some(meta) => parse_raw_int_literal_magnitude(&meta.raw_literal_text)?,
+            None => u128::try_from(*value).ok()?,
+        };
+        let bits = integer_width_bits(ty)?;
+        // The magnitude of a signed type's minimum is 2^(bits - 1).
+        if magnitude > 1u128 << (bits - 1) {
+            return None;
+        }
+        Some(if magnitude == 0 {
+            "0".to_string()
+        } else {
+            format!("-{magnitude}")
+        })
+    }
+
     fn float_literal_type_hint(&self, expr: &ir::Expr, expected_ty: Option<&LType>) -> LType {
         if let Some(meta) = expr.float_literal_metadata() {
             return match meta.kind.width {
@@ -4736,10 +4772,25 @@ impl<'a> Generator<'a> {
                 let value = self.gen_expr(inner, fctx)?;
                 match (op, value.ty.clone()) {
                     (UnaryOp::Neg, ty) if is_signed_integer_type(&ty) => {
-                        let reg = self.new_temp();
+                        // `-128i8` is the literal `MIN`, not the negation of
+                        // the out-of-range `128i8`.
+                        if let Some(constant) = self.negated_int_literal_repr(inner, &ty) {
+                            return Some(Value {
+                                ty,
+                                repr: Some(constant),
+                            });
+                        }
                         let repr = value.repr.unwrap_or_else(|| default_value(&ty));
-                        fctx.lines
-                            .push(format!("  {} = sub {} 0, {}", reg, llvm_type(&ty), repr));
+                        let proven = self.negation_overflow_proven(inner, &ty, fctx);
+                        let reg = self.emit_trapping_int_op(
+                            ArithOp::Neg,
+                            &ty,
+                            "0",
+                            &repr,
+                            proven,
+                            expr.span,
+                            fctx,
+                        );
                         Some(Value {
                             ty,
                             repr: Some(reg),
@@ -4809,7 +4860,15 @@ impl<'a> Generator<'a> {
                 } else {
                     DivisorFact::Unknown
                 };
-                self.gen_binary(*op, lv, rv, divisor, fctx, expr.span)
+                let proven = lv.ty == rv.ty
+                    && self.arith_overflow_proven(
+                        *op,
+                        OverflowOperand::Expr(lhs),
+                        rhs,
+                        &lv.ty,
+                        fctx,
+                    );
+                self.gen_binary(*op, lv, rv, divisor, proven, fctx, expr.span)
             }
             ir::ExprKind::Call {
                 callee,
@@ -5197,12 +5256,16 @@ impl<'a> Generator<'a> {
         self.load_string_from_out_slots(&out_ptr_slot, &out_len_slot, fctx)
     }
 
+    /// `lhs op rhs`. Integer `+`, `-` and `*` trap on overflow unless
+    /// `overflow_proven`; integer `/` and `%` are guarded per `divisor`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn gen_binary(
         &mut self,
         op: BinOp,
         lhs: Value,
         rhs: Value,
         divisor: DivisorFact,
+        overflow_proven: bool,
         fctx: &mut FnCtx,
         span: crate::span::Span,
     ) -> Option<Value> {
@@ -5273,6 +5336,21 @@ impl<'a> Generator<'a> {
                         };
                         let lhs_repr = lhs.repr.unwrap_or_else(|| "0".to_string());
                         let mut rhs_repr = rhs.repr.unwrap_or_else(|| "0".to_string());
+                        if let Some(arith) = ArithOp::from_bin_op(op) {
+                            let reg = self.emit_trapping_int_op(
+                                arith,
+                                lhs_ty,
+                                &lhs_repr,
+                                &rhs_repr,
+                                overflow_proven,
+                                span,
+                                fctx,
+                            );
+                            return Some(Value {
+                                ty: lhs_ty.clone(),
+                                repr: Some(reg),
+                            });
+                        }
                         if matches!(op, BinOp::Div | BinOp::Mod) {
                             rhs_repr = self.emit_integer_division_guards(
                                 op, lhs_ty, &lhs_repr, &rhs_repr, divisor, span, fctx,
@@ -5820,6 +5898,9 @@ impl<'a> Generator<'a> {
         if let Some(rest) = name.strip_prefix(crate::ast::CONVERT_BUILTIN_PREFIX) {
             let (mode, target) = rest.split_once(':').unwrap_or((rest, ""));
             return self.gen_numeric_conversion_call(mode, target, args, span, fctx);
+        }
+        if let Some(spec) = name.strip_prefix(crate::ast::ARITH_BUILTIN_PREFIX) {
+            return self.gen_arith_method_call(spec, args, span, fctx);
         }
         if name == crate::ast::INDEX_PANIC_BUILTIN {
             self.emit_static_panic(
@@ -8156,6 +8237,8 @@ impl<'a> Generator<'a> {
             suppress_lifetime_end: false,
             async_poll_ctx: None,
             divisor_facts: BTreeMap::new(),
+            range_facts: BTreeMap::new(),
+            local_ranges: BTreeMap::new(),
         };
 
         if captures.is_empty() {

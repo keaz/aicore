@@ -186,6 +186,8 @@ check_pass=(
   "examples/core/variant_fields.aic"
   "examples/core/indexing.aic"
   "examples/core/numeric_conversions.aic"
+  "examples/core/checked_arithmetic.aic"
+  "examples/core/integer_overflow_trap.aic"
   "examples/core/loop_labels.aic"
   "examples/core/ranges_and_patterns.aic"
   "examples/core/number_literals.aic"
@@ -253,6 +255,7 @@ fmt_roundtrip=(
   "examples/core/variant_fields.aic"
   "examples/core/indexing.aic"
   "examples/core/numeric_conversions.aic"
+  "examples/core/checked_arithmetic.aic"
   "examples/core/loop_labels.aic"
   "examples/core/ranges_and_patterns.aic"
   "examples/core/number_literals.aic"
@@ -290,6 +293,7 @@ check_fail=(
   "examples/core/const_evaluation_invalid.aic"
   "examples/core/closure_capture_mutation_invalid.aic"
   "examples/core/match_missing_witness_invalid.aic"
+  "examples/core/constant_overflow_invalid.aic"
 )
 run_pass=(
   "examples/option_match.aic"
@@ -428,6 +432,7 @@ run_pass=(
   "examples/core/variant_fields.aic"
   "examples/core/indexing.aic"
   "examples/core/numeric_conversions.aic"
+  "examples/core/checked_arithmetic.aic"
   "examples/core/loop_labels.aic"
   "examples/core/ranges_and_patterns.aic"
   "examples/core/number_literals.aic"
@@ -473,6 +478,7 @@ run_fail=(
   "examples/e5/panic_line_map.aic:AICore panic at"
   "examples/verify/method_contract_violation.aic:contract_violation{kind:requires,owner:Account::withdraw}"
   "examples/core/integer_division_by_zero.aic:division_by_zero{op:div,type:Int}"
+  "examples/core/integer_overflow_trap.aic:integer_overflow{op:add,type:UInt8}: UInt8 addition overflows"
 )
 
 wave1_numeric_check_candidates=(
@@ -1018,6 +1024,7 @@ case "$MODE" in
     expect_run_value "examples/core/variant_fields.aic" "42"
     expect_run_value "examples/core/indexing.aic" "42"
     expect_run_value "examples/core/numeric_conversions.aic" "42"
+    expect_run_value "examples/core/checked_arithmetic.aic" "42"
     expect_run_value "examples/core/loop_labels.aic" "42"
     expect_run_value "examples/core/ranges_and_patterns.aic" "42"
     expect_run_value "examples/core/number_literals.aic" "42"

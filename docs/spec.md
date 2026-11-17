@@ -295,7 +295,7 @@ fn bad2(a: Int16) -> Int8 { a }    // rejected: narrowing
   - `E1230` arithmetic/bitwise/shift mismatch
   - `E1231` equality mismatch
   - `E1232` comparison mismatch
-- Integer overflow is not diagnosed by the type system; runtime arithmetic follows backend integer-width semantics.
+- Integer overflow never wraps silently: `+`, `-`, `*` and unary `-` (and their compound assignments) trap at run time with `integer_overflow{op:<op>,type:<T>}`, literal-only operations that always overflow are `E1320`, and `wrapping_*` / `checked_*` / `saturating_*` methods state another policy (`E1321` on misuse). See `docs/reference/integer-arithmetic.md`.
 
 ### 4.4 Float families and literal policy (`#319`)
 

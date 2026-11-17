@@ -1,0 +1,9 @@
+module examples.core.constant_overflow_invalid;
+
+// `aic check` reports E1320: the literal operands make this addition
+// overflow `UInt8` on every run. Use `wrapping_add` for wrapping, or a wider
+// type.
+fn main() -> Int {
+    let level: UInt8 = 200 + 100;
+    level as Int
+}

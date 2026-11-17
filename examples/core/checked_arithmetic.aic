@@ -1,0 +1,42 @@
+module examples.core.checked_arithmetic;
+
+import std.io;
+
+// Integer `+`, `-`, `*` and unary `-` trap when the result does not fit
+// the type. A method names the overflow policy when another one is meant:
+// `wrapping_*` keeps the low bits, `checked_*` returns an Option and
+// `saturating_*` clamps to the type's bounds.
+
+// FNV-1a style mixing is meant to wrap.
+fn mix(hash: UInt32, byte: UInt32) -> UInt32 {
+    (hash ^ byte).wrapping_mul(16777619u32)
+}
+
+// The `requires` clause bounds `n`, so `n * n + n` cannot overflow and the
+// compiler leaves out its overflow checks.
+fn triangle_twice(n: Int) -> Int requires n >= 0 && n <= 1000000 {
+    n * n + n
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let level: UInt8 = 250;
+    let wrapped = level.wrapping_add(10u8) as Int;
+    let clamped = level.saturating_add(10u8) as Int;
+    let rejected = match level.checked_add(10u8) {
+        Some(_) => 0,
+        None => 1,
+    };
+    let quotient = match 84.checked_div(0) {
+        Some(value) => value,
+        None => 2,
+    };
+    let lowest: Int8 = -128;
+    let negated = lowest.saturating_neg() as Int;
+    let hash = mix(mix(2166136261u32, 97u32), 98u32);
+    let hashed = if hash == 1294271946u32 { 1 } else { 0 };
+    let mut total = 0;
+    total += triangle_twice(5);
+    // 4 + 255 + 1 + 2 + 127 + 1 + 30 = 420
+    print_int((wrapped + clamped + rejected + quotient + negated + hashed + total) / 10);
+    0
+}

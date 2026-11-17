@@ -192,7 +192,7 @@ fn write_build_opt_project(root: &std::path::Path) {
         concat!(
             "module build.opt;\n",
             "fn mix(x: Int, y: Int) -> Int {\n",
-            "    ((x * 31) + y) ^ (y * 17)\n",
+            "    x.wrapping_mul(31).wrapping_add(y) ^ y.wrapping_mul(17)\n",
             "}\n",
             "fn main() -> Int {\n",
             "    let mut i = 0;\n",

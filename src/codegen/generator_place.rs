@@ -280,7 +280,15 @@ impl<'a> Generator<'a> {
                 } else {
                     DivisorFact::Unknown
                 };
-                let Some(combined) = self.gen_binary(op, current, value, divisor, fctx, span)
+                let lhs = if path.is_empty() {
+                    OverflowOperand::Local(target)
+                } else {
+                    OverflowOperand::Unknown
+                };
+                let proven = current.ty == value.ty
+                    && self.arith_overflow_proven(op, lhs, expr, &current.ty, fctx);
+                let Some(combined) =
+                    self.gen_binary(op, current, value, divisor, proven, fctx, span)
                 else {
                     return;
                 };

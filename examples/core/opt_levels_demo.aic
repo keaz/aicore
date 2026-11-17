@@ -1,7 +1,7 @@
 import std.io;
 
 fn mix(x: Int, y: Int) -> Int {
-    ((x * 31) + y) ^ (y * 17)
+    x.wrapping_mul(31).wrapping_add(y) ^ y.wrapping_mul(17)
 }
 
 fn fold(rounds: Int) -> Int {

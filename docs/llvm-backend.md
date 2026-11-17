@@ -183,6 +183,7 @@ Artifact behavior:
 - `exe`: compiles module IR + runtime C and links executable.
 - `obj`: emits module object only (no runtime object linked in).
 - `lib`: archives module object + runtime object into static library.
+- `obj` and `lib`: a module that can panic (integer overflow, division and bounds checks) gets a weak fallback `aic_rt_panic` that prints the panic line and exits with status 1, so a C program links the artifact without the runtime; a linked runtime's strong definition takes precedence. See `docs/reference/integer-arithmetic.md`.
 - `exe` + `--target wasm32`: emits standalone `.wasm` with host-import runtime bindings (no runtime C object linked).
 
 ## Optimization Levels (`[PERF-T1]`)

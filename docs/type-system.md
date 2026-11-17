@@ -130,7 +130,7 @@ fn bad_u64_to_int(a: UInt64) -> Int { a } // E1204
   - `E1231`: equality operand mismatch
   - `E1232`: comparison operand mismatch
   - `E1233`: logical operator requires `Bool`
-- No overflow trap diagnostics are emitted by the type checker for integer arithmetic.
+- Integer `+`, `-`, `*` and unary `-` trap at run time on overflow (`integer_overflow{op:..,type:..}` panic); literal-only operations that always overflow are `E1320`. `wrapping_*`, `checked_*` (`Option[T]`) and `saturating_*` methods choose another policy (`E1321` on misuse). See [Integer Arithmetic and Overflow](./reference/integer-arithmetic.md).
 
 Examples:
 

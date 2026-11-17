@@ -14186,8 +14186,8 @@ fn exec_o2_outperforms_o0_on_deterministic_workload() {
     let source = r#"import std.io;
 
 fn mix(x: Int, y: Int) -> Int {
-    let mixed = ((x * 1103515245) + (y * 12345)) ^ (x >> 7);
-    mixed + 17
+    let mixed = x.wrapping_mul(1103515245).wrapping_add(y.wrapping_mul(12345)) ^ (x >> 7);
+    mixed.wrapping_add(17)
 }
 
 fn main() -> Int effects { io } capabilities { io  } {
@@ -14512,6 +14512,272 @@ fn exec_signed_min_divided_by_minus_one_panics_for_every_width() {
         let expected = format!("integer_overflow{{op:div,type:{ty}}}: {ty} division overflows (");
         assert!(stderr.contains(&expected), "{ty}: stderr={stderr}");
     }
+}
+
+/// `let min: T`, `let max: T` (and for signed types the bounds built with
+/// shifts, so no literal is needed for 128-bit types).
+fn int_bounds_setup(ty: &str, signed_bits: Option<u32>) -> String {
+    match signed_bits {
+        Some(bits) => format!(
+            "{}\n    let max: {ty} = ~min;",
+            signed_min_setup(ty, bits, "min")
+        ),
+        None => format!("let min: {ty} = 0;\n    let max: {ty} = ~min;"),
+    }
+}
+
+/// Builds `source` once and runs it with `extra_args` extra arguments.
+struct BuiltProgram {
+    _dir: tempfile::TempDir,
+    exe: std::path::PathBuf,
+}
+
+impl BuiltProgram {
+    fn new(source: &str) -> Self {
+        let dir = tempdir().expect("tempdir");
+        let src = dir.path().join("main.aic");
+        fs::write(&src, source).expect("write source");
+        let front = run_frontend(&src).expect("frontend");
+        assert!(
+            !has_errors(&front.diagnostics),
+            "diagnostics: {:#?}",
+            front.diagnostics
+        );
+        let lowered = lower_runtime_asserts(&front.ir);
+        let llvm = emit_llvm_with_resolution_and_options(
+            &lowered,
+            Some(&front.resolution),
+            &src.to_string_lossy(),
+            CodegenOptions::default(),
+        )
+        .expect("emit llvm");
+        let exe = dir.path().join("app");
+        compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
+        BuiltProgram { _dir: dir, exe }
+    }
+
+    fn run(&self, extra_args: usize) -> (i32, String, String) {
+        let output = Command::new(&self.exe)
+            .args(std::iter::repeat_n("x", extra_args))
+            .output()
+            .expect("run exe");
+        (
+            output.status.code().unwrap_or(1),
+            String::from_utf8_lossy(&output.stdout).to_string(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        )
+    }
+}
+
+#[test]
+fn exec_integer_overflow_traps_for_every_width_and_operator() {
+    let mut types: Vec<(&str, Option<u32>)> = DIVISION_SIGNED_TYPES
+        .iter()
+        .map(|(ty, bits)| (*ty, Some(*bits)))
+        .collect();
+    types.extend(DIVISION_UNSIGNED_TYPES.iter().map(|ty| (*ty, None)));
+    // (type, statement that overflows, expected panic message)
+    let mut cases = Vec::new();
+    for (ty, signed_bits) in &types {
+        let setup = int_bounds_setup(ty, *signed_bits);
+        let mut push = |body: String, op: &str, noun: &str| {
+            cases.push((
+                *ty,
+                format!("{setup}\n    let one: {ty} = 1;\n    let two: {ty} = 2;\n    {body}"),
+                format!("integer_overflow{{op:{op},type:{ty}}}: {ty} {noun} overflows"),
+            ));
+        };
+        push(
+            format!("let r: {ty} = max + one; keep(r == r);"),
+            "add",
+            "addition",
+        );
+        push(
+            format!("let r: {ty} = min - one; keep(r == r);"),
+            "sub",
+            "subtraction",
+        );
+        push(
+            format!("let r: {ty} = max * two; keep(r == r);"),
+            "mul",
+            "multiplication",
+        );
+        push(
+            format!("let mut r: {ty} = max; r += one; keep(r == r);"),
+            "add",
+            "addition",
+        );
+        push(
+            format!("let mut r: {ty} = min; r -= one; keep(r == r);"),
+            "sub",
+            "subtraction",
+        );
+        push(
+            format!("let mut r: {ty} = max; r *= two; keep(r == r);"),
+            "mul",
+            "multiplication",
+        );
+        if signed_bits.is_some() {
+            push(
+                format!("let r: {ty} = -min; keep(r == r);"),
+                "neg",
+                "negation",
+            );
+            push(
+                format!("let r: {ty} = min * (-one); keep(r == r);"),
+                "mul",
+                "multiplication",
+            );
+        }
+    }
+    let functions = cases
+        .iter()
+        .enumerate()
+        .map(|(idx, (_, body, _))| {
+            format!(
+                "fn case{idx}() -> () effects {{ io }} capabilities {{ io }} {{\n    {body}\n}}\n"
+            )
+        })
+        .collect::<String>();
+    let dispatch = (0..cases.len())
+        .map(|idx| format!("    if selector == {idx} {{ case{idx}(); }};\n"))
+        .collect::<String>();
+    let src = format!(
+        r#"
+import std.io;
+import std.env;
+
+fn keep(ok: Bool) -> () effects {{ io }} capabilities {{ io }} {{
+    if ok {{ print_int(1) }} else {{ print_int(0) }};
+}}
+
+{functions}
+fn main() -> Int effects {{ io, env }} capabilities {{ io, env }} {{
+    let selector = arg_count() - 1;
+{dispatch}    print_int(-1);
+    0
+}}
+"#
+    );
+    let program = BuiltProgram::new(&src);
+    let (code, stdout, stderr) = program.run(cases.len());
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "-1\n", "no case runs past the selectors");
+    for (idx, (ty, body, message)) in cases.iter().enumerate() {
+        let (code, stdout, stderr) = program.run(idx);
+        assert_ne!(code, 0, "{ty} `{body}` did not trap: stdout={stdout}");
+        assert!(stdout.is_empty(), "{ty} `{body}` kept running: {stdout}");
+        assert!(stderr.contains(message), "{ty} `{body}`: stderr={stderr}");
+    }
+}
+
+#[test]
+fn exec_integer_arithmetic_at_the_bounds_does_not_trap() {
+    let mut checks = String::new();
+    for (ty, bits) in DIVISION_SIGNED_TYPES {
+        let setup = int_bounds_setup(ty, Some(*bits)).replace("min", &format!("min_{ty}"));
+        let setup = setup.replace("max", &format!("max_{ty}"));
+        checks.push_str(&format!(
+            "    {setup}\n    let one_{ty}: {ty} = 1;\n    let zero_{ty}: {ty} = 0;\n    \
+             ok = ok && max_{ty} - one_{ty} + one_{ty} == max_{ty};\n    \
+             ok = ok && min_{ty} + one_{ty} - one_{ty} == min_{ty};\n    \
+             ok = ok && -max_{ty} - one_{ty} == min_{ty};\n    \
+             ok = ok && min_{ty} * one_{ty} == min_{ty} && max_{ty} * (-one_{ty}) == min_{ty} + one_{ty};\n    \
+             ok = ok && zero_{ty} - max_{ty} == min_{ty} + one_{ty};\n    \
+             let mut acc_{ty}: {ty} = min_{ty};\n    acc_{ty} += max_{ty};\n    acc_{ty} *= acc_{ty};\n    \
+             ok = ok && acc_{ty} == one_{ty};\n"
+        ));
+    }
+    for ty in DIVISION_UNSIGNED_TYPES {
+        checks.push_str(&format!(
+            "    let zero_{ty}: {ty} = 0;\n    let max_{ty}: {ty} = ~zero_{ty};\n    let one_{ty}: {ty} = 1;\n    \
+             ok = ok && max_{ty} - one_{ty} + one_{ty} == max_{ty};\n    \
+             ok = ok && max_{ty} - max_{ty} == zero_{ty} && max_{ty} * one_{ty} == max_{ty};\n    \
+             let mut acc_{ty}: {ty} = max_{ty};\n    acc_{ty} -= max_{ty};\n    acc_{ty} += one_{ty};\n    \
+             ok = ok && acc_{ty} == one_{ty};\n"
+        ));
+    }
+    let src = format!(
+        r#"
+import std.io;
+fn main() -> Int effects {{ io }} capabilities {{ io }} {{
+    let mut ok = true;
+{checks}
+    if ok {{ print_int(1) }} else {{ print_int(0) }};
+    0
+}}
+"#
+    );
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_wrapping_checked_and_saturating_methods_for_every_width() {
+    let mut checks = String::new();
+    for (ty, bits) in DIVISION_SIGNED_TYPES {
+        let setup = int_bounds_setup(ty, Some(*bits))
+            .replace("min", &format!("min_{ty}"))
+            .replace("max", &format!("max_{ty}"));
+        checks.push_str(&format!(
+            "    {setup}\n    let one_{ty}: {ty} = 1;\n    let two_{ty}: {ty} = 2;\n    let zero_{ty}: {ty} = 0;\n    \
+             ok = ok && max_{ty}.wrapping_add(one_{ty}) == min_{ty} && min_{ty}.wrapping_sub(one_{ty}) == max_{ty};\n    \
+             ok = ok && max_{ty}.wrapping_mul(two_{ty}) == -two_{ty} && min_{ty}.wrapping_neg() == min_{ty};\n    \
+             ok = ok && is_none_{ty}(max_{ty}.checked_add(one_{ty})) && is_none_{ty}(min_{ty}.checked_sub(one_{ty}));\n    \
+             ok = ok && is_none_{ty}(max_{ty}.checked_mul(two_{ty})) && is_none_{ty}(min_{ty}.checked_neg());\n    \
+             ok = ok && is_none_{ty}(min_{ty}.checked_div(-one_{ty})) && is_none_{ty}(one_{ty}.checked_div(zero_{ty}));\n    \
+             ok = ok && is_none_{ty}(min_{ty}.checked_rem(-one_{ty})) && is_none_{ty}(one_{ty}.checked_rem(zero_{ty}));\n    \
+             ok = ok && value_{ty}(max_{ty}.checked_sub(one_{ty})) == max_{ty} - one_{ty};\n    \
+             ok = ok && value_{ty}(min_{ty}.checked_div(two_{ty})) == min_{ty} / two_{ty};\n    \
+             ok = ok && value_{ty}((-two_{ty} - one_{ty}).checked_rem(two_{ty})) == -one_{ty};\n    \
+             ok = ok && value_{ty}(max_{ty}.checked_neg()) == min_{ty} + one_{ty};\n    \
+             ok = ok && max_{ty}.saturating_add(one_{ty}) == max_{ty} && min_{ty}.saturating_sub(one_{ty}) == min_{ty};\n    \
+             ok = ok && max_{ty}.saturating_mul(two_{ty}) == max_{ty} && max_{ty}.saturating_mul(-two_{ty}) == min_{ty};\n    \
+             ok = ok && min_{ty}.saturating_mul(-two_{ty}) == max_{ty} && min_{ty}.saturating_neg() == max_{ty};\n    \
+             ok = ok && two_{ty}.saturating_mul(-two_{ty}) == -two_{ty} - two_{ty};\n"
+        ));
+    }
+    for ty in DIVISION_UNSIGNED_TYPES {
+        checks.push_str(&format!(
+            "    let zero_{ty}: {ty} = 0;\n    let max_{ty}: {ty} = ~zero_{ty};\n    let one_{ty}: {ty} = 1;\n    let two_{ty}: {ty} = 2;\n    \
+             ok = ok && max_{ty}.wrapping_add(one_{ty}) == zero_{ty} && zero_{ty}.wrapping_sub(one_{ty}) == max_{ty};\n    \
+             ok = ok && max_{ty}.wrapping_mul(two_{ty}) == max_{ty} - one_{ty} && one_{ty}.wrapping_neg() == max_{ty};\n    \
+             ok = ok && is_none_{ty}(max_{ty}.checked_add(one_{ty})) && is_none_{ty}(zero_{ty}.checked_sub(one_{ty}));\n    \
+             ok = ok && is_none_{ty}(max_{ty}.checked_mul(two_{ty})) && is_none_{ty}(one_{ty}.checked_neg());\n    \
+             ok = ok && is_none_{ty}(one_{ty}.checked_div(zero_{ty})) && is_none_{ty}(one_{ty}.checked_rem(zero_{ty}));\n    \
+             ok = ok && value_{ty}(zero_{ty}.checked_neg()) == zero_{ty} && value_{ty}(max_{ty}.checked_div(max_{ty})) == one_{ty};\n    \
+             ok = ok && max_{ty}.saturating_add(one_{ty}) == max_{ty} && zero_{ty}.saturating_sub(one_{ty}) == zero_{ty};\n    \
+             ok = ok && max_{ty}.saturating_mul(two_{ty}) == max_{ty} && two_{ty}.saturating_mul(two_{ty}) == two_{ty} + two_{ty};\n"
+        ));
+    }
+    let helpers = DIVISION_SIGNED_TYPES
+        .iter()
+        .map(|(ty, _)| *ty)
+        .chain(DIVISION_UNSIGNED_TYPES.iter().copied())
+        .map(|ty| {
+            format!(
+                "fn is_none_{ty}(o: Option[{ty}]) -> Bool {{ match o {{ Some(_) => false, None => true }} }}\n\
+                 fn value_{ty}(o: Option[{ty}]) -> {ty} {{ match o {{ Some(v) => v, None => ~o_zero_{ty}() }} }}\n\
+                 fn o_zero_{ty}() -> {ty} {{ 0 }}\n"
+            )
+        })
+        .collect::<String>();
+    let src = format!(
+        r#"
+import std.io;
+{helpers}
+fn main() -> Int effects {{ io }} capabilities {{ io }} {{
+    let mut ok = true;
+{checks}
+    if ok {{ print_int(1) }} else {{ print_int(0) }};
+    0
+}}
+"#
+    );
+    let (code, stdout, stderr) = compile_and_run(&src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n", "stderr={stderr}");
 }
 
 #[test]
@@ -15940,6 +16206,66 @@ int main(void) {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout), "42\n");
+}
+
+#[test]
+fn exec_library_artifacts_report_overflow_panics_without_the_runtime() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("math.aic");
+    let llvm_ir = compile_to_llvm(
+        &src,
+        r#"
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+"#,
+    );
+    let harness = dir.path().join("harness_overflow.c");
+    fs::write(
+        &harness,
+        r#"#include <stdint.h>
+#include <stdio.h>
+
+long aic_add(long x, long y);
+
+int main(void) {
+    printf("%ld\n", aic_add(40, 2));
+    fflush(stdout);
+    printf("%ld\n", aic_add(INT64_MAX, 1));
+    return 0;
+}
+"#,
+    )
+    .expect("write harness");
+
+    for (kind, artifact) in [
+        (ArtifactKind::Obj, dir.path().join("math_overflow.o")),
+        (ArtifactKind::Lib, dir.path().join("libmath_overflow.a")),
+    ] {
+        let work = dir.path().join(format!("work_{kind:?}"));
+        compile_with_clang_artifact(&llvm_ir, &artifact, &work, kind).expect("build artifact");
+        let exe = dir.path().join(format!("harness_overflow_{kind:?}"));
+        let link = Command::new("clang")
+            .arg(&harness)
+            .arg(&artifact)
+            .arg("-o")
+            .arg(&exe)
+            .output()
+            .expect("link artifact");
+        assert!(
+            link.status.success(),
+            "{kind:?} link stderr={}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+        let output = Command::new(&exe).output().expect("run harness");
+        assert_eq!(output.status.code(), Some(1), "{kind:?}");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "42\n", "{kind:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            "AICore panic at 3:5: integer_overflow{op:add,type:Int}: Int addition overflows\n",
+            "{kind:?}"
+        );
+    }
 }
 
 #[test]

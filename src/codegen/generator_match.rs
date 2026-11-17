@@ -326,6 +326,7 @@ impl<'a> Generator<'a> {
                     value.clone(),
                     literal,
                     DivisorFact::Unknown,
+                    false,
                     fctx,
                     pattern.span,
                 )?;

@@ -1,0 +1,11 @@
+module examples.core.integer_overflow_trap;
+import std.io;
+
+// Integer arithmetic that does not fit its type panics deterministically with
+// integer_overflow{op:add,type:UInt8}: UInt8 addition overflows
+fn main() -> Int effects { io } capabilities { io } {
+    let level: UInt8 = 255;
+    let step: UInt8 = 1;
+    print_int((level + step) as Int);
+    0
+}

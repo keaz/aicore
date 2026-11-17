@@ -48,21 +48,9 @@ impl DivisorFact {
 /// left out because the fact would not hold at every use.
 pub(super) fn requires_divisor_facts(func: &ir::Function) -> BTreeMap<String, DivisorFact> {
     let mut facts = BTreeMap::new();
-    let Some(requires) = &func.requires else {
+    let Some(requires) = enforced_requires(func) else {
         return facts;
     };
-    // Only trust `requires` when contract lowering enforces it at entry. A
-    // requires clause that is satisfiable but not proven is lowered to an
-    // entry assert; without that assert (IR emitted without
-    // `lower_runtime_asserts`) the clause proves nothing at runtime.
-    let enforced = matches!(
-        func.body.stmts.first(),
-        Some(ir::Stmt::Assert { message, .. })
-            if message.starts_with("contract_violation{kind:requires,")
-    );
-    if !enforced {
-        return facts;
-    }
     let params = func
         .params
         .iter()
@@ -78,6 +66,20 @@ pub(super) fn requires_divisor_facts(func: &ir::Function) -> BTreeMap<String, Di
     facts
 }
 
+/// The `requires` clause of `func` when contract lowering enforces it at
+/// entry. A requires clause that is satisfiable but not proven is lowered to
+/// an entry assert; without that assert (IR emitted without
+/// `lower_runtime_asserts`) the clause proves nothing at runtime.
+pub(super) fn enforced_requires(func: &ir::Function) -> Option<&ir::Expr> {
+    let requires = func.requires.as_ref()?;
+    let enforced = matches!(
+        func.body.stmts.first(),
+        Some(ir::Stmt::Assert { message, .. })
+            if message.starts_with("contract_violation{kind:requires,")
+    );
+    enforced.then_some(requires)
+}
+
 /// The fact for a divisor expression, given the facts of the current function.
 pub(super) fn divisor_fact(expr: &ir::Expr, params: &BTreeMap<String, DivisorFact>) -> DivisorFact {
     if let Some(value) = plain_int_literal(expr) {
@@ -91,7 +93,7 @@ pub(super) fn divisor_fact(expr: &ir::Expr, params: &BTreeMap<String, DivisorFac
 
 /// The value of an integer literal or a negated integer literal. Literals with
 /// wide-literal metadata are not folded, so their guards stay in place.
-fn plain_int_literal(expr: &ir::Expr) -> Option<i128> {
+pub(super) fn plain_int_literal(expr: &ir::Expr) -> Option<i128> {
     match &expr.kind {
         ir::ExprKind::Int(value, ..) if expr.int_literal_metadata().is_none() => {
             Some(*value as i128)
@@ -140,7 +142,7 @@ fn collect_requires_facts(
     *entry = (*entry).max(fact);
 }
 
-fn flip_comparison(op: BinOp) -> Option<BinOp> {
+pub(super) fn flip_comparison(op: BinOp) -> Option<BinOp> {
     match op {
         BinOp::Eq => Some(BinOp::Eq),
         BinOp::Ne => Some(BinOp::Ne),
@@ -169,7 +171,7 @@ fn comparison_fact(op: BinOp, bound: i128) -> Option<DivisorFact> {
     }
 }
 
-fn collect_bound_names_in_block(block: &ir::Block, out: &mut BTreeSet<String>) {
+pub(super) fn collect_bound_names_in_block(block: &ir::Block, out: &mut BTreeSet<String>) {
     for stmt in &block.stmts {
         match stmt {
             ir::Stmt::Let { name, expr, .. } => {

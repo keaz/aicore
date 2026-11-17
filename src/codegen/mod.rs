@@ -18,7 +18,10 @@ use self::runtime::runtime_c_source;
 
 mod divisor_facts;
 use self::divisor_facts::DivisorFact;
+mod overflow_facts;
+use self::generator_arith::{ArithOp, OverflowOperand};
 
+mod generator_arith;
 mod generator_collections;
 mod generator_concurrency;
 mod generator_control_flow;
@@ -2455,6 +2458,12 @@ pub fn compile_with_clang_artifact_with_options_and_runtime(
     if wasm_target {
         llvm_to_compile = rewrite_wasm_entry_wrapper(&llvm_to_compile);
     }
+    if artifact != ArtifactKind::Exe {
+        llvm_to_compile = add_library_panic_fallback(
+            &llvm_to_compile,
+            target_is_windows(options.target_triple.as_deref()),
+        );
+    }
 
     fs::write(&ll_path, llvm_to_compile)?;
     if !wasm_target {
@@ -2728,6 +2737,130 @@ fn probe_pkg_config_flags(package: &str) -> Option<(Vec<String>, Vec<String>)> {
 
 fn instrument_llvm_for_leak_tracking(llvm_ir: &str) -> String {
     llvm_ir.replace("@malloc(", "@aic_rt_heap_alloc(")
+}
+
+/// Gives an `obj` or `lib` artifact its own weak `aic_rt_panic` when the
+/// module calls it, so that a C program can link the artifact without the
+/// AICore runtime. Integer overflow checks, division guards and bounds
+/// checks panic through `aic_rt_panic`; the fallback prints the same
+/// `AICore panic at <line>:<column>: <message>` line to standard error and
+/// exits with status 1. The definition is weak: when the runtime is linked
+/// too (the runtime object in a `lib` archive, or a runtime library next to
+/// an `obj`), its strong `aic_rt_panic` takes precedence, which adds the
+/// `AIC_BACKTRACE` stack trace. The fallback uses only `write` (`_write` on
+/// Windows) and `exit`.
+fn add_library_panic_fallback(llvm_ir: &str, windows: bool) -> String {
+    if !llvm_ir.contains("call void @aic_rt_panic(") {
+        return llvm_ir.to_string();
+    }
+    let mut out = String::with_capacity(llvm_ir.len() + 4096);
+    for line in llvm_ir.lines() {
+        if line.trim_start().starts_with("declare void @aic_rt_panic(") {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    // An `extern "C"` declaration of `write`/`exit` in the module is reused.
+    let declares = |symbol: &str| {
+        llvm_ir.lines().any(|line| {
+            let line = line.trim_start();
+            (line.starts_with("declare ") || line.starts_with("define "))
+                && line.contains(&format!(" @{symbol}("))
+        })
+    };
+    let (write_decl, write_call) = if windows {
+        (
+            "declare i32 @_write(i32, i8*, i32)",
+            "  %n32 = trunc i64 %n to i32\n  %written = call i32 @_write(i32 2, i8* %p, i32 %n32)",
+        )
+    } else {
+        (
+            "declare i64 @write(i32, i8*, i64)",
+            "  %written = call i64 @write(i32 2, i8* %p, i64 %n)",
+        )
+    };
+    let write_decl = if declares(if windows { "_write" } else { "write" }) {
+        ""
+    } else {
+        write_decl
+    };
+    let exit_decl = if declares("exit") {
+        ""
+    } else {
+        "declare void @exit(i32)"
+    };
+    out.push_str(&format!(
+        r#"
+; Weak fallback for `obj`/`lib` artifacts linked without the AICore runtime.
+@aic_rt_panic_fallback.prefix = private unnamed_addr constant [12 x i8] c"AICore panic"
+@aic_rt_panic_fallback.at = private unnamed_addr constant [4 x i8] c" at "
+@aic_rt_panic_fallback.colon = private unnamed_addr constant [1 x i8] c":"
+@aic_rt_panic_fallback.sep = private unnamed_addr constant [2 x i8] c": "
+@aic_rt_panic_fallback.newline = private unnamed_addr constant [1 x i8] c"\0A"
+
+{write_decl}
+{exit_decl}
+
+define internal void @aic_rt_panic_fallback.write(i8* %p, i64 %n) {{
+entry:
+{write_call}
+  ret void
+}}
+
+define internal void @aic_rt_panic_fallback.write_u64(i64 %v) {{
+entry:
+  %buf = alloca [20 x i8]
+  br label %digit
+digit:
+  %value = phi i64 [ %v, %entry ], [ %rest, %digit ]
+  %pos = phi i64 [ 20, %entry ], [ %next, %digit ]
+  %rest = udiv i64 %value, 10
+  %low = urem i64 %value, 10
+  %low8 = trunc i64 %low to i8
+  %char = add i8 %low8, 48
+  %next = sub i64 %pos, 1
+  %slot = getelementptr inbounds [20 x i8], [20 x i8]* %buf, i64 0, i64 %next
+  store i8 %char, i8* %slot
+  %more = icmp ne i64 %rest, 0
+  br i1 %more, label %digit, label %done
+done:
+  %start = getelementptr inbounds [20 x i8], [20 x i8]* %buf, i64 0, i64 %next
+  %count = sub i64 20, %next
+  call void @aic_rt_panic_fallback.write(i8* %start, i64 %count)
+  ret void
+}}
+
+define weak void @aic_rt_panic(i8* %ptr, i64 %len, i64 %cap, i64 %line, i64 %column) {{
+entry:
+  call void @aic_rt_panic_fallback.write(i8* getelementptr inbounds ([12 x i8], [12 x i8]* @aic_rt_panic_fallback.prefix, i64 0, i64 0), i64 12)
+  %line_known = icmp sgt i64 %line, 0
+  %column_known = icmp sgt i64 %column, 0
+  %located = and i1 %line_known, %column_known
+  br i1 %located, label %location, label %message
+location:
+  call void @aic_rt_panic_fallback.write(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @aic_rt_panic_fallback.at, i64 0, i64 0), i64 4)
+  call void @aic_rt_panic_fallback.write_u64(i64 %line)
+  call void @aic_rt_panic_fallback.write(i8* getelementptr inbounds ([1 x i8], [1 x i8]* @aic_rt_panic_fallback.colon, i64 0, i64 0), i64 1)
+  call void @aic_rt_panic_fallback.write_u64(i64 %column)
+  br label %message
+message:
+  %has_text = icmp ne i8* %ptr, null
+  br i1 %has_text, label %text, label %finish
+text:
+  call void @aic_rt_panic_fallback.write(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @aic_rt_panic_fallback.sep, i64 0, i64 0), i64 2)
+  %negative = icmp slt i64 %len, 0
+  %text_len = select i1 %negative, i64 0, i64 %len
+  call void @aic_rt_panic_fallback.write(i8* %ptr, i64 %text_len)
+  br label %finish
+finish:
+  call void @aic_rt_panic_fallback.write(i8* getelementptr inbounds ([1 x i8], [1 x i8]* @aic_rt_panic_fallback.newline, i64 0, i64 0), i64 1)
+  call void @exit(i32 1)
+  unreachable
+}}
+"#
+    ));
+    out
 }
 
 fn rewrite_wasm_entry_wrapper(llvm_ir: &str) -> String {
@@ -3560,6 +3693,11 @@ struct FnCtx {
     async_poll_ctx: Option<AsyncPollCtx>,
     // Parameters whose `requires` clause proves them safe as divisors.
     divisor_facts: BTreeMap<String, DivisorFact>,
+    // Parameter ranges proven by the `requires` clause; they let integer
+    // arithmetic skip its overflow check.
+    range_facts: BTreeMap<String, overflow_facts::Range>,
+    // Ranges of immutable integer `let` bindings, keyed by their slot.
+    local_ranges: BTreeMap<String, overflow_facts::Range>,
 }
 
 #[derive(Debug, Clone)]

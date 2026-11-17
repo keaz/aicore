@@ -149,6 +149,7 @@ Literal forms follow the same surface:
 - Float suffixes: `f32`, `f64`
 - Unsuffixed integer literals default to `Int`
 - Unsuffixed float literals default to `Float` (`Float64`) unless context narrows them to `Float32`
+- Integer `+`, `-`, `*` and unary `-` panic on overflow instead of wrapping; `wrapping_add`, `checked_add` (`Option`) and `saturating_add` (and the `sub`/`mul`/`neg` forms) choose another policy ([Integer Arithmetic and Overflow](docs/reference/integer-arithmetic.md))
 
 Additional first-class type forms supported by the checker:
 
