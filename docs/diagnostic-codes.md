@@ -169,7 +169,7 @@ Recent core-language additions:
 - `E2118`: registry configuration or credential source is invalid.
 - `E2119`: trust policy denied package install (allow/deny/signature policy).
 - `E2120`: invalid or unsupported extern ABI declaration.
-- `E2121`: extern or `intrinsic fn` signature uses unsupported language features (generics, async, effects/capabilities, contracts, or a missing runtime ABI).
+- `E2121`: extern or `intrinsic fn` signature uses unsupported language features (generics, async, capabilities, contracts, or a missing runtime ABI).
 - `E2122`: call to an extern or `unsafe fn` outside an `unsafe` boundary.
 - `E2123`: unsupported type in extern C-ABI signature.
 - `E2124`: package signature verification/trusted-key validation failure.
@@ -229,6 +229,7 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E2007` | Unknown capability name in a function signature. | Use only known capabilities: `io, fs, net, time, rand, env, proc, concurrency`. |
 | `E2008` | Duplicate capability listed in one function signature. | Remove duplicates; keep one declaration per capability. |
 | `E2009` | Missing capability authority for declared or transitive effects. | Add `capabilities { ... }` to match required effect authority and thread capability boundaries across callers. |
+| `E2010` | An `extern` function declaration has no `effects { ... }` clause. Foreign code is opaque to effect analysis, so every extern states its effects and callers inherit them. | Add `effects { ... }` naming what the C function does (for example `effects { io }` for `puts`), or `effects { }` if it has no side effects. |
 | `E5023` | Backstop: backend const evaluation failed after a clean check (the checker reports `E1316`, `E1317`, `E1288` or `E1287` first). | Report it as a compiler bug; the checker diagnostic names the fix. |
 | `E5024` | Backstop for an extern function with a non-`C` ABI or no native symbol name; the checker reports `E2120` first. | Use `extern \"C\"` plain signatures and wrapper functions. |
 | `E5025` | `break` reached backend outside loop context. | Ensure `break` is only emitted inside `loop`/`while`. |
