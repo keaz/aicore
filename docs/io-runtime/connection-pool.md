@@ -139,24 +139,28 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
   of seconds; only tests of the `Timeout` path use a short one. A generous timeout
   costs nothing when the manager answers quickly.
 
-## Known Limitations
+## Channel Usage
 
-- The runtime does not reuse channel slots. A process can create at most 128
-  channels (`AIC_RT_LIMIT_CONC_CHANNELS` can only lower this), and closing a channel
-  does not free its slot. `new_pool(...)` uses one channel, and every `acquire(...)`
-  round and every `pool_stats(...)` call opens one reply channel. A process that
-  makes more than about 125 of these calls in total gets channel-creation failures,
-  which `acquire(...)` reports as `Closed`. Keep long-running pool workloads and
-  stats polling loops well under this budget until slot reclamation lands in the
-  runtime. The follow-up brief is `docs/io-runtime/channel-slot-reclamation.md`.
+- `new_pool(...)` keeps one request channel open for the life of the pool. Every
+  `acquire(...)` round and every `pool_stats(...)` call opens a reply channel and
+  closes it before returning, which releases its runtime slot. A process can make
+  any number of these calls; only channels open at the same time count against the
+  128-slot runtime table (see `docs/io-concurrency-runtime.md#channel-slot-lifetime`).
+- When the caller gave up on a reply channel, the manager's late `send` on it fails
+  with `Closed` even if a new channel already reuses the slot, so the manager
+  reclaims the lease.
+- If the channel table is full, `new_pool(...)` returns `ConnectionFailed` and
+  `acquire(...)` returns `Closed`.
 
 ## Validation
 
 - Runnable integration example: `examples/io/connection_pool.aic` (expected final line `42`).
+- Channel reuse under many pool calls: `examples/io/channel_slot_reuse.aic` (expected final line `42`).
 - Execution tests:
   - `exec_pool_ten_workers_share_five_connections_without_leaks`
   - `exec_pool_idle_connections_are_recycled_after_timeout`
   - `exec_pool_discarded_connection_is_replaced`
   - `exec_pool_slow_acquire_reply_does_not_leak_lease`
+  - `exec_pool_many_acquire_release_and_stats_calls_do_not_leak`
   - `exec_pool_abandoned_acquire_returns_lease_to_pool`
   - `exec_runtime_pool_churn_sustained_cycles_are_leak_free`

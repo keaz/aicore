@@ -7402,8 +7402,8 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
 
     // The manager ages idle entries once per loop iteration, and a loaded
     // machine runs fewer iterations per millisecond. Wait for the reap itself.
-    // Each pool_stats call uses one of the process's 128 channel slots, so
-    // poll at most 100 times.
+    // Poll at most 100 times so a pool that never reaps fails the test
+    // instead of hanging.
     let mut polls = 0;
     while pool_stats(pool).destroyed < 1 && polls < 100 {
         wait_ms(10);
@@ -7750,6 +7750,435 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "42\n");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_channel_slots_are_reclaimed_after_close() {
+    // Creates and closes far more channels than the 128-slot runtime table, and
+    // buffers more payloads than the 4096-slot payload table, in one process.
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    // 1. close_receiver on an empty channel, 1000 times.
+    let mut empty_ok = 0;
+    let mut i = 0;
+    while i < 1000 {
+        let ch: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+        if ch.0.handle > 0 {
+            let _c = close_receiver(ch.1);
+            empty_ok = empty_ok + 1;
+        } else {
+            ()
+        };
+        i = i + 1;
+    };
+
+    // 2. Buffered values discarded by close_receiver: 5000 > payload table (4096).
+    let mut buffered_ok = 0;
+    let mut j = 0;
+    while j < 5000 {
+        let ch: (Sender[String], Receiver[String]) = buffered_channel(2);
+        let sent = match send(ch.0, "payload") {
+            Ok(_) => true,
+            Err(_) => false,
+        };
+        if sent {
+            let _c = close_receiver(ch.1);
+            buffered_ok = buffered_ok + 1;
+        } else {
+            ()
+        };
+        j = j + 1;
+    };
+
+    // 3. close_sender, then drain to Closed: the last receive frees the slot.
+    let mut drained_ok = 0;
+    let mut k = 0;
+    while k < 300 {
+        let ch: (Sender[Int], Receiver[Int]) = buffered_channel(2);
+        let _s1 = send(ch.0, k);
+        let _s2 = send(ch.0, k + 1);
+        let _c = close_sender(ch.0);
+        let a = match recv(ch.1) { Ok(v) => v, Err(_) => -1 };
+        let b = match recv(ch.1) { Ok(v) => v, Err(_) => -1 };
+        let end_closed = match recv(ch.1) {
+            Ok(_) => false,
+            Err(err) => match err { Closed => true, _ => false },
+        };
+        if a == k && b == k + 1 && end_closed {
+            drained_ok = drained_ok + 1;
+        } else {
+            ()
+        };
+        k = k + 1;
+    };
+
+    // 4. IntChannel with close_channel.
+    let mut int_ok = 0;
+    let mut m = 0;
+    while m < 300 {
+        match channel_int(1) {
+            Ok(ch) => if true {
+                let _c = close_channel(ch);
+                int_ok = int_ok + 1;
+                ()
+            } else {
+                ()
+            },
+            Err(_) => (),
+        };
+        m = m + 1;
+    };
+
+    print_int(empty_ok);
+    print_int(buffered_ok);
+    print_int(drained_ok);
+    print_int(int_ok);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1000\n5000\n300\n300\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_channel_stale_handle_after_slot_reuse_fails_closed() {
+    // A handle kept after its channel was released must not reach the new channel
+    // that reuses the slot: operations fail with Closed and the new channel stays empty.
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn conc_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn chan_code(err: ChannelError) -> Int {
+    match err {
+        Closed => 6,
+        Full => 8,
+        Empty => 9,
+        Timeout => 2,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let old: (Sender[Int], Receiver[Int]) = buffered_channel(4);
+    let old_slot = (old.0.handle - 1) % 128;
+    let _closed_old = close_receiver(old.1);
+
+    // Churn until a new channel lands in the released slot.
+    let mut fresh: (Sender[Int], Receiver[Int]) = buffered_channel(4);
+    let mut tries = 0;
+    while (fresh.0.handle - 1) % 128 != old_slot && tries < 1000 {
+        let _c = close_receiver(fresh.1);
+        fresh = buffered_channel(4);
+        tries = tries + 1;
+    };
+    let reused = (fresh.0.handle - 1) % 128 == old_slot && fresh.0.handle != old.0.handle;
+
+    let stale_send = match send(old.0, 99) {
+        Ok(_) => 0,
+        Err(err) => chan_code(err),
+    };
+    let stale_try_send = match try_send(old.0, 98) {
+        Ok(_) => 0,
+        Err(err) => chan_code(err),
+    };
+    let stale_recv = match recv_timeout(old.1, 5) {
+        Ok(_) => 0,
+        Err(err) => chan_code(err),
+    };
+    let stale_int_send = match send_int(IntChannel { handle: old.0.handle }, 7, 5) {
+        Ok(_) => 0,
+        Err(err) => conc_code(err),
+    };
+    let stale_close = match close_sender(old.0) {
+        Ok(_) => 1,
+        Err(err) => 100 + conc_code(err),
+    };
+    let fresh_empty = match try_recv(fresh.1) {
+        Ok(_) => 0,
+        Err(err) => chan_code(err),
+    };
+    let fresh_send = match send(fresh.0, 5) { Ok(_) => 1, Err(_) => 0 };
+    let fresh_value = match recv(fresh.1) { Ok(v) => v, Err(_) => -1 };
+    let _cf = close_receiver(fresh.1);
+
+    let missing = match close_channel(IntChannel { handle: 128 * 5000 + 1 }) {
+        Ok(_) => 0,
+        Err(err) => conc_code(err),
+    };
+
+    print_int(if reused { 1 } else { 0 });
+    print_int(stale_send);
+    print_int(stale_try_send);
+    print_int(stale_recv);
+    print_int(stale_int_send);
+    print_int(stale_close);
+    print_int(fresh_empty);
+    print_int(fresh_send);
+    print_int(fresh_value);
+    print_int(missing);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "1\n6\n6\n6\n6\n1\n9\n1\n5\n1\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_channel_exhaustion_reports_error_and_recovers() {
+    // 128 simultaneously open channels fill the table. The next creation fails
+    // with Io (or handle 0 from `buffered_channel`) until a channel is closed.
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.vec;
+
+fn conc_code(err: ConcurrencyError) -> Int {
+    match err {
+        NotFound => 1,
+        Timeout => 2,
+        Cancelled => 3,
+        InvalidInput => 4,
+        Panic => 5,
+        Closed => 6,
+        Io => 7,
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let mut open: Vec[Receiver[Int]] = vec.new_vec();
+    let mut failure = 0;
+    let mut opened = 0;
+    while failure == 0 && opened < 200 {
+        let created: Result[(Sender[Int], Receiver[Int]), ConcurrencyError] = try_buffered_channel(1);
+        match created {
+            Ok(ch) => if true {
+                open = vec.push(open, ch.1);
+                opened = opened + 1;
+                ()
+            } else {
+                ()
+            },
+            Err(err) => if true {
+                failure = conc_code(err);
+                ()
+            } else {
+                ()
+            },
+        };
+    };
+    let zero_handle = buffered_channel(1).0.handle;
+    let bad_capacity: Result[(Sender[Int], Receiver[Int]), ConcurrencyError] = try_buffered_channel(0);
+    let bad_capacity_code = match bad_capacity {
+        Ok(_) => 0,
+        Err(err) => conc_code(err),
+    };
+
+    // Free one slot; creation works again.
+    let first_rx = match vec.get(open, 0) {
+        Some(rx) => rx,
+        None => Receiver { handle: 0 },
+    };
+    let _c = close_receiver(first_rx);
+    let again: Result[(Sender[Int], Receiver[Int]), ConcurrencyError] = try_buffered_channel(1);
+    let again_ok = match again {
+        Ok(ch) => if true {
+            let _ca = close_receiver(ch.1);
+            1
+        } else {
+            0
+        },
+        Err(_) => 0,
+    };
+    let mut idx = 1;
+    while idx < open.len {
+        match vec.get(open, idx) {
+            Some(rx) => if true {
+                let _cr = close_receiver(rx);
+                ()
+            } else {
+                ()
+            },
+            None => (),
+        };
+        idx = idx + 1;
+    };
+    let after: Result[(Sender[Int], Receiver[Int]), ConcurrencyError] = try_buffered_channel(1);
+    let after_ok = match after { Ok(_) => 1, Err(_) => 0 };
+
+    print_int(opened);
+    print_int(failure);
+    print_int(zero_handle);
+    print_int(bad_capacity_code);
+    print_int(again_ok);
+    print_int(after_ok);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "128\n7\n0\n4\n1\n1\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_channel_blocked_receiver_releases_slot_after_close() {
+    // A receiver blocked on a channel wakes with Closed when the sender closes it,
+    // and the slot is released once the waiter leaves.
+    let src = r#"
+import std.concurrent;
+import std.io;
+
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
+fn blocking_recv_code(rx: Receiver[Int]) -> Int effects { concurrency } capabilities { concurrency } {
+    match recv_timeout(rx, 5000) {
+        Ok(_) => 1,
+        Err(err) => match err {
+            Closed => 6,
+            Timeout => 2,
+            _ => 3,
+        },
+    }
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let mut woke_closed = 0;
+    let mut round = 0;
+    while round < 150 {
+        let ch: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+        let rx = ch.1;
+        let waiter: Task[Int] = spawn(|| -> Int { blocking_recv_code(rx) });
+        wait_ms(1);
+        let _c = close_sender(ch.0);
+        let out = match join_value(waiter) {
+            Ok(v) => v,
+            Err(_) => 0,
+        };
+        if out == 6 {
+            woke_closed = woke_closed + 1;
+        } else {
+            ()
+        };
+        round = round + 1;
+    };
+    print_int(woke_closed);
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "150\n", "stderr={stderr}");
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn exec_pool_many_acquire_release_and_stats_calls_do_not_leak() {
+    // Every acquire round and pool_stats call opens a reply channel. 500 calls in
+    // one process need released reply channel slots.
+    let src = r#"
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let created = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn { id: prior + 1 })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.id > 0 };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+    let pool: Pool[FakeConn] = match new_pool(
+        PoolConfig {
+            min_size: 0,
+            max_size: 2,
+            acquire_timeout_ms: 2000,
+            idle_timeout_ms: 0,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    ) {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+
+    let mut acquired = 0;
+    let mut stats_ok = 0;
+    let mut i = 0;
+    while i < 250 {
+        match acquire(pool) {
+            Ok(conn) => if true {
+                release(conn);
+                acquired = acquired + 1;
+                ()
+            } else {
+                ()
+            },
+            Err(_) => (),
+        };
+        let stats = pool_stats(pool);
+        if stats.total >= 1 && stats.total <= 2 {
+            stats_ok = stats_ok + 1;
+        } else {
+            ()
+        };
+        i = i + 1;
+    };
+    // Let the manager apply the last release before the final check.
+    let mut final_stats = pool_stats(pool);
+    let mut polls = 0;
+    while final_stats.in_use != 0 && polls < 100 {
+        final_stats = pool_stats(pool);
+        polls = polls + 1;
+    };
+    close_pool(pool);
+
+    print_int(acquired);
+    print_int(stats_ok);
+    print_int(final_stats.in_use);
+    print_int(if final_stats.total <= 2 { 1 } else { 0 });
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "250\n250\n0\n1\n", "stderr={stderr}");
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -1719,6 +1719,11 @@
     {
       "module": "std.concurrent",
       "kind": "fn",
+      "signature": "try_buffered_channel[T](capacity: Int) -> Result[Tuple[Sender[T], Receiver[T]], ConcurrencyError] effects { concurrency }"
+    },
+    {
+      "module": "std.concurrent",
+      "kind": "fn",
       "signature": "try_lock[T](m: Mutex[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }"
     },
     {

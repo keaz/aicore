@@ -1763,6 +1763,32 @@ fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { conc
     }
 }
 
+/// `try_buffered_channel` in `std.concurrent`.
+///
+/// Like `buffered_channel`, but reports a failure instead of returning handle
+/// `0`: `InvalidInput` for a capacity outside `1..=1048576`, and `Io` when every
+/// runtime channel slot is in use.
+///
+/// ## Example
+/// ```aic
+/// // match try_buffered_channel(4) { Ok(ch) => ..., Err(err) => ... }
+/// ```
+///
+/// ## Effects
+/// See the function signature for required effects and capabilities.
+///
+/// ## Errors
+/// Returns `InvalidInput` or `Io` as described above.
+fn try_buffered_channel[T](capacity: Int) -> Result[(Sender[T], Receiver[T]), ConcurrencyError] effects { concurrency } {
+    match aic_conc_channel_int_buffered_intrinsic(capacity) {
+        Ok(ch) => Ok((
+            Sender { handle: ch.handle },
+            Receiver { handle: ch.handle },
+        )),
+        Err(err) => Err(err),
+    }
+}
+
 /// `buffered_channel_u32` in `std.concurrent`.
 fn buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> (Sender[T], Receiver[T]) effects { concurrency } {
     match conc_u32_to_int_result(capacity) {
@@ -1785,6 +1811,9 @@ fn buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> (Sender[T], Rece
 
 /// `close_sender` in `std.concurrent`.
 ///
+/// Closes the channel for sending. Values already buffered can still be
+/// received; the runtime releases the channel slot once the last one is taken.
+///
 /// ## Example
 /// ```aic
 /// // Import `std.concurrent` and call `close_sender` with module-specific arguments.
@@ -1801,6 +1830,10 @@ fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { co
 
 /// `close_receiver` in `std.concurrent`.
 ///
+/// Closes the channel and discards every value still buffered in it, so the
+/// runtime releases the channel slot. Closing a channel whose slot was already
+/// released returns `Ok(true)`.
+///
 /// ## Example
 /// ```aic
 /// // Import `std.concurrent` and call `close_receiver` with module-specific arguments.
@@ -1812,7 +1845,34 @@ fn close_sender[T](tx: Sender[T]) -> Result[Bool, ConcurrencyError] effects { co
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn close_receiver[T](rx: Receiver[T]) -> Result[Bool, ConcurrencyError] effects { concurrency } {
-    close_channel(IntChannel { handle: rx.handle })
+    let closed = close_channel(IntChannel { handle: rx.handle });
+    match closed {
+        Ok(_) => if true {
+            // Drop the payloads still buffered. Taking the last one lets the
+            // runtime release the channel slot.
+            let mut draining = true;
+            while draining {
+                match aic_conc_try_recv_int_intrinsic(IntChannel { handle: rx.handle }) {
+                    Ok(payload_id) => if true {
+                        let _dropped = aic_conc_payload_drop_intrinsic(payload_id);
+                        ()
+                    } else {
+                        ()
+                    },
+                    Err(_) => if true {
+                        draining = false;
+                        ()
+                    } else {
+                        ()
+                    },
+                };
+            };
+            closed
+        } else {
+            closed
+        },
+        Err(_) => closed,
+    }
 }
 
 /// `bytes_channel` in `std.concurrent`.

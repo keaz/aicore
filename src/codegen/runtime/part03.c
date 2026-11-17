@@ -3485,9 +3485,21 @@ typedef struct {
     pthread_cond_t cond;
 } AicConcTaskSlot;
 
+// Channel handles carry a slot index and a generation:
+// handle = generation * AIC_RT_CONC_CHANNEL_CAP + slot_index + 1.
+// A slot is released once it is closed, its buffer is empty and no operation
+// waits on it; the release bumps the generation, so old copies of the handle
+// stop matching the slot and behave like a closed channel. Generations wrap at
+// AIC_RT_CONC_CHANNEL_GEN_LIMIT, which keeps every handle at or below 2^30.
+#define AIC_RT_CONC_CHANNEL_GEN_LIMIT (INT64_C(1) << 23)
+
 typedef struct {
+    int ready;
     int active;
     int closed;
+    int wrapped;
+    int64_t generation;
+    int64_t waiters;
     int64_t* values;
     int64_t cap;
     int64_t len;
@@ -3567,6 +3579,9 @@ static AicConcArcSlot aic_rt_conc_arcs[AIC_RT_CONC_ARC_CAP];
 static AicConcAtomicIntSlot aic_rt_conc_atomic_ints[AIC_RT_CONC_ATOMIC_INT_CAP];
 static AicConcAtomicBoolSlot aic_rt_conc_atomic_bools[AIC_RT_CONC_ATOMIC_BOOL_CAP];
 static AicConcThreadLocalSlot aic_rt_conc_tls[AIC_RT_CONC_TL_CAP];
+static pthread_mutex_t aic_rt_conc_channel_table_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t aic_rt_conc_channel_table_once = PTHREAD_ONCE_INIT;
+static int64_t aic_rt_conc_channel_next = 0;
 static pthread_mutex_t aic_rt_conc_scope_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_payload_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aic_rt_conc_arc_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -3768,16 +3783,115 @@ static AicConcTaskSlot* aic_rt_conc_get_task(int64_t handle) {
     return slot;
 }
 
-static AicConcChannelSlot* aic_rt_conc_get_channel(int64_t handle) {
+#define AIC_RT_CONC_CHANNEL_LIVE 0
+#define AIC_RT_CONC_CHANNEL_RETIRED 1
+#define AIC_RT_CONC_CHANNEL_MISSING 2
+
+static void aic_rt_conc_channel_table_init(void) {
+    for (int64_t i = 0; i < AIC_RT_CONC_CHANNEL_CAP; ++i) {
+        AicConcChannelSlot* slot = &aic_rt_conc_channels[i];
+        memset(slot, 0, sizeof(*slot));
+        if (pthread_mutex_init(&slot->mutex, NULL) != 0) {
+            continue;
+        }
+        if (pthread_cond_init(&slot->not_empty, NULL) != 0) {
+            pthread_mutex_destroy(&slot->mutex);
+            continue;
+        }
+        if (pthread_cond_init(&slot->not_full, NULL) != 0) {
+            pthread_cond_destroy(&slot->not_empty);
+            pthread_mutex_destroy(&slot->mutex);
+            continue;
+        }
+        slot->ready = 1;
+    }
+}
+
+static void aic_rt_conc_channel_table_ensure(void) {
     aic_rt_conc_limits_ensure();
-    if (handle <= 0 || handle > aic_rt_conc_channel_limit) {
-        return NULL;
+    (void)pthread_once(&aic_rt_conc_channel_table_once, aic_rt_conc_channel_table_init);
+}
+
+// Locks the slot named by `handle`. Returns AIC_RT_CONC_CHANNEL_LIVE with the
+// slot mutex held, AIC_RT_CONC_CHANNEL_RETIRED when the handle belongs to a
+// channel whose slot was already released, or AIC_RT_CONC_CHANNEL_MISSING when
+// the handle was never issued. A lock failure is reported through `out_lock_rc`.
+static int aic_rt_conc_channel_lock(
+    int64_t handle,
+    AicConcChannelSlot** out_slot,
+    int* out_lock_rc
+) {
+    *out_slot = NULL;
+    *out_lock_rc = 0;
+    aic_rt_conc_channel_table_ensure();
+    if (handle <= 0 || handle > AIC_RT_CONC_CHANNEL_CAP * AIC_RT_CONC_CHANNEL_GEN_LIMIT) {
+        return AIC_RT_CONC_CHANNEL_MISSING;
     }
-    AicConcChannelSlot* slot = &aic_rt_conc_channels[handle - 1];
-    if (!slot->active) {
-        return NULL;
+    int64_t index = (handle - 1) % AIC_RT_CONC_CHANNEL_CAP;
+    int64_t generation = (handle - 1) / AIC_RT_CONC_CHANNEL_CAP;
+    if (index >= aic_rt_conc_channel_limit) {
+        return AIC_RT_CONC_CHANNEL_MISSING;
     }
-    return slot;
+    AicConcChannelSlot* slot = &aic_rt_conc_channels[index];
+    if (!slot->ready) {
+        return AIC_RT_CONC_CHANNEL_MISSING;
+    }
+    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    if (lock_rc != 0) {
+        *out_lock_rc = lock_rc;
+        return AIC_RT_CONC_CHANNEL_MISSING;
+    }
+    int state;
+    if (generation == slot->generation) {
+        state = slot->active ? AIC_RT_CONC_CHANNEL_LIVE : AIC_RT_CONC_CHANNEL_MISSING;
+    } else if (generation < slot->generation || slot->wrapped) {
+        state = AIC_RT_CONC_CHANNEL_RETIRED;
+    } else {
+        state = AIC_RT_CONC_CHANNEL_MISSING;
+    }
+    if (state != AIC_RT_CONC_CHANNEL_LIVE) {
+        pthread_mutex_unlock(&slot->mutex);
+        return state;
+    }
+    *out_slot = slot;
+    return AIC_RT_CONC_CHANNEL_LIVE;
+}
+
+// Releases the slot once nothing can use it again: the channel is closed, its
+// buffer is empty and no operation waits on it. Must hold `slot->mutex`.
+static void aic_rt_conc_channel_release_if_idle_locked(AicConcChannelSlot* slot) {
+    if (!slot->active || !slot->closed || slot->len != 0 || slot->waiters != 0) {
+        return;
+    }
+    free(slot->values);
+    slot->values = NULL;
+    slot->cap = 0;
+    slot->len = 0;
+    slot->head = 0;
+    slot->tail = 0;
+    slot->closed = 0;
+    slot->active = 0;
+    slot->generation += 1;
+    if (slot->generation >= AIC_RT_CONC_CHANNEL_GEN_LIMIT) {
+        slot->generation = 0;
+        slot->wrapped = 1;
+    }
+}
+
+static void aic_rt_conc_channel_unlock(AicConcChannelSlot* slot) {
+    aic_rt_conc_channel_release_if_idle_locked(slot);
+    pthread_mutex_unlock(&slot->mutex);
+}
+
+static int aic_rt_conc_channel_wait(
+    AicConcChannelSlot* slot,
+    pthread_cond_t* cond,
+    const struct timespec* deadline
+) {
+    slot->waiters += 1;
+    int wait_rc = pthread_cond_timedwait(cond, &slot->mutex, deadline);
+    slot->waiters -= 1;
+    return wait_rc;
 }
 
 static AicConcMutexSlot* aic_rt_conc_get_mutex(int64_t handle) {
@@ -4732,7 +4846,7 @@ int64_t aic_rt_conc_select_first(
 }
 
 int64_t aic_rt_conc_channel_int(int64_t capacity, int64_t* out_handle) {
-    aic_rt_conc_limits_ensure();
+    aic_rt_conc_channel_table_ensure();
     if (out_handle != NULL) {
         *out_handle = 0;
     }
@@ -4740,53 +4854,54 @@ int64_t aic_rt_conc_channel_int(int64_t capacity, int64_t* out_handle) {
         return 4;
     }
 
-    int64_t slot_index = -1;
-    for (int64_t i = 0; i < aic_rt_conc_channel_limit; ++i) {
-        if (!aic_rt_conc_channels[i].active) {
-            slot_index = i;
-            break;
+    int64_t* values = (int64_t*)malloc((size_t)capacity * sizeof(int64_t));
+    if (values == NULL) {
+        return 7;
+    }
+
+    int table_rc = pthread_mutex_lock(&aic_rt_conc_channel_table_mutex);
+    if (table_rc != 0) {
+        free(values);
+        return aic_rt_conc_map_errno(table_rc);
+    }
+    // Scan from the slot after the last allocation so released slots are reused
+    // round-robin. That spreads generations evenly and keeps a released handle
+    // away from its slot for as long as possible.
+    int64_t limit = aic_rt_conc_channel_limit;
+    int64_t start = aic_rt_conc_channel_next % limit;
+    for (int64_t step = 0; step < limit; ++step) {
+        int64_t index = (start + step) % limit;
+        AicConcChannelSlot* slot = &aic_rt_conc_channels[index];
+        if (!slot->ready) {
+            continue;
         }
+        if (pthread_mutex_lock(&slot->mutex) != 0) {
+            continue;
+        }
+        if (slot->active) {
+            pthread_mutex_unlock(&slot->mutex);
+            continue;
+        }
+        slot->active = 1;
+        slot->closed = 0;
+        slot->waiters = 0;
+        slot->values = values;
+        slot->cap = capacity;
+        slot->len = 0;
+        slot->head = 0;
+        slot->tail = 0;
+        int64_t handle = slot->generation * AIC_RT_CONC_CHANNEL_CAP + index + 1;
+        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_next = index + 1;
+        pthread_mutex_unlock(&aic_rt_conc_channel_table_mutex);
+        if (out_handle != NULL) {
+            *out_handle = handle;
+        }
+        return 0;
     }
-    if (slot_index < 0) {
-        return 7;
-    }
-
-    AicConcChannelSlot* slot = &aic_rt_conc_channels[slot_index];
-    memset(slot, 0, sizeof(*slot));
-    slot->values = (int64_t*)malloc((size_t)capacity * sizeof(int64_t));
-    if (slot->values == NULL) {
-        memset(slot, 0, sizeof(*slot));
-        return 7;
-    }
-    if (pthread_mutex_init(&slot->mutex, NULL) != 0) {
-        free(slot->values);
-        memset(slot, 0, sizeof(*slot));
-        return 7;
-    }
-    if (pthread_cond_init(&slot->not_empty, NULL) != 0) {
-        pthread_mutex_destroy(&slot->mutex);
-        free(slot->values);
-        memset(slot, 0, sizeof(*slot));
-        return 7;
-    }
-    if (pthread_cond_init(&slot->not_full, NULL) != 0) {
-        pthread_cond_destroy(&slot->not_empty);
-        pthread_mutex_destroy(&slot->mutex);
-        free(slot->values);
-        memset(slot, 0, sizeof(*slot));
-        return 7;
-    }
-    slot->active = 1;
-    slot->cap = capacity;
-    slot->len = 0;
-    slot->head = 0;
-    slot->tail = 0;
-    slot->closed = 0;
-
-    if (out_handle != NULL) {
-        *out_handle = slot_index + 1;
-    }
-    return 0;
+    pthread_mutex_unlock(&aic_rt_conc_channel_table_mutex);
+    free(values);
+    return 7;
 }
 
 int64_t aic_rt_conc_channel_int_buffered(int64_t capacity, int64_t* out_handle) {
@@ -4797,41 +4912,45 @@ int64_t aic_rt_conc_send_int(int64_t handle, int64_t value, int64_t timeout_ms) 
     if (timeout_ms < 0) {
         return 4;
     }
-    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
-    if (slot == NULL) {
-        return 1;
-    }
-
-    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    AicConcChannelSlot* slot = NULL;
+    int lock_rc = 0;
+    int state = aic_rt_conc_channel_lock(handle, &slot, &lock_rc);
     if (lock_rc != 0) {
         return aic_rt_conc_map_errno(lock_rc);
     }
+    if (state == AIC_RT_CONC_CHANNEL_RETIRED) {
+        return 6;
+    }
+    if (state != AIC_RT_CONC_CHANNEL_LIVE) {
+        return 1;
+    }
+
     struct timespec deadline;
     int deadline_rc = aic_rt_conc_make_deadline(timeout_ms, &deadline);
     if (deadline_rc != 0) {
-        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_unlock(slot);
         return aic_rt_conc_map_errno(deadline_rc);
     }
 
     while (slot->len >= slot->cap) {
         if (slot->closed) {
-            pthread_mutex_unlock(&slot->mutex);
+            aic_rt_conc_channel_unlock(slot);
             return 6;
         }
-        int wait_rc = pthread_cond_timedwait(&slot->not_full, &slot->mutex, &deadline);
+        int wait_rc = aic_rt_conc_channel_wait(slot, &slot->not_full, &deadline);
 #ifdef ETIMEDOUT
         if (wait_rc == ETIMEDOUT) {
-            pthread_mutex_unlock(&slot->mutex);
+            aic_rt_conc_channel_unlock(slot);
             return 2;
         }
 #endif
         if (wait_rc != 0) {
-            pthread_mutex_unlock(&slot->mutex);
+            aic_rt_conc_channel_unlock(slot);
             return aic_rt_conc_map_errno(wait_rc);
         }
     }
     if (slot->closed) {
-        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_unlock(slot);
         return 6;
     }
 
@@ -4839,26 +4958,27 @@ int64_t aic_rt_conc_send_int(int64_t handle, int64_t value, int64_t timeout_ms) 
     slot->tail = (slot->tail + 1) % slot->cap;
     slot->len += 1;
     pthread_cond_signal(&slot->not_empty);
-    pthread_mutex_unlock(&slot->mutex);
+    aic_rt_conc_channel_unlock(slot);
     return 0;
 }
 
 int64_t aic_rt_conc_try_send_int(int64_t handle, int64_t value) {
-    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
-    if (slot == NULL) {
-        return 6;
-    }
-
-    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    AicConcChannelSlot* slot = NULL;
+    int lock_rc = 0;
+    int state = aic_rt_conc_channel_lock(handle, &slot, &lock_rc);
     if (lock_rc != 0) {
         return aic_rt_conc_map_errno(lock_rc);
     }
+    if (state != AIC_RT_CONC_CHANNEL_LIVE) {
+        return 6;
+    }
+
     if (slot->closed) {
-        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_unlock(slot);
         return 6;
     }
     if (slot->len >= slot->cap) {
-        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_unlock(slot);
         return 8;
     }
 
@@ -4866,7 +4986,7 @@ int64_t aic_rt_conc_try_send_int(int64_t handle, int64_t value) {
     slot->tail = (slot->tail + 1) % slot->cap;
     slot->len += 1;
     pthread_cond_signal(&slot->not_empty);
-    pthread_mutex_unlock(&slot->mutex);
+    aic_rt_conc_channel_unlock(slot);
     return 0;
 }
 
@@ -4877,36 +4997,40 @@ int64_t aic_rt_conc_recv_int(int64_t handle, int64_t timeout_ms, int64_t* out_va
     if (timeout_ms < 0) {
         return 4;
     }
-    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
-    if (slot == NULL) {
-        return 1;
-    }
-
-    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    AicConcChannelSlot* slot = NULL;
+    int lock_rc = 0;
+    int state = aic_rt_conc_channel_lock(handle, &slot, &lock_rc);
     if (lock_rc != 0) {
         return aic_rt_conc_map_errno(lock_rc);
     }
+    if (state == AIC_RT_CONC_CHANNEL_RETIRED) {
+        return 6;
+    }
+    if (state != AIC_RT_CONC_CHANNEL_LIVE) {
+        return 1;
+    }
+
     struct timespec deadline;
     int deadline_rc = aic_rt_conc_make_deadline(timeout_ms, &deadline);
     if (deadline_rc != 0) {
-        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_unlock(slot);
         return aic_rt_conc_map_errno(deadline_rc);
     }
 
     while (slot->len == 0) {
         if (slot->closed) {
-            pthread_mutex_unlock(&slot->mutex);
+            aic_rt_conc_channel_unlock(slot);
             return 6;
         }
-        int wait_rc = pthread_cond_timedwait(&slot->not_empty, &slot->mutex, &deadline);
+        int wait_rc = aic_rt_conc_channel_wait(slot, &slot->not_empty, &deadline);
 #ifdef ETIMEDOUT
         if (wait_rc == ETIMEDOUT) {
-            pthread_mutex_unlock(&slot->mutex);
+            aic_rt_conc_channel_unlock(slot);
             return 2;
         }
 #endif
         if (wait_rc != 0) {
-            pthread_mutex_unlock(&slot->mutex);
+            aic_rt_conc_channel_unlock(slot);
             return aic_rt_conc_map_errno(wait_rc);
         }
     }
@@ -4915,7 +5039,7 @@ int64_t aic_rt_conc_recv_int(int64_t handle, int64_t timeout_ms, int64_t* out_va
     slot->head = (slot->head + 1) % slot->cap;
     slot->len -= 1;
     pthread_cond_signal(&slot->not_full);
-    pthread_mutex_unlock(&slot->mutex);
+    aic_rt_conc_channel_unlock(slot);
     if (out_value != NULL) {
         *out_value = value;
     }
@@ -4926,18 +5050,19 @@ int64_t aic_rt_conc_try_recv_int(int64_t handle, int64_t* out_value) {
     if (out_value != NULL) {
         *out_value = 0;
     }
-    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
-    if (slot == NULL) {
-        return 6;
-    }
-
-    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    AicConcChannelSlot* slot = NULL;
+    int lock_rc = 0;
+    int state = aic_rt_conc_channel_lock(handle, &slot, &lock_rc);
     if (lock_rc != 0) {
         return aic_rt_conc_map_errno(lock_rc);
     }
+    if (state != AIC_RT_CONC_CHANNEL_LIVE) {
+        return 6;
+    }
+
     if (slot->len == 0) {
         int closed = slot->closed;
-        pthread_mutex_unlock(&slot->mutex);
+        aic_rt_conc_channel_unlock(slot);
         return closed ? 6 : 9;
     }
 
@@ -4945,7 +5070,7 @@ int64_t aic_rt_conc_try_recv_int(int64_t handle, int64_t* out_value) {
     slot->head = (slot->head + 1) % slot->cap;
     slot->len -= 1;
     pthread_cond_signal(&slot->not_full);
-    pthread_mutex_unlock(&slot->mutex);
+    aic_rt_conc_channel_unlock(slot);
     if (out_value != NULL) {
         *out_value = value;
     }
@@ -5026,18 +5151,22 @@ int64_t aic_rt_conc_select_recv_int(
 }
 
 int64_t aic_rt_conc_close_channel(int64_t handle) {
-    AicConcChannelSlot* slot = aic_rt_conc_get_channel(handle);
-    if (slot == NULL) {
-        return 1;
-    }
-    int lock_rc = pthread_mutex_lock(&slot->mutex);
+    AicConcChannelSlot* slot = NULL;
+    int lock_rc = 0;
+    int state = aic_rt_conc_channel_lock(handle, &slot, &lock_rc);
     if (lock_rc != 0) {
         return aic_rt_conc_map_errno(lock_rc);
+    }
+    if (state == AIC_RT_CONC_CHANNEL_RETIRED) {
+        return 0;
+    }
+    if (state != AIC_RT_CONC_CHANNEL_LIVE) {
+        return 1;
     }
     slot->closed = 1;
     pthread_cond_broadcast(&slot->not_empty);
     pthread_cond_broadcast(&slot->not_full);
-    pthread_mutex_unlock(&slot->mutex);
+    aic_rt_conc_channel_unlock(slot);
     return 0;
 }
 

@@ -123,6 +123,7 @@ fn select_first_u32(tasks: Vec[Task[Int]], timeout_ms: Int) -> Result[IntTaskSel
 fn channel[T]() -> (Sender[T], Receiver[T]) effects { concurrency }
 fn buffered_channel[T](capacity: Int) -> (Sender[T], Receiver[T]) effects { concurrency }
 fn buffered_channel_u32[T](capacity: ConcurrencyCapacityU32) -> (Sender[T], Receiver[T]) effects { concurrency }
+fn try_buffered_channel[T](capacity: Int) -> Result[(Sender[T], Receiver[T]), ConcurrencyError] effects { concurrency }
 fn send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
 fn recv[T](rx: Receiver[T]) -> Result[T, ChannelError] effects { concurrency }
 fn try_send[T](tx: Sender[T], value: T) -> Result[Bool, ChannelError] effects { concurrency }
@@ -198,6 +199,34 @@ fn read_lock[T](rw: RwLock[T]) -> Result[T, ConcurrencyError] effects { concurre
 fn write_lock[T](rw: RwLock[T]) -> Result[MutexGuard[T], ConcurrencyError] effects { concurrency }
 fn close_rwlock[T](rw: RwLock[T]) -> Result[Bool, ConcurrencyError] effects { concurrency }
 ```
+
+## Channel Slot Lifetime
+
+The runtime keeps channels in a table of 128 slots (`AIC_RT_LIMIT_CONC_CHANNELS`
+can lower this). That bounds how many channels are open at the same time, not how
+many a process creates over its life:
+
+- A slot is released when the channel is closed, its buffer is empty and no
+  `send`/`recv` is waiting on it. Released slots are reused, so a long-running
+  process can open and close channels without limit.
+- `close_sender(tx)` and `close_channel(ch)` close the channel for sending.
+  Values already buffered can still be received; the slot is released when the
+  last one is taken. A closed channel that still holds values keeps its slot.
+- `close_receiver(rx)` closes the channel and discards every value still buffered,
+  dropping the payloads, so the slot is released right away (or as soon as a
+  blocked `send`/`recv` wakes up and returns `Closed`).
+- Channel handles are `generation * 128 + slot + 1`. Releasing a slot advances
+  its generation, so an old copy of a handle never reaches the channel that
+  reuses the slot. Operations on a released handle behave like a closed, empty
+  channel: `send`/`try_send`/`recv`/`try_recv` fail with `Closed`, and closing it
+  again returns `Ok(true)`. A handle that was never issued fails with `NotFound`
+  (`Closed` for the `try_*` paths), as before. Handles stay at or below `2^30`;
+  the generation wraps after 8,388,608 reuses of one slot, and slots are reused
+  round-robin to keep that far away.
+- When all slots are open, `try_buffered_channel(...)` and `channel_int(...)`
+  return `Err(Io)`. `channel()`/`buffered_channel(...)` return handle `0` in that
+  case, and every operation on handle `0` fails. Use `try_buffered_channel` when
+  the caller must tell exhaustion apart from success.
 
 ## Arc Usage Pattern
 
@@ -486,13 +515,12 @@ Codegen lowers to these runtime symbols:
 ## Platform Limitations
 
 - All platforms:
-  - Channel slots are not reused. A process can create at most 128 channels in its
-    lifetime (`AIC_RT_LIMIT_CONC_CHANNELS` can only lower this). Closing a channel
-    does not free its slot, so the 129th `channel`/`buffered_channel` call fails
-    even when every earlier channel is closed. Code that opens a reply channel per
-    request (for example `std.pool` `acquire` and `pool_stats`) hits this limit
-    after about 125 requests. Slot reclamation is open follow-up work; see
-    `docs/io-runtime/channel-slot-reclamation.md`.
+  - At most 128 channels can be open at the same time
+    (`AIC_RT_LIMIT_CONC_CHANNELS` can only lower this). Closed channels release
+    their slot for reuse; see [Channel Slot Lifetime](#channel-slot-lifetime).
+    A channel closed with `close_sender`/`close_channel` that still holds
+    undelivered values keeps its slot until they are received; use
+    `close_receiver` to discard them.
 - Linux/macOS:
   - Full channel/task/mutex runtime behavior is implemented.
 - Windows:

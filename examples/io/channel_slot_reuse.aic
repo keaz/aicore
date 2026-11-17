@@ -1,0 +1,120 @@
+import std.concurrent;
+import std.io;
+import std.pool;
+
+struct FakeConn {
+    id: Int,
+}
+
+// Opens and closes `rounds` channels one after another. The runtime table has
+// 128 slots, so this only succeeds because closed channels give their slot back.
+fn churn_channels(rounds: Int) -> Int effects { concurrency } capabilities { concurrency } {
+    let mut ok = 0;
+    let mut i = 0;
+    while i < rounds {
+        let ch: (Sender[String], Receiver[String]) = buffered_channel(1);
+        let sent = match send(ch.0, "job") {
+            Ok(_) => true,
+            Err(_) => false,
+        };
+        // close_receiver drops the buffered "job" payload and frees the slot.
+        let closed = match close_receiver(ch.1) {
+            Ok(_) => true,
+            Err(_) => false,
+        };
+        if sent && closed {
+            ok = ok + 1;
+        } else {
+            ()
+        };
+        i = i + 1;
+    };
+    ok
+}
+
+// A copy of a handle kept after its channel closed stays closed, even after
+// another channel reuses the slot.
+fn stale_handle_is_closed() -> Bool effects { concurrency } capabilities { concurrency } {
+    let old: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let _closed = close_receiver(old.1);
+    let _churn = churn_channels(200);
+    let fresh: (Sender[Int], Receiver[Int]) = buffered_channel(1);
+    let stale_send_closed = match send(old.0, 1) {
+        Ok(_) => false,
+        Err(err) => match err {
+            Closed => true,
+            _ => false,
+        },
+    };
+    let fresh_empty = match try_recv(fresh.1) {
+        Ok(_) => false,
+        Err(err) => match err {
+            Empty => true,
+            _ => false,
+        },
+    };
+    let _closed_fresh = close_receiver(fresh.1);
+    stale_send_closed && fresh_empty
+}
+
+// Every acquire and pool_stats call opens a reply channel.
+fn pool_cycles(cycles: Int) -> Bool effects { concurrency } capabilities { concurrency } {
+    let created = atomic_int(0);
+    let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
+        let prior = atomic_add(created, 1);
+        Ok(FakeConn { id: prior + 1 })
+    };
+    let check_cb: Fn(FakeConn) -> Bool = |conn: FakeConn| -> Bool { conn.id > 0 };
+    let destroy_cb: Fn(FakeConn) -> () = |conn: FakeConn| -> () { () };
+    let pool: Pool[FakeConn] = match new_pool(
+        PoolConfig {
+            min_size: 0,
+            max_size: 2,
+            acquire_timeout_ms: 2000,
+            idle_timeout_ms: 0,
+            max_lifetime_ms: 0,
+            health_check_ms: 0,
+        },
+        create_cb,
+        check_cb,
+        destroy_cb,
+    ) {
+        Ok(p) => p,
+        Err(_) => Pool { handle: 0 },
+    };
+    let mut acquired = 0;
+    let mut i = 0;
+    while i < cycles {
+        match acquire(pool) {
+            Ok(conn) => if true {
+                release(conn);
+                acquired = acquired + 1;
+                ()
+            } else {
+                ()
+            },
+            Err(_) => (),
+        };
+        i = i + 1;
+    };
+    let mut stats = pool_stats(pool);
+    let mut polls = 0;
+    while stats.in_use != 0 && polls < 100 {
+        stats = pool_stats(pool);
+        polls = polls + 1;
+    };
+    close_pool(pool);
+    acquired == cycles && stats.in_use == 0 && stats.total <= 2
+}
+
+fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
+    let churned = churn_channels(1000);
+    let stale_ok = stale_handle_is_closed();
+    let pool_ok = pool_cycles(200);
+    if churned == 1000 && stale_ok && pool_ok {
+        print_int(42);
+    } else {
+        print_int(0);
+    };
+    0
+}

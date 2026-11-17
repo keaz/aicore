@@ -36,8 +36,7 @@ fn read_stats(pool: Pool[FakeConn]) -> PoolStats effects { concurrency } capabil
 // sleep alone does not guarantee expiry on a loaded machine. Wait until the
 // pool reports that it destroyed a connection after `baseline`. Each stats
 // request also advances the manager, so this ends even if `wait_ms` cannot
-// spawn its timer task. The bounds keep the run under the runtime's channel
-// limit, since every `pool_stats` call opens a reply channel.
+// spawn its timer task. The bound keeps a broken pool from hanging the run.
 fn wait_for_idle_reap(pool: Pool[FakeConn], baseline: Int) -> Bool effects { concurrency } capabilities { concurrency } {
     let mut reaped = false;
     let mut polls = 0;

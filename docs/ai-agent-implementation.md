@@ -224,6 +224,7 @@ Notes:
   - `examples/io/channel_migration_compat.aic`
   - `examples/io/generic_channel_types.aic`
   - `examples/io/structured_concurrency.aic`
+  - `examples/io/channel_slot_reuse.aic` (closed channels release their runtime slot; stale handles fail with `Closed`; see `docs/io-runtime/channel-slot-reclamation.md`)
   - structured APIs: `spawn_group(Vec[Int], Int)`, `timeout_task(Task, Int)`, `select_first(Vec[Task], Int)`
 - Complete IO agent playbooks:
   - `docs/io-runtime/README.md`

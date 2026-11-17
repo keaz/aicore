@@ -273,7 +273,9 @@ fn acquire_result_timeout[T]() -> Result[PooledConn[T], PoolError] {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn id_base() -> Int {
-    1000000
+    // Above the largest channel handle (2^30), so a request channel handle
+    // always fits below this field.
+    2147483648
 }
 
 /// `timeout_field_base` in `std.pool`.
@@ -289,7 +291,8 @@ fn id_base() -> Int {
 /// ## Errors
 /// Returns module-defined error variants when the operation fails.
 fn timeout_field_base() -> Int {
-    1000000000000
+    // 2^39: above the manager field (task handle <= 128 times `id_base()`).
+    549755813888
 }
 
 /// `clamp_non_negative` in `std.pool`.
@@ -1392,12 +1395,18 @@ fn acquire[T](pool: Pool[T]) -> Result[PooledConn[T], PoolError] effects { concu
             ) = buffered_channel(1);
             let reply_tx = reply_ch.0;
             let reply_rx = reply_ch.1;
-            let sent = send(
-                tx,
-                Acquire(AcquireReq {
-                    reply: reply_tx,
-                }),
-            );
+            // Handle 0 means the runtime channel table is full. Do not send a
+            // request whose reply cannot be delivered.
+            let sent: Result[Bool, ChannelError] = if reply_tx.handle <= 0 {
+                Err(Closed())
+            } else {
+                send(
+                    tx,
+                    Acquire(AcquireReq {
+                        reply: reply_tx,
+                    }),
+                )
+            };
             match sent {
                 Ok(_) => if true {
                     let mut waiting = true;
