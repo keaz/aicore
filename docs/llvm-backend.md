@@ -98,7 +98,7 @@ Wave 1 extension contract (`#317`):
   - `Float32`, `Float64`, `Float`, `Bool`, `Char`, `()`
 - Supported extern C non-scalar value view in the current native target contract:
   - `String` parameters as `{ i8*, i64, i64 }`
-- Extern declarations are still restricted to plain signatures (`extern "C" fn ...;`) without async/generics/effects/contracts.
+- Extern declarations are still restricted to plain signatures (`extern "C" fn ... -> Ret effects { ... };`) without async/generics/capabilities/contracts. The `effects` clause is mandatory (`E2010`) and only feeds effect analysis; it does not change lowering.
 
 Wave numeric contract (`#317`, `#318`, `#319`, `#320`):
 

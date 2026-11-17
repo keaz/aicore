@@ -1,0 +1,45 @@
+module examples.core.extern_effects;
+
+// Every `extern "C"` declaration states its effects (E2010 if it does
+// not). Callers inherit them through normal effect analysis.
+
+// `putchar` writes to stdout, so it carries `io`.
+extern "C" fn putchar(c: Int32) -> Int32 effects { io };
+
+// `abs` has no side effects; `effects { }` declares it pure.
+extern "C" fn abs(x: Int32) -> Int32 effects { };
+
+// A pure function may call a pure extern.
+fn magnitude(x: Int32) -> Int32 {
+    unsafe {
+        abs(x)
+    }
+}
+
+// Calling `putchar` needs `effects { io }` and `capabilities { io }`.
+// Removing them reports E2001 and E2009, even inside `unsafe { }`.
+fn emit_digit(d: Int32) -> Int32 effects { io } capabilities { io } {
+    unsafe {
+        putchar(48i32 + d)
+    }
+}
+
+fn emit_newline() -> Int32 effects { io } capabilities { io } {
+    unsafe {
+        putchar(10i32)
+    }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let tens = magnitude(-4i32);
+    let ones = magnitude(2i32);
+    let first = emit_digit(tens);
+    let second = emit_digit(ones);
+    let last = emit_newline();
+    // `putchar` returns the byte it wrote, or a negative value on error.
+    if first < 0i32 || second < 0i32 || last < 0i32 {
+        1
+    } else {
+        0
+    }
+}

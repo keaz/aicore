@@ -210,6 +210,7 @@ check_pass=(
   "examples/core/iterator_trait_pipeline.aic"
   "examples/core/dyn_trait_objects.aic"
   "examples/core/intrinsic_declaration_demo.aic"
+  "examples/core/extern_effects.aic"
   "examples/core/intrinsic_std_wrapper_migration.aic"
   "examples/core/named_function_arguments.aic"
   "examples/core/struct_methods.aic"
@@ -238,6 +239,7 @@ check_pass=(
 # Files that must already be in `aic fmt` canonical form.
 fmt_check_pass=(
   "examples/core/formatter_comments.aic"
+  "examples/core/extern_effects.aic"
 )
 # Files whose formatted copy must stay valid, keep every comment, and be a
 # fixed point of `aic fmt` (the checked-in file itself is not rewritten).
@@ -281,6 +283,7 @@ check_fail=(
   "examples/verify/net_proc_protocol_invalid.aic"
   "examples/verify/qv_contract_proof_fail.aic"
   "examples/core/intrinsic_declaration_invalid_body.aic"
+  "examples/core/extern_effects_pure_caller_invalid.aic"
   "examples/core/trait_unsupported_members_invalid.aic"
   "examples/core/unknown_type_invalid.aic"
   "examples/core/std_type_without_import_invalid.aic"
@@ -1036,6 +1039,7 @@ case "$MODE" in
     expect_run_value "examples/core/leak_check_closure_capture.aic" "42"
     expect_run_value "examples/core/iterator_trait_pipeline.aic" "42"
     expect_run_value "examples/core/struct_defaults.aic" "9094"
+    expect_run_value "examples/core/extern_effects.aic" "42"
     expect_run_value "examples/core/visibility_modifiers_demo" "42"
     expect_run_value "examples/core/tuple_types.aic" "42"
     expect_run_value "examples/core/named_function_arguments.aic" "42"

@@ -59,9 +59,11 @@ Diagnostics:
 - `E2007`: unknown capability.
 - `E2008`: duplicate capability declaration.
 - `E2009`: missing capability authority for declared/transitive effects.
+- `E2010`: `extern` declaration without an `effects { ... }` clause (callers inherit extern effects; see `docs/reference/effects.md`).
 
 Examples:
 
 - Valid capability+protocol usage: `examples/verify/capability_protocol_ok.aic`
 - Invalid capability usage: `examples/verify/capability_missing_invalid.aic`
 - Invalid protocol usage: `examples/verify/file_protocol_invalid.aic`
+- Extern effects: `examples/core/extern_effects.aic` (valid) and `examples/core/extern_effects_pure_caller_invalid.aic` (`E2001`)

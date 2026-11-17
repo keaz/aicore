@@ -294,12 +294,14 @@ Diagnostics:
 `src/package_workflow.rs`, `compiler/aic/libs/typecheck/src/main.aic`, `compiler/aic/libs/backend_llvm/src/main.aic`, `src/main.rs`, and `src/driver.rs` now form the FFI bridge pipeline.
 
 - Frontend syntax:
-  - `extern "C" fn ...;`
+  - `extern "C" fn ... -> Ret effects { ... };` (the effects clause is mandatory; `effects { }` declares a pure C function)
   - `unsafe fn ...`
   - expression `unsafe { ... }`
 - Typechecker/diagnostic contract:
   - `E2120`: missing/unsupported extern ABI
-  - `E2121`: extern signature must be plain (no async/generics/effects/contracts)
+  - `E2010`: extern declaration has no `effects { ... }` clause (VERIFY-T7, #488)
+  - `E2121`: extern signature must be plain (no async/generics/capabilities/contracts)
+  - extern effects join normal effect analysis: callers get `E2001`/`E2005` for undeclared effects and `E2009` for missing capabilities, and an effectful extern call inside a contract reports `E2002`
   - `E2122`: calling `extern` or `unsafe fn` requires an explicit unsafe boundary
   - `E2123`: unsupported C-ABI signature type (MVP support: `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, `()`)
 - Backend contract:

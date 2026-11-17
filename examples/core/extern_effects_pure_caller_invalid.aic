@@ -1,0 +1,14 @@
+module examples.core.extern_effects_pure_caller_invalid;
+
+// Expected failure: `greet` is pure (no `effects` clause) but calls `puts`,
+// which declares `effects { io }`. `unsafe { }` does not waive effects, so
+// `aic check` reports E2001 at the call.
+extern "C" fn puts(s: String) -> Int32 effects { io };
+
+fn greet() -> Int32 {
+    unsafe { puts("hello") }
+}
+
+fn main() -> Int {
+    0
+}
