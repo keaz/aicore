@@ -110,7 +110,7 @@ Wave 5D examples:
 
 - LLVM execution tests:
   - `make test-exec`
-  - Direct cargo equivalent: `RUST_MIN_STACK=33554432 cargo test --locked --test execution_tests -- --test-threads=1`
+  - Direct cargo equivalent: `cargo test --locked --test execution_tests`. Tests run in parallel with the libtest default thread count and need no `RUST_MIN_STACK`: the test helpers compile on a thread with the CLI's 64 MiB stack. `make test-exec EXEC_TEST_THREADS=1` runs them one at a time.
 - CLI/LSP and harness integration:
   - `cargo test --locked --test e7_cli_tests`
   - `cargo test --locked --test lsp_smoke_tests`

@@ -133,6 +133,11 @@ fn main() -> Int effects { concurrency } capabilities { concurrency } {
 - Tests and examples that depend on expiry must wait for the observable effect (for
   example, `pool_stats(...).destroyed` increasing), not for a fixed sleep.
   `examples/io/connection_pool.aic` shows this pattern.
+- `acquire(...)` succeeds only if the manager answers within `acquire_timeout_ms`
+  waits. A loaded machine (for example, parallel test runs) can delay the manager
+  thread by more than 30 ms. Tests that expect `acquire(...)` to succeed use a timeout
+  of seconds; only tests of the `Timeout` path use a short one. A generous timeout
+  costs nothing when the manager answers quickly.
 
 ## Known Limitations
 

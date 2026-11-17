@@ -7375,7 +7375,7 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         PoolConfig {
             min_size: 1,
             max_size: 2,
-            acquire_timeout_ms: 30,
+            acquire_timeout_ms: 5000,
             idle_timeout_ms: 4,
             max_lifetime_ms: 0,
             health_check_ms: 0,
@@ -7400,7 +7400,15 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         Err(_) => 0,
     };
 
-    wait_ms(20);
+    // The manager ages idle entries once per loop iteration, and a loaded
+    // machine runs fewer iterations per millisecond. Wait for the reap itself.
+    // Each pool_stats call uses one of the process's 128 channel slots, so
+    // poll at most 100 times.
+    let mut polls = 0;
+    while pool_stats(pool).destroyed < 1 && polls < 100 {
+        wait_ms(10);
+        polls = polls + 1;
+    };
 
     let second_id = match acquire(pool) {
         Ok(conn) => if true {
@@ -7441,10 +7449,29 @@ struct FakeConn {
     healthy: Bool,
 }
 
+fn wait_ms(ms: Int) -> () effects { concurrency } capabilities { concurrency } {
+    match spawn_task(1, ms) {
+        Ok(task) => if true {
+            let _joined = join_task(task);
+            ()
+        } else {
+            ()
+        },
+        Err(_) => (),
+    }
+}
+
 fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
     let created = atomic_int(0);
     let create_cb: Fn() -> Result[FakeConn, PoolError] = || -> Result[FakeConn, PoolError] {
         let prior = atomic_add(created, 1);
+        // Creating the replacement is slow, as is a pool manager on a loaded
+        // machine. The second acquire must wait for it within its timeout.
+        if prior > 0 {
+            wait_ms(50);
+        } else {
+            ();
+        };
         Ok(FakeConn {
             id: prior + 1,
             healthy: true,
@@ -7457,7 +7484,7 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         PoolConfig {
             min_size: 1,
             max_size: 1,
-            acquire_timeout_ms: 30,
+            acquire_timeout_ms: 5000,
             idle_timeout_ms: 0,
             max_lifetime_ms: 0,
             health_check_ms: 0,
@@ -18386,7 +18413,7 @@ fn main() -> Int effects { io, concurrency } capabilities { io, concurrency } {
         PoolConfig {
             min_size: 1,
             max_size: 2,
-            acquire_timeout_ms: 30,
+            acquire_timeout_ms: 5000,
             idle_timeout_ms: 0,
             max_lifetime_ms: 0,
             health_check_ms: 0,

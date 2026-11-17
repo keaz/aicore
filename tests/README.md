@@ -19,7 +19,7 @@ This directory groups the repository's executable checks by stable category rath
 - `cargo test --locked --test unit_tests`
 - `cargo test --locked --test golden_tests`
 - `cargo test --locked --test diagnostic_catalog_tests`
-- `cargo test --locked --test execution_tests`
+- `cargo test --locked --test execution_tests` (same as `make test-exec`; runs in parallel, no `RUST_MIN_STACK` needed)
 - `cargo test --locked --test e7_cli_tests`
 - `cargo test --locked --test lsp_smoke_tests`
 - `cargo test --locked --test selfhost_parity_tests`

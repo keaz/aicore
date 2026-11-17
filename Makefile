@@ -3,8 +3,8 @@ SHELL := /usr/bin/env bash
 CARGO ?= cargo
 AIC ?= cargo run --quiet --bin aic --
 AIC_SELFHOST_BOOTSTRAP_TIMEOUT ?= 900
-RUST_MIN_STACK ?= 33554432
-EXEC_TEST_THREADS ?= 1
+# Empty runs execution tests with the libtest default (one thread per CPU).
+EXEC_TEST_THREADS ?=
 
 .DEFAULT_GOAL := help
 
@@ -102,7 +102,7 @@ test-golden:
 	$(CARGO) test --locked --test formatter_tests
 
 test-exec:
-	RUST_MIN_STACK="$(RUST_MIN_STACK)" $(CARGO) test --locked --test execution_tests -- --test-threads="$(EXEC_TEST_THREADS)"
+	$(CARGO) test --locked --test execution_tests$(if $(EXEC_TEST_THREADS), -- --test-threads="$(EXEC_TEST_THREADS)",)
 
 test-e7:
 	$(CARGO) test --locked --test e7_cli_tests
