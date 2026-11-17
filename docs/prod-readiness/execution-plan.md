@@ -124,7 +124,7 @@ Goal: no known silent wrong result, and every program that passes `aic check` bu
 
 ### Wave 1 progress
 
-All nine items are on local `main` (2026-11-17), each rebased onto the previous one and fast-forwarded. `make ci` passes on the result. Nothing is pushed yet, and the issues stay open until their commits are on `origin/main` (rule 10).
+All nine items are on `origin/main` (pushed 2026-11-17 as `dd243fb..08bcda1`), each rebased onto the previous one and fast-forwarded. `make ci` passes locally on the result. The GitHub Actions workflows (`CI`, `Nightly Fuzz`, `Release`) are disabled on the repository, so no hosted run exists for this head; at the owner's request the nine issues were closed with the rule 10 evidence and a note that it is a local macOS `make ci` pass. The epic [#421] (CORR) has no open children left but is still open.
 
 | Item | Issue | Commits on local `main` |
 |---|---|---|
@@ -140,9 +140,9 @@ All nine items are on local `main` (2026-11-17), each rebased onto the previous 
 
 Verification: targeted suites per item, then `make ci` on the integrated `main`. The first run failed only in `test-selfhost`: 1.3 had rewritten `examples/core/opt_levels_demo.aic`, which is in the self-host parity manifest, with `wrapping_mul`, which the frozen self-host compiler cannot check. `2ca35c6` reduces the hash state with `%` instead; the remaining gates then passed. The REST soak gate passes with checked arithmetic, but `json_runtime_hardening` (+27 %) and `async_net_lifecycle_sustained_churn` (+24 %) have the least headroom left.
 
-Watch on the first push: the 1.3 panic fallback for `obj`/`lib` artifacts has a Windows `_write` path that only a unit test on the generated IR covers; it was never built or run on Windows. The remaining GitHub steps (push, CI on three platforms, closing the issues with the rule 10 evidence) are not done.
+Watch when CI is enabled again: the 1.3 panic fallback for `obj`/`lib` artifacts has a Windows `_write` path that only a unit test on the generated IR covers; it was never built or run on Windows. Linux and Windows have not run any Wave 1 change. [#429] also still needs its three green `main` runs and a scheduled `Nightly Fuzz` run.
 
-**Wave 1 exit:** met on local `main`. The parity table has no gaps (`E5037` is the only `build` row), overflow traps, `extern` calls carry effects, and `make examples-check` covers every example file.
+**Wave 1 exit:** met (local `make ci`). The parity table has no gaps (`E5037` is the only `build` row), overflow traps, `extern` calls carry effects, and `make examples-check` covers every example file.
 
 | # | Item | Issue | Size | Needs |
 |---|---|---|---|---|
