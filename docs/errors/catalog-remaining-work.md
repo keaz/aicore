@@ -14,7 +14,7 @@ cargo test --locked --test diagnostic_catalog_tests
 ## State at hand-off
 
 - Done: one row per registered code (332 after Wave 1 item 1.1 of the execution plan), with a Mode
-  column: 254 `check`, 3 `warn-unused`, 1 `build`, 1 `cli`, 19 `package`, 14 `selfhost`, 36 `internal`,
+  column: 253 `check`, 3 `warn-unused`, 1 `build`, 1 `cli`, 19 `package`, 14 `selfhost`, 37 `internal`,
   3 `reserved`, 1 `retired`. Every runnable trigger reports its code and every fix is error-free
   (verified by `tests/diagnostic_catalog_tests.rs`, registered in `make test-unit`).
 - Verification: the catalog test and the full `make ci` passed after the Wave 0 integration
@@ -26,12 +26,10 @@ Closed by #445: the ten former gaps are `internal` rows that name the checker co
 first (`E1222`, `E1257`, `E1314` to `E1319`). Section numbers below are kept stable because the
 execution plan cites them.
 
-## 2. Generic mangling collision (`E1255`)
+## 2. Generic mangling collision (done)
 
-`f[B, Int]` and `f_B[Int]` both mangle to `fn_f_B_Int` because `_` is both an identifier character
-and the separator, so a valid program is rejected (the `E1255` catalog trigger). Make mangling
-injective, keep `E1255` as a backstop, and change the `E1255` row to `internal` (or another genuine
-trigger).
+Closed by #499: instantiation mangling (`src/mangle.rs`) is injective and shared by the checker and
+code generation; `E1255` is an `internal` backstop.
 
 ## 3. Self-host compiler reuses codes with other meanings
 
