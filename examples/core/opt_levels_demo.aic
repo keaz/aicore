@@ -1,7 +1,8 @@
 import std.io;
 
 fn mix(x: Int, y: Int) -> Int {
-    x.wrapping_mul(31).wrapping_add(y) ^ y.wrapping_mul(17)
+    // `% 1000003` keeps the state small, so the products never overflow.
+    x % 1000003 * 31 + y ^ y * 17
 }
 
 fn fold(rounds: Int) -> Int {
@@ -14,7 +15,7 @@ fn fold(rounds: Int) -> Int {
     acc
 }
 
-fn main() -> Int effects { io } capabilities { io  } {
+fn main() -> Int effects { io } capabilities { io } {
     let value = fold(1000);
     if value != 0 {
         print_int(42);
