@@ -1,6 +1,6 @@
 # Diagnostic Code Catalog
 
-This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (333 codes).
+This catalog covers all registered diagnostics from `src/diagnostic_codes.rs` (335 codes).
 
 Each code has one row: what the compiler reports, how to produce it, and how to fix it.
 `tests/diagnostic_catalog_tests.rs` runs every trigger and fix program in this table, so the
@@ -270,6 +270,8 @@ Programs are written on one line; `\|` in a program stands for `|`.
 | `E1317` | check | A const initializer or struct field default has no compile-time value: it divides or takes a modulo by zero, its integer result overflows the declared type (`Int8`, `UInt16`, ... or `Int`), or it shifts by a negative amount or by at least the type's bit width. | `const A: Int8 = 100 + 100; fn main() -> Int { 0 }` | `const A: Int8 = 100 + 27; fn main() -> Int { 0 }` |
 | `E1318` | check | A type alias expands to itself, directly or through other aliases or type arguments (`type A = Option[A];`). | `type A = B; type B = A; fn main() -> Int { 0 }` | `type A = Int; type B = A; fn main() -> Int { 0 }` |
 | `E1319` | check | A `std.json` serialization call (`encode`, `decode_with`, `schema`, directly or through a generic function that passes its type parameter on) is instantiated with a type that contains a function value, `dyn` trait object or `Async` value in its fields, payloads or elements. | `import std.json; fn main() -> Int { let f = \|\| -> Int { 1 }; let r = json.encode(f); 0 }` | `import std.json; fn main() -> Int { let r = json.encode(1); 0 }` |
+| `E1320` | check | Integer arithmetic (`+`, `-`, `*`, `/`) whose operands are all integer literals produces a value outside its type's range. Outside a `const` initializer or field default (which report `E1317`). | `fn main() -> Int { let b: UInt8 = 200 + 100; 0 }` | `fn main() -> Int { let b: UInt16 = 200 + 100; 0 }` |
+| `E1321` | check | An integer overflow-policy method (`wrapping_*`, `checked_*`, `saturating_*`) is called on a float, with an operand of another integer type, by a name that does not exist (`wrapping_div`, `saturating_rem`), or as `saturating_neg` on an unsigned type. | `fn main() -> Int { let x = 1.5; let y = x.wrapping_add(1.0); 0 }` | `fn main() -> Int { let x = 1; let y = x.wrapping_add(1); 0 }` |
 | `E2001` | check | A function body (or a call inside it) uses an effect, directly or through a callee's signature, that is not listed in the enclosing function's `effects { ... }` clause. | `import std.io; fn main() -> Int { print_int(1); 0 }` | `import std.io; fn main() -> Int effects { io } capabilities { io } { print_int(1); 0 }` |
 | `E2002` | check | A `requires`/`ensures`/`invariant` contract expression calls a function or method whose signature declares effects; contracts must be pure. | `import std.time; fn f(x: Int) -> Int effects { time } capabilities { time } requires now_ms() > 0 { x } fn main() -> Int { 0 }` | `fn f(x: Int) -> Int requires x > 0 { x } fn main() -> Int { 0 }` |
 | `E2003` | check | A function's `effects { ... }` clause names an effect that is not one of the known effects (`io`, `fs`, `net`, `time`, `rand`, `env`, `proc`, `concurrency`). | `fn main() -> Int effects { disk } { 0 }` | `fn main() -> Int effects { fs } capabilities { fs } { 0 }` |

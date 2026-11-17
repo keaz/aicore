@@ -119,6 +119,8 @@ Recent core-language additions:
 - `E1317`: a const initializer or struct field default without a compile-time value: division or modulo by zero, an integer result that overflows the declared type, or a shift by a negative amount or at least the bit width.
 - `E1318`: a type alias that expands to itself, directly or through other aliases or type arguments.
 - `E1319`: a `std.json` serialization call (`encode`, `decode_with`, `schema`, or a generic function that passes its type parameter to one) instantiated with a type that contains a function value, `dyn` trait object or `Async` value.
+- `E1320`: integer arithmetic (`+`, `-`, `*`, `/`) whose operands are all integer literals and whose result does not fit its type (`let b: UInt8 = 200 + 100;`). At run time the same overflow traps (see `docs/reference/integer-arithmetic.md`); a `const` initializer or field default reports `E1317` instead.
+- `E1321`: misuse of an integer overflow-policy method (`wrapping_*`, `checked_*`, `saturating_*`): a float receiver, an operand of another integer type, a method that does not exist (`wrapping_div`, `wrapping_rem`, `saturating_div`, `saturating_rem`), or `saturating_neg` on an unsigned type.
 - `E1257`: `await` operand is not `Async[T]`.
 - `E1258`: generic trait bound (including the `Send` marker bound) not satisfied by the concrete type.
 - `E1259`: generic bound names an unknown trait or a trait whose arity is not 1.
@@ -270,6 +272,8 @@ The table below captures high-frequency IO/runtime diagnostics with deterministi
 | `E1317` | Const initializer or field default has no compile-time value. | Avoid division by zero and keep the result in the declared type's range. |
 | `E1318` | Cyclic type alias. | Make one alias in the cycle name a concrete type. |
 | `E1319` | JSON serialization of a type that contains a function, `dyn` or `Async` value. | Serialize plain data; keep closures and handles out of encoded types. |
+| `E1320` | Integer arithmetic on literals always overflows its type. | Use a wider type, or an explicit `wrapping_*`, `checked_*` or `saturating_*` method. |
+| `E1321` | Invalid integer overflow-policy method call. | Call it on an integer, with an operand of the same type; use `checked_div` / `checked_rem` for division. |
 | `E6004` | Import was declared but never used. | Remove the import or use a symbol from that module. |
 | `E6005` | Function is unreachable from entrypoint or otherwise unused. | Remove dead function code or invoke it from live call paths. |
 | `E6006` | Local variable is never used. | Prefix with `_` to mark intentional non-use, or remove the binding. |
