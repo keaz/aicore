@@ -5,7 +5,7 @@ fn approx_eq(a: Float, b: Float, epsilon: Float) -> Bool {
     abs_float(a - b) <= epsilon
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let abs_ok = if abs(-42) == 42 { 1 } else { 0 };
     let abs_float_ok = if approx_eq(abs_float(-3.5), 3.5, 0.000000001) { 1 } else { 0 };
     let min_ok = if min(4, -9) == -9 { 1 } else { 0 };

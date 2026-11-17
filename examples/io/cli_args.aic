@@ -5,7 +5,7 @@ import std.env;
 import std.vec;
 import std.string;
 
-fn main() -> Int effects { io, env } {
+fn main() -> Int effects { io, env } capabilities { io, env } {
     let values = args();
     let count = arg_count();
     let same_count = if vec_len(values) == count { 1 } else { 0 };

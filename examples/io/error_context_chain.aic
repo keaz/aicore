@@ -14,7 +14,7 @@ fn io_code(err: IoError) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let fs_chain_ctx = with_context(from_fs_error_with_context(NotFound(), "open config"), "bootstrap");
     let chain = error_chain(fs_chain_ctx);
 

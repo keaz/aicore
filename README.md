@@ -675,7 +675,7 @@ Additional targets:
 
 | Target | Description |
 |--------|-------------|
-| `make examples-check` | Type-check all examples |
+| `make examples-check` | Type-check every example; expected failures are listed in `scripts/ci/example-check-failures.txt` |
 | `make examples-run` | Execute all runnable examples |
 | `make cli-smoke` | CLI smoke tests |
 | `make docs-check` | Documentation/schema validation |

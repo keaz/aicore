@@ -8,7 +8,7 @@ fn classify(x: Int) -> Int {
     }
 }
 
-fn risky(a: Int, b: Int) -> Int effects { io } {
+fn risky(a: Int, b: Int) -> Int effects { io } capabilities { io } {
     if a > 0 && b > 0 {
         if a > b {
             a

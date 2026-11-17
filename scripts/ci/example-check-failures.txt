@@ -1,0 +1,59 @@
+# Examples that fail `aic check` on purpose.
+#
+# `scripts/ci/examples-check-all.py` (run by `make examples-check`) runs
+# `aic check` on every `*.aic` file under `examples/`. A file that is not
+# listed here must pass. A listed file must fail and report exactly the
+# listed codes (errors, warnings and notes), so an entry goes stale as soon
+# as the compiler changes what the file reports.
+#
+# Format: <path> <code>[,<code>...] # <why the file fails>
+
+# Diagnostic demonstrations: each file shows one error.
+examples/agent/fixable_imports.aic E1033 # input for the agent fix protocol (missing ';')
+examples/core/closure_capture_mutation_invalid.aic E1289 # shows the closure capture mutation error
+examples/core/const_evaluation_invalid.aic E1317 # shows const evaluation errors
+examples/core/constant_overflow_invalid.aic E1320 # shows literal arithmetic that always overflows
+examples/core/extern_effects_pure_caller_invalid.aic E2001,E2009 # shows a pure function calling an extern that declares io
+examples/core/intrinsic_declaration_invalid_body.aic E1093 # shows an intrinsic declaration with a body
+examples/core/match_missing_witness_invalid.aic E1247 # shows the non-exhaustive match witness
+examples/core/std_type_without_import_invalid.aic E1313 # shows a std type used without its import
+examples/core/trait_unsupported_members_invalid.aic E1084,E1085,E1098 # shows unsupported trait members
+examples/core/unknown_type_invalid.aic E1228,E1230 # shows unknown type errors
+examples/e2/cycle_a.aic E2103 # import cycle demonstration (with cycle_b.aic)
+examples/e2/cycle_b.aic E2103 # import cycle demonstration (with cycle_a.aic)
+examples/e2/recovery_bad_file.aic E1041,E1205 # parser recovery demonstration
+examples/e4/transitive_effect_violation.aic E2001,E2005,E2009 # shows transitive effect errors
+examples/e7/diag_errors.aic E1300,E2001,E2009 # input for `aic diag` output tests
+examples/e7/explain_trigger.aic E1208 # input for `aic explain`
+examples/e7/suggest_effects_demo.aic E2001,E2005,E2009 # input for `aic suggest-effects`
+examples/e8/conformance_pack/diagnostics/missing_effect.aic E2001,E2009 # conformance pack negative case
+examples/effects_reject.aic E2001,E2005,E2009 # shows effect errors
+examples/io/effect_misuse_fs.aic E2001,E2009 # shows a missing fs effect
+examples/verify/capability_missing_invalid.aic E2009 # shows a missing capability
+examples/verify/file_protocol_invalid.aic E2006,E6001 # shows a file handle protocol violation
+examples/verify/fs_protocol_invalid.aic E2006 # shows an fs protocol violation
+examples/verify/generic_channel_protocol_invalid.aic E2006 # shows a channel protocol violation
+examples/verify/net_proc_protocol_invalid.aic E2006 # shows a net/proc protocol violation
+examples/verify/qv_contract_proof_fail.aic E4002 # shows a contract the verifier disproves
+examples/vscode/error_lens_diagnostics.aic E1202 # VS Code error lens fixture
+
+# Test files: `aic test` rewrites `assert`/`assert_eq` into its harness, so a
+# plain `aic check` reports them as unknown callables (`E1218`).
+examples/e7/harness/compile-fail/missing_effect.aic E1202,E1228,E1300,E2001,E2009 # `aic test` compile-fail case (expect-error)
+examples/e7/property_framework/properties.aic E1218 # checked by `aic test examples/e7/property_framework`
+examples/e7/scaffold_examples/tests/generated_tests.aic E1218 # checked by `aic test examples/e7/scaffold_examples`
+examples/e7/task_cli_tooling/tests/generated/boundary_validate_task_index.aic E1218,E4003 # `aic test` file of the task_cli_tooling project
+examples/e7/task_cli_tooling/tests/task_cli_tests.aic E1218,E4003 # `aic test` file of the task_cli_tooling project
+examples/e7/test_framework/tests.aic E1218 # checked by `aic test examples/e7/test_framework`
+examples/test/mock_io.aic E1218 # `aic test` mock I/O demonstration
+examples/test/mock_isolation_violation.aic E1218 # `aic test` mock isolation failure demonstration
+examples/test/replay_failure.aic E1218 # `aic test` replay failure demonstration
+
+# Tool inputs that are not programs.
+examples/e7/spec_first/specs/validate_user.aic E1003,E1041,E1202,E1228 # `spec fn` file for `aic spec`
+examples/e7/task_cli_tooling/specs/validate_task_index.aic E1003,E1041,E1202,E1228 # `spec fn` file for `aic spec`
+examples/ops/migration_v1_to_v2/src/main.aic E1051,E1204,E6001 # pre-migration source for `aic migrate` (uses null)
+examples/verify/intrinsics/invalid_bindings.aic E1228,E1315 # `aic verify-intrinsics` negative fixture
+examples/verify/intrinsics/valid_bindings.aic E1228 # `aic verify-intrinsics` fixture; declarations only, std error types not imported
+examples/vscode/call_hierarchy_workspace/main.aic E1208,E1228,E1229 # VS Code call hierarchy fixture with fully qualified cross-file calls
+examples/vscode/call_hierarchy_workspace/runner.aic E1208,E1228,E1229 # VS Code call hierarchy fixture with fully qualified cross-file calls

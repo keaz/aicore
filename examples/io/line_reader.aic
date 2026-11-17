@@ -36,7 +36,7 @@ fn at_eof(v: Result[Option[String], FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
+fn main() -> Int effects { io, fs } capabilities { io, fs } {
     let writer = unwrap_handle(open_write("lines.txt"));
     let wrote = ok_bool(file_write_str(writer, "alpha\nbeta\ngamma"));
     let closed_writer = ok_bool(file_close(writer));

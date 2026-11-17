@@ -59,6 +59,13 @@ make init
 - `make examples-check`
 - `make examples-run`
 
+`make examples-check` runs `aic check` on every `*.aic` file under `examples/`
+(`scripts/ci/examples-check-all.py`). A file must pass, or be listed with the
+exact codes it reports in `scripts/ci/example-check-failures.txt` (diagnostic
+demonstrations, `aic test` files, tool inputs). A new example that fails on
+purpose needs an entry with a reason; an entry whose file now passes, reports
+other codes, or no longer exists fails the gate.
+
 These gates are safe to run at the same time from several checkouts or
 worktrees. `scripts/ci/examples.sh` and the Makefile targets keep every
 scratch file in a per-run `mktemp -d` directory (under `$TMPDIR`, else `/tmp`)

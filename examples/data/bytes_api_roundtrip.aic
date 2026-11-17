@@ -14,15 +14,15 @@ fn payload_len(packet: UdpPacket) -> Int {
     byte_len(packet.payload)
 }
 
-fn fs_accepts_bytes(path: String, payload: Bytes) -> Result[Bool, FsError] effects { fs } {
+fn fs_accepts_bytes(path: String, payload: Bytes) -> Result[Bool, FsError] effects { fs } capabilities { fs } {
     write_bytes(path, payload)
 }
 
-fn net_accepts_bytes(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net } {
+fn net_accepts_bytes(handle: Int, payload: Bytes) -> Result[Int, NetError] effects { net } capabilities { net } {
     tcp_send(handle, payload)
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let base = concat(from_string("wire"), from_string("bytes"));
     let score =
         (if byte_len(base) == 9 { 1 } else { 0 }) +

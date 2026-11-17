@@ -10,7 +10,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let s0: Set[String] = set.new_set();
     let s1 = set.add(s0, "pear");
     let s2 = set.add(s1, "apple");

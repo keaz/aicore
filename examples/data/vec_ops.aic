@@ -9,7 +9,7 @@ fn opt_int_or(v: Option[Int], fallback: Int) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let mut nums: Vec[Int] = vec.new_vec();
     nums = vec.push(nums, 2);
     nums = vec.push(nums, 4);

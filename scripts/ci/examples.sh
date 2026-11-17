@@ -885,6 +885,10 @@ expect_verify_intrinsics_fail() {
 }
 case "$MODE" in
   check)
+    # Every example file passes `aic check` or is listed, with its codes, in
+    # scripts/ci/example-check-failures.txt.
+    cargo build --quiet --locked --bin aic
+    python3 scripts/ci/examples-check-all.py "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/debug/aic"
     for f in "${check_pass[@]}"; do
       "${AIC[@]}" check "$f" >/dev/null
     done

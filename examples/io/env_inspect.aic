@@ -5,21 +5,21 @@ import std.env;
 import std.vec;
 import std.string;
 
-fn home_len() -> Int effects { env, fs } {
+fn home_len() -> Int effects { env, fs } capabilities { env, fs } {
     match home_dir() {
         Ok(path) => len(path),
         Err(_) => 0,
     }
 }
 
-fn temp_len() -> Int effects { env, fs } {
+fn temp_len() -> Int effects { env, fs } capabilities { env, fs } {
     match temp_dir() {
         Ok(path) => len(path),
         Err(_) => 0,
     }
 }
 
-fn main() -> Int effects { io, env, fs } {
+fn main() -> Int effects { io, env, fs } capabilities { io, env, fs } {
     let vars_count = vec_len(all_vars());
     let os_len = len(os_name());
     let arch_len = len(arch());

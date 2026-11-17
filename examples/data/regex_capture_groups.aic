@@ -12,7 +12,7 @@ fn parse_or(v: Result[Int, String], fallback: Int) -> Int {
     }
 }
 
-fn capture_from_match(m: RegexMatch) -> Int effects { env } {
+fn capture_from_match(m: RegexMatch) -> Int effects { env } capabilities { env } {
     let left = match vec.get(m.groups, 0) {
         Some(value) => value,
         None => "",
@@ -33,7 +33,7 @@ fn capture_from_match(m: RegexMatch) -> Int effects { env } {
     }
 }
 
-fn capture_score(v: Result[Option[RegexMatch], RegexError]) -> Int effects { env } {
+fn capture_score(v: Result[Option[RegexMatch], RegexError]) -> Int effects { env } capabilities { env } {
     match v {
         Ok(found) => match found {
             Some(m) => capture_from_match(m),
@@ -43,7 +43,7 @@ fn capture_score(v: Result[Option[RegexMatch], RegexError]) -> Int effects { env
     }
 }
 
-fn items_score(items: Vec[RegexMatch]) -> Int effects { env } {
+fn items_score(items: Vec[RegexMatch]) -> Int effects { env } capabilities { env } {
     if items.len == 3 {
         1
     } else {
@@ -51,14 +51,14 @@ fn items_score(items: Vec[RegexMatch]) -> Int effects { env } {
     }
 }
 
-fn find_all_score(v: Result[Vec[RegexMatch], RegexError]) -> Int effects { env } {
+fn find_all_score(v: Result[Vec[RegexMatch], RegexError]) -> Int effects { env } capabilities { env } {
     match v {
         Ok(items) => items_score(items),
         Err(_) => 0,
     }
 }
 
-fn main() -> Int effects { env, io } {
+fn main() -> Int effects { env, io } capabilities { env, io } {
     let re = match compile("([0-9]+)-([0-9]+)") {
         Ok(value) => value,
         Err(_) => Regex { pattern: "", flags: 0 },

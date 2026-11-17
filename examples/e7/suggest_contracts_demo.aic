@@ -10,7 +10,7 @@ fn bounded_index(idx: Int, limit: Int) -> Int {
   }
 }
 
-fn passthrough[T](value: T) -> T effects { io } {
+fn passthrough[T](value: T) -> T effects { io } capabilities { io } {
   print_int(1);
   value
 }

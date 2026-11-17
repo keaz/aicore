@@ -1,6 +1,6 @@
 module examples.e7.semantic_diff_v2;
 
-fn normalize[T](x: T, default_value: Int) -> Int effects { io, fs } requires true ensures result >= 0 {
+fn normalize[T](x: T, default_value: Int) -> Int effects { io, fs } capabilities { io, fs } requires true ensures result >= 0 {
     default_value
 }
 

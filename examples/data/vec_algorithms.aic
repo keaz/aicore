@@ -38,7 +38,7 @@ fn over_two(x: Int) -> Bool {
     x > 2
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let mut nums: Vec[Int] = vec.new_vec();
     nums = vec.push(nums, 3);
     nums = vec.push(nums, 1);

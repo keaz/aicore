@@ -8,7 +8,7 @@ fn decode_len(v: Result[String, EncodingError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let score =
         (if is_ascii("wire") { 1 } else { 0 }) +
         (if byte_length("wire") == 4 { 1 } else { 0 }) +

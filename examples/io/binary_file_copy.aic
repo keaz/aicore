@@ -1,6 +1,6 @@
+import std.bytes;
 import std.fs;
 import std.io;
-import std.string;
 
 fn ok_bool(v: Result[Bool, FsError]) -> Int {
     match v {
@@ -9,20 +9,35 @@ fn ok_bool(v: Result[Bool, FsError]) -> Int {
     }
 }
 
-fn main() -> Int effects { io, fs } {
-    let wrote_src = ok_bool(write_bytes("source.bin", "abc123"));
-    let copied = match read_bytes("source.bin") {
-        Ok(bytes) => ok_bool(write_bytes("copy.bin", bytes)),
+fn copy_and_verify(src: String, dst: String) -> Int effects { fs } capabilities { fs } {
+    let payload = bytes.from_string("abc123");
+    let wrote_src = ok_bool(write_bytes(src, payload));
+    let copied = match read_bytes(src) {
+        Ok(data) => ok_bool(write_bytes(dst, data)),
         Err(_) => 0,
     };
-    let verify = match read_bytes("copy.bin") {
-        Ok(bytes) => if len(bytes) == 6 && string.starts_with(bytes, "ab") { 1 } else { 0 },
+    let verify = match read_bytes(dst) {
+        Ok(data) => if bytes.byte_len(data) == 6 && bytes.starts_with(data, bytes.from_string("ab")) {
+            1
+        } else {
+            0
+        },
         Err(_) => 0,
     };
-    let removed_src = ok_bool(delete("source.bin"));
-    let removed_copy = ok_bool(delete("copy.bin"));
+    let removed_src = ok_bool(delete(src));
+    let removed_dst = ok_bool(delete(dst));
+    wrote_src + copied + verify + removed_src + removed_dst
+}
 
-    if wrote_src + copied + verify + removed_src + removed_copy == 5 {
+fn main() -> Int effects { fs, io } capabilities { fs, io } {
+    let score = match temp_file("aic_copy_src_") {
+        Ok(src) => match temp_file("aic_copy_dst_") {
+            Ok(dst) => copy_and_verify(src, dst),
+            Err(_) => 0,
+        },
+        Err(_) => 0,
+    };
+    if score == 5 {
         print_int(42);
     } else {
         print_int(0);

@@ -28,7 +28,7 @@ This tree mixes onboarding examples, runnable subsystem demos, negative fixtures
 
 ## Useful commands
 
-- `make examples-check` to type-check the curated example set
+- `make examples-check` to type-check every example (files that fail on purpose are listed with their codes in `scripts/ci/example-check-failures.txt`) and the curated format and failure sets
 - `make examples-run` to execute the runnable example set
 - `aic check <file>` for a single example without execution
 - `aic run <file>` for a single runnable example

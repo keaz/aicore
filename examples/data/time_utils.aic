@@ -4,7 +4,7 @@ import std.io;
 import std.time;
 import std.string;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     let base = DateTime {
         year: 2026,
         month: 2,

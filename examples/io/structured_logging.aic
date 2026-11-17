@@ -1,6 +1,6 @@
 import std.log;
 
-fn main() -> Int effects { io } {
+fn main() -> Int effects { io } capabilities { io } {
     set_json_output(true);
     set_level(Info());
     debug("debug-only startup detail");
