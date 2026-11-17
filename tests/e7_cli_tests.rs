@@ -6168,7 +6168,7 @@ search_paths = ["native"]
         r#"module ffi_demo.main;
 import std.io;
 
-extern "C" fn ffi_add42(x: Int) -> Int;
+extern "C" fn ffi_add42(x: Int) -> Int effects { };
 
 fn add42(x: Int) -> Int {
     unsafe { ffi_add42(x) }
@@ -6217,6 +6217,76 @@ fn main() -> Int effects { io } capabilities { io } {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+}
+
+fn extern_effect_error_codes(output: &std::process::Output) -> Vec<String> {
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut codes = text
+        .match_indices("error[")
+        .filter_map(|(at, _)| text.get(at + 6..at + 11))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    codes.sort();
+    codes.dedup();
+    codes
+}
+
+#[test]
+fn extern_effects_check_and_build_agree() {
+    let project = tempdir().expect("project");
+    let cases = [
+        (
+            "missing_clause.aic",
+            "extern \"C\" fn puts(s: String) -> Int32;\nfn main() -> Int { 0 }\n",
+            vec!["E2010"],
+        ),
+        (
+            "pure_caller.aic",
+            "extern \"C\" fn puts(s: String) -> Int32 effects { io };\nfn greet() -> Int32 { unsafe { puts(\"hi\") } }\nfn main() -> Int { 0 }\n",
+            vec!["E2001", "E2009"],
+        ),
+        (
+            "declared.aic",
+            "extern \"C\" fn putchar(c: Int32) -> Int32 effects { io };\nfn main() -> Int effects { io } capabilities { io } {\n    let written = unsafe { putchar(10i32) };\n    if written == 10i32 { 0 } else { 1 }\n}\n",
+            vec![],
+        ),
+    ];
+    for (name, source, expected) in cases {
+        let path = project.path().join(name);
+        fs::write(&path, source).expect("write source");
+        let path_str = path.to_string_lossy().to_string();
+        let out_str = project
+            .path()
+            .join(format!("{name}.bin"))
+            .to_string_lossy()
+            .to_string();
+
+        let check = run_aic(&["check", &path_str]);
+        let build = run_aic(&["build", &path_str, "-o", &out_str]);
+        let check_codes = extern_effect_error_codes(&check);
+        let build_codes = extern_effect_error_codes(&build);
+        assert_eq!(check_codes, expected, "check codes for {name}");
+        assert_eq!(
+            build_codes, check_codes,
+            "build must agree with check for {name}"
+        );
+        assert_eq!(
+            check.status.success(),
+            expected.is_empty(),
+            "check status for {name}: {}",
+            String::from_utf8_lossy(&check.stderr)
+        );
+        assert_eq!(
+            build.status.success(),
+            expected.is_empty(),
+            "build status for {name}: {}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+    }
 }
 
 #[test]

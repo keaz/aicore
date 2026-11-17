@@ -1050,6 +1050,29 @@ impl<'a> Parser<'a> {
             "expected '->' with function return type",
         )?;
         let ret_type = self.parse_type()?;
+        let signature_end = self.previous_span().end;
+
+        // Foreign code is opaque to effect analysis, so every extern
+        // declaration states its effects. `effects { }` declares a pure
+        // C function; callers inherit whatever is declared here.
+        let effects_declared = self.at_kind(|k| matches!(k, TokenKind::KwEffects));
+        let effects = self.parse_effects_clause()?;
+        if !effects_declared {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E2010",
+                    format!(
+                        "extern function '{}' must declare its effects",
+                        name
+                    ),
+                    self.file,
+                    Span::new(start, signature_end),
+                )
+                .with_help(
+                    "add `effects { ... }` naming what the C function does (for example `effects { io }` for `puts`), or `effects { }` if it has no side effects",
+                ),
+            );
+        }
 
         if self.at_kind(|k| {
             matches!(
@@ -1063,11 +1086,11 @@ impl<'a> Parser<'a> {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E1066",
-                    "extern function declarations cannot have effects/capabilities/contracts",
+                    "extern function declarations cannot have capabilities/contracts or a second effects clause",
                     self.file,
                     self.current_span(),
                 )
-                .with_help("declare `extern` signatures only; wrap them in normal functions for effects/capabilities/contracts"),
+                .with_help("declare `extern` signatures with one `effects { ... }` clause only; callers hold the capabilities, and contracts belong on wrapper functions"),
             );
             while !self.at_kind(|k| matches!(k, TokenKind::Semi | TokenKind::Eof)) {
                 self.bump();
@@ -1093,7 +1116,7 @@ impl<'a> Parser<'a> {
             generics,
             params,
             ret_type,
-            effects: Vec::new(),
+            effects,
             capabilities: Vec::new(),
             requires: None,
             ensures: None,
@@ -7206,7 +7229,7 @@ fn bad(
     #[test]
     fn parses_extern_c_function_and_unsafe_block() {
         let src = r#"
-extern "C" fn c_abs(x: Int) -> Int;
+extern "C" fn c_abs(x: Int) -> Int effects { };
 
 fn wrap(x: Int) -> Int {
     unsafe { c_abs(x) }
@@ -7222,6 +7245,7 @@ fn wrap(x: Int) -> Int {
         };
         assert!(extern_fn.is_extern);
         assert_eq!(extern_fn.extern_abi.as_deref(), Some("C"));
+        assert!(extern_fn.effects.is_empty());
 
         let wrap_fn = match &program.items[1] {
             Item::Function(f) => f,
@@ -7229,6 +7253,55 @@ fn wrap(x: Int) -> Int {
         };
         let tail = wrap_fn.body.tail.as_ref().expect("tail");
         assert!(matches!(tail.kind, ExprKind::UnsafeBlock { .. }));
+    }
+
+    #[test]
+    fn parses_extern_effects_clause() {
+        let src = r#"extern "C" fn puts(s: String) -> Int32 effects { io };"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        assert!(diagnostics.is_empty(), "diags={diagnostics:#?}");
+        let program = program.expect("program");
+        let Item::Function(extern_fn) = &program.items[0] else {
+            panic!("expected function");
+        };
+        assert!(extern_fn.is_extern);
+        assert_eq!(extern_fn.effects, vec!["io".to_string()]);
+        assert!(extern_fn.capabilities.is_empty());
+    }
+
+    #[test]
+    fn reports_extern_without_effects_clause() {
+        let src = r#"extern "C" fn puts(s: String) -> Int32;"#;
+        let (program, diagnostics) = parse(src, "test.aic");
+        let diag = diagnostics
+            .iter()
+            .find(|d| d.code == "E2010")
+            .unwrap_or_else(|| panic!("expected E2010, diags={diagnostics:#?}"));
+        assert!(diag.message.contains("'puts'"), "message={}", diag.message);
+        assert!(diag.help.iter().any(|h| h.contains("effects { io }")));
+        assert_eq!(diagnostics.len(), 1, "diags={diagnostics:#?}");
+        // The declaration still parses so later phases keep checking callers.
+        assert!(program.is_some());
+    }
+
+    #[test]
+    fn reports_extern_capabilities_and_contracts() {
+        for clause in [
+            "effects { io } capabilities { io }",
+            "effects { } requires true",
+            "effects { io } effects { fs }",
+        ] {
+            let src = format!(r#"extern "C" fn f(x: Int) -> Int {clause};"#);
+            let (_program, diagnostics) = parse(&src, "test.aic");
+            assert!(
+                diagnostics.iter().any(|d| d.code == "E1066"),
+                "clause={clause} diags={diagnostics:#?}"
+            );
+            assert!(
+                !diagnostics.iter().any(|d| d.code == "E2010"),
+                "clause={clause} diags={diagnostics:#?}"
+            );
+        }
     }
 
     #[test]

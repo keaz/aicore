@@ -1336,6 +1336,15 @@ impl<'a> Printer<'a> {
             self.out.push_str(&self.params(&f.params));
             self.out.push_str(") -> ");
             self.out.push_str(&self.display_type(&f.ret_type));
+            // Every extern declares its effects, so an empty set prints as
+            // `effects { }` (a declared pure C function), never as nothing.
+            if f.effects.is_empty() {
+                self.out.push_str(" effects { }");
+            } else {
+                self.out.push_str(" effects { ");
+                self.out.push_str(&sorted_unique(&f.effects).join(", "));
+                self.out.push_str(" }");
+            }
             self.out.push(';');
             self.trailing(f.span.end);
             self.out.push('\n');

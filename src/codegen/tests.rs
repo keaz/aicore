@@ -133,8 +133,8 @@ fn main() -> Int {
 #[test]
 fn extern_fixed_width_signatures_emit_exact_llvm_decls() {
     let src = r#"
-extern "C" fn c_add_u16(a: UInt16, b: UInt16) -> UInt16;
-extern "C" fn c_neg_i8(a: Int8) -> Int8;
+extern "C" fn c_add_u16(a: UInt16, b: UInt16) -> UInt16 effects { };
+extern "C" fn c_neg_i8(a: Int8) -> Int8 effects { };
 
 fn main() -> Int { 0 }
 "#;

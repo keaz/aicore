@@ -15743,12 +15743,69 @@ fn main() -> Int {
 }
 
 #[test]
+fn exec_extern_effects_declared_on_libc_calls_run() {
+    let src = r#"
+extern "C" fn putchar(c: Int32) -> Int32 effects { io };
+extern "C" fn abs(x: Int32) -> Int32 effects { };
+
+fn magnitude(x: Int32) -> Int32 {
+    unsafe { abs(x) }
+}
+
+fn emit(c: Int32) -> Int32 effects { io } capabilities { io } {
+    unsafe { putchar(c) }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let a = emit(48i32 + magnitude(-4i32));
+    let b = emit(48i32 + magnitude(2i32));
+    let c = emit(10i32);
+    if a == 52i32 && b == 50i32 && c == 10i32 { 0 } else { 1 }
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stdout={stdout} stderr={stderr}");
+    assert_eq!(stdout, "42\n", "stderr={stderr}");
+}
+
+#[test]
+fn exec_extern_effects_pure_caller_is_rejected_before_codegen() {
+    let dir = tempdir().expect("tempdir");
+    let src = dir.path().join("main.aic");
+    fs::write(
+        &src,
+        r#"
+extern "C" fn putchar(c: Int32) -> Int32 effects { io };
+
+fn sneaky() -> Int32 {
+    unsafe { putchar(33i32) }
+}
+
+fn main() -> Int {
+    let written = sneaky();
+    if written == 33i32 { 0 } else { 1 }
+}
+"#,
+    )
+    .expect("write source");
+    let front = run_frontend(&src).expect("frontend");
+    let codes = front
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == aicore::diagnostics::Severity::Error)
+        .map(|d| d.code.as_str())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"E2001"), "codes={codes:?}");
+    assert!(has_errors(&front.diagnostics));
+}
+
+#[test]
 fn exec_extern_c_string_view_parameter_round_trips_through_native_fixture() {
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("ffi_string_view.aic");
     let source = r#"import std.io;
 
-extern "C" fn ffi_string_len(s: String) -> Int;
+extern "C" fn ffi_string_len(s: String) -> Int effects { };
 
 fn main() -> Int effects { io } capabilities { io  } {
     let tagged = "ffi:core";

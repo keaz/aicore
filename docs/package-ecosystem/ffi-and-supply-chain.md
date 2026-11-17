@@ -5,7 +5,7 @@
 AICore supports explicit C ABI declarations and explicit unsafe boundaries.
 
 ```aic
-extern "C" fn ffi_add42(x: Int) -> Int;
+extern "C" fn ffi_add42(x: Int) -> Int effects { };
 
 fn wrapped(x: Int) -> Int {
     unsafe { ffi_add42(x) }
@@ -15,7 +15,8 @@ fn wrapped(x: Int) -> Int {
 Safety rules:
 
 - only `extern "C"` ABI is supported (`E2120`)
-- extern declarations must remain plain (`E2121`)
+- extern declarations must state their effects (`E2010`); callers inherit them, so a pure function cannot call an effectful extern even inside `unsafe { ... }` (`E2001`)
+- extern declarations must otherwise remain plain (`E2121`)
 - extern calls require explicit `unsafe` boundary (`E2122`)
 - unsupported ABI types are rejected (`E2123`)
 - raw value coverage includes the existing fixed-width scalars for params/returns, plus `String` parameters as the current target's `ptr-len-cap` view

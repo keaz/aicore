@@ -2,7 +2,7 @@ module ffi_string_view_demo.main;
 
 import std.io;
 
-extern "C" fn ffi_string_len(s: String) -> Int;
+extern "C" fn ffi_string_len(s: String) -> Int effects { };
 
 fn prefixed_len(input: String) -> Int {
     unsafe { ffi_string_len(input) }

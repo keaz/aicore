@@ -80,7 +80,7 @@ fn compile_and_run_with_c_stub(source: &str, c_stub: &str) -> (i32, String, Stri
 #[test]
 fn unit_extern_string_return_is_accepted_and_scalarized_in_llvm() {
     let src = r#"
-extern "C" fn ffi_string_banner() -> String;
+extern "C" fn ffi_string_banner() -> String effects { };
 
 fn main() -> Int {
     0
@@ -116,7 +116,7 @@ fn main() -> Int {
 #[test]
 fn unit_extern_string_return_with_params_scalarizes_and_forwards_arguments() {
     let src = r#"
-extern "C" fn ffi_string_repeat(seed: String, times: Int) -> String;
+extern "C" fn ffi_string_repeat(seed: String, times: Int) -> String effects { };
 
 fn main() -> Int {
     let _out = unsafe { ffi_string_repeat("ab", 4) };
@@ -156,7 +156,7 @@ fn main() -> Int {
 #[test]
 fn unit_extern_unsupported_return_shape_is_still_rejected() {
     let src = r#"
-extern "C" fn ffi_bad() -> Bytes;
+extern "C" fn ffi_bad() -> Bytes effects { };
 
 fn main() -> Int {
     0

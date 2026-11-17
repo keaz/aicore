@@ -126,7 +126,7 @@ async fn fetch_data(url: String) -> String effects { net } capabilities { net } 
 
 intrinsic fn aic_fs_read_to_string_intrinsic(path: String) -> String effects { fs };
 
-extern "C" fn c_sqrt(x: Float) -> Float;
+extern "C" fn c_sqrt(x: Float) -> Float effects { };
 ```
 
 ### Types and Data Structures

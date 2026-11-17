@@ -1793,7 +1793,7 @@ fn bad(v: Vec[Int]) -> Int {
 #[test]
 fn unit_extern_call_requires_explicit_unsafe_boundary() {
     let src = r#"
-extern "C" fn c_abs(x: Int) -> Int;
+extern "C" fn c_abs(x: Int) -> Int effects { };
 
 fn wrap(x: Int) -> Int {
     c_abs(x)
@@ -1815,7 +1815,7 @@ fn wrap(x: Int) -> Int {
 #[test]
 fn unit_extern_call_inside_unsafe_block_is_allowed() {
     let src = r#"
-extern "C" fn c_abs(x: Int) -> Int;
+extern "C" fn c_abs(x: Int) -> Int effects { };
 
 fn wrap(x: Int) -> Int {
     unsafe { c_abs(x) }
@@ -1835,7 +1835,7 @@ fn wrap(x: Int) -> Int {
 #[test]
 fn unit_extern_abi_mismatch_reports_e2120() {
     let src = r#"
-extern "Rust" fn c_abs(x: Int) -> Int;
+extern "Rust" fn c_abs(x: Int) -> Int effects { };
 fn wrap(x: Int) -> Int {
     unsafe { c_abs(x) }
 }
@@ -1853,10 +1853,174 @@ fn wrap(x: Int) -> Int {
     );
 }
 
+fn extern_effect_frontend_codes(source: &str) -> Vec<String> {
+    let dir = tempdir().expect("tempdir");
+    let source_path = dir.path().join("main.aic");
+    fs::write(&source_path, source).expect("write source");
+    let out = run_frontend(&source_path).expect("frontend");
+    out.diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.code.clone())
+        .collect()
+}
+
+#[test]
+fn unit_extern_without_effects_clause_reports_e2010() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn puts(s: String) -> Int32;
+
+fn main() -> Int {
+    0
+}
+"#,
+    );
+    assert_eq!(codes, vec!["E2010".to_string()], "codes={codes:?}");
+}
+
+#[test]
+fn unit_pure_function_calling_effectful_extern_reports_e2001() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn puts(s: String) -> Int32 effects { io };
+
+fn greet() -> Int32 {
+    unsafe { puts("hello") }
+}
+
+fn main() -> Int {
+    0
+}
+"#,
+    );
+    assert!(codes.contains(&"E2001".to_string()), "codes={codes:?}");
+}
+
+#[test]
+fn unit_effectful_extern_requires_matching_capability() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn puts(s: String) -> Int32 effects { io };
+
+fn greet() -> Int32 effects { io } {
+    unsafe { puts("hello") }
+}
+
+fn main() -> Int {
+    0
+}
+"#,
+    );
+    assert!(codes.contains(&"E2009".to_string()), "codes={codes:?}");
+    assert!(!codes.contains(&"E2001".to_string()), "codes={codes:?}");
+}
+
+#[test]
+fn unit_extern_effects_propagate_to_transitive_callers() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn puts(s: String) -> Int32 effects { io };
+
+fn greet() -> Int32 effects { io } capabilities { io } {
+    unsafe { puts("hello") }
+}
+
+fn main() -> Int {
+    let written = greet();
+    if written >= 0i32 { 0 } else { 1 }
+}
+"#,
+    );
+    assert!(codes.contains(&"E2001".to_string()), "codes={codes:?}");
+}
+
+#[test]
+fn unit_extern_effects_accepted_when_callers_declare_them() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn puts(s: String) -> Int32 effects { io };
+extern "C" fn abs(x: Int32) -> Int32 effects { };
+
+fn greet() -> Int32 effects { io } capabilities { io } {
+    unsafe { puts("hello") }
+}
+
+fn magnitude(x: Int32) -> Int32 {
+    unsafe { abs(x) }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let written = greet();
+    let size = magnitude(-3i32);
+    if written >= 0i32 && size == 3i32 { 0 } else { 1 }
+}
+"#,
+    );
+    assert!(codes.is_empty(), "codes={codes:?}");
+}
+
+#[test]
+fn unit_extern_unknown_effect_reports_e2003() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn puts(s: String) -> Int32 effects { console };
+
+fn main() -> Int {
+    0
+}
+"#,
+    );
+    assert!(codes.contains(&"E2003".to_string()), "codes={codes:?}");
+}
+
+#[test]
+fn unit_effectful_extern_call_in_contract_reports_e2002() {
+    let codes = extern_effect_frontend_codes(
+        r#"
+extern "C" fn rand() -> Int32 effects { rand };
+
+fn pick(x: Int32) -> Int32 effects { rand } capabilities { rand } requires rand() >= 0i32 {
+    x
+}
+
+fn main() -> Int {
+    0
+}
+"#,
+    );
+    assert!(codes.contains(&"E2002".to_string()), "codes={codes:?}");
+}
+
+#[test]
+fn unit_formatter_prints_extern_effects_clause() {
+    let src = r#"extern "C" fn puts(s: String) -> Int32 effects { io };
+extern "C" fn abs(x: Int32) -> Int32 effects { };
+fn main() -> Int {
+    0
+}
+"#;
+    let (program, diags) = parse(src, "fmt.aic");
+    assert!(diags.is_empty(), "diags={diags:#?}");
+    let ir = build(&program.expect("program"));
+    let formatted = format_program(&ir);
+    assert!(
+        formatted.contains("extern \"C\" fn puts(s: String) -> Int32 effects { io };"),
+        "formatted={formatted}"
+    );
+    assert!(
+        formatted.contains("extern \"C\" fn abs(x: Int32) -> Int32 effects { };"),
+        "formatted={formatted}"
+    );
+    let (reparsed, rediags) = parse(&formatted, "fmt.aic");
+    assert!(rediags.is_empty(), "rediags={rediags:#?}");
+    assert!(reparsed.is_some());
+}
+
 #[test]
 fn unit_extern_signature_accepts_string_view_parameter() {
     let src = r#"
-extern "C" fn c_strlen_view(s: String) -> Int;
+extern "C" fn c_strlen_view(s: String) -> Int effects { };
 
 fn wrap(s: String) -> Int {
     unsafe { c_strlen_view(s) }
@@ -1872,7 +2036,7 @@ fn wrap(s: String) -> Int {
 #[test]
 fn unit_extern_signature_accepts_string_view_return_type() {
     let src = r#"
-extern "C" fn c_get_name() -> String;
+extern "C" fn c_get_name() -> String effects { };
 
 fn wrap() -> String {
     unsafe { c_get_name() }
@@ -1888,7 +2052,7 @@ fn wrap() -> String {
 #[test]
 fn unit_extern_signature_rejects_non_c_abi_types() {
     let src = r#"
-extern "C" fn c_take_bytes(s: Bytes) -> Int;
+extern "C" fn c_take_bytes(s: Bytes) -> Int effects { };
 fn wrap(s: Bytes) -> Int {
     unsafe { c_take_bytes(s) }
 }
@@ -1903,7 +2067,7 @@ fn wrap(s: Bytes) -> Int {
 #[test]
 fn unit_extern_string_view_signatures_scalarize_raw_llvm_decls() {
     let src = r#"
-extern "C" fn c_strlen_view(s: String) -> Int;
+extern "C" fn c_strlen_view(s: String) -> Int effects { };
 
 fn main() -> Int { 0 }
 "#;

@@ -115,7 +115,7 @@ AICore supports MVP C-ABI interop through explicit `extern` declarations and man
 ### Source declaration rules
 
 ```aic
-extern "C" fn zlibCompileFlags() -> Int;
+extern "C" fn zlibCompileFlags() -> Int effects { };
 
 fn zlib_flags() -> Int {
     unsafe { zlibCompileFlags() }
@@ -125,7 +125,8 @@ fn zlib_flags() -> Int {
 Rules enforced by diagnostics:
 
 - only `extern "C"` is supported (`E2120`, backend guard `E5024`)
-- extern signatures must be plain declarations (no async/generics/effects/contracts) (`E2121`)
+- every extern declares its effects with `effects { ... }` (`E2010`); `effects { }` declares a pure C function, and callers inherit declared effects through normal effect analysis (`E2001`, `E2005`, `E2009`)
+- extern signatures must otherwise be plain declarations (no async/generics/capabilities/contracts) (`E1066`, `E2121`)
 - currently supported raw C ABI value types are `Int`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Bool`, `Float`, `Char`, and `()` (`E2123`)
 - calls to `extern` (and `unsafe fn`) require an explicit unsafe boundary (`unsafe { ... }` or `unsafe fn`) (`E2122`)
 - extern parameters additionally accept `String`, using the current target's `ptr-len-cap` value layout at the C boundary; see `docs/llvm-backend.md` for the exact LLVM shape.

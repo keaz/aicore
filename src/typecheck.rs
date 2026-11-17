@@ -3352,9 +3352,10 @@ impl<'a> Checker<'a> {
             }
         }
 
+        // `effects { ... }` is part of an extern signature (E2010 makes it
+        // mandatory); everything else must stay on wrapper functions.
         if func.is_async
             || !func.generics.is_empty()
-            || !func.effects.is_empty()
             || !func.capabilities.is_empty()
             || func.requires.is_some()
             || func.ensures.is_some()
@@ -3363,7 +3364,7 @@ impl<'a> Checker<'a> {
                 Diagnostic::error(
                     "E2121",
                     format!(
-                        "extern function '{}' must be a plain signature without async/generics/effects/capabilities/contracts",
+                        "extern function '{}' must be a plain signature without async/generics/capabilities/contracts",
                         func.name
                     ),
                     self.file,
@@ -3733,6 +3734,14 @@ impl<'a> Checker<'a> {
 
         for (function_name, function_key) in &user_functions {
             if self.is_std_function(function_key) || intrinsic_names.contains(function_name) {
+                continue;
+            }
+            // An extern declaration cannot hold capabilities (E1066); its
+            // declared effects are authorized at each caller instead.
+            if self
+                .fn_sig_for_key(function_key)
+                .is_some_and(|sig| sig.is_extern)
+            {
                 continue;
             }
             let declared_capabilities = self
