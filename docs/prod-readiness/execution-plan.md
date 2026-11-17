@@ -122,6 +122,28 @@ Exit: `origin/main` contains every commit listed in "Starting state", CI is gree
 
 Goal: no known silent wrong result, and every program that passes `aic check` builds.
 
+### Wave 1 progress
+
+All nine items are on local `main` (2026-11-17), each rebased onto the previous one and fast-forwarded. `make ci` passes on the result. Nothing is pushed yet, and the issues stay open until their commits are on `origin/main` (rule 10).
+
+| Item | Issue | Commits on local `main` |
+|---|---|---|
+| 1.1 | [#445] | `0ea30f8`, `c4e6936` |
+| 1.2 | [#499] | `e91556e`, `a815dda` |
+| 1.3 | [#486] | `8216263`, `2189ed2`, `2ca35c6` |
+| 1.4 | [#488] | `05663a6`..`ecd8966` |
+| 1.5 | [#468] | `1d0ae30` |
+| 1.6 | [#500] | `66e00c1` |
+| 1.7 | [#501] | `fba03e7`, `f56c66a` |
+| 1.8 | [#502] | `0175857` |
+| 1.9 | [#503] | `79904ac` |
+
+Verification: targeted suites per item, then `make ci` on the integrated `main`. The first run failed only in `test-selfhost`: 1.3 had rewritten `examples/core/opt_levels_demo.aic`, which is in the self-host parity manifest, with `wrapping_mul`, which the frozen self-host compiler cannot check. `2ca35c6` reduces the hash state with `%` instead; the remaining gates then passed. The REST soak gate passes with checked arithmetic, but `json_runtime_hardening` (+27 %) and `async_net_lifecycle_sustained_churn` (+24 %) have the least headroom left.
+
+Watch on the first push: the 1.3 panic fallback for `obj`/`lib` artifacts has a Windows `_write` path that only a unit test on the generated IR covers; it was never built or run on Windows. The remaining GitHub steps (push, CI on three platforms, closing the issues with the rule 10 evidence) are not done.
+
+**Wave 1 exit:** met on local `main`. The parity table has no gaps (`E5037` is the only `build` row), overflow traps, `extern` calls carry effects, and `make examples-check` covers every example file.
+
 | # | Item | Issue | Size | Needs |
 |---|---|---|---|---|
 | 1.1 | Close the remaining check/build parity gaps | [#445] | M | Wave 0 |
@@ -146,7 +168,7 @@ Notes:
 - **1.2** `f[B, Int]` and `f_B[Int]` both mangle to `fn_f_B_Int`, so a valid program is rejected with `E1255` (catalog-remaining-work section 2). Make mangling injective and keep `E1255` as an `internal` backstop. Done on branch `corr-t11-injective-mangling` (2026-11-17): `src/mangle.rs` escapes `_` inside components (`__`), brackets and commas (`_L`, `_R`, `_C`), other characters (`_x<hex>_`), and joins type arguments with `_S`; the checker and code generation share it (instantiations, the cross-module symbol suffix as `#<symbol>`, dyn wrappers and vtables). `E1255` is an `internal` row.
 - **1.3** Moved up from Phase 5 because overflow is a silent wrong result: `Int` max + 1 prints `-9223372036854775808` today. Done on branch `verify-t1-checked-arithmetic` (2026-11-17): integer `+`, `-`, `*`, unary `-` and `+=`/`-=`/`*=` trap with `integer_overflow{op:<op>,type:<T>}` on every width (`llvm.*.with.overflow`, `src/codegen/generator_arith.rs`); `wrapping_*`, `checked_*` and `saturating_*` methods choose another policy (`E1321` for misuse); literal-only arithmetic that always overflows is `E1320`, evaluated exactly on every width (`UInt128` up to 2^128-1); `src/codegen/overflow_facts.rs` drops checks that literals, local types, `requires` bounds and immutable `let` initializers prove safe. A negated literal (`-128i8`) is a constant, not a checked negation. `obj`/`lib` artifacts get a weak fallback `aic_rt_panic`, so a C harness links them without the runtime. Code that relied on wrapping (`examples/core/opt_levels_demo.aic`, the O2 benchmark workload, the `e7` build-opt fixture) uses `wrapping_*`. Rules: `docs/reference/integer-arithmetic.md`. The REST soak gate passes within budget with checked arithmetic (parse 21.9 ms, router 1449 ms, JSON 1856 ms, async churn 2750 ms, multi-worker 1305 ms; all below their regression limits).
 - **1.4** Moved up from Phase 5: a pure function can call `extern "C" fn puts` inside `unsafe { }` and print.
-  Done on branch `verify-t7-extern-effects` (not yet on `main`): every `extern` declaration must carry `effects { ... }` (`E2010`; `effects { }` declares a pure C function), and callers inherit extern effects through the normal `E2001`/`E2005`/`E2009`/`E2002` rules. Example `examples/core/extern_effects.aic`; design in `docs/reference/effects.md`. `E2011` is unused.
+  Done on branch `verify-t7-extern-effects` (2026-11-17): every `extern` declaration must carry `effects { ... }` (`E2010`; `effects { }` declares a pure C function), and callers inherit extern effects through the normal `E2001`/`E2005`/`E2009`/`E2002` rules. Example `examples/core/extern_effects.aic`; design in `docs/reference/effects.md`. `E2011` is unused.
 - **1.5** Before Wave 0, 60 of 315 example files failed `aic check` (some on purpose). 20 failed only with `E2009`, because they declare `effects` without `capabilities`. `scripts/ci/examples.sh` only checks fixed lists, so other files go stale unnoticed. Make every file pass, or list it as an expected failure with its code. `examples/core/std_name_shadowing.aic` also fails `aic fmt --check`. Recount with:
 
   ```bash
