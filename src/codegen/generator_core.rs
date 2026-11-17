@@ -21,7 +21,8 @@ impl<'a> Generator<'a> {
         ) = collect_type_templates(program, &type_map, resolution);
         let drop_impl_methods = collect_drop_impl_methods(program, &type_map);
         let recursive_call_targets = collect_recursive_call_targets(program);
-        let mutable_receiver_fns = super::generator_place::collect_mutable_receiver_fns(program);
+        let (mutable_receiver_fns, mutable_receiver_symbols) =
+            super::generator_place::collect_mutable_receiver_fns(program);
         let function_modules_by_symbol = resolution
             .map(|resolution| {
                 resolution
@@ -54,6 +55,7 @@ impl<'a> Generator<'a> {
             fn_sigs: BTreeMap::new(),
             fn_sigs_by_symbol: BTreeMap::new(),
             fn_llvm_names: BTreeMap::new(),
+            fn_names_by_symbol: BTreeMap::new(),
             extern_decls: BTreeSet::new(),
             type_map,
             type_aliases,
@@ -74,6 +76,7 @@ impl<'a> Generator<'a> {
             async_counter: 0,
             deferred_fn_defs: Vec::new(),
             mutable_receiver_fns,
+            mutable_receiver_symbols,
             llvm_intrinsic_decls: BTreeSet::new(),
             async_ready_helpers: BTreeMap::new(),
             fn_value_adapters: BTreeMap::new(),
@@ -946,6 +949,8 @@ impl<'a> Generator<'a> {
         };
         *count += 1;
         self.fn_llvm_names.insert(func.symbol, llvm_name);
+        self.fn_names_by_symbol
+            .insert(func.symbol, func.name.clone());
         if !func.generics.is_empty() {
             return;
         }
@@ -4822,7 +4827,7 @@ impl<'a> Generator<'a> {
                 }
                 if let ir::ExprKind::FieldAccess { base, field } = &callee.kind {
                     if !self.is_module_qualified_callee(callee, fctx) {
-                        return self.gen_method_call(base, field, args, expr.span, fctx);
+                        return self.gen_method_call(base, field, args, *symbol, expr.span, fctx);
                     }
                 }
 
@@ -5613,14 +5618,15 @@ impl<'a> Generator<'a> {
             ));
             return None;
         };
-        // An unqualified call that the checker resolved to a user (non-std)
-        // function must reach that function, even when std lowers a builtin
-        // with the same bare name (`size`, `get`, `count`, ...).
-        let resolves_to_user_function = call_path.len() == 1
-            && call_symbol
-                .and_then(|symbol| self.function_modules_by_symbol.get(&symbol))
-                .map(|module| module != "std" && !module.starts_with("std."))
-                .unwrap_or(false);
+        // A call that the checker resolved to a user (non-std) function must
+        // reach that function, even when std lowers a builtin with the same
+        // bare name (`size`, `get`, `count`, ...). This holds for qualified
+        // calls too: `codec.encode(p)` into a user module named `codec` is
+        // not `json.encode`.
+        let resolves_to_user_function = call_symbol
+            .and_then(|symbol| self.function_modules_by_symbol.get(&symbol))
+            .map(|module| module != "std" && !module.starts_with("std."))
+            .unwrap_or(false);
         let exact_sig = call_symbol.and_then(|symbol| self.fn_sigs_by_symbol.get(&symbol).cloned());
         let builtin_name = if resolves_to_user_function {
             ""
@@ -5659,7 +5665,9 @@ impl<'a> Generator<'a> {
             return value;
         }
 
-        if let Some(value) = self.gen_mutable_receiver_function_call(name, args, span, fctx) {
+        if let Some(value) =
+            self.gen_mutable_receiver_function_call(name, call_symbol, args, span, fctx)
+        {
             return value;
         }
 
@@ -5918,7 +5926,9 @@ impl<'a> Generator<'a> {
         if let Some(result) = self.gen_router_builtin_call(builtin_name, args, span, fctx) {
             return result;
         }
-        if let Some(result) = self.gen_json_builtin_call(builtin_name, args, span, fctx) {
+        if let Some(result) =
+            self.gen_json_builtin_call(builtin_name, call_symbol, args, span, fctx)
+        {
             return result;
         }
         if let Some(result) = self.gen_regex_builtin_call(builtin_name, args, span, fctx) {
@@ -6145,15 +6155,20 @@ impl<'a> Generator<'a> {
         false
     }
 
+    /// Emits `base.field(args)` as a call to `Type::field`. `symbol` is the
+    /// checker's resolution of the method call.
     pub(super) fn gen_method_call(
         &mut self,
         base: &ir::Expr,
         field: &str,
         args: &[ir::Expr],
+        symbol: Option<ir::SymbolId>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        if let Some(value) = self.gen_mutable_receiver_method_call(base, field, args, span, fctx) {
+        if let Some(value) =
+            self.gen_mutable_receiver_method_call(base, field, args, symbol, span, fctx)
+        {
             return value;
         }
         let receiver = self.gen_expr(base, fctx)?;
@@ -6169,7 +6184,7 @@ impl<'a> Generator<'a> {
         for arg in args {
             values.push(self.gen_expr(arg, fctx)?);
         }
-        self.gen_named_function_call_with_values(&associated, values, span, fctx)
+        self.gen_named_function_call_with_values(&associated, symbol, values, span, fctx)
     }
 
     pub(super) fn has_callable_name(&self, name: &str) -> bool {
@@ -7020,8 +7035,11 @@ impl<'a> Generator<'a> {
         let receiver_name = self.method_receiver_type_name(&receiver, args[0].span)?;
         let iter_assoc = format!("{receiver_name}::iter");
         if self.has_callable_name(&iter_assoc) {
+            // `for` desugaring: the checker resolved no call here, so the
+            // callee is found by its `Type::iter` name.
             return self.gen_named_function_call_with_values(
                 &iter_assoc,
+                None,
                 vec![receiver],
                 span,
                 fctx,
@@ -7080,32 +7098,43 @@ impl<'a> Generator<'a> {
             );
             return None;
         }
-        self.gen_named_function_call_with_values(&next_assoc, vec![receiver], span, fctx)
+        // `for` desugaring: the checker resolved no call here, so the callee
+        // is found by its `Type::next` name.
+        self.gen_named_function_call_with_values(&next_assoc, None, vec![receiver], span, fctx)
     }
 
     pub(super) fn gen_named_function_call_with_values(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         values: Vec<Value>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        self.gen_named_function_call_with_receiver(name, values, None, span, fctx)
+        self.gen_named_function_call_with_receiver(name, symbol, values, None, span, fctx)
     }
 
     /// Calls `name` with `values`. When `name` has a `&mut self` receiver,
     /// `receiver_ptr` is the address of the caller's receiver storage; a
     /// receiver without storage (a temporary) is spilled to a fresh slot.
+    ///
+    /// `symbol` is the checker's resolution of the call. When it names a
+    /// function called `name` (see `callee_symbol`), the signature, generic
+    /// instance and LLVM name come from that function, so a same-named
+    /// function in another module (two `Meter::read` methods on types
+    /// named `Meter`) is never called instead.
     pub(super) fn gen_named_function_call_with_receiver(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         values: Vec<Value>,
         receiver_ptr: Option<String>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Value> {
-        let by_ref_receiver = self.mutable_receiver_fns.contains(name);
-        if let Some(instance) = self.resolve_generic_instance(name, None, &values, None, span) {
+        let symbol = self.callee_symbol(name, symbol);
+        let by_ref_receiver = self.has_mutable_receiver(name, symbol);
+        if let Some(instance) = self.resolve_generic_instance(name, symbol, &values, None, span) {
             let mut rendered_args = Vec::with_capacity(values.len());
             for (idx, (value, expected)) in values.iter().zip(instance.params.iter()).enumerate() {
                 let Some(coerced) =
@@ -7169,7 +7198,7 @@ impl<'a> Generator<'a> {
             });
         }
 
-        let Some(sig) = self.fn_sig(name).cloned() else {
+        let Some(sig) = self.callee_sig(name, symbol) else {
             self.diagnostics.push(Diagnostic::error(
                 "E5012",
                 format!("unknown function '{}' in codegen", name),
@@ -7230,7 +7259,7 @@ impl<'a> Generator<'a> {
             ));
         }
 
-        let mangled = mangle(name);
+        let mangled = self.callee_llvm_name(name, symbol);
         if sig.ret == LType::Unit {
             fctx.lines.push(format!(
                 "  call void @{}({})",
@@ -8290,6 +8319,56 @@ impl<'a> Generator<'a> {
         wrapper.params == intrinsic.params && wrapper.ret == intrinsic.ret
     }
 
+    /// The checker's symbol for a call lowered under `name`, kept only when
+    /// it is a function declared as `name`. A call can be lowered under
+    /// another name than the function the checker resolved: `json.encode`
+    /// lowers to `aic_json_serde_encode_intrinsic`, and a trait-bound
+    /// method call in a generic body resolves to the trait's method while
+    /// each instance calls the concrete type's impl method. There the
+    /// symbol does not name the callee, so it is dropped and the callers
+    /// fall back to the bare name.
+    pub(super) fn callee_symbol(
+        &self,
+        name: &str,
+        symbol: Option<ir::SymbolId>,
+    ) -> Option<ir::SymbolId> {
+        symbol.filter(|symbol| {
+            self.fn_names_by_symbol
+                .get(symbol)
+                .is_some_and(|declared| declared == name)
+        })
+    }
+
+    /// Signature of the non-generic function a call to `name` reaches. With
+    /// a symbol from `callee_symbol` it is that function's own signature.
+    /// Without one the bare-name lookup is the only option: the call was
+    /// synthesized by codegen (for-in desugaring, invariant helpers), was
+    /// lowered to a std intrinsic, or dispatches through a trait bound, and
+    /// no checker symbol names the callee.
+    pub(super) fn callee_sig(&self, name: &str, symbol: Option<ir::SymbolId>) -> Option<FnSig> {
+        match symbol {
+            Some(symbol) => self.fn_sigs_by_symbol.get(&symbol).cloned(),
+            None => self.fn_sig(name).cloned(),
+        }
+    }
+
+    /// LLVM name of the function a call to `name` reaches. Of several
+    /// functions with one name, all but the first have a symbol-suffixed
+    /// LLVM name, so only a symbol finds them.
+    pub(super) fn callee_llvm_name(&self, name: &str, symbol: Option<ir::SymbolId>) -> String {
+        symbol
+            .and_then(|symbol| self.fn_llvm_names.get(&symbol).cloned())
+            .unwrap_or_else(|| mangle(name))
+    }
+
+    /// Whether the function a call to `name` reaches takes `&mut self`.
+    pub(super) fn has_mutable_receiver(&self, name: &str, symbol: Option<ir::SymbolId>) -> bool {
+        match symbol {
+            Some(symbol) => self.mutable_receiver_symbols.contains(&symbol),
+            None => self.mutable_receiver_fns.contains(name),
+        }
+    }
+
     pub(super) fn fn_sig(&self, name: &str) -> Option<&FnSig> {
         self.call_sig_overrides
             .iter()
@@ -8398,13 +8477,20 @@ impl<'a> Generator<'a> {
         render_type(&sig.ret) == ret
     }
 
+    /// Signature of the call to `name` with arguments of `arg_types`: the
+    /// function's own signature, or the one generic instance at those
+    /// types. `symbol` is the checker's resolution of the call; when it
+    /// names a function called `name` (see `callee_symbol`) only that
+    /// function and its instances are considered.
     pub(super) fn resolve_call_sig_for_types(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         arg_types: &[LType],
         span: crate::span::Span,
     ) -> Option<FnSig> {
-        if let Some(sig) = self.fn_sig(name).cloned() {
+        let symbol = self.callee_symbol(name, symbol);
+        if let Some(sig) = self.callee_sig(name, symbol) {
             if sig.params == arg_types {
                 return Some(sig);
             }
@@ -8413,6 +8499,7 @@ impl<'a> Generator<'a> {
         if let Some(instances) = self.generic_fn_instances.get(name) {
             let matches = instances
                 .iter()
+                .filter(|instance| symbol.is_none_or(|symbol| instance.symbol == symbol))
                 .filter(|instance| instance.params == arg_types)
                 .collect::<Vec<_>>();
             if matches.len() == 1 {

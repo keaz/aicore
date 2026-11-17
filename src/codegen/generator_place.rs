@@ -15,27 +15,29 @@
 
 use super::*;
 
-/// Names of the functions and impl methods with a `&mut self` receiver.
-pub(super) fn collect_mutable_receiver_fns(program: &ir::Program) -> BTreeSet<String> {
+/// Names and symbols of the functions and impl methods with a `&mut self`
+/// receiver.
+pub(super) fn collect_mutable_receiver_fns(
+    program: &ir::Program,
+) -> (BTreeSet<String>, BTreeSet<ir::SymbolId>) {
     let has_mutable_receiver =
         |func: &ir::Function| func.params.first().is_some_and(|p| p.mutable_receiver);
     let mut names = BTreeSet::new();
+    let mut symbols = BTreeSet::new();
+    let mut record = |func: &ir::Function| {
+        if has_mutable_receiver(func) {
+            names.insert(func.name.clone());
+            symbols.insert(func.symbol);
+        }
+    };
     for item in &program.items {
         match item {
-            ir::Item::Function(func) if has_mutable_receiver(func) => {
-                names.insert(func.name.clone());
-            }
-            ir::Item::Impl(impl_def) => {
-                for method in &impl_def.methods {
-                    if has_mutable_receiver(method) {
-                        names.insert(method.name.clone());
-                    }
-                }
-            }
+            ir::Item::Function(func) => record(func),
+            ir::Item::Impl(impl_def) => impl_def.methods.iter().for_each(&mut record),
             _ => {}
         }
     }
-    names
+    (names, symbols)
 }
 
 /// Prefix of the helper that checks a struct invariant and rebuilds the
@@ -105,17 +107,19 @@ impl<'a> Generator<'a> {
     /// Emits `base.method(args)` when `base` is a place and `method` takes
     /// `&mut self`: the method receives the place's address, so its updates
     /// land in the caller's binding. Returns `None` when this does not
-    /// apply and the ordinary method call path should run.
+    /// apply and the ordinary method call path should run. `symbol` is the
+    /// checker's resolution of the method call.
     pub(super) fn gen_mutable_receiver_method_call(
         &mut self,
         base: &ir::Expr,
         method: &str,
         args: &[ir::Expr],
+        symbol: Option<ir::SymbolId>,
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
         let ty = self.place_type_without_codegen(base, fctx)?;
-        let name = self.mutable_receiver_method(&ty, method)?;
+        let (name, symbol) = self.mutable_receiver_method(&ty, method, symbol)?;
         let (ptr, ty) = self.place_address(base, fctx)?;
         let loaded = self.new_temp();
         fctx.lines.push(format!(
@@ -136,20 +140,30 @@ impl<'a> Generator<'a> {
             };
             values.push(value);
         }
-        Some(self.gen_named_function_call_with_receiver(&name, values, Some(ptr), span, fctx))
+        Some(self.gen_named_function_call_with_receiver(
+            &name,
+            symbol,
+            values,
+            Some(ptr),
+            span,
+            fctx,
+        ))
     }
 
     /// Emits `Type::method(receiver, args)` for a `&mut self` method: the
     /// receiver's address is passed when it is a place, so the update lands
     /// in the caller's binding. Returns `None` for other functions.
+    /// `symbol` is the checker's resolution of the call.
     pub(super) fn gen_mutable_receiver_function_call(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
     ) -> Option<Option<Value>> {
-        if !self.mutable_receiver_fns.contains(name) {
+        let symbol = self.callee_symbol(name, symbol);
+        if !self.has_mutable_receiver(name, symbol) {
             return None;
         }
         let (receiver_arg, rest) = args.split_first()?;
@@ -184,7 +198,7 @@ impl<'a> Generator<'a> {
             };
             values.push(value);
         }
-        Some(self.gen_named_function_call_with_receiver(name, values, storage, span, fctx))
+        Some(self.gen_named_function_call_with_receiver(name, symbol, values, storage, span, fctx))
     }
 
     /// Type of a place expression rooted in a local, computed without
@@ -206,16 +220,24 @@ impl<'a> Generator<'a> {
         }
     }
 
-    /// The `Type::method` name of a `&mut self` method called on a value of
-    /// type `ty`, when there is one.
-    fn mutable_receiver_method(&self, ty: &LType, method: &str) -> Option<String> {
+    /// The `Type::method` name, and the checker's symbol when it names that
+    /// method, of a `&mut self` method called on a value of type `ty`, when
+    /// there is one.
+    fn mutable_receiver_method(
+        &self,
+        ty: &LType,
+        method: &str,
+        symbol: Option<ir::SymbolId>,
+    ) -> Option<(String, Option<ir::SymbolId>)> {
         let repr = match ty {
             LType::Struct(layout) => &layout.repr,
             LType::Enum(layout) => &layout.repr,
             _ => return None,
         };
         let name = format!("{}::{}", base_type_name(repr), method);
-        self.mutable_receiver_fns.contains(&name).then_some(name)
+        let symbol = self.callee_symbol(&name, symbol);
+        self.has_mutable_receiver(&name, symbol)
+            .then_some((name, symbol))
     }
 
     pub(super) fn gen_place_assign(
@@ -639,6 +661,8 @@ impl<'a> Generator<'a> {
                 repr: Some(reg),
             });
         }
-        self.gen_named_function_call_with_values(&helper, fields, span, fctx)
+        // The invariant helper is generated by contract lowering after the
+        // checker ran, so no checker symbol exists for this call.
+        self.gen_named_function_call_with_values(&helper, None, fields, span, fctx)
     }
 }

@@ -3491,6 +3491,9 @@ struct Generator<'a> {
     fn_sigs: BTreeMap<String, FnSig>,
     fn_sigs_by_symbol: BTreeMap<ir::SymbolId, FnSig>,
     fn_llvm_names: BTreeMap<ir::SymbolId, String>,
+    /// Declared name (`helper`, `Meter::read`) of every function and impl
+    /// method, by symbol.
+    fn_names_by_symbol: BTreeMap<ir::SymbolId, String>,
     extern_decls: BTreeSet<String>,
     type_map: BTreeMap<ir::TypeId, String>,
     type_aliases: BTreeMap<String, AliasDef>,
@@ -3515,6 +3518,9 @@ struct Generator<'a> {
     /// Functions whose first parameter is a `&mut self` receiver. They take
     /// the receiver as a pointer to the caller's storage.
     mutable_receiver_fns: BTreeSet<String>,
+    /// Symbols of the functions in `mutable_receiver_fns`, so a call the
+    /// checker resolved is not confused with a same-named function.
+    mutable_receiver_symbols: BTreeSet<ir::SymbolId>,
     /// Declarations of LLVM intrinsics used by the module (for example
     /// `llvm.fptosi.sat.i8.f64`), emitted once in the header.
     llvm_intrinsic_decls: BTreeSet<String>,

@@ -1,9 +1,12 @@
 use super::*;
 
 impl<'a> Generator<'a> {
+    /// Lowers a std.json call by its builtin `name`. `symbol` is the
+    /// checker's resolution of the call.
     pub(super) fn gen_json_builtin_call(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -60,7 +63,7 @@ impl<'a> Generator<'a> {
             "encode_null" if self.sig_matches_shape(name, &[], "JsonValue") => {
                 Some(self.gen_json_encode_null_call(args, span, fctx))
             }
-            "encode_any" => Some(self.gen_json_derive_encode_call(name, args, span, fctx)),
+            "encode_any" => Some(self.gen_json_derive_encode_call(name, symbol, args, span, fctx)),
             "decode_int"
                 if self.sig_matches_shape(name, &["JsonValue"], "Result[Int, JsonError]") =>
             {
@@ -91,8 +94,8 @@ impl<'a> Generator<'a> {
             {
                 Some(self.gen_json_decode_string_call(name, args, span, fctx))
             }
-            "decode_any" => Some(self.gen_json_derive_decode_call(name, args, span, fctx)),
-            "schema_any" => Some(self.gen_json_derive_schema_call(name, args, span, fctx)),
+            "decode_any" => Some(self.gen_json_derive_decode_call(name, symbol, args, span, fctx)),
+            "schema_any" => Some(self.gen_json_derive_schema_call(name, symbol, args, span, fctx)),
             "object_empty" if self.sig_matches_shape(name, &[], "JsonValue") => {
                 Some(self.gen_json_object_empty_call(args, span, fctx))
             }
@@ -1293,6 +1296,7 @@ impl<'a> Generator<'a> {
     pub(super) fn gen_json_derive_encode_call(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -1309,7 +1313,7 @@ impl<'a> Generator<'a> {
         let input = self.gen_expr(&args[0], fctx)?;
         let arg_types = vec![input.ty.clone()];
         let call_sig = self
-            .resolve_call_sig_for_types(name, &arg_types, span)
+            .resolve_call_sig_for_types(name, symbol, &arg_types, span)
             .or_else(|| {
                 if name == "aic_json_serde_encode_intrinsic" {
                     let ret_ty = self.parse_type_repr("Result[JsonValue, JsonError]", span)?;
@@ -1354,6 +1358,7 @@ impl<'a> Generator<'a> {
     pub(super) fn gen_json_derive_decode_call(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -1372,7 +1377,7 @@ impl<'a> Generator<'a> {
         let target_ty = self.json_marker_payload_ty(&marker.ty, args[1].span)?;
         let arg_types = vec![input.ty.clone(), marker.ty.clone()];
         let call_sig = self
-            .resolve_call_sig_for_types(name, &arg_types, span)
+            .resolve_call_sig_for_types(name, symbol, &arg_types, span)
             .or_else(|| {
                 if name == "aic_json_serde_decode_intrinsic" {
                     let ret_repr = format!("Result[{}, JsonError]", render_type(&target_ty));
@@ -1418,6 +1423,7 @@ impl<'a> Generator<'a> {
     pub(super) fn gen_json_derive_schema_call(
         &mut self,
         name: &str,
+        symbol: Option<ir::SymbolId>,
         args: &[ir::Expr],
         span: crate::span::Span,
         fctx: &mut FnCtx,
@@ -1435,7 +1441,7 @@ impl<'a> Generator<'a> {
         let target_ty = self.json_marker_payload_ty(&marker.ty, args[0].span)?;
         let arg_types = vec![marker.ty.clone()];
         let call_sig = self
-            .resolve_call_sig_for_types(name, &arg_types, span)
+            .resolve_call_sig_for_types(name, symbol, &arg_types, span)
             .or_else(|| {
                 if name == "aic_json_serde_schema_intrinsic" {
                     let ret_ty = self.parse_type_repr("Result[String, JsonError]", span)?;

@@ -962,6 +962,13 @@ Verifier-focused examples:
 - `&mut self` methods (SYNTAX-T1, #448) take the receiver by pointer, so they are rejected as values (`E1303`) and skipped by `resolve_function_value_symbol`. A `&mut self` method value that reaches codegen without the checker reports `E5034` instead of getting a by-value adapter.
 - Verification: `src/typecheck.rs` tests `method_values_take_the_receiver_as_first_parameter` (types, and `E1303` for arguments, struct fields and trait impl methods) and `mutable_self_receivers_are_checked`, `src/codegen/tests.rs` tests `impl_methods_lower_as_function_values` and `mutable_receiver_methods_are_not_lowered_as_function_values`, `tests/execution_tests.rs` test `exec_first_class_fn_value_from_impl_method`, the parity gate `tests/check_build_parity_tests.rs`, and `examples/core/method_values.aic`.
 
+## Symbol-Keyed Call Lowering (CORR-T13, #502)
+
+- Every `ir::ExprKind::Call`, including a method call (`m.read()`, callee `FieldAccess`), carries the checker's callee symbol (`Checker::call_symbols`, attached in `src/driver.rs`).
+- Codegen (`src/codegen/generator_core.rs`) passes that symbol to `gen_method_call`, `gen_named_function_call_with_receiver`, `gen_mutable_receiver_method_call` / `gen_mutable_receiver_function_call` (`src/codegen/generator_place.rs`) and, through `gen_json_builtin_call`, to `resolve_call_sig_for_types`. `callee_symbol` keeps the symbol only when it is a function declared under the name being called; `callee_sig`, `callee_llvm_name` and `has_mutable_receiver` then read `fn_sigs_by_symbol`, `fn_llvm_names` and `mutable_receiver_symbols`, and generic instances are filtered by symbol. Without a symbol these helpers use the bare name; each such call site has a comment saying why no symbol exists (`for` desugaring, invariant helpers, a std wrapper lowered to its intrinsic, trait-bound calls in generic bodies).
+- `gen_call` never lowers a call that the checker resolved to a user-module function as a std builtin, also when the call is qualified (`codec.encode(p)`).
+- Verification: `tests/execution_tests.rs` tests `exec_same_named_methods_of_same_named_types_in_two_modules_reach_their_own_module` (failed with `E5014`/`E5012` before), `exec_same_named_methods_on_different_types_reach_their_own_type` and `exec_user_module_functions_named_like_std_json_generics_run_the_user_function` (failed with `E5014` before; with one instantiation it silently ran `json.encode`).
+
 ## Place Assignment and `&mut self` (SYNTAX-T1, #448)
 
 - Language surface: `p.x = v`, `p.a.b = v`, `t.0 = v`, `t.1.0 = v`, `v[i] = x`, `items[i].qty = x`, and `self.n = v` / `self = v` in `&mut self` methods. Rules and diagnostics are in `docs/reference/statements.md`.

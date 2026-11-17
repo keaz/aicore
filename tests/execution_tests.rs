@@ -248,6 +248,45 @@ fn compile_and_run_or_backend_diags(
     ))
 }
 
+/// Builds and runs `main.aic` next to the module files in `modules`, each
+/// given as a path relative to the project root (`app/alpha.aic`).
+fn compile_and_run_with_modules(source: &str, modules: &[(&str, &str)]) -> (i32, String, String) {
+    let dir = tempdir().expect("tempdir");
+    for (path, text) in modules {
+        let file = dir.path().join(path);
+        fs::create_dir_all(file.parent().expect("module dir")).expect("mkdir module dir");
+        fs::write(&file, text).expect("write module");
+    }
+    let src = dir.path().join("main.aic");
+    fs::write(&src, source).expect("write source");
+
+    let front = run_frontend(&src).expect("frontend");
+    assert!(
+        !has_errors(&front.diagnostics),
+        "diagnostics: {:#?}",
+        front.diagnostics
+    );
+    let lowered = lower_runtime_asserts(&front.ir);
+    let llvm = emit_llvm_with_resolution_and_options(
+        &lowered,
+        Some(&front.resolution),
+        &src.to_string_lossy(),
+        CodegenOptions::default(),
+    )
+    .unwrap_or_else(|diags| panic!("codegen diagnostics: {diags:#?}"));
+    let exe = dir.path().join("app_exe");
+    compile_with_clang(&llvm.llvm_ir, &exe, dir.path()).expect("clang build");
+    let output = Command::new(exe)
+        .current_dir(dir.path())
+        .output()
+        .expect("run exe");
+    (
+        output.status.code().unwrap_or(1),
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
 fn assert_program_prints_42(source: &str) {
     let (code, stdout, stderr) = compile_and_run(source);
     assert_eq!(code, 0, "stderr={stderr}");
@@ -15095,6 +15134,187 @@ fn main() -> Int effects { io } capabilities { io } {
     let (code, stdout, stderr) = compile_and_run(src);
     assert_eq!(code, 0, "stderr={stderr}");
     assert_eq!(stdout, "4\n5\n4\n99\n4\n");
+}
+
+const SAME_NAMED_METER_ALPHA: &str = r#"module app.alpha;
+
+pub struct Meter { n: Int }
+
+impl Meter {
+    pub fn read(self) -> Int { self.n + 1 }
+    pub fn bump(&mut self, by: Int) -> () { self.n = self.n + by; }
+    pub fn pick[T](self, a: T, b: T) -> T { a }
+}
+
+pub fn total() -> Int {
+    let mut m = Meter { n: 3 };
+    m.bump(1);
+    Meter::bump(m, 10);
+    m.read() * 100 + Meter::read(m) + m.pick(1000000, 2000000)
+}
+"#;
+
+const SAME_NAMED_METER_BETA: &str = r#"module app.beta;
+
+pub struct Meter { n: Int }
+
+impl Meter {
+    pub fn read(self) -> Int { self.n * 2 }
+    pub fn bump(&mut self, by: Int) -> () { self.n = self.n + by * 3; }
+    pub fn pick[T](self, a: T, b: T) -> T { b }
+}
+
+pub fn total() -> Int {
+    let mut m = Meter { n: 3 };
+    m.bump(1);
+    Meter::bump(m, 10);
+    m.read() * 100 + Meter::read(m) + m.pick(1000000, 2000000)
+}
+"#;
+
+#[test]
+fn exec_same_named_methods_of_same_named_types_in_two_modules_reach_their_own_module() {
+    // Both modules declare `Meter` with `Meter::read`, `Meter::bump`
+    // (`&mut self`) and generic `Meter::pick`. Method syntax and
+    // `Type::method` calls must reach the module's own method, not the
+    // last one collected under the shared name.
+    let src = r#"module app.main;
+import std.io;
+import app.alpha;
+import app.beta;
+
+fn main() -> Int effects { io } capabilities { io } {
+    print_int(alpha.total());
+    print_int(beta.total());
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_modules(
+        src,
+        &[
+            ("app/alpha.aic", SAME_NAMED_METER_ALPHA),
+            ("app/beta.aic", SAME_NAMED_METER_BETA),
+        ],
+    );
+    assert_eq!(code, 0, "stderr={stderr}");
+    // alpha: n = 3 + 1 + 10 = 14, read = 15, pick = a.
+    // beta: n = 3 + 3 + 30 = 36, read = 72, pick = b.
+    assert_eq!(stdout, "1001515\n2007272\n");
+}
+
+#[test]
+fn exec_same_named_methods_on_different_types_reach_their_own_type() {
+    let src = r#"import std.io;
+
+struct Coin { v: Int }
+struct Note { v: Int }
+
+impl Coin {
+    fn value(self) -> Int { self.v }
+    fn add(&mut self, x: Int) -> () { self.v = self.v + x; }
+    fn tag[T](self, x: T) -> T { x }
+}
+
+impl Note {
+    fn value(self) -> Int { self.v * 100 }
+    fn add(&mut self, x: Int) -> () { self.v = self.v + x * 10; }
+    fn tag[T](self, x: T) -> Int { 7 }
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let mut c = Coin { v: 1 };
+    let mut n = Note { v: 2 };
+    c.add(1);
+    n.add(1);
+    Coin::add(c, 2);
+    Note::add(n, 2);
+    print_int(c.value());
+    print_int(n.value());
+    print_int(Coin::value(c));
+    print_int(Note::value(n));
+    print_int(c.tag(5));
+    print_int(n.tag(5));
+    0
+}
+"#;
+    let (code, stdout, stderr) = compile_and_run(src);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "4\n3200\n4\n3200\n5\n7\n");
+}
+
+#[test]
+fn exec_user_module_functions_named_like_std_json_generics_run_the_user_function() {
+    // `codec.encode`, `codec.decode_with` and `codec.schema` share their
+    // bare names with the std.json generics that codegen lowers as
+    // builtins (`resolve_call_sig_for_types`). Both sets are instantiated
+    // at `Point`; each call must reach the function the checker resolved.
+    let codec = r#"module app.codec;
+import std.json;
+
+pub fn encode[T](value: T) -> Result[JsonValue, JsonError] {
+    Ok(json.encode_int(77))
+}
+
+pub fn decode_with[T](value: JsonValue, marker: Option[T]) -> Result[Int, JsonError] {
+    Ok(88)
+}
+
+pub fn schema[T](marker: Option[T]) -> Result[String, JsonError] {
+    Ok("codec-schema")
+}
+"#;
+    let src = r#"module app.main;
+import std.io;
+import std.json;
+import app.codec;
+
+struct Point { x: Int, y: Int }
+
+fn show(r: Result[JsonValue, JsonError]) -> () effects { io } capabilities { io } {
+    match r {
+        Ok(v) => match json.stringify(v) {
+            Ok(s) => print_str(s),
+            Err(_) => print_int(-1),
+        },
+        Err(_) => print_int(-2),
+    };
+    print_str("\n");
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let p = Point { x: 1, y: 2 };
+    show(codec.encode(p));
+    show(json.encode(p));
+    let marker: Option[Point] = None;
+    let encoded = match json.encode(p) {
+        Ok(v) => v,
+        Err(_) => json.encode_null(),
+    };
+    match codec.decode_with(encoded, marker) {
+        Ok(v) => print_int(v),
+        Err(_) => print_int(-3),
+    };
+    match json.decode_with(encoded, marker) {
+        Ok(q) => print_int(q.x * 10 + q.y),
+        Err(_) => print_int(-4),
+    };
+    match codec.schema(marker) {
+        Ok(s) => print_str(s),
+        Err(_) => print_int(-5),
+    };
+    print_str("\n");
+    match json.schema(marker) {
+        Ok(s) => if is_std_schema(s) { print_int(1) } else { print_int(0) },
+        Err(_) => print_int(-6),
+    };
+    0
+}
+
+fn is_std_schema(s: String) -> Bool { s != "codec-schema" }
+"#;
+    let (code, stdout, stderr) = compile_and_run_with_modules(src, &[("app/codec.aic", codec)]);
+    assert_eq!(code, 0, "stderr={stderr}");
+    assert_eq!(stdout, "77\n{\"x\":1,\"y\":2}\n88\n12\ncodec-schema\n1\n");
 }
 
 #[test]
