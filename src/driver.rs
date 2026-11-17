@@ -71,6 +71,33 @@ pub struct FrontendOptions {
     pub offline: bool,
 }
 
+/// Stack size for threads that run the compiler. The front end and code generator recurse once
+/// per nested expression, and an unoptimized build uses about 64 KiB of stack per level of
+/// `Checker::check_expr_with_expected`. A 40-term `a + b + ...` chain therefore needs more than
+/// the 2 MiB that Rust gives spawned threads (including test threads) and the 1 MiB of the
+/// Windows main thread.
+pub const COMPILER_THREAD_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Runs `work` on a new thread named `name` with [`COMPILER_THREAD_STACK_BYTES`] of stack and
+/// returns its result. A panic in `work` is resumed on the calling thread. Returns an error only
+/// when the thread cannot be created.
+pub fn run_on_compiler_stack<F, R>(name: &str, work: F) -> std::io::Result<R>
+where
+    F: FnOnce() -> R + Send,
+    R: Send,
+{
+    std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .name(name.to_string())
+            .stack_size(COMPILER_THREAD_STACK_BYTES)
+            .spawn_scoped(scope, work)?;
+        match handle.join() {
+            Ok(result) => Ok(result),
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    })
+}
+
 pub fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
     run_frontend_with_options(path, FrontendOptions::default())
 }
@@ -1468,5 +1495,50 @@ fn resolve_native_path(project_root: &Path, value: &str) -> PathBuf {
         path
     } else {
         project_root.join(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stack_hungry_depth(depth: usize) -> usize {
+        let frame = std::hint::black_box([depth as u8; 4096]);
+        if depth == 0 {
+            frame[0] as usize
+        } else {
+            stack_hungry_depth(depth - 1) + frame[1] as usize
+        }
+    }
+
+    #[test]
+    fn run_on_compiler_stack_fits_recursion_deeper_than_default_thread_stack() {
+        // 1024 frames of at least 4 KiB need more than 4 MiB, twice the 2 MiB
+        // default of a spawned thread.
+        let depth = 1024;
+        let sum = run_on_compiler_stack("aic-test-deep", || stack_hungry_depth(depth))
+            .expect("spawn compiler thread");
+        assert_eq!(sum, (0..=depth).map(|d| d as u8 as usize).sum::<usize>());
+    }
+
+    #[test]
+    fn run_on_compiler_stack_names_the_thread_and_borrows_caller_data() {
+        let input = [1, 2, 3];
+        let (name, total) = run_on_compiler_stack("aic-test-name", || {
+            let name = std::thread::current().name().map(str::to_string);
+            (name, input.iter().sum::<i32>())
+        })
+        .expect("spawn compiler thread");
+        assert_eq!(name.as_deref(), Some("aic-test-name"));
+        assert_eq!(total, 6);
+    }
+
+    #[test]
+    fn run_on_compiler_stack_resumes_panics_on_the_caller() {
+        let caught = std::panic::catch_unwind(|| {
+            run_on_compiler_stack("aic-test-panic", || -> () { panic!("compiler failed") })
+        });
+        let payload = caught.expect_err("panic must reach the caller");
+        assert_eq!(payload.downcast_ref::<&str>(), Some(&"compiler failed"));
     }
 }

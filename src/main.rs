@@ -29,8 +29,8 @@ use aicore::diagnostic_explain::{explain, explain_text};
 use aicore::diagnostics::{Diagnostic, Severity};
 use aicore::docgen::{generate_docs, DocFormat};
 use aicore::driver::{
-    diagnostics_pretty, has_errors, run_frontend_with_options, sort_and_cap_diagnostics,
-    sort_diagnostics, FrontendOptions, FrontendOutput,
+    diagnostics_pretty, has_errors, run_frontend_with_options, run_on_compiler_stack,
+    sort_and_cap_diagnostics, sort_diagnostics, FrontendOptions, FrontendOutput,
 };
 use aicore::formatter::{format_program, format_source, FormatError};
 use aicore::intrinsic_verifier::verify_intrinsics;
@@ -970,20 +970,11 @@ impl SandboxProfileArg {
     }
 }
 
-/// Stack size for the compiler thread. The default Windows main-thread stack (1 MiB) is too
-/// small for the recursive front end and code generator, so run the CLI on a dedicated thread.
-const COMPILER_THREAD_STACK_BYTES: usize = 64 * 1024 * 1024;
-
 fn main() {
-    let worker = std::thread::Builder::new()
-        .name("aic-main".to_string())
-        .stack_size(COMPILER_THREAD_STACK_BYTES)
-        .spawn(run_cli);
-    let result = match worker {
-        Ok(handle) => match handle.join() {
-            Ok(result) => result,
-            Err(payload) => std::panic::resume_unwind(payload),
-        },
+    // The main thread's stack (1 MiB on Windows) is too small for the recursive front end and
+    // code generator, so the CLI runs on a thread with the compiler's stack size.
+    let result = match run_on_compiler_stack("aic-main", run_cli) {
+        Ok(result) => result,
         Err(err) => Err(anyhow::anyhow!("failed to start compiler thread: {err}")),
     };
     let exit = match result {

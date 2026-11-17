@@ -49,6 +49,7 @@ Core language-specific deep dive:
 - Cross-target execution matrix runner: `src/execution_matrix.rs`
 - Performance budget runner: `src/perf_gate.rs`
 - CLI command surface: `src/main.rs`
+- Compiler stack size: the front end and code generator recurse once per nested expression, and an unoptimized build needs about 64 KiB of stack per level of `Checker::check_expr_with_expected` (a 40-term `+` chain needs more than 2 MiB). Run the compiler through `driver::run_on_compiler_stack`, which uses a thread with `driver::COMPILER_THREAD_STACK_BYTES` (64 MiB). The CLI (`src/main.rs`) and the `run_frontend`/`emit_llvm_*` wrappers in `tests/execution_tests.rs` do this, so the execution tests need neither `RUST_MIN_STACK` nor `--test-threads=1`. New in-process test harnesses that compile large programs must do the same.
 - Source formatter (`aic fmt`, LSP formatting): `src/formatter.rs`
 
 ## Source Formatter Trivia (`aic fmt`)

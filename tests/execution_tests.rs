@@ -6,13 +6,42 @@ use std::time::{Duration, Instant};
 
 use aicore::codegen::{
     compile_with_clang, compile_with_clang_artifact, compile_with_clang_artifact_with_options,
-    emit_llvm, emit_llvm_with_options, emit_llvm_with_resolution_and_options, ArtifactKind,
-    CodegenOptions, CompileOptions, LinkOptions, OptimizationLevel,
+    ArtifactKind, CodegenOptions, CodegenOutput, CompileOptions, LinkOptions, OptimizationLevel,
 };
 use aicore::contracts::lower_runtime_asserts;
-use aicore::driver::{has_errors, run_frontend};
+use aicore::diagnostics::Diagnostic;
+use aicore::driver::{has_errors, run_on_compiler_stack, FrontendOutput};
+use aicore::{codegen, driver, ir, resolver};
 use serde_json::Value;
 use tempfile::tempdir;
+
+// Test threads get a 2 MiB stack, which deeply nested test programs exceed in an unoptimized
+// build. These wrappers run the in-process compiler on a thread with the CLI's stack size, so
+// `cargo test --test execution_tests` needs no `RUST_MIN_STACK`.
+fn run_frontend(path: &Path) -> anyhow::Result<FrontendOutput> {
+    run_on_compiler_stack("aic-test-frontend", || driver::run_frontend(path))
+        .expect("spawn compiler thread")
+}
+
+fn emit_llvm_with_options(
+    program: &ir::Program,
+    file: &str,
+    options: CodegenOptions,
+) -> Result<CodegenOutput, Vec<Diagnostic>> {
+    emit_llvm_with_resolution_and_options(program, None, file, options)
+}
+
+fn emit_llvm_with_resolution_and_options(
+    program: &ir::Program,
+    resolution: Option<&resolver::Resolution>,
+    file: &str,
+    options: CodegenOptions,
+) -> Result<CodegenOutput, Vec<Diagnostic>> {
+    run_on_compiler_stack("aic-test-codegen", || {
+        codegen::emit_llvm_with_resolution_and_options(program, resolution, file, options)
+    })
+    .expect("spawn compiler thread")
+}
 
 fn compile_and_run_with_setup_and_args_and_input<F>(
     source: &str,
@@ -179,7 +208,7 @@ fn compile_and_run(source: &str) -> (i32, String, String) {
 
 fn compile_and_run_or_backend_diags(
     source: &str,
-) -> Result<(i32, String, String), Vec<aicore::diagnostics::Diagnostic>> {
+) -> Result<(i32, String, String), Vec<Diagnostic>> {
     let dir = tempdir().expect("tempdir");
     let src = dir.path().join("main.aic");
     fs::write(&src, source).expect("write source");
