@@ -15,7 +15,7 @@ Core entities:
 - `Program`
 - `Symbol { id, name, kind, span }`
 - `TypeDef { id, repr }`
-- `GenericInstantiation { id, kind, name, symbol, type_args, mangled }`
+- `GenericInstantiation { id, kind, name, symbol, type_args, mangled }`; `mangled` is the injective name from `src/mangle.rs` (see `docs/llvm-backend.md`)
 - `Item::{Function,Struct,Enum}`
 - `Item::{Function,Struct,Enum,Trait,Impl}`
 - `Expr` / `Stmt` / `Pattern`

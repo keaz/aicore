@@ -165,9 +165,9 @@ Match lowering notes:
 
 - Frontend typecheck records deterministic generic instantiations in IR.
 - Codegen builds per-function concrete instances from this metadata.
-- Specialized symbols use stable mangled names (`aic_<instantiation-mangle>`).
+- Specialized symbols use stable mangled names (`aic_<instantiation-mangle>`). The mangle (`src/mangle.rs`, shared by the checker and code generation) is injective: in each component `_` becomes `__`, `[`, `]` and `,` become `_L`, `_R`, `_C`, any other non-alphanumeric character becomes `_x<hex>_`, spaces are dropped, and type arguments follow the name as `_S<component>`. So `f[B, Int]` is `fn_f_SB_SInt` and `f_B[Int]` is `fn_f__B_SInt`. Dyn wrappers and vtables use the same escaping (`aic_dynwrap_S<trait>_S<method>_S<type>`, `aic_dyn_vtable_S<trait>_S<type>`).
 - Duplicate instantiations are deduplicated by mangled key.
-- A function name that more than one module declares (a user `first[T]` next to std `first[T]`) gets the function's symbol in its mangled name (`fn_first__s<symbol>_Int`), so each function keeps its own instances. A call with a resolved callee symbol only matches instances of that function, and a call resolved to a non-generic function never matches a generic instance.
+- A function name that more than one module declares (a user `first[T]` next to std `first[T]`) gets the function's symbol in its mangled name (`fn_first_x23_<symbol>_SInt`, the escaped `first#<symbol>`, which no identifier can spell), so each function keeps its own instances. A call with a resolved callee symbol only matches instances of that function, and a call resolved to a non-generic function never matches a generic instance.
 
 ## Artifact Modes (E5-T5)
 

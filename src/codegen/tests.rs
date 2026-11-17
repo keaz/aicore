@@ -508,12 +508,12 @@ if c { a + b } else { 0 }
     let int_defs = out1
         .llvm_ir
         .lines()
-        .filter(|line| line.starts_with("define i64 @aic_fn_id_Int("))
+        .filter(|line| line.starts_with("define i64 @aic_fn_id_SInt("))
         .count();
     let bool_defs = out1
         .llvm_ir
         .lines()
-        .filter(|line| line.starts_with("define i1 @aic_fn_id_Bool("))
+        .filter(|line| line.starts_with("define i1 @aic_fn_id_SBool("))
         .count();
     assert_eq!(int_defs, 1, "Int instantiation should be deduped");
     assert_eq!(bool_defs, 1, "Bool instantiation should be emitted");

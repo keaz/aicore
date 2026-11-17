@@ -221,6 +221,7 @@ check_pass=(
   "examples/core/pattern_extended_match.aic"
   "examples/core/std_type_with_import.aic"
   "examples/core/const_evaluation.aic"
+  "examples/core/generic_names_with_underscores.aic"
   "examples/selfhost/driver_basic.aic"
   "examples/selfhost/driver_package"
   "examples/verify/capability_protocol_ok.aic"
@@ -453,6 +454,7 @@ run_pass=(
   "examples/core/pattern_or.aic"
   "examples/core/std_type_with_import.aic"
   "examples/core/const_evaluation.aic"
+  "examples/core/generic_names_with_underscores.aic"
   "examples/selfhost/driver_basic.aic"
   "examples/selfhost/driver_package"
   "examples/verify/generic_channel_protocol_ok.aic"
@@ -1042,6 +1044,7 @@ case "$MODE" in
     expect_run_value "examples/core/pattern_guard_check.aic" "42"
     expect_run_value "examples/core/std_type_with_import.aic" "2"
     expect_run_value "examples/core/const_evaluation.aic" "66706"
+    expect_run_value "examples/core/generic_names_with_underscores.aic" "42"
     expect_run_value "examples/data/map_u64_values.aic" "42"
     expect_run_value "examples/data/map_bytes_and_u64_keys_values.aic" "42"
     if command -v clang >/dev/null 2>&1; then

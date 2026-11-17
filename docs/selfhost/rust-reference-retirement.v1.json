@@ -105,6 +105,7 @@
         "src/ir.rs",
         "src/ir_builder.rs",
         "src/lexer.rs",
+        "src/mangle.rs",
         "src/match_usefulness.rs",
         "src/parser.rs",
         "src/resolver.rs",

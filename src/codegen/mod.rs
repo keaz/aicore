@@ -4684,33 +4684,6 @@ fn const_int_kind_of(ty: &LType) -> Option<const_eval::IntKind> {
     })
 }
 
-fn mangle_generic_instantiation(kind_tag: &str, name: &str, type_args: &[String]) -> String {
-    let mut out = String::new();
-    out.push_str(kind_tag);
-    out.push('_');
-    out.push_str(&mangle_generic_component(name));
-    for arg in type_args {
-        out.push('_');
-        out.push_str(&mangle_generic_component(arg));
-    }
-    out
-}
-
-fn mangle_generic_component(input: &str) -> String {
-    let mut out = String::new();
-    for ch in input.chars() {
-        match ch {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => out.push(ch),
-            '[' => out.push_str("_lb_"),
-            ']' => out.push_str("_rb_"),
-            ',' => out.push_str("_c_"),
-            ' ' => {}
-            other => out.push_str(&format!("_x{:02X}_", other as u32)),
-        }
-    }
-    out
-}
-
 fn mangle(name: &str) -> String {
     let mut out = String::from("aic_");
     for c in name.chars() {

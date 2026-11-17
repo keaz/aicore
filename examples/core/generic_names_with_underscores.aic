@@ -1,0 +1,34 @@
+module examples.core.generic_names_with_underscores;
+
+import std.io;
+
+// `f[B, Int]` and `f_B[Int]` are different instantiations. Their mangled
+// symbols (`fn_f_SB_SInt`, `fn_f__B_SInt`) stay distinct because the
+// mangling escapes `_` inside names (see docs/llvm-backend.md).
+struct B {
+    v: Int,
+}
+
+struct Pair_B[T] {
+    first: T,
+}
+
+struct Pair[T, U] {
+    first: T,
+    second: U,
+}
+
+fn f[T, U](x: T, y: U) -> Int {
+    40
+}
+
+fn f_B[T](x: T) -> Int {
+    2
+}
+
+fn main() -> Int effects { io } capabilities { io } {
+    let a = Pair {first: B {v: 1}, second: 2};
+    let b = Pair_B {first: 3};
+    print_int(f(B {v: 1}, 1) + f_B(1) + a.second + b.first - 5);
+    0
+}

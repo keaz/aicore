@@ -6815,12 +6815,8 @@ impl<'a> Generator<'a> {
                 return None;
             };
 
-            let wrapper_llvm_name = format!(
-                "aic_dynwrap_{}_{}_{}",
-                mangle_generic_component(trait_name),
-                mangle_generic_component(&method.name),
-                mangle_generic_component(&concrete_repr)
-            );
+            let wrapper_llvm_name =
+                crate::mangle::join("aic_dynwrap", &[trait_name, &method.name, &concrete_repr]);
             self.emit_dyn_wrapper_if_needed(
                 &wrapper_llvm_name,
                 &impl_llvm_name,
@@ -6835,11 +6831,7 @@ impl<'a> Generator<'a> {
             ));
         }
 
-        let global_name = format!(
-            "aic_dyn_vtable_{}_{}",
-            mangle_generic_component(trait_name),
-            mangle_generic_component(&concrete_repr)
-        );
+        let global_name = crate::mangle::join("aic_dyn_vtable", &[trait_name, &concrete_repr]);
         self.globals.push(format!(
             "@{} = private unnamed_addr constant [{} x i8*] [{}]",
             global_name,
@@ -7544,12 +7536,11 @@ impl<'a> Generator<'a> {
     /// several functions declare carries the function's symbol, matching the
     /// checker's `record_instantiation`.
     fn generic_fn_instance_name(&self, func: &ir::Function, type_args: &[String]) -> String {
-        if self.shared_fn_names.contains(&func.name) {
-            let name = format!("{}__s{}", func.name, func.symbol.0);
-            mangle_generic_instantiation("fn", &name, type_args)
-        } else {
-            mangle_generic_instantiation("fn", &func.name, type_args)
-        }
+        let disambiguator = self
+            .shared_fn_names
+            .contains(&func.name)
+            .then_some(func.symbol.0);
+        crate::mangle::instantiation("fn", &func.name, disambiguator, type_args)
     }
 
     pub(super) fn register_generic_instance(

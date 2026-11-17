@@ -11698,7 +11698,7 @@ impl<'a> Checker<'a> {
         // Functions that share a bare name across modules (a user `first[T]`
         // and std `first[T]`) are distinct instantiations; codegen applies
         // the same rule (`generic_fn_instance_name`).
-        let mangle_name = match symbol {
+        let disambiguator = match symbol {
             Some(symbol)
                 if kind == ir::GenericInstantiationKind::Function
                     && self
@@ -11707,12 +11707,15 @@ impl<'a> Checker<'a> {
                         .get(name)
                         .is_some_and(|modules| modules.len() > 1) =>
             {
-                format!("{}__s{}", name, symbol.0)
+                Some(symbol.0)
             }
-            _ => name.to_string(),
+            _ => None,
         };
-        let key = format!("{}::{}[{}]", kind_tag, mangle_name, type_args.join(", "));
-        let mangled = mangle_instantiation(kind_tag, &mangle_name, type_args);
+        let key = match disambiguator {
+            Some(id) => format!("{}::{}#{}[{}]", kind_tag, name, id, type_args.join(", ")),
+            None => format!("{}::{}[{}]", kind_tag, name, type_args.join(", ")),
+        };
+        let mangled = crate::mangle::instantiation(kind_tag, name, disambiguator, type_args);
 
         if let Some(existing_key) = self.mangled_keys.get(&mangled) {
             if existing_key != &key {
@@ -11726,7 +11729,7 @@ impl<'a> Checker<'a> {
                         self.file,
                         span,
                     )
-                    .with_help("refine mangling strategy to keep instantiation keys unique"),
+                    .with_help("instantiation mangling is injective, so this is a compiler bug; please report it"),
                 );
                 return;
             }
@@ -13526,33 +13529,6 @@ fn instantiation_kind_tag(kind: &ir::GenericInstantiationKind) -> &'static str {
         ir::GenericInstantiationKind::Struct => "struct",
         ir::GenericInstantiationKind::Enum => "enum",
     }
-}
-
-fn mangle_instantiation(kind_tag: &str, name: &str, type_args: &[String]) -> String {
-    let mut out = String::new();
-    out.push_str(kind_tag);
-    out.push('_');
-    out.push_str(&mangle_component(name));
-    for arg in type_args {
-        out.push('_');
-        out.push_str(&mangle_component(arg));
-    }
-    out
-}
-
-fn mangle_component(input: &str) -> String {
-    let mut out = String::new();
-    for ch in input.chars() {
-        match ch {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => out.push(ch),
-            '[' => out.push_str("_lb_"),
-            ']' => out.push_str("_rb_"),
-            ',' => out.push_str("_c_"),
-            ' ' => {}
-            other => out.push_str(&format!("_x{:02X}_", other as u32)),
-        }
-    }
-    out
 }
 
 fn contains_null_token(input: &str) -> bool {

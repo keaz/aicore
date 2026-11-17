@@ -9551,7 +9551,7 @@ fn main() -> Int {
     assert_ne!(firsts[0].mangled, firsts[1].mangled);
     for inst in &firsts {
         let symbol = inst.symbol.expect("function instantiation symbol");
-        assert_eq!(inst.mangled, format!("fn_first__s{}_Int", symbol.0));
+        assert_eq!(inst.mangled, format!("fn_first_x23_{}_SInt", symbol.0));
     }
 }
 
